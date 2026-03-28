@@ -414,7 +414,6 @@ func (c *Client) QueryDependencyStats(ctx context.Context, limit uint64) (*dto.D
 			groupArray(DISTINCT dep_version) AS versions
 		FROM (
 			SELECT
-				p.sbom_id,
 				p.source_file,
 				ifNull(s.document_name, p.source_file) AS doc_name,
 				dep_name,

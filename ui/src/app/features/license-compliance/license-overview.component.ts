@@ -116,7 +116,7 @@ interface GroupedProject {
 
             <!-- Exempted Packages -->
             <div class="detail-section" *ngIf="item.exempted_packages?.length">
-              <h4>Exempted Packages ({{ item.exempted_packages!.length | number }})</h4>
+              <h4>Exempted Packages ({{ item.exempted_packages!.length }})</h4>
               <div class="pkg-list">
                 <span *ngFor="let pkg of item.exempted_packages" class="pkg-tag exempted">{{ pkg }}</span>
               </div>
