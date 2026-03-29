@@ -15,9 +15,9 @@ jobs:
     name: Sync Labels
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - uses: EndBug/label-sync@v2
+      - uses: EndBug/label-sync@52074158190acb45f3f9dc67a08bf9c43f5fc6ef # v2.3.3
         with:
           config-file: .github/labels.yml
           delete-other-labels: false

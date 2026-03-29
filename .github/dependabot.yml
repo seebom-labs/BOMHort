@@ -1,0 +1,65 @@
+# Dependabot configuration for automated dependency updates
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
+
+version: 2
+updates:
+  # Go backend dependencies
+  - package-ecosystem: "gomod"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+      - "go"
+    reviewers:
+      - "mfahlandt"
+      - "koksay"
+    commit-message:
+      prefix: "deps(go):"
+    open-pull-requests-limit: 10
+
+  # Angular frontend dependencies
+  - package-ecosystem: "npm"
+    directory: "/ui"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+      - "frontend"
+    reviewers:
+      - "mfahlandt"
+      - "koksay"
+    commit-message:
+      prefix: "deps(npm):"
+    open-pull-requests-limit: 10
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+      - "ci"
+    reviewers:
+      - "mfahlandt"
+      - "koksay"
+    commit-message:
+      prefix: "deps(actions):"
+    open-pull-requests-limit: 5
+
+  # Hugo docs site dependencies
+  - package-ecosystem: "gomod"
+    directory: "/docs"
+    schedule:
+      interval: "monthly"
+    labels:
+      - "dependencies"
+      - "docs"
+    commit-message:
+      prefix: "deps(docs):"
+    open-pull-requests-limit: 5
+

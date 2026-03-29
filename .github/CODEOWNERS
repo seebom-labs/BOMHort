@@ -1,0 +1,29 @@
+# SeeBOM CODEOWNERS
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owners for everything in the repo
+*                           @mfahlandt @koksay
+
+# Backend (Go)
+/backend/                   @mfahlandt
+
+# Frontend (Angular)
+/ui/                        @mfahlandt
+
+# Helm chart / Kubernetes
+/deploy/                    @koksay @mfahlandt
+/examples/                  @koksay
+
+# ClickHouse schema
+/db/                        @mfahlandt
+
+# CI/CD
+/.github/                   @mfahlandt @koksay
+
+# Documentation
+/docs/                      @mfahlandt
+
+# Security-sensitive files
+/SECURITY.md                @mfahlandt @koksay
+/.github/dependabot.yml     @mfahlandt @koksay
+
