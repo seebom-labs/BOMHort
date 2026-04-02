@@ -72,5 +72,5 @@ body:
       options:
         - label: I have searched existing issues and this has not been requested before.
           required: true
-        - label: This feature is within the [project scope](GOVERNANCE.md#project-scope).
+        - label: This feature is within the [project scope](../../GOVERNANCE.md#project-scope).
 
