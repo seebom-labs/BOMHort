@@ -51,6 +51,7 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string) ([
 
 // QuerySBOMLicenses fetches the license breakdown for a specific SBOM.
 func (c *Client) QuerySBOMLicenses(ctx context.Context, sbomID string) ([]dto.SBOMLicenseBreakdownItem, error) {
+	// Step 1: Get the license compliance summary (categories, exemptions).
 	rows, err := c.Conn.Query(ctx, `
 		SELECT license_id, category, package_count, non_compliant_packages,
 		       exempted_packages, exemption_reason
@@ -66,11 +67,13 @@ func (c *Client) QuerySBOMLicenses(ctx context.Context, sbomID string) ([]dto.SB
 	var items []dto.SBOMLicenseBreakdownItem
 	for rows.Next() {
 		var item dto.SBOMLicenseBreakdownItem
+		var nonCompliant []string
 		var exempted []string
 		var reason string
-		if err := rows.Scan(&item.LicenseID, &item.Category, &item.PackageCount, &item.Packages, &exempted, &reason); err != nil {
+		if err := rows.Scan(&item.LicenseID, &item.Category, &item.PackageCount, &nonCompliant, &exempted, &reason); err != nil {
 			return nil, fmt.Errorf("failed to scan license row: %w", err)
 		}
+		item.Packages = nonCompliant
 		if len(exempted) > 0 {
 			item.ExemptedPackages = exempted
 			item.ExemptionReason = reason
@@ -80,7 +83,64 @@ func (c *Client) QuerySBOMLicenses(ctx context.Context, sbomID string) ([]dto.SB
 	if items == nil {
 		items = []dto.SBOMLicenseBreakdownItem{}
 	}
+
+	// Step 2: For items where the package list is empty (typically permissive
+	// licenses where non_compliant_packages is always []), resolve the actual
+	// package names from sbom_packages by matching on the license array.
+	needsResolve := false
+	for _, it := range items {
+		if len(it.Packages) == 0 && it.PackageCount > 0 {
+			needsResolve = true
+			break
+		}
+	}
+	if needsResolve {
+		pkgMap, err := c.resolvePackagesByLicense(ctx, sbomID)
+		if err == nil {
+			for i := range items {
+				if len(items[i].Packages) == 0 && items[i].PackageCount > 0 {
+					if pkgs, ok := pkgMap[items[i].LicenseID]; ok {
+						items[i].Packages = pkgs
+					}
+				}
+			}
+		}
+	}
+
 	return items, nil
+}
+
+// resolvePackagesByLicense returns a map of license_id → []package_name by
+// exploding the parallel arrays in sbom_packages.
+func (c *Client) resolvePackagesByLicense(ctx context.Context, sbomID string) (map[string][]string, error) {
+	rows, err := c.Conn.Query(ctx, `
+		SELECT pkg_license, groupArray(pkg_name) AS pkg_names
+		FROM (
+			SELECT pkg_name, pkg_license
+			FROM sbom_packages FINAL
+			ARRAY JOIN
+				package_names    AS pkg_name,
+				package_licenses AS pkg_license
+			WHERE sbom_id = ?
+			  AND pkg_name != ''
+		)
+		GROUP BY pkg_license
+	`, sbomID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string][]string)
+	for rows.Next() {
+		var license string
+		var names []string
+		if err := rows.Scan(&license, &names); err != nil {
+			continue
+		}
+		result[license] = names
+	}
+	return result, nil
 }
 
 // QuerySBOMDetail fetches detailed info for a single SBOM with severity breakdown.
