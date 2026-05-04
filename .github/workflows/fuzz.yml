@@ -10,12 +10,13 @@ on:
 
 permissions:
   contents: read
-  security-events: write
 
 jobs:
   fuzz:
     name: Go Fuzz Tests
     runs-on: ubuntu-latest
+    permissions:
+      security-events: write
     defaults:
       run:
         working-directory: backend
@@ -31,4 +32,5 @@ jobs:
 
       - name: Run VEX parser fuzz test
         run: go test ./internal/vex/ -fuzz=FuzzParse -fuzztime=60s
+
 

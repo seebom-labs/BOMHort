@@ -9,8 +9,7 @@ on:
         type: string
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 env:
   REGISTRY: ghcr.io
@@ -20,6 +19,8 @@ jobs:
   images:
     name: Build & Push Images
     runs-on: ubuntu-latest
+    permissions:
+      packages: write
     strategy:
       matrix:
         component:
@@ -65,6 +66,8 @@ jobs:
     name: Create Pre-Release
     runs-on: ubuntu-latest
     needs: images
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
