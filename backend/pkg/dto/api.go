@@ -164,3 +164,29 @@ type DependencyStatsResponse struct {
 	TotalUniqueDeps uint64                `json:"total_unique_deps"`
 	TopDependencies []DependencyStatsItem `json:"top_dependencies"`
 }
+
+// VersionSkewItem represents a package with inconsistent versions across projects.
+type VersionSkewItem struct {
+	PackageName     string                `json:"package_name"`
+	PURL            string                `json:"purl"`
+	VersionCount    uint64                `json:"version_count"`
+	ProjectCount    uint64                `json:"project_count"`
+	IsDirectInCount uint64                `json:"is_direct_in_count"`
+	Versions        []VersionSkewDetail   `json:"versions"`
+}
+
+// VersionSkewDetail shows per-version breakdown for a skewed package.
+type VersionSkewDetail struct {
+	Version      string   `json:"version"`
+	ProjectCount uint64   `json:"project_count"`
+	Projects     []string `json:"projects"`
+}
+
+// VersionSkewResponse wraps the version skew statistics response.
+type VersionSkewResponse struct {
+	TotalSkewedPackages uint64            `json:"total_skewed_packages"`
+	Items               []VersionSkewItem `json:"items"`
+	Page                uint64            `json:"page"`
+	PageSize            uint64            `json:"page_size"`
+}
+

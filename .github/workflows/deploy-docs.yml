@@ -32,8 +32,12 @@ jobs:
           fetch-depth: 0
 
       - name: Install Hugo
+        env:
+          # SHA256 checksum for hugo_extended_0.158.0_linux-amd64.deb
+          HUGO_SHA256: "b63b49c2961f6f9f761368f790c34f26b62c4b17dc915f014db6885f7cd5681f"
         run: |
           wget -O ${{ runner.temp }}/hugo.deb https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_extended_${HUGO_VERSION}_linux-amd64.deb
+          echo "${HUGO_SHA256}  ${{ runner.temp }}/hugo.deb" | sha256sum --check --status
           sudo dpkg -i ${{ runner.temp }}/hugo.deb
 
       - name: Install Go (for Hugo modules)
@@ -43,7 +47,7 @@ jobs:
           cache-dependency-path: docs/go.sum
 
       - name: Install Node.js
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: '22'
           cache: npm

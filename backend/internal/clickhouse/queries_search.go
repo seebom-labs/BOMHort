@@ -523,3 +523,197 @@ func (c *Client) QueryDependencyStats(ctx context.Context, limit uint64) (*dto.D
 		TopDependencies: deps,
 	}, nil
 }
+
+// QueryVersionSkew returns packages with inconsistent versions across projects,
+// ranked by project count. Only packages with >1 distinct version are included.
+// Uses server-side pagination to handle large datasets efficiently.
+func (c *Client) QueryVersionSkew(ctx context.Context, page, pageSize uint64, search string) (*dto.VersionSkewResponse, error) {
+	if pageSize == 0 {
+		pageSize = 50
+	}
+	if page == 0 {
+		page = 1
+	}
+	offset := (page - 1) * pageSize
+
+	// Build optional search filter.
+	searchFilter := ""
+	args := []interface{}{}
+	if search != "" {
+		searchFilter = "AND dep_name ILIKE ?"
+		args = append(args, "%"+search+"%")
+	}
+
+	// Count total skewed packages (packages with >1 version across projects).
+	var totalSkewed uint64
+	countQuery := fmt.Sprintf(`
+		SELECT count() FROM (
+			SELECT dep_name
+			FROM (SELECT * FROM sbom_packages FINAL) AS p
+			ARRAY JOIN p.package_names AS dep_name, p.package_versions AS dep_version
+			WHERE dep_name != '' AND dep_version != '' %s
+			GROUP BY dep_name
+			HAVING uniqExact(dep_version) > 1
+		)
+	`, searchFilter)
+	if search != "" {
+		_ = c.Conn.QueryRow(ctx, countQuery, "%"+search+"%").Scan(&totalSkewed)
+	} else {
+		_ = c.Conn.QueryRow(ctx, countQuery).Scan(&totalSkewed)
+	}
+
+	// Find paginated skewed packages.
+	mainQuery := fmt.Sprintf(`
+		SELECT
+			dep_name,
+			any(dep_purl) AS purl,
+			uniqExact(dep_version) AS version_count,
+			count(DISTINCT project_key) AS project_count,
+			groupArray(DISTINCT dep_version) AS versions
+		FROM (
+			SELECT
+				dep_name,
+				dep_purl,
+				dep_version,
+				multiIf(
+					position(source_file, 's3://') = 1,
+					arrayStringConcat(
+						arraySlice(splitByChar('/', replaceOne(source_file, 's3://', '')), 2, 2),
+						'/'
+					),
+					doc_name != '',
+					doc_name,
+					source_file
+				) AS project_key
+			FROM (
+				SELECT
+					p.source_file,
+					ifNull(s.document_name, p.source_file) AS doc_name,
+					dep_name,
+					dep_purl,
+					dep_version
+				FROM (SELECT * FROM sbom_packages FINAL) AS p
+				INNER JOIN (SELECT sbom_id, document_name FROM sboms FINAL) AS s
+					ON p.sbom_id = s.sbom_id
+				ARRAY JOIN
+					p.package_names AS dep_name,
+					p.package_purls AS dep_purl,
+					p.package_versions AS dep_version
+			)
+			WHERE dep_name != '' AND dep_version != '' %s
+		)
+		GROUP BY dep_name
+		HAVING uniqExact(dep_version) > 1
+		ORDER BY project_count DESC, version_count DESC
+		LIMIT ? OFFSET ?
+	`, searchFilter)
+
+	var rows interface{ Next() bool; Scan(dest ...interface{}) error; Close() error }
+	var err error
+	if search != "" {
+		rows2, err2 := c.Conn.Query(ctx, mainQuery, "%"+search+"%", pageSize, offset)
+		if err2 != nil {
+			return nil, fmt.Errorf("failed to query version skew: %w", err2)
+		}
+		rows = rows2
+		err = nil
+	} else {
+		rows2, err2 := c.Conn.Query(ctx, mainQuery, pageSize, offset)
+		if err2 != nil {
+			return nil, fmt.Errorf("failed to query version skew: %w", err2)
+		}
+		rows = rows2
+		err = nil
+	}
+	_ = err
+	defer rows.Close()
+
+	var items []dto.VersionSkewItem
+	for rows.Next() {
+		var item dto.VersionSkewItem
+		var versions []string
+		if err := rows.Scan(&item.PackageName, &item.PURL, &item.VersionCount, &item.ProjectCount, &versions); err != nil {
+			return nil, fmt.Errorf("failed to scan version skew row: %w", err)
+		}
+
+		for _, v := range versions {
+			item.Versions = append(item.Versions, dto.VersionSkewDetail{
+				Version:      v,
+				ProjectCount: 0,
+			})
+		}
+		items = append(items, item)
+	}
+
+	// Second pass: per-version project counts and names (efficient for ≤50 items per page).
+	for i := range items {
+		vRows, err := c.Conn.Query(ctx, `
+			SELECT
+				dep_version,
+				count(DISTINCT project_key) AS project_count,
+				groupArray(DISTINCT project_key) AS projects
+			FROM (
+				SELECT
+					dep_version,
+					multiIf(
+						position(source_file, 's3://') = 1,
+						arrayStringConcat(
+							arraySlice(splitByChar('/', replaceOne(source_file, 's3://', '')), 2, 2),
+							'/'
+						),
+						doc_name != '',
+						doc_name,
+						source_file
+					) AS project_key
+				FROM (
+					SELECT
+						p.source_file,
+						ifNull(s.document_name, p.source_file) AS doc_name,
+						dep_version
+					FROM (SELECT * FROM sbom_packages FINAL) AS p
+					INNER JOIN (SELECT sbom_id, document_name FROM sboms FINAL) AS s
+						ON p.sbom_id = s.sbom_id
+					ARRAY JOIN
+						p.package_names AS dep_name,
+						p.package_versions AS dep_version
+					WHERE dep_name = ?
+				)
+			)
+			GROUP BY dep_version
+		`, items[i].PackageName)
+		if err == nil {
+			type versionInfo struct {
+				count    uint64
+				projects []string
+			}
+			versionData := make(map[string]versionInfo)
+			for vRows.Next() {
+				var v string
+				var cnt uint64
+				var projects []string
+				if err := vRows.Scan(&v, &cnt, &projects); err == nil {
+					versionData[v] = versionInfo{count: cnt, projects: projects}
+				}
+			}
+			vRows.Close()
+			for j := range items[i].Versions {
+				if info, ok := versionData[items[i].Versions[j].Version]; ok {
+					items[i].Versions[j].ProjectCount = info.count
+					items[i].Versions[j].Projects = info.projects
+				}
+			}
+		}
+	}
+
+	if items == nil {
+		items = []dto.VersionSkewItem{}
+	}
+
+	return &dto.VersionSkewResponse{
+		TotalSkewedPackages: totalSkewed,
+		Items:               items,
+		Page:                page,
+		PageSize:            pageSize,
+	}, nil
+}
+

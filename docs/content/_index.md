@@ -1,6 +1,7 @@
 ---
 title: "SeeBOM"
 linkTitle: "SeeBOM"
+description: "SeeBOM is a Kubernetes-native SBOM visualization and governance platform. Ingest SPDX SBOMs from S3, detect CVEs via OSV, enforce license compliance, and apply VEX statements."
 ---
 
 {{< blocks/cover title="" image_anchor="top" height="med" color="dark" >}}
