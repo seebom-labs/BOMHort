@@ -8,6 +8,8 @@ on:
 permissions:
   contents: write
   packages: write
+  id-token: write       # For cosign keyless signing & provenance attestation
+  attestations: write   # For GitHub artifact attestations
 
 env:
   REGISTRY: ghcr.io
@@ -51,6 +53,7 @@ jobs:
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
+        id: push
         uses: docker/build-push-action@263435318d21b8e681c14492fe198e362a7a4b04 # v6.18.0
         with:
           context: ${{ matrix.component.context }}
@@ -62,6 +65,23 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.REPO }}/${{ matrix.component.name }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@3454372f43399081ed03b604cb2d021dabca52bb # v3.8.2
+
+      - name: Sign container image
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          cosign sign --yes \
+            "${{ env.REGISTRY }}/${{ env.REPO }}/${{ matrix.component.name }}@${DIGEST}"
+
+      - name: Attest provenance
+        uses: actions/attest-build-provenance@db473fddc028af60658334401dc6fa3ffd8669fd # v2.3.0
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.REPO }}/${{ matrix.component.name }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
 
   helm:
     name: Package & Push Helm Chart
@@ -103,14 +123,26 @@ jobs:
         id: version
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
+      - name: Generate SBOM
+        uses: anchore/sbom-action@e11c554f704a0b820cbf8c51673f6945e0731532 # v0.18.0
+        with:
+          path: .
+          format: spdx-json
+          output-file: seebom-${{ steps.version.outputs.version }}.spdx.json
+          artifact-name: seebom-sbom
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v2.3.2
         with:
           tag_name: ${{ github.ref_name }}
           name: SeeBOM ${{ steps.version.outputs.version }}
           generate_release_notes: true
+          files: |
+            seebom-${{ steps.version.outputs.version }}.spdx.json
           body: |
             ## Container Images
+
+            All images are signed with [cosign](https://github.com/sigstore/cosign) (keyless) and attested with SLSA provenance.
 
             ```
             docker pull ${{ env.REGISTRY }}/${{ env.REPO }}/api-gateway:${{ steps.version.outputs.version }}
@@ -120,10 +152,21 @@ jobs:
             docker pull ${{ env.REGISTRY }}/${{ env.REPO }}/ui:${{ steps.version.outputs.version }}
             ```
 
+            Verify signatures:
+            ```bash
+            cosign verify --certificate-identity-regexp="https://github.com/seebom-labs/seebom" \
+              --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+              ${{ env.REGISTRY }}/${{ env.REPO }}/api-gateway:${{ steps.version.outputs.version }}
+            ```
+
             ## Helm Chart
 
             ```bash
             helm install seebom oci://${{ env.REGISTRY }}/${{ env.REPO }}/charts/seebom --version ${{ steps.version.outputs.version }}
             ```
+
+            ## SBOM
+
+            An SPDX SBOM for this release is attached as `seebom-${{ steps.version.outputs.version }}.spdx.json`.
           draft: false
           prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') }}

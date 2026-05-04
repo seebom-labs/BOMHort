@@ -1,5 +1,5 @@
 baseURL = "https://docs.seebom.dev/"
-title = "SeeBOM"
+title = "SeeBOM Documentation"
 languageCode = "en-us"
 defaultContentLanguage = "en"
 defaultContentLanguageInSubdir = false
@@ -20,8 +20,14 @@ defaultContentLanguageInSubdir = false
 # Ignore the original markdown files in docs/ root (they are preserved as-is)
 ignoreFiles = ["^[A-Z_]+\\.md$"]
 
-enableRobotsTXT = true
+enableRobotsTXT = false  # Using static/robots.txt instead (includes Sitemap directive)
 enableGitInfo = false
+
+# SEO: Generate sitemap
+[sitemap]
+  changefreq = "weekly"
+  filename = "sitemap.xml"
+  priority = 0.5
 
 # Taxonomy
 [taxonomies]
@@ -84,10 +90,13 @@ enableGitInfo = false
 
 # Docsy parameters
 [params]
-  description = "Kubernetes-native SBOM Visualization & Governance Platform"
+  description = "SeeBOM is a Kubernetes-native SBOM visualization and governance platform. Ingest SPDX SBOMs, detect vulnerabilities via OSV, enforce license compliance, and apply VEX statements."
   github_repo = "https://github.com/seebom-labs/seebom"
   github_project_repo = "https://github.com/seebom-labs/seebom"
   github_branch = "main"
+  # SEO
+  images = ["images/og-image.png"]
+  offlineSearch = false
 
   [params.ui]
     sidebar_menu_compact = true
@@ -110,6 +119,7 @@ enableGitInfo = false
       desc = "Source code and issue tracker"
 
 [outputs]
-  home = ["HTML"]
-  section = ["HTML"]
+  home = ["HTML", "RSS"]
+  section = ["HTML", "RSS"]
+  page = ["HTML"]
 
