@@ -4,6 +4,12 @@
 
 <h3 align="center">Kubernetes-native Software Bill of Materials (SBOM) Visualization & Governance Platform</h3>
 
+<p align="center">
+  <a href="https://github.com/seebom-labs/seebom/actions/workflows/ci.yml"><img src="https://github.com/seebom-labs/seebom/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/seebom-labs/seebom"><img src="https://api.scorecard.dev/projects/github.com/seebom-labs/seebom/badge" alt="OpenSSF Scorecard"></a>
+  <a href="https://www.bestpractices.dev/projects/TODO"><img src="https://www.bestpractices.dev/projects/TODO/badge" alt="OpenSSF Best Practices"></a>
+</p>
+
 Ingest 1000+ SPDX SBOMs, scan for vulnerabilities via OSV, enforce license compliance, and apply VEX statements — all visualized in a fast Angular dashboard backed by ClickHouse analytics.
 
 <p align="center">

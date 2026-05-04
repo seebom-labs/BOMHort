@@ -123,7 +123,7 @@ Frontend Test:   cd ui && npx ng test            # uses Vitest
 - Unit tests use **Vitest** (not Karma/Jasmine). Run via `npx ng test`.
 - Virtual scrolling uses `@angular/cdk` (`ScrollingModule`). Always implement for large lists of dependency nodes or vulnerabilities to prevent browser freezing.
 - Utilize OnPush change detection for data-heavy dashboard components to optimize rendering performance.
-- All routes are lazy-loaded standalone components (see `app.routes.ts`). Feature pages: `dashboard`, `sbom-explorer`, `vulnerability`, `search` (CVE impact, license compliance, dependency stats), `license-compliance`, `vex`, `archived-packages`.
+- All routes are lazy-loaded standalone components (see `app.routes.ts`). Feature pages: `dashboard`, `sbom-explorer`, `vulnerability`, `search` (CVE impact, license compliance, dependency stats, version skew), `license-compliance`, `vex`, `archived-packages`.
 - Shared chart components live in `shared/charts/` (donut chart, horizontal bar chart).
 - UI supports **Dark Mode** (toggle in navbar, persisted to localStorage) and **Custom CSS Theming** (external `custom-theme.css` mountable without rebuild).
 - UI supports **Site Configuration** (`ui-config.json`): brand name, page title, dashboard texts, and disclaimer are configurable without rebuild. Loaded at startup via `APP_INITIALIZER` in `SiteConfigService`. Mount via Docker volume or Kubernetes ConfigMap (`ui.siteConfig` in Helm values).
@@ -153,3 +153,13 @@ Frontend Test:   cd ui && npx ng test            # uses Vitest
 ## Angular (Frontend)
 - **Never bypass Angular sanitization** — use `DomSanitizer.sanitize(SecurityContext.HTML, ...)` which strips `<script>`, event handlers, and other dangerous HTML while preserving safe formatting (`<strong>`, `<a>`, `<em>`, `<code>`).
 - Dashboard description and disclaimer use safe sanitization, not `bypassSecurityTrustHtml`.
+
+## Supply Chain Security (OpenSSF Scorecard)
+- **Signed Releases**: All container images are signed with [cosign](https://github.com/sigstore/cosign) (keyless/OIDC via Fulcio) and attested with SLSA provenance (`actions/attest-build-provenance`) in `.github/workflows/release.yml`.
+- **Pinned Dependencies**: All GitHub Actions are pinned by full SHA hash (not tags). External downloads (e.g., Hugo in `deploy-docs.yml`) include SHA256 checksum verification.
+- **Fuzzing**: Native Go fuzz tests exist for SPDX and VEX parsers (`internal/spdx/fuzz_test.go`, `internal/vex/fuzz_test.go`). The `.github/workflows/fuzz.yml` workflow runs them weekly and on PRs touching `backend/`.
+- **SAST**: CodeQL runs on every push/PR for Go and TypeScript (`.github/workflows/codeql.yml`).
+- **Scorecard**: The `.github/workflows/scorecard.yml` workflow runs the OpenSSF Scorecard weekly and publishes results as SARIF to GitHub Security tab.
+- **Dependency Updates**: Dependabot covers `gomod`, `npm`, `github-actions`, and `docs` (`.github/dependabot.yml`).
+
+
