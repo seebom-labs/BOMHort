@@ -153,3 +153,13 @@ Frontend Test:   cd ui && npx ng test            # uses Vitest
 ## Angular (Frontend)
 - **Never bypass Angular sanitization** — use `DomSanitizer.sanitize(SecurityContext.HTML, ...)` which strips `<script>`, event handlers, and other dangerous HTML while preserving safe formatting (`<strong>`, `<a>`, `<em>`, `<code>`).
 - Dashboard description and disclaimer use safe sanitization, not `bypassSecurityTrustHtml`.
+
+## Supply Chain Security (OpenSSF Scorecard)
+- **Signed Releases**: All container images are signed with [cosign](https://github.com/sigstore/cosign) (keyless/OIDC via Fulcio) and attested with SLSA provenance (`actions/attest-build-provenance`) in `.github/workflows/release.yml`.
+- **Pinned Dependencies**: All GitHub Actions are pinned by full SHA hash (not tags). External downloads (e.g., Hugo in `deploy-docs.yml`) include SHA256 checksum verification.
+- **Fuzzing**: Native Go fuzz tests exist for SPDX and VEX parsers (`internal/spdx/fuzz_test.go`, `internal/vex/fuzz_test.go`). The `.github/workflows/fuzz.yml` workflow runs them weekly and on PRs touching `backend/`.
+- **SAST**: CodeQL runs on every push/PR for Go and TypeScript (`.github/workflows/codeql.yml`).
+- **Scorecard**: The `.github/workflows/scorecard.yml` workflow runs the OpenSSF Scorecard weekly and publishes results as SARIF to GitHub Security tab.
+- **Dependency Updates**: Dependabot covers `gomod`, `npm`, `github-actions`, and `docs` (`.github/dependabot.yml`).
+
+
