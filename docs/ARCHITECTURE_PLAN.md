@@ -161,18 +161,19 @@ ClickHouse: sboms, sbom_packages, vulnerabilities, license_compliance, vex_state
 API Gateway (REST) → 16 Endpoints
        │ HTTP/JSON + CORS
        ▼
-Angular UI (10 lazy-loaded routes, virtual scrolling, OnPush, dark mode)
+Angular UI (11 lazy-loaded routes, virtual scrolling, OnPush, dark mode)
        │ Custom CSS theme mountable without Angular rebuild
 ```
 
-## 3. API Endpoints (16)
+## 3. API Endpoints (17)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/healthz` | Health check |
 | GET | `/api/v1/stats/dashboard` | Dashboard statistics (incl. VEX effective/suppressed, license breakdown) |
 | GET | `/api/v1/stats/dependencies?limit=N` | Top-N dependencies cross-project with vuln count |
-| GET | `/api/v1/sboms?page=&page_size=` | Paginated SBOM list with package/vuln counts |
+| GET | `/api/v1/stats/version-skew?page=&page_size=&search=` | Packages with inconsistent versions across projects (paginated, searchable) |
+| GET | `/api/v1/sboms?page=&page_size=&search=` | Paginated SBOM list with package/vuln counts |
 | GET | `/api/v1/sboms/{id}/detail` | SBOM detail with severity breakdown |
 | GET | `/api/v1/sboms/{id}/vulnerabilities` | All vulns for an SBOM with VEX status |
 | GET | `/api/v1/sboms/{id}/licenses` | License breakdown per SBOM (with package list per license) |
