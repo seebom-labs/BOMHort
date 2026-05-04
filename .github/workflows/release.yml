@@ -123,13 +123,19 @@ jobs:
         id: version
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
+      - name: Install mikebom
+        run: |
+          MIKEBOM_VERSION="v0.1.0-alpha.13"
+          MIKEBOM_SHA256="793df7839e38c09868dabe5ed5060abb24b57983dc982c238bfde5d73f29a9ef"
+          curl -sL "https://github.com/kusari-sandbox/mikebom/releases/download/${MIKEBOM_VERSION}/mikebom-${MIKEBOM_VERSION}-x86_64-unknown-linux-gnu.tar.gz" -o mikebom.tar.gz
+          echo "${MIKEBOM_SHA256}  mikebom.tar.gz" | sha256sum -c -
+          tar -xzf mikebom.tar.gz
+          chmod +x mikebom
+          sudo mv mikebom /usr/local/bin/
+
       - name: Generate SBOM
-        uses: anchore/sbom-action@e11c554f704a0b820cbf8c51673f6945e0731532 # v0.18.0
-        with:
-          path: .
-          format: spdx-json
-          output-file: seebom-${{ steps.version.outputs.version }}.spdx.json
-          artifact-name: seebom-sbom
+        run: |
+          mikebom sbom scan --format spdx-json --output seebom-${{ steps.version.outputs.version }}.spdx.json .
 
       - name: Install cosign
         uses: sigstore/cosign-installer@3454372f43399081ed03b604cb2d021dabca52bb # v3.8.2
