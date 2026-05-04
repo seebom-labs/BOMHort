@@ -14,6 +14,7 @@ import {
   ProjectLicenseViolation,
   AffectedProject,
   DependencyStatsResponse,
+  VersionSkewResponse,
   LicenseExceptionsFile,
   ArchivedPackageInfo,
 } from './api.models';
@@ -84,6 +85,16 @@ export class ApiService {
   getDependencyStats(limit = 50): Observable<DependencyStatsResponse> {
     const params = new HttpParams().set('limit', limit.toString());
     return this.http.get<DependencyStatsResponse>(`${this.baseUrl}/stats/dependencies`, { params });
+  }
+
+  getVersionSkew(page = 1, pageSize = 50, search = ''): Observable<VersionSkewResponse> {
+    let params = new HttpParams()
+      .set('page', page.toString())
+      .set('page_size', pageSize.toString());
+    if (search) {
+      params = params.set('search', search);
+    }
+    return this.http.get<VersionSkewResponse>(`${this.baseUrl}/stats/version-skew`, { params });
   }
 
   getVEXStatements(page = 1, pageSize = 50): Observable<PaginatedResponse<VEXStatementItem>> {

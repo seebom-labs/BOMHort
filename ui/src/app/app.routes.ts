@@ -50,6 +50,13 @@ export const routes: Routes = [
       ),
   },
   {
+    path: 'version-skew',
+    loadComponent: () =>
+      import('./features/search/version-skew.component').then(
+        (m) => m.VersionSkewComponent
+      ),
+  },
+  {
     path: 'vex',
     loadComponent: () =>
       import('./features/vex/vex-list.component').then((m) => m.VEXListComponent),

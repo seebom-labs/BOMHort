@@ -2,7 +2,7 @@ import { Component, OnInit, OnDestroy, ChangeDetectionStrategy, ChangeDetectorRe
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ScrollingModule } from '@angular/cdk/scrolling';
-import { RouterModule } from '@angular/router';
+import { RouterModule, ActivatedRoute } from '@angular/router';
 import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../core/api.service';
@@ -131,6 +131,7 @@ export class SbomListComponent implements OnInit, OnDestroy {
   constructor(
     private readonly api: ApiService,
     private readonly cdr: ChangeDetectorRef,
+    private readonly route: ActivatedRoute,
   ) {}
 
   ngOnInit(): void {
@@ -144,7 +145,10 @@ export class SbomListComponent implements OnInit, OnDestroy {
       this.loadSboms(term);
     });
 
-    this.loadSboms('');
+    // Read initial search from URL query parameter.
+    const initialSearch = this.route.snapshot.queryParamMap.get('search') || '';
+    this.searchTerm = initialSearch;
+    this.loadSboms(initialSearch);
   }
 
   ngOnDestroy(): void {

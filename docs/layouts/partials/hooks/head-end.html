@@ -1,2 +1,40 @@
 {{/* Force dark mode permanently – no toggle */}}
 <script>document.documentElement.setAttribute('data-bs-theme','dark');</script>
+
+{{/* SEO: Canonical URL */}}
+<link rel="canonical" href="{{ .Permalink }}">
+
+{{/* Open Graph */}}
+<meta property="og:site_name" content="SeeBOM Documentation">
+<meta property="og:type" content="{{ if .IsPage }}article{{ else }}website{{ end }}">
+<meta property="og:title" content="{{ .Title }} | SeeBOM">
+<meta property="og:description" content="{{ with .Description }}{{ . }}{{ else }}{{ .Site.Params.description }}{{ end }}">
+<meta property="og:url" content="{{ .Permalink }}">
+<meta property="og:image" content="{{ "images/og-image.png" | absURL }}">
+
+{{/* Twitter Card */}}
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{ .Title }} | SeeBOM">
+<meta name="twitter:description" content="{{ with .Description }}{{ . }}{{ else }}{{ .Site.Params.description }}{{ end }}">
+<meta name="twitter:image" content="{{ "images/og-image.png" | absURL }}">
+
+{{/* JSON-LD Structured Data */}}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "{{ if .IsPage }}TechArticle{{ else }}WebSite{{ end }}",
+  "name": "{{ .Title }}",
+  "description": "{{ with .Description }}{{ . }}{{ else }}{{ .Site.Params.description }}{{ end }}",
+  "url": "{{ .Permalink }}",
+  {{ if .IsPage }}"dateModified": "{{ .Lastmod.Format "2006-01-02" }}",{{ end }}
+  "publisher": {
+    "@type": "Organization",
+    "name": "SeeBOM",
+    "url": "https://seebom.dev",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "{{ "images/logo-with-text.svg" | absURL }}"
+    }
+  }
+}
+</script>

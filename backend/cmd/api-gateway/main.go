@@ -215,6 +215,20 @@ func main() {
 		writeJSON(w, http.StatusOK, stats)
 	})
 
+	// Version skew: packages with inconsistent versions across projects.
+	mux.HandleFunc("GET /api/v1/stats/version-skew", func(w http.ResponseWriter, r *http.Request) {
+		page := parseUint64(r.URL.Query().Get("page"), 1)
+		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
+		search := sanitizeSearchTerm(r.URL.Query().Get("search"))
+		resp, err := chClient.QueryVersionSkew(r.Context(), page, pageSize, search)
+		if err != nil {
+			log.Printf("ERROR: version skew: %v", err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch version skew data")
+			return
+		}
+		writeJSON(w, http.StatusOK, resp)
+	})
+
 	// VEX statements list with pagination.
 	mux.HandleFunc("GET /api/v1/vex/statements", func(w http.ResponseWriter, r *http.Request) {
 		page := parseUint64(r.URL.Query().Get("page"), 1)

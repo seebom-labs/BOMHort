@@ -160,6 +160,28 @@ export interface DependencyStatsResponse {
   top_dependencies: DependencyStatsItem[];
 }
 
+export interface VersionSkewDetail {
+  version: string;
+  project_count: number;
+  projects: string[];
+}
+
+export interface VersionSkewItem {
+  package_name: string;
+  purl: string;
+  version_count: number;
+  project_count: number;
+  is_direct_in_count: number;
+  versions: VersionSkewDetail[];
+}
+
+export interface VersionSkewResponse {
+  total_skewed_packages: number;
+  items: VersionSkewItem[];
+  page: number;
+  page_size: number;
+}
+
 export interface LicenseExceptionsFile {
   version: string;
   lastUpdated: string;
