@@ -1,6 +1,6 @@
 module github.com/seebom-labs/seebom/backend
 
-go 1.25.5
+go 1.25.9
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.46.0
