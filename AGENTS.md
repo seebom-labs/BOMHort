@@ -23,6 +23,9 @@ Key shared packages:
 - `internal/s3` – S3-compatible bucket client (AWS S3, MinIO, GCS) for streaming SBOM ingestion from multiple buckets. Supports per-bucket `cluster` assignment for multi-cluster differentiation from a single instance.
 - `internal/github` – GitHub API client for resolving unknown licenses from PURL (rate-limited, cached). Includes 50+ well-known Go module→GitHub repo mappings (`golang.org/x/*`, `gopkg.in/*`, `go.uber.org/*`, `k8s.io/*`, `oras.land/*`, `dario.cat/*`, etc.), fallback to the dedicated `/repos/{owner}/{repo}/license` endpoint, and static license overrides for repos where GitHub misdetects the license.
 - `internal/spdx` – SPDX JSON streaming parser. Supports both plain SPDX documents and **in-toto attestation envelopes** where the SPDX content is wrapped inside the `predicate` field (common with Syft/BuildKit-generated container SBOMs).
+- `internal/cyclonedx` – CycloneDX JSON parser. Maps components, licenses, and dependencies to the shared model.
+- `internal/sbom` – Multi-format SBOM dispatch layer. Auto-detects format (SPDX, CycloneDX, in-toto) and routes to the appropriate parser. Supports opt-in protobom backend via `USE_PROTOBOM=true`.
+- `internal/protobomparser` – Parser backend using [protobom](https://github.com/protobom/protobom) for maximum format coverage (SPDX 2.3 + CycloneDX 1.0–1.7). Opt-in alternative to built-in parsers.
 - `internal/vex` – OpenVEX parser with URL normalization
 
 Data layer (`pkg/`):
@@ -46,7 +49,7 @@ Data layer (`pkg/`):
 
 **CVE Refresh Strategy:** New CVEs are discovered via a lightweight daily CronJob (`cve-refresher`) that queries all unique PURLs (~20k) against the OSV API in 1000-PURL batch chunks, deduplicates against existing vulnerabilities, and inserts new findings. This avoids expensive full re-scans of all SBOMs.
 
-**Parsing Pipeline Order:** The parsing worker processes each SBOM in a strict order: (1) Parse SPDX JSON (with in-toto unwrapping), (2) Resolve unknown licenses via GitHub API, (3) Insert SBOM metadata + packages with resolved licenses into ClickHouse, (4) Query OSV for vulnerabilities, (5) Check license compliance. License resolution **must** happen before ClickHouse inserts so that `sbom_packages.package_licenses` contains the resolved values from the start — the dependency tree API reads directly from this column.
+**Parsing Pipeline Order:** The parsing worker processes each SBOM in a strict order: (1) Auto-detect format and parse (SPDX/CycloneDX/in-toto, with optional protobom backend via `USE_PROTOBOM=true`), (2) Resolve unknown licenses via GitHub API, (3) Insert SBOM metadata + packages with resolved licenses into ClickHouse, (4) Query OSV for vulnerabilities, (5) Check license compliance. License resolution **must** happen before ClickHouse inserts so that `sbom_packages.package_licenses` contains the resolved values from the start — the dependency tree API reads directly from this column.
 
 # Executable Commands
 
@@ -103,7 +106,7 @@ Frontend Test:   cd ui && npx ng test            # uses Vitest
 ## Go (Backend)
 - Use standard idiomatic Go. Handle errors explicitly; never swallow them.
 - HTTP routing uses Go 1.22+ stdlib `net/http` with method-pattern registration (e.g., `mux.HandleFunc("GET /api/v1/sboms", ...)`). No web framework.
-- Only 4 direct dependencies: `clickhouse-go/v2`, `goccy/go-json`, `google/uuid`, `minio/minio-go/v7`. Keep it minimal.
+- Only 5 direct dependencies: `clickhouse-go/v2`, `goccy/go-json`, `google/uuid`, `minio/minio-go/v7`, `protobom/protobom`. Keep it minimal.
 - Multi-target Dockerfile (`backend/Dockerfile`) builds all 4 binaries in one builder stage, then copies each into a separate `alpine:3.21` runtime stage.
 - Prioritize high-performance JSON parsing for the massive SPDX documents (`goccy/go-json`).
 - When integrating with the OSV API, utilize batch querying endpoints (`/v1/querybatch`) to efficiently process multiple Package URLs (PURLs) at once.

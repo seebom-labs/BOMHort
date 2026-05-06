@@ -10,7 +10,7 @@
   <a href="https://www.bestpractices.dev/projects/12903"><img src="https://www.bestpractices.dev/projects/12903/badge" alt="OpenSSF Best Practices"></a>
 </p>
 
-Ingest 1000+ SPDX SBOMs, scan for vulnerabilities via OSV, enforce license compliance, and apply VEX statements — all visualized in a fast Angular dashboard backed by ClickHouse analytics.
+Ingest 1000+ SPDX and CycloneDX SBOMs, scan for vulnerabilities via OSV, enforce license compliance, and apply VEX statements — all visualized in a fast Angular dashboard backed by ClickHouse analytics.
 
 <p align="center">
   <a href="https://docs.seebom.dev/docs/getting-started/">Getting Started</a> ·
@@ -371,7 +371,11 @@ sboms/*.spdx.json + *.openvex.json
 
 The Parsing Worker processes each SBOM in a carefully ordered pipeline:
 
-1. **Parse** — Decode SPDX JSON (supports plain SPDX and in-toto attestation envelopes where SPDX is wrapped in the `predicate` field)
+1. **Parse** — Auto-detect format and decode:
+   - **SPDX JSON** (plain documents with `spdxVersion` field)
+   - **In-toto attestation envelopes** (SPDX wrapped in `predicate` field, common with Syft/BuildKit)
+   - **CycloneDX JSON** (detected via `bomFormat: "CycloneDX"`, versions 1.0–1.7)
+   - Optional: Set `USE_PROTOBOM=true` to delegate all parsing to [protobom](https://github.com/protobom/protobom) for maximum format coverage
 2. **Resolve Licenses** — For packages with `NOASSERTION`/empty licenses, query the GitHub API using three resolution strategies:
    - Direct `github.com/{owner}/{repo}` extraction from PURLs
    - **Well-known Go module mappings** (50+ entries: `golang.org/x/*` → `golang/*`, `gopkg.in/*`, `go.uber.org/*`, `k8s.io/*`, `dario.cat/mergo`, etc.)

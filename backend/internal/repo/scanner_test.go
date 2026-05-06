@@ -7,12 +7,13 @@ import (
 )
 
 func TestScanner_Scan(t *testing.T) {
-	// Create a temporary directory with test SPDX and VEX files.
+	// Create a temporary directory with test SPDX, CycloneDX, and VEX files.
 	tmpDir := t.TempDir()
 
 	testFiles := map[string]string{
 		"test1.spdx.json":   `{"spdxVersion": "SPDX-2.3"}`,
 		"test2.spdx.json":   `{"spdxVersion": "SPDX-2.3"}`,
+		"test3.cdx.json":    `{"bomFormat": "CycloneDX", "specVersion": "1.5"}`,
 		"cve.openvex.json":  `{"@context": "https://openvex.dev/ns/v0.2.0"}`,
 		"advisory.vex.json": `{"statements": []}`,
 		"not-spdx.txt":      `this should be ignored`,
@@ -30,9 +31,9 @@ func TestScanner_Scan(t *testing.T) {
 		t.Fatalf("Scan() returned error: %v", err)
 	}
 
-	// Should find 2 SPDX + 2 VEX files, not the .txt file.
-	if len(files) != 4 {
-		t.Errorf("expected 4 files, got %d", len(files))
+	// Should find 2 SPDX + 1 CycloneDX + 2 VEX files, not the .txt file.
+	if len(files) != 5 {
+		t.Errorf("expected 5 files, got %d", len(files))
 	}
 
 	sbomCount := 0
@@ -54,8 +55,8 @@ func TestScanner_Scan(t *testing.T) {
 		}
 	}
 
-	if sbomCount != 2 {
-		t.Errorf("expected 2 SBOM files, got %d", sbomCount)
+	if sbomCount != 3 {
+		t.Errorf("expected 3 SBOM files (2 SPDX + 1 CycloneDX), got %d", sbomCount)
 	}
 	if vexCount != 2 {
 		t.Errorf("expected 2 VEX files, got %d", vexCount)

@@ -67,7 +67,7 @@ func (s *Scanner) Scan() ([]FileInfo, error) {
 		switch {
 		case strings.HasSuffix(name, ".openvex.json"), strings.HasSuffix(name, ".vex.json"):
 			fileType = "vex"
-		case strings.HasSuffix(name, ".spdx.json"), strings.HasSuffix(name, ".json"):
+		case strings.HasSuffix(name, ".spdx.json"), strings.HasSuffix(name, ".cdx.json"), strings.HasSuffix(name, ".json"):
 			fileType = "sbom"
 		default:
 			return nil

@@ -21,7 +21,7 @@ import (
 	"github.com/seebom-labs/seebom/backend/internal/osv"
 	"github.com/seebom-labs/seebom/backend/internal/osvutil"
 	s3client "github.com/seebom-labs/seebom/backend/internal/s3"
-	"github.com/seebom-labs/seebom/backend/internal/spdx"
+	"github.com/seebom-labs/seebom/backend/internal/sbom"
 	"github.com/seebom-labs/seebom/backend/internal/vex"
 	"github.com/seebom-labs/seebom/backend/pkg/models"
 )
@@ -222,14 +222,14 @@ func processVEXJob(ctx context.Context, chClient *clickhouse.Client, openFile fu
 
 func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, exceptions *license.ExceptionIndex, ghResolver *gh.Resolver, openFile func() (io.ReadCloser, error), job models.IngestionJob) error {
 
-	// 1. Parse the SPDX file.
+	// 1. Parse the SBOM file (auto-detects SPDX or CycloneDX).
 	rc, err := openFile()
 	if err != nil {
 		return fmt.Errorf("failed to open SBOM source %s: %w", job.SourceFile, err)
 	}
 	defer rc.Close()
 
-	result, err := spdx.Parse(rc, job.SourceFile, job.SHA256Hash)
+	result, err := sbom.Parse(rc, job.SourceFile, job.SHA256Hash)
 	if err != nil {
 		return err
 	}

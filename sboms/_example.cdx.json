@@ -1,0 +1,131 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2024-06-15T14:30:00Z",
+    "tools": [
+      {
+        "vendor": "anchore",
+        "name": "syft",
+        "version": "1.4.1"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "bom-ref": "pkg:golang/github.com/example/myservice@v2.1.0",
+      "name": "github.com/example/myservice",
+      "version": "v2.1.0",
+      "purl": "pkg:golang/github.com/example/myservice@v2.1.0"
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/github.com/gin-gonic/gin@v1.9.1",
+      "name": "github.com/gin-gonic/gin",
+      "version": "v1.9.1",
+      "purl": "pkg:golang/github.com/gin-gonic/gin@v1.9.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/google.golang.org/protobuf@v1.33.0",
+      "name": "google.golang.org/protobuf",
+      "version": "v1.33.0",
+      "purl": "pkg:golang/google.golang.org/protobuf@v1.33.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/github.com/sirupsen/logrus@v1.9.3",
+      "name": "github.com/sirupsen/logrus",
+      "version": "v1.9.3",
+      "purl": "pkg:golang/github.com/sirupsen/logrus@v1.9.3",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/github.com/go-redis/redis/v9@v9.5.1",
+      "name": "github.com/go-redis/redis/v9",
+      "version": "v9.5.1",
+      "purl": "pkg:golang/github.com/go-redis/redis/v9@v9.5.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-2-Clause"
+          }
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/github.com/prometheus/client_golang@v1.19.0",
+      "name": "github.com/prometheus/client_golang",
+      "version": "v1.19.0",
+      "purl": "pkg:golang/github.com/prometheus/client_golang@v1.19.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "Apache-2.0"
+          }
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "pkg:golang/github.com/example/myservice@v2.1.0",
+      "dependsOn": [
+        "pkg:golang/github.com/gin-gonic/gin@v1.9.1",
+        "pkg:golang/github.com/sirupsen/logrus@v1.9.3",
+        "pkg:golang/github.com/go-redis/redis/v9@v9.5.1",
+        "pkg:golang/github.com/prometheus/client_golang@v1.19.0"
+      ]
+    },
+    {
+      "ref": "pkg:golang/github.com/gin-gonic/gin@v1.9.1",
+      "dependsOn": [
+        "pkg:golang/google.golang.org/protobuf@v1.33.0"
+      ]
+    },
+    {
+      "ref": "pkg:golang/google.golang.org/protobuf@v1.33.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:golang/github.com/sirupsen/logrus@v1.9.3",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:golang/github.com/go-redis/redis/v9@v9.5.1",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:golang/github.com/prometheus/client_golang@v1.19.0",
+      "dependsOn": [
+        "pkg:golang/google.golang.org/protobuf@v1.33.0"
+      ]
+    }
+  ]
+}
+

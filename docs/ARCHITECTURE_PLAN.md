@@ -34,6 +34,9 @@ seebom/
 │   │   └── cve-refresher/main.go       # Background CVE Refresh CronJob
 │   ├── internal/
 │   │   ├── spdx/              # SPDX JSON streaming parser
+│   │   ├── cyclonedx/         # CycloneDX JSON parser
+│   │   ├── sbom/              # Multi-format dispatch layer (auto-detect + route)
+│   │   ├── protobomparser/    # Protobom-based parser (opt-in, all formats)
 │   │   ├── vex/               # OpenVEX parser (with URL normalization)
 │   │   ├── clickhouse/
 │   │   │   ├── client.go      # Connection + hash dedup
@@ -385,3 +388,4 @@ Moved to Section 10 for comprehensive coverage including exemptions and visual r
 | 29 | Go temp package name sanitization: `tmp.xxxxx` CI/CD artifacts replaced in SPDX parser with PURL-based names and filtered in license checker as fallback | ✅ Implemented |
 | 30 | S3 bucket ingestion: Multi-bucket S3 support as default ingestion method via `minio-go/v7`. Streaming ListObjects with batched enqueue (500/batch). Worker fetches via `s3://` URIs. Local filesystem ingestion preserved. | ✅ Implemented |
 | 31 | Package search: Fuzzy ILIKE search on package names with detail page showing all projects using a package (paginated). Search preview shows first 5 projects; detail page shows all. | ✅ Implemented |
+| 32 | Multi-format SBOM parsing: Format-detection dispatch layer (`internal/sbom`) with built-in SPDX + CycloneDX parsers (default) and opt-in protobom backend (`USE_PROTOBOM=true`) for maximum format coverage. `.cdx.json` recognized alongside `.spdx.json`. | ✅ Implemented |
