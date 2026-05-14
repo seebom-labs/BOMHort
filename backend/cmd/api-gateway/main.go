@@ -273,6 +273,43 @@ func main() {
 		writeJSON(w, http.StatusOK, packages)
 	})
 
+	mux.HandleFunc("GET /api/v1/packages/search", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query().Get("q")
+		if q == "" {
+			writeError(w, http.StatusBadRequest, "Missing required query parameter 'q'")
+			return
+		}
+		q = sanitizeLogParam(q)
+		page, _ := strconv.ParseUint(r.URL.Query().Get("page"), 10, 64)
+		pageSize, _ := strconv.ParseUint(r.URL.Query().Get("page_size"), 10, 64)
+		pageSize = clampPageSize(pageSize)
+		result, err := chClient.QueryDependencySearch(r.Context(), q, page, pageSize)
+		if err != nil {
+			log.Printf("ERROR: package search q=%s: %v", sanitizeLogParam(q), err)
+			writeError(w, http.StatusInternalServerError, "Failed to search packages")
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	})
+
+	mux.HandleFunc("GET /api/v1/packages/detail", func(w http.ResponseWriter, r *http.Request) {
+		name := r.URL.Query().Get("name")
+		if name == "" {
+			writeError(w, http.StatusBadRequest, "Missing required query parameter 'name'")
+			return
+		}
+		page, _ := strconv.ParseUint(r.URL.Query().Get("page"), 10, 64)
+		pageSize, _ := strconv.ParseUint(r.URL.Query().Get("page_size"), 10, 64)
+		pageSize = clampPageSize(pageSize)
+		result, err := chClient.QueryPackageDetail(r.Context(), name, page, pageSize)
+		if err != nil {
+			log.Printf("ERROR: package detail name=%s: %v", sanitizeLogParam(name), err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch package detail")
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	})
+
 	// CORS + security middleware for Angular dev server.
 	handler := securityHeadersMiddleware(
 		rateLimitMiddleware(

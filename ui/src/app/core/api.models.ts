@@ -211,3 +211,32 @@ export interface LicenseException {
   comment?: string;
 }
 
+export interface DependencySearchProject {
+  project_name: string;
+  version: string;
+  sbom_id: string;
+}
+
+export interface DependencySearchResult {
+  package_name: string;
+  purl: string;
+  project_count: number;
+  versions: string[];
+  projects: DependencySearchProject[];
+}
+
+export interface DependencySearchResponse {
+  total_results: number;
+  items: DependencySearchResult[];
+  page: number;
+  page_size: number;
+  query: string;
+}
+
+export interface PackageDetailResponse {
+  package_name: string;
+  total_projects: number;
+  projects: DependencySearchProject[];
+  page: number;
+  page_size: number;
+}

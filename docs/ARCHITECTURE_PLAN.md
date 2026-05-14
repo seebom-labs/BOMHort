@@ -30,7 +30,7 @@ seebom/
 │   ├── cmd/
 │   │   ├── ingestion-watcher/main.go   # K8s CronJob
 │   │   ├── parsing-worker/main.go      # SBOM + VEX processor
-│   │   ├── api-gateway/main.go         # REST API (16 endpoints)
+│   │   ├── api-gateway/main.go         # REST API (19 endpoints)
 │   │   └── cve-refresher/main.go       # Background CVE Refresh CronJob
 │   ├── internal/
 │   │   ├── spdx/              # SPDX JSON streaming parser
@@ -63,7 +63,7 @@ seebom/
 │       │   └── custom-theme.example.css   # Template for custom branding
 │       └── app/
 │           ├── app.ts                 # Navbar + dark-mode toggle
-│           ├── app.routes.ts          # 10 lazy-loaded routes
+│           ├── app.routes.ts          # 13 lazy-loaded routes
 │           ├── core/                  # ApiService, models, HTTP interceptor
 │           ├── shared/charts/         # DonutChart, HorizontalBarChart (themeable)
 │           └── features/
@@ -74,7 +74,10 @@ seebom/
 │               ├── search/
 │               │   ├── cve-impact.component.ts          # CVE → affected projects
 │               │   ├── license-violations.component.ts  # Projects with license issues
-│               │   └── dependency-stats.component.ts    # Top dependencies cross-project
+│               │   ├── dependency-stats.component.ts    # Top dependencies cross-project
+│               │   ├── version-skew.component.ts        # Packages with inconsistent versions
+│               │   ├── package-search.component.ts      # Fuzzy package name search
+│               │   └── package-detail.component.ts      # All projects using a specific package
 │               ├── license-compliance/ # License overview
 │               └── vex/                # VEX statements (with empty state)
 ├── db/
@@ -158,14 +161,14 @@ ClickHouse: sboms, sbom_packages, vulnerabilities, license_compliance, vex_state
        ├── Violations:     sumIf(copyleft|unknown) − exceptions (from config file)
        └── Dep Stats:      ARRAY JOIN + count(DISTINCT sbom_id) cross-project
        ▼
-API Gateway (REST) → 16 Endpoints
+API Gateway (REST) → 19 Endpoints
        │ HTTP/JSON + CORS
        ▼
-Angular UI (11 lazy-loaded routes, virtual scrolling, OnPush, dark mode)
+Angular UI (13 lazy-loaded routes, virtual scrolling, OnPush, dark mode)
        │ Custom CSS theme mountable without Angular rebuild
 ```
 
-## 3. API Endpoints (17)
+## 3. API Endpoints (19)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -186,6 +189,8 @@ Angular UI (11 lazy-loaded routes, virtual scrolling, OnPush, dark mode)
 | GET | `/api/v1/license-policy` | Active license classification (permissive/copyleft lists) |
 | GET | `/api/v1/vex/statements?page=&page_size=` | Paginated VEX statements with matched affected_sboms |
 | GET | `/api/v1/packages/archived` | Packages using archived GitHub repos (no longer maintained) |
+| GET | `/api/v1/packages/search?q=&page=&page_size=` | Fuzzy package name search across all SBOMs (ILIKE, paginated) |
+| GET | `/api/v1/packages/detail?name=&page=&page_size=` | All projects using a specific package (paginated) |
 
 ## 4. ClickHouse Schema (11 Migrations)
 
@@ -214,6 +219,8 @@ Angular UI (11 lazy-loaded routes, virtual scrolling, OnPush, dark mode)
 **License Violations:** `sumIf(package_count, category = 'copyleft')` + `groupArrayArrayIf(non_compliant_packages, ...)` aggregates per SBOM. Exceptions are filtered at query time (no re-ingest needed).
 
 **Dependency Stats:** `ARRAY JOIN package_names, package_purls, package_versions` expands the parallel arrays, then `count(DISTINCT sbom_id)` for cross-project counting.
+
+**Package Search:** `dep_name ILIKE ?` with `ARRAY JOIN` for fuzzy matching. Search results include project count, versions, and a preview of 5 projects. Detail endpoint returns all projects paginated via `GROUP BY project_key ORDER BY project_key LIMIT ? OFFSET ?`.
 
 ## 5. VEX Architecture
 
@@ -258,6 +265,9 @@ Moved to Section 10 for comprehensive coverage including exemptions and visual r
 | `/licenses` | LicenseOverviewComponent | Category cards + virtual scroll |
 | `/license-compliance` | LicenseViolationsComponent | **2 tabs:** Violations (filtered by exceptions), active exceptions |
 | `/dependencies` | DependencyStatsComponent | Top-100 dependencies, version pills, vuln count, unique deps counter |
+| `/package-search` | PackageSearchComponent | Fuzzy package name search, expandable results with project preview, link to detail |
+| `/package-search/:name` | PackageDetailComponent | All projects using a specific package (paginated table with SBOM links) |
+| `/version-skew` | VersionSkewComponent | Packages with inconsistent versions across projects (paginated, searchable) |
 | `/vex` | VEXListComponent | Virtual scroll, status badges, justification, empty state |
 | `/archived-packages` | ArchivedPackagesComponent | Grouped by repo, project aggregation with version tags, stars, last push |
 
@@ -374,3 +384,4 @@ Moved to Section 10 for comprehensive coverage including exemptions and visual r
 | 28 | SBOM detail: Archived badge on dependencies from archived repos | ✅ Implemented |
 | 29 | Go temp package name sanitization: `tmp.xxxxx` CI/CD artifacts replaced in SPDX parser with PURL-based names and filtered in license checker as fallback | ✅ Implemented |
 | 30 | S3 bucket ingestion: Multi-bucket S3 support as default ingestion method via `minio-go/v7`. Streaming ListObjects with batched enqueue (500/batch). Worker fetches via `s3://` URIs. Local filesystem ingestion preserved. | ✅ Implemented |
+| 31 | Package search: Fuzzy ILIKE search on package names with detail page showing all projects using a package (paginated). Search preview shows first 5 projects; detail page shows all. | ✅ Implemented |

@@ -42,7 +42,7 @@ describe('App', () => {
     fixture.detectChanges();
     const compiled = fixture.nativeElement as HTMLElement;
     const links = compiled.querySelectorAll('.nav-links a');
-    expect(links.length).toBe(8);
+    expect(links.length).toBe(10);
     expect(links[0].textContent).toContain('Dashboard');
     expect(links[1].textContent).toContain('SBOMs');
     expect(links[2].textContent).toContain('Vulnerabilities');
@@ -50,7 +50,9 @@ describe('App', () => {
     expect(links[4].textContent).toContain('Licenses');
     expect(links[5].textContent).toContain('Compliance');
     expect(links[6].textContent).toContain('Dependencies');
-    expect(links[7].textContent).toContain('VEX');
+    expect(links[7].textContent).toContain('Pkg Search');
+    expect(links[8].textContent).toContain('Version Skew');
+    expect(links[9].textContent).toContain('VEX');
   });
 });
 

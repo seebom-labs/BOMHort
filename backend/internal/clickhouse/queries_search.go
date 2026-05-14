@@ -717,3 +717,251 @@ func (c *Client) QueryVersionSkew(ctx context.Context, page, pageSize uint64, se
 	}, nil
 }
 
+// QueryDependencySearch searches packages by name (ILIKE fuzzy match) and returns
+// paginated results with project counts and a preview of projects per package.
+func (c *Client) QueryDependencySearch(ctx context.Context, query string, page, pageSize uint64) (*dto.DependencySearchResponse, error) {
+	if pageSize == 0 {
+		pageSize = 20
+	}
+	if page == 0 {
+		page = 1
+	}
+	offset := (page - 1) * pageSize
+	searchPattern := "%" + query + "%"
+
+	var totalResults uint64
+	_ = c.Conn.QueryRow(ctx, `
+		SELECT count() FROM (
+			SELECT dep_name
+			FROM (SELECT * FROM sbom_packages FINAL) AS p
+			ARRAY JOIN p.package_names AS dep_name
+			WHERE dep_name ILIKE ?
+			GROUP BY dep_name
+		)
+	`, searchPattern).Scan(&totalResults)
+
+	rows, err := c.Conn.Query(ctx, `
+		SELECT
+			dep_name,
+			any(dep_purl) AS purl,
+			count(DISTINCT project_key) AS project_count,
+			groupArray(DISTINCT dep_version) AS versions
+		FROM (
+			SELECT
+				dep_name,
+				dep_purl,
+				dep_version,
+				multiIf(
+					position(source_file, 's3://') = 1,
+					arrayStringConcat(
+						arraySlice(splitByChar('/', replaceOne(source_file, 's3://', '')), 2, 2),
+						'/'
+					),
+					doc_name != '',
+					doc_name,
+					source_file
+				) AS project_key
+			FROM (
+				SELECT
+					p.source_file,
+					ifNull(s.document_name, p.source_file) AS doc_name,
+					dep_name,
+					dep_purl,
+					dep_version
+				FROM (SELECT * FROM sbom_packages FINAL) AS p
+				INNER JOIN (SELECT sbom_id, document_name FROM sboms FINAL) AS s
+					ON p.sbom_id = s.sbom_id
+				ARRAY JOIN
+					p.package_names AS dep_name,
+					p.package_purls AS dep_purl,
+					p.package_versions AS dep_version
+			)
+			WHERE dep_name ILIKE ?
+		)
+		GROUP BY dep_name
+		ORDER BY project_count DESC, dep_name ASC
+		LIMIT ? OFFSET ?
+	`, searchPattern, pageSize, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query dependency search: %w", err)
+	}
+	defer rows.Close()
+
+	var items []dto.DependencySearchResult
+	for rows.Next() {
+		var item dto.DependencySearchResult
+		if err := rows.Scan(&item.PackageName, &item.PURL, &item.ProjectCount, &item.Versions); err != nil {
+			return nil, fmt.Errorf("failed to scan search result: %w", err)
+		}
+		items = append(items, item)
+	}
+
+	for i := range items {
+		projRows, err := c.Conn.Query(ctx, `
+			SELECT
+				project_key,
+				any(dep_version) AS version,
+				any(sbom_id) AS sbom_id
+			FROM (
+				SELECT
+					p.sbom_id,
+					dep_version,
+					multiIf(
+						position(p.source_file, 's3://') = 1,
+						arrayStringConcat(
+							arraySlice(splitByChar('/', replaceOne(p.source_file, 's3://', '')), 2, 2),
+							'/'
+						),
+						doc_name != '',
+						doc_name,
+						p.source_file
+					) AS project_key
+				FROM (
+					SELECT
+						p.sbom_id,
+						p.source_file,
+						ifNull(s.document_name, p.source_file) AS doc_name,
+						dep_name,
+						dep_version
+					FROM (SELECT * FROM sbom_packages FINAL) AS p
+					INNER JOIN (SELECT sbom_id, document_name FROM sboms FINAL) AS s
+						ON p.sbom_id = s.sbom_id
+					ARRAY JOIN
+						p.package_names AS dep_name,
+						p.package_versions AS dep_version
+				) AS p
+				WHERE dep_name = ?
+			)
+			GROUP BY project_key
+			ORDER BY project_key ASC
+			LIMIT 5
+		`, items[i].PackageName)
+		if err == nil {
+			for projRows.Next() {
+				var proj dto.DependencySearchProject
+				if err := projRows.Scan(&proj.ProjectName, &proj.Version, &proj.SBOMID); err == nil {
+					items[i].Projects = append(items[i].Projects, proj)
+				}
+			}
+			projRows.Close()
+		}
+		if items[i].Projects == nil {
+			items[i].Projects = []dto.DependencySearchProject{}
+		}
+	}
+
+	if items == nil {
+		items = []dto.DependencySearchResult{}
+	}
+
+	return &dto.DependencySearchResponse{
+		TotalResults: totalResults,
+		Items:        items,
+		Page:         page,
+		PageSize:     pageSize,
+		Query:        query,
+	}, nil
+}
+
+// QueryPackageDetail returns ALL projects using a specific package (paginated).
+func (c *Client) QueryPackageDetail(ctx context.Context, packageName string, page, pageSize uint64) (*dto.PackageDetailResponse, error) {
+	if pageSize == 0 {
+		pageSize = 50
+	}
+	if page == 0 {
+		page = 1
+	}
+	offset := (page - 1) * pageSize
+
+	var totalProjects uint64
+	_ = c.Conn.QueryRow(ctx, `
+		SELECT count(DISTINCT project_key) FROM (
+			SELECT
+				multiIf(
+					position(p.source_file, 's3://') = 1,
+					arrayStringConcat(
+						arraySlice(splitByChar('/', replaceOne(p.source_file, 's3://', '')), 2, 2),
+						'/'
+					),
+					doc_name != '',
+					doc_name,
+					p.source_file
+				) AS project_key
+			FROM (
+				SELECT
+					p.source_file,
+					ifNull(s.document_name, p.source_file) AS doc_name,
+					dep_name
+				FROM (SELECT * FROM sbom_packages FINAL) AS p
+				INNER JOIN (SELECT sbom_id, document_name FROM sboms FINAL) AS s
+					ON p.sbom_id = s.sbom_id
+				ARRAY JOIN p.package_names AS dep_name
+			) AS p
+			WHERE dep_name = ?
+		)
+	`, packageName).Scan(&totalProjects)
+
+	rows, err := c.Conn.Query(ctx, `
+		SELECT
+			project_key,
+			any(dep_version) AS version,
+			any(sbom_id) AS sbom_id
+		FROM (
+			SELECT
+				p.sbom_id,
+				dep_version,
+				multiIf(
+					position(p.source_file, 's3://') = 1,
+					arrayStringConcat(
+						arraySlice(splitByChar('/', replaceOne(p.source_file, 's3://', '')), 2, 2),
+						'/'
+					),
+					doc_name != '',
+					doc_name,
+					p.source_file
+				) AS project_key
+			FROM (
+				SELECT
+					p.sbom_id,
+					p.source_file,
+					ifNull(s.document_name, p.source_file) AS doc_name,
+					dep_name,
+					dep_version
+				FROM (SELECT * FROM sbom_packages FINAL) AS p
+				INNER JOIN (SELECT sbom_id, document_name FROM sboms FINAL) AS s
+					ON p.sbom_id = s.sbom_id
+				ARRAY JOIN
+					p.package_names AS dep_name,
+					p.package_versions AS dep_version
+			) AS p
+			WHERE dep_name = ?
+		)
+		GROUP BY project_key
+		ORDER BY project_key ASC
+		LIMIT ? OFFSET ?
+	`, packageName, pageSize, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query package detail: %w", err)
+	}
+	defer rows.Close()
+
+	var projects []dto.DependencySearchProject
+	for rows.Next() {
+		var proj dto.DependencySearchProject
+		if err := rows.Scan(&proj.ProjectName, &proj.Version, &proj.SBOMID); err != nil {
+			return nil, fmt.Errorf("failed to scan project row: %w", err)
+		}
+		projects = append(projects, proj)
+	}
+	if projects == nil {
+		projects = []dto.DependencySearchProject{}
+	}
+
+	return &dto.PackageDetailResponse{
+		PackageName:   packageName,
+		TotalProjects: totalProjects,
+		Projects:      projects,
+		Page:          page,
+		PageSize:      pageSize,
+	}, nil
+}

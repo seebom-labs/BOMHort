@@ -14,6 +14,8 @@ import {
   ProjectLicenseViolation,
   AffectedProject,
   DependencyStatsResponse,
+  DependencySearchResponse,
+  PackageDetailResponse,
   VersionSkewResponse,
   LicenseExceptionsFile,
   ArchivedPackageInfo,
@@ -110,6 +112,22 @@ export class ApiService {
 
   getArchivedPackages(): Observable<ArchivedPackageInfo[]> {
     return this.http.get<ArchivedPackageInfo[]>(`${this.baseUrl}/packages/archived`);
+  }
+
+  searchPackages(query: string, page = 1, pageSize = 50): Observable<DependencySearchResponse> {
+    let params = new HttpParams()
+      .set('q', query)
+      .set('page', page.toString())
+      .set('page_size', pageSize.toString());
+    return this.http.get<DependencySearchResponse>(`${this.baseUrl}/packages/search`, { params });
+  }
+
+  getPackageDetail(name: string, page = 1, pageSize = 50): Observable<PackageDetailResponse> {
+    const params = new HttpParams()
+      .set('name', name)
+      .set('page', page.toString())
+      .set('page_size', pageSize.toString());
+    return this.http.get<PackageDetailResponse>(`${this.baseUrl}/packages/detail`, { params });
   }
 }
 

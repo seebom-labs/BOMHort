@@ -190,3 +190,37 @@ type VersionSkewResponse struct {
 	PageSize            uint64            `json:"page_size"`
 }
 
+// DependencySearchProject represents a project using a specific package.
+type DependencySearchProject struct {
+	ProjectName string `json:"project_name"`
+	Version     string `json:"version"`
+	SBOMID      string `json:"sbom_id"`
+}
+
+// DependencySearchResult represents a package found by search.
+type DependencySearchResult struct {
+	PackageName  string                    `json:"package_name"`
+	PURL         string                    `json:"purl"`
+	ProjectCount uint64                    `json:"project_count"`
+	Versions     []string                  `json:"versions"`
+	Projects     []DependencySearchProject `json:"projects"`
+}
+
+// DependencySearchResponse wraps the package search response.
+type DependencySearchResponse struct {
+	TotalResults uint64                   `json:"total_results"`
+	Items        []DependencySearchResult `json:"items"`
+	Page         uint64                   `json:"page"`
+	PageSize     uint64                   `json:"page_size"`
+	Query        string                   `json:"query"`
+}
+
+// PackageDetailResponse returns all projects using a specific package (paginated).
+type PackageDetailResponse struct {
+	PackageName   string                    `json:"package_name"`
+	TotalProjects uint64                    `json:"total_projects"`
+	Projects      []DependencySearchProject `json:"projects"`
+	Page          uint64                    `json:"page"`
+	PageSize      uint64                    `json:"page_size"`
+}
+

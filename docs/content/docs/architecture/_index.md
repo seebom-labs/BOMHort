@@ -21,7 +21,7 @@ Kubernetes-native SBOM platform as a monorepo. Go backend with four binaries (Cr
 |--------|------|---------|
 | `ingestion-watcher` | K8s CronJob | Scans SBOM/VEX directory, hash-dedup, enqueues jobs |
 | `parsing-worker` | Deployment (N replicas) | Processes SBOMs (SPDX→ClickHouse), VEX files, OSV lookups, license resolution, compliance checks |
-| `api-gateway` | Deployment | Stateless REST API (16 endpoints) |
+| `api-gateway` | Deployment | Stateless REST API (19 endpoints) |
 | `cve-refresher` | K8s CronJob (daily) | Checks all known PURLs for newly disclosed CVEs |
 
 ## Data Flow
@@ -63,7 +63,7 @@ ClickHouse: sboms, sbom_packages, vulnerabilities, license_compliance, vex_state
        │         │  Dedup + reverse-lookup + INSERT  │
        │         └──────────────────────────────────┘
        ▼
-API Gateway (REST) → 16 Endpoints → Angular UI
+API Gateway (REST) → 19 Endpoints → Angular UI
 ```
 
 ## ClickHouse Schema
@@ -101,6 +101,9 @@ API Gateway (REST) → 16 Endpoints → Angular UI
 | GET | `/api/v1/license-policy` | Active license policy |
 | GET | `/api/v1/vex/statements?page=&page_size=` | Paginated VEX statements |
 | GET | `/api/v1/packages/archived` | Archived GitHub repo packages |
+| GET | `/api/v1/packages/search?q=&page=&page_size=` | Fuzzy package name search |
+| GET | `/api/v1/packages/detail?name=&page=&page_size=` | All projects using a specific package |
+| GET | `/api/v1/stats/version-skew?page=&page_size=&search=` | Version skew detection |
 
 ## VEX Architecture
 
@@ -159,5 +162,5 @@ License resolution runs **before** the ClickHouse insert so that `sbom_packages.
 
 ## Angular UI
 
-10 lazy-loaded routes with virtual scrolling, OnPush change detection, dark mode toggle, and CSS custom properties theming. External `custom-theme.css` and `ui-config.json` are mountable without rebuild.
+13 lazy-loaded routes with virtual scrolling, OnPush change detection, dark mode toggle, and CSS custom properties theming. Includes package search with fuzzy name matching and paginated detail views. External `custom-theme.css` and `ui-config.json` are mountable without rebuild.
 

@@ -149,3 +149,40 @@ Tests run automatically on every push/PR:
   run: go test ./... -count=1 -race
 ```
 
+## Angular (Frontend) Tests
+
+The Angular frontend uses **Vitest** (not Karma/Jasmine). Tests live alongside components as `*.spec.ts` files.
+
+### Quick Start
+
+```bash
+cd ui
+
+# Run all tests
+npx ng test
+
+# Run once (no watch)
+npx ng test --watch=false
+```
+
+### Current Test Inventory (Frontend)
+
+| Spec File | Tests | What's Covered |
+|-----------|-------|---------------|
+| `app.spec.ts` | 3 | App creation, navbar brand, navigation links (10 routes) |
+| `dashboard.component.spec.ts` | 2 | Component creation, KPI rendering |
+| `sbom-detail.component.spec.ts` | 4 | Tab switching, vuln/license/dep views |
+| `cve-impact.component.spec.ts` | 2 | CVE search, project listing |
+| `license-violations.component.spec.ts` | 2 | Violations tab, exceptions tab |
+| `dependency-stats.component.spec.ts` | 2 | Top dependencies, unique deps counter |
+| `version-skew.spec.ts` | 3 | Model parsing, empty results, sorting |
+| `package-search.spec.ts` | 8 | Search/detail response parsing, pagination, URL encoding, sorting |
+| plus more... | — | Various model and component tests |
+| **Total** | **53** | |
+
+### Test Patterns (Angular)
+
+- **Model tests** — Verify TypeScript interfaces match API shapes (no HTTP mocking needed)
+- **Component tests** — Use `TestBed` with `provideHttpClientTesting()` for HTTP mocking
+- **OnPush strategy** — Tests call `fixture.detectChanges()` and verify DOM output
+

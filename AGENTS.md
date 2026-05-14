@@ -10,7 +10,7 @@ The platform consists of **4 Go binaries**, an **Angular UI**, and a **ClickHous
 |--------|------|---------|
 | `ingestion-watcher` | K8s CronJob | Scans SBOM/VEX directory, hash-dedup, enqueues jobs |
 | `parsing-worker` | Deployment (N replicas) | Processes SBOMs (SPDX→ClickHouse), VEX files, OSV lookups, license checks |
-| `api-gateway` | Deployment | Stateless REST API (16 endpoints) |
+| `api-gateway` | Deployment | Stateless REST API (19 endpoints) |
 | `cve-refresher` | K8s CronJob (daily) | Checks all known PURLs for newly disclosed CVEs without re-scanning SBOMs |
 
 Key shared packages:
@@ -123,7 +123,7 @@ Frontend Test:   cd ui && npx ng test            # uses Vitest
 - Unit tests use **Vitest** (not Karma/Jasmine). Run via `npx ng test`.
 - Virtual scrolling uses `@angular/cdk` (`ScrollingModule`). Always implement for large lists of dependency nodes or vulnerabilities to prevent browser freezing.
 - Utilize OnPush change detection for data-heavy dashboard components to optimize rendering performance.
-- All routes are lazy-loaded standalone components (see `app.routes.ts`). Feature pages: `dashboard`, `sbom-explorer`, `vulnerability`, `search` (CVE impact, license compliance, dependency stats, version skew), `license-compliance`, `vex`, `archived-packages`.
+- All routes are lazy-loaded standalone components (see `app.routes.ts`). Feature pages: `dashboard`, `sbom-explorer`, `vulnerability`, `search` (CVE impact, license compliance, dependency stats, version skew, package search + detail), `license-compliance`, `vex`, `archived-packages`.
 - Shared chart components live in `shared/charts/` (donut chart, horizontal bar chart).
 - UI supports **Dark Mode** (toggle in navbar, persisted to localStorage) and **Custom CSS Theming** (external `custom-theme.css` mountable without rebuild).
 - UI supports **Site Configuration** (`ui-config.json`): brand name, page title, dashboard texts, and disclaimer are configurable without rebuild. Loaded at startup via `APP_INITIALIZER` in `SiteConfigService`. Mount via Docker volume or Kubernetes ConfigMap (`ui.siteConfig` in Helm values).

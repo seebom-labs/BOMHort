@@ -20,6 +20,7 @@ import { SiteConfigService } from './core/site-config.service';
         <a routerLink="/licenses" routerLinkActive="active">Licenses</a>
         <a routerLink="/license-compliance" routerLinkActive="active">Compliance</a>
         <a routerLink="/dependencies" routerLinkActive="active">Dependencies</a>
+        <a routerLink="/package-search" routerLinkActive="active">Pkg Search</a>
         <a routerLink="/version-skew" routerLinkActive="active">Version Skew</a>
         <a routerLink="/vex" routerLinkActive="active">VEX</a>
       </div>

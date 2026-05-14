@@ -50,6 +50,20 @@ export const routes: Routes = [
       ),
   },
   {
+    path: 'package-search',
+    loadComponent: () =>
+      import('./features/search/package-search.component').then(
+        (m) => m.PackageSearchComponent
+      ),
+  },
+  {
+    path: 'package-search/:name',
+    loadComponent: () =>
+      import('./features/search/package-detail.component').then(
+        (m) => m.PackageDetailComponent
+      ),
+  },
+  {
     path: 'version-skew',
     loadComponent: () =>
       import('./features/search/version-skew.component').then(
