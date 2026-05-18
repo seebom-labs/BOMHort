@@ -186,3 +186,5 @@ seedJob:
   # Set to download CNCF license exceptions into the SBOM PVC:
   # cncfExceptionsURL: "https://raw.githubusercontent.com/cncf/foundation/main/license-exceptions/exceptions.json"
 
+# Set to false to keep Job resources after completion (for debugging, or better visibility in ArgoCD). By default, Jobs are cleaned up after 5 minutes to prevent clutter.
+cleanBatchJobs: true

@@ -7,7 +7,9 @@ metadata:
     app.kubernetes.io/component: migrate
     app.kubernetes.io/instance: {{ .Release.Name }}
 spec:
+  {{- if .Values.cleanBatchJobs }}
   ttlSecondsAfterFinished: 300
+  {{- end }}
   backoffLimit: 10
   template:
     metadata:
