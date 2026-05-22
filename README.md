@@ -78,9 +78,10 @@ cp .env.example .env
 | `SKIP_OSV` | `false` | Skip OSV vulnerability API calls. Set `true` for fast initial bulk load (licenses only), then re-run with `false`. |
 | `SKIP_GITHUB_RESOLVE` | `false` | Skip GitHub license resolution for packages with `NOASSERTION`/empty licenses. |
 | `GITHUB_TOKEN` | *(empty)* | GitHub personal access token for license resolution. Increases rate limit from 60 to 5000 req/h. No scopes needed. |
+| `CLUSTER_NAME` | *(empty)* | Cluster identifier for multi-cluster deployments. All ingested data is tagged with this value. Empty = single-instance mode. |
 | `CUSTOM_THEME` | (example file) | Path to a custom CSS theme file for the UI. See "Custom Theme" section. |
 | `UI_CONFIG` | `./ui/public/ui-config.json` | Path to a JSON file with UI text overrides (brand name, dashboard texts, disclaimer). See "Site Configuration" section. |
-| `S3_BUCKETS` | *(empty)* | JSON array of S3 bucket configs. See "S3 Ingestion" section. |
+| `S3_BUCKETS` | *(empty)* | JSON array of S3 bucket configs (supports per-bucket `cluster` override). See "S3 Ingestion" section. |
 | `S3_BUCKET` | *(empty)* | Single S3 bucket name (simpler alternative to `S3_BUCKETS`). |
 | `S3_ENDPOINT` | `s3.amazonaws.com` | S3 endpoint URL. |
 | `S3_REGION` | `us-east-1` | AWS region. |
@@ -236,6 +237,20 @@ S3_BUCKETS='[{"name":"my-private-bucket"}]'
 # Or per-bucket credentials in JSON:
 S3_BUCKETS='[{"name":"my-bucket","accessKey":"AKIA...","secretKey":"..."}]'
 ```
+
+**Multi-cluster: per-bucket cluster assignment:**
+
+```bash
+# .env — each bucket maps to a different cluster
+CLUSTER_NAME=default
+S3_BUCKETS='[
+  {"name":"prod-eu-sboms", "cluster":"prod-eu", "region":"eu-west-1"},
+  {"name":"prod-us-sboms", "cluster":"prod-us", "region":"us-east-1"},
+  {"name":"staging-sboms", "cluster":"staging"}
+]'
+```
+
+Buckets without a `cluster` field inherit the global `CLUSTER_NAME`. If neither is set, data is untagged (single-instance mode).
 
 **How it works:**
 - The Ingestion Watcher streams `ListObjects` from each bucket (paginated, no full listing in memory)

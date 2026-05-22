@@ -96,6 +96,47 @@ s3:
 - Streams object listings — handles 100k+ SBOMs without memory issues
 - Works with any S3-compatible storage (AWS, GCS, MinIO, Ceph, DigitalOcean Spaces)
 
+### Multi-Cluster Ingestion
+
+SeeBOM supports tagging data by **cluster** for multi-cluster visibility from a single instance. This is fully optional — omit all cluster config for single-instance mode.
+
+**Option 1: Global cluster name (one instance per cluster)**
+
+```yaml
+# values-prod-eu.yaml
+ingestionWatcher:
+  env:
+    CLUSTER_NAME: "prod-eu"
+```
+
+Deploy one SeeBOM instance per cluster, each with its own `CLUSTER_NAME`.
+
+**Option 2: Per-bucket cluster assignment (one instance, multiple clusters)**
+
+```yaml
+# values.yaml — single watcher, multiple clusters
+ingestionWatcher:
+  env:
+    CLUSTER_NAME: "default"   # fallback for buckets without explicit cluster
+
+s3:
+  buckets: |
+    [
+      {"name": "prod-eu-sboms", "region": "eu-west-1", "cluster": "prod-eu"},
+      {"name": "prod-us-sboms", "region": "us-east-1", "cluster": "prod-us"},
+      {"name": "staging-sboms", "cluster": "staging"},
+      {"name": "shared-sboms"}
+    ]
+```
+
+In this example:
+- `prod-eu-sboms` → all SBOMs tagged as `prod-eu`
+- `prod-us-sboms` → tagged as `prod-us`
+- `staging-sboms` → tagged as `staging`
+- `shared-sboms` → inherits `CLUSTER_NAME` = `default`
+
+**Priority:** per-bucket `cluster` > global `CLUSTER_NAME` > empty (untagged)
+
 ### Option B: Seed Job
 
 ```yaml

@@ -15,7 +15,7 @@ func (c *Client) EnqueueJobs(ctx context.Context, jobs []models.IngestionJob) er
 	}
 
 	batch, err := c.Conn.PrepareBatch(ctx,
-		"INSERT INTO ingestion_queue (created_at, job_id, source_file, sha256_hash, status, job_type, claimed_by, claimed_at, finished_at, error_message)")
+		"INSERT INTO ingestion_queue (created_at, job_id, source_file, sha256_hash, status, job_type, claimed_by, claimed_at, finished_at, error_message, cluster)")
 	if err != nil {
 		return fmt.Errorf("failed to prepare queue batch: %w", err)
 	}
@@ -36,6 +36,7 @@ func (c *Client) EnqueueJobs(ctx context.Context, jobs []models.IngestionJob) er
 			(*time.Time)(nil),
 			(*time.Time)(nil),
 			"",
+			job.Cluster,
 		); err != nil {
 			return fmt.Errorf("failed to append queue job: %w", err)
 		}
@@ -53,7 +54,7 @@ func (c *Client) EnqueueJobs(ctx context.Context, jobs []models.IngestionJob) er
 // regardless of merge timing. This avoids phantom re-claims entirely.
 func (c *Client) ClaimJobs(ctx context.Context, workerID string, limit int) ([]models.IngestionJob, error) {
 	rows, err := c.Conn.Query(ctx, `
-		SELECT job_id, source_file, sha256_hash, min_created, job_type
+		SELECT job_id, source_file, sha256_hash, min_created, job_type, cluster
 		FROM (
 		    SELECT
 		        job_id,
@@ -61,7 +62,8 @@ func (c *Client) ClaimJobs(ctx context.Context, workerID string, limit int) ([]m
 		        argMax(sha256_hash, created_at)  AS sha256_hash,
 		        min(created_at)                  AS min_created,
 		        argMax(job_type, created_at)      AS job_type,
-		        argMax(status, created_at)        AS latest_status
+		        argMax(status, created_at)        AS latest_status,
+		        argMax(cluster, created_at)       AS cluster
 		    FROM ingestion_queue
 		    GROUP BY job_id
 		) sub
@@ -76,7 +78,7 @@ func (c *Client) ClaimJobs(ctx context.Context, workerID string, limit int) ([]m
 	var jobs []models.IngestionJob
 	for rows.Next() {
 		var job models.IngestionJob
-		if err := rows.Scan(&job.JobID, &job.SourceFile, &job.SHA256Hash, &job.CreatedAt, &job.JobType); err != nil {
+		if err := rows.Scan(&job.JobID, &job.SourceFile, &job.SHA256Hash, &job.CreatedAt, &job.JobType, &job.Cluster); err != nil {
 			return nil, fmt.Errorf("failed to scan job row: %w", err)
 		}
 		job.Status = models.JobStatusProcessing
@@ -92,7 +94,7 @@ func (c *Client) ClaimJobs(ctx context.Context, workerID string, limit int) ([]m
 
 	// Mark claimed jobs as processing.
 	batch, err := c.Conn.PrepareBatch(ctx,
-		"INSERT INTO ingestion_queue (created_at, job_id, source_file, sha256_hash, status, job_type, claimed_by, claimed_at, finished_at, error_message)")
+		"INSERT INTO ingestion_queue (created_at, job_id, source_file, sha256_hash, status, job_type, claimed_by, claimed_at, finished_at, error_message, cluster)")
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare claim batch: %w", err)
 	}
@@ -109,6 +111,7 @@ func (c *Client) ClaimJobs(ctx context.Context, workerID string, limit int) ([]m
 			job.ClaimedAt,
 			(*time.Time)(nil),
 			"",
+			job.Cluster,
 		); err != nil {
 			return nil, fmt.Errorf("failed to append claim: %w", err)
 		}
@@ -125,16 +128,16 @@ func (c *Client) ClaimJobs(ctx context.Context, workerID string, limit int) ([]m
 func (c *Client) CompleteJob(ctx context.Context, job models.IngestionJob) error {
 	now := time.Now()
 	return c.Conn.Exec(ctx,
-		`INSERT INTO ingestion_queue (created_at, job_id, source_file, sha256_hash, status, job_type, claimed_by, claimed_at, finished_at, error_message)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		now, job.JobID, job.SourceFile, job.SHA256Hash, models.JobStatusDone, job.JobType, job.ClaimedBy, job.ClaimedAt, &now, "")
+		`INSERT INTO ingestion_queue (created_at, job_id, source_file, sha256_hash, status, job_type, claimed_by, claimed_at, finished_at, error_message, cluster)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		now, job.JobID, job.SourceFile, job.SHA256Hash, models.JobStatusDone, job.JobType, job.ClaimedBy, job.ClaimedAt, &now, "", job.Cluster)
 }
 
 // FailJob marks a job as failed with an error message.
 func (c *Client) FailJob(ctx context.Context, job models.IngestionJob, errMsg string) error {
 	now := time.Now()
 	return c.Conn.Exec(ctx,
-		`INSERT INTO ingestion_queue (created_at, job_id, source_file, sha256_hash, status, job_type, claimed_by, claimed_at, finished_at, error_message)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		now, job.JobID, job.SourceFile, job.SHA256Hash, models.JobStatusFailed, job.JobType, job.ClaimedBy, job.ClaimedAt, &now, errMsg)
+		`INSERT INTO ingestion_queue (created_at, job_id, source_file, sha256_hash, status, job_type, claimed_by, claimed_at, finished_at, error_message, cluster)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		now, job.JobID, job.SourceFile, job.SHA256Hash, models.JobStatusFailed, job.JobType, job.ClaimedBy, job.ClaimedAt, &now, errMsg, job.Cluster)
 }

@@ -81,6 +81,58 @@ API Gateway (REST) → 19 Endpoints → Angular UI
 | `github_license_cache` | ReplacingMergeTree | Resolved GitHub licenses cache |
 | `github_repo_metadata` | ReplacingMergeTree | GitHub repo metadata (archived, fork, stars) |
 
+All core tables (`sboms`, `sbom_packages`, `vulnerabilities`, `license_compliance`, `ingestion_queue`, `vex_statements`) include a `cluster LowCardinality(String) DEFAULT ''` column for multi-cluster support.
+
+## Multi-Cluster Data Model
+
+SeeBOM supports tagging all ingested data with a **cluster identifier** for multi-cluster deployments. This is fully optional — single-instance deployments work without any configuration.
+
+### How it works
+
+```
+┌────────────────────────────────────┐
+│  S3 Buckets with per-bucket cluster │
+│                                      │
+│  bucket: prod-eu-sboms               │
+│  cluster: "prod-eu"                  │
+│                                      │
+│  bucket: staging-sboms               │
+│  cluster: "staging"                  │
+│                                      │
+│  bucket: other-sboms                 │
+│  cluster: "" (inherits CLUSTER_NAME) │
+└────────────────┬─────────────────────┘
+                 │
+                 ▼
+    Ingestion Watcher
+    (resolves cluster per object)
+                 │
+                 ▼
+    ingestion_queue.cluster = "prod-eu" | "staging" | ""
+                 │
+                 ▼
+    Parsing Worker
+    (propagates job.Cluster → all inserts)
+                 │
+                 ▼
+    sboms.cluster / vulnerabilities.cluster / etc.
+```
+
+### Configuration
+
+| Method | Use case |
+|--------|----------|
+| No config (default) | Single instance, no cluster differentiation |
+| `CLUSTER_NAME=prod-eu` | All data from this instance tagged as `prod-eu` |
+| Per-bucket `"cluster"` in `S3_BUCKETS` JSON | One watcher instance ingests from multiple clusters |
+| Mix: per-bucket + `CLUSTER_NAME` fallback | Buckets without explicit cluster inherit the global value |
+
+### Priority
+
+1. Per-bucket `cluster` field in S3 config (highest)
+2. Global `CLUSTER_NAME` environment variable (fallback)
+3. Empty string `""` (no cluster, single-instance mode)
+
 ## API Endpoints
 
 | Method | Endpoint | Description |

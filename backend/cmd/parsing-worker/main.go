@@ -288,11 +288,13 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 	}
 
 	// 3. Insert SBOM metadata.
+	result.SBOM.Cluster = job.Cluster
 	if err := chClient.InsertSBOM(ctx, &result.SBOM); err != nil {
 		return err
 	}
 
 	// 4. Insert package arrays (with resolved licenses).
+	result.Packages.Cluster = job.Cluster
 	if err := chClient.InsertSBOMPackages(ctx, &result.Packages); err != nil {
 		return err
 	}
@@ -388,6 +390,7 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 						AffectedVersions: affectedVersions,
 						FixedVersion:     fixedVersion,
 						OSVJSON:          string(rawJSON),
+						Cluster:          job.Cluster,
 					})
 				}
 			}
@@ -424,6 +427,7 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 				NonCompliantPackages: nonCompliant,
 				ExemptedPackages:     exempted,
 				ExemptionReason:      lr.ExemptionReason,
+				Cluster:              job.Cluster,
 			}
 		}
 		if err := chClient.InsertLicenseCompliance(ctx, licModels); err != nil {

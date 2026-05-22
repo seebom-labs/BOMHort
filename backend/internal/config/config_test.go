@@ -221,3 +221,61 @@ func TestS3BucketNames(t *testing.T) {
 		t.Errorf("S3BucketNames() = %q, want %q", got, "bucket-a/v1/, bucket-b")
 	}
 }
+
+func TestLoad_ClusterName_Default(t *testing.T) {
+	os.Unsetenv("CLUSTER_NAME")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if cfg.ClusterName != "" {
+		t.Errorf("expected default ClusterName=\"\", got %q", cfg.ClusterName)
+	}
+}
+
+func TestLoad_ClusterName_Custom(t *testing.T) {
+	t.Setenv("CLUSTER_NAME", "production-eu-west-1")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if cfg.ClusterName != "production-eu-west-1" {
+		t.Errorf("expected ClusterName=\"production-eu-west-1\", got %q", cfg.ClusterName)
+	}
+}
+
+func TestLoad_S3BucketClusterOverride(t *testing.T) {
+	t.Setenv("S3_BUCKETS", `[{"name":"prod-bucket","cluster":"prod-eu"},{"name":"staging-bucket","cluster":"staging"},{"name":"default-bucket"}]`)
+	t.Setenv("CLUSTER_NAME", "global-fallback")
+	os.Unsetenv("S3_BUCKET")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if len(cfg.S3Buckets) != 3 {
+		t.Fatalf("expected 3 buckets, got %d", len(cfg.S3Buckets))
+	}
+
+	// Bucket with explicit cluster.
+	if cfg.S3Buckets[0].Cluster != "prod-eu" {
+		t.Errorf("bucket[0].Cluster = %q, want \"prod-eu\"", cfg.S3Buckets[0].Cluster)
+	}
+	if cfg.S3Buckets[1].Cluster != "staging" {
+		t.Errorf("bucket[1].Cluster = %q, want \"staging\"", cfg.S3Buckets[1].Cluster)
+	}
+	// Bucket without cluster — stays empty (watcher resolves to ClusterName at runtime).
+	if cfg.S3Buckets[2].Cluster != "" {
+		t.Errorf("bucket[2].Cluster = %q, want \"\" (empty, fallback to ClusterName)", cfg.S3Buckets[2].Cluster)
+	}
+
+	// Global ClusterName is the fallback.
+	if cfg.ClusterName != "global-fallback" {
+		t.Errorf("ClusterName = %q, want \"global-fallback\"", cfg.ClusterName)
+	}
+}

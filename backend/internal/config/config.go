@@ -18,6 +18,7 @@ type S3BucketConfig struct {
 	Prefix       string `json:"prefix"`
 	UsePathStyle bool   `json:"usePathStyle"`
 	UseSSL       *bool  `json:"useSSL"`
+	Cluster      string `json:"cluster"` // Optional: override ClusterName for this bucket
 }
 
 // Config holds all configuration values, read from environment variables.
@@ -50,6 +51,9 @@ type Config struct {
 	ExceptionsFile    string // Path to license-exceptions.json
 	LicensePolicyFile string // Path to license-policy.json
 	GitHubToken       string // GitHub personal access token (optional, increases rate limit)
+
+	// Multi-cluster
+	ClusterName string // Cluster identifier for this instance (default "" = unassigned)
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -71,6 +75,7 @@ func Load() (*Config, error) {
 		ExceptionsFile:     getEnv("EXCEPTIONS_FILE", "/data/config/license-exceptions.json"),
 		LicensePolicyFile:  getEnv("LICENSE_POLICY_FILE", "/data/config/license-policy.json"),
 		GitHubToken:        getEnv("GITHUB_TOKEN", ""),
+		ClusterName:        getEnv("CLUSTER_NAME", ""),
 	}
 
 	if cfg.WorkerID == "" {

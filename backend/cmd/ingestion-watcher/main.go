@@ -116,6 +116,7 @@ func ingestLocalFiles(ctx context.Context, cfg *config.Config, chClient *clickho
 			SHA256Hash: f.SHA256Hash,
 			Status:     models.JobStatusPending,
 			JobType:    jobType,
+			Cluster:    cfg.ClusterName,
 		})
 
 		// Flush batch when it reaches the threshold.
@@ -150,6 +151,8 @@ func ingestLocalFiles(ctx context.Context, cfg *config.Config, chClient *clickho
 func ingestS3Buckets(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, sbomCount *int) int {
 	// Convert config bucket types to s3 package types.
 	bucketConfigs := make([]s3client.BucketConfig, len(cfg.S3Buckets))
+	// Build bucket→cluster mapping: per-bucket cluster overrides global ClusterName.
+	bucketCluster := make(map[string]string, len(cfg.S3Buckets))
 	for i, b := range cfg.S3Buckets {
 		bucketConfigs[i] = s3client.BucketConfig{
 			Name:         b.Name,
@@ -160,6 +163,11 @@ func ingestS3Buckets(ctx context.Context, cfg *config.Config, chClient *clickhou
 			Prefix:       b.Prefix,
 			UsePathStyle: b.UsePathStyle,
 			UseSSL:       b.UseSSL,
+		}
+		if b.Cluster != "" {
+			bucketCluster[b.Name] = b.Cluster
+		} else {
+			bucketCluster[b.Name] = cfg.ClusterName
 		}
 	}
 
@@ -218,6 +226,7 @@ func ingestS3Buckets(ctx context.Context, cfg *config.Config, chClient *clickhou
 			SHA256Hash: obj.ETag, // Use ETag for dedup (no download needed during listing)
 			Status:     models.JobStatusPending,
 			JobType:    jobType,
+			Cluster:    bucketCluster[obj.Bucket],
 		})
 
 		// Flush batch.

@@ -1,6 +1,6 @@
 # SeeBOM Product Roadmap
 
-> Last updated: 2026-05-21
+> Last updated: 2026-05-22
 > Project Board: https://github.com/orgs/seebom-labs/projects/1
 
 ## Executive Summary
@@ -45,9 +45,9 @@ The sequencing is driven by dependency chains: multi-cluster support must land b
 | #140 | Workload vulnerability summary | The key cross-reference: image → posture. Powers compliance dashboards. |
 | #62 | Exportable Auditor Reports (PDF/CSV) | CRA compliance requires offline documentation. Auditors don't use UIs. |
 | #60 | Local OSV Mirror | Eliminates external dependency on osv.dev. Faster scans, offline capability, no rate limits. |
-| #57 | Per-project license policies | Enterprise reality: different products have different license constraints. |
+| #57 | Project-aware data model + per-project policies | **Expanded scope.** Add `project LowCardinality(String) DEFAULT ''` column to all core tables (same pattern as `cluster`). Resolution via per-bucket config, push API payload, or document-name convention. Includes per-project license policies, severity thresholds, and exception scopes. Powers Project List View (#8) and Aggregated SBOM View (#58). |
 | #143 | In-toto Witness Integration | Supply chain attestation verification for ingested SBOMs. Provenance display, signature verification. Prerequisite for CRA compliance scoring (#141). |
-| #58 | Aggregated SBOM View | UX fix: group 50 versions of containerd into one expandable row. |
+| #58 | Aggregated SBOM View | UX fix: group 50 versions of containerd into one expandable row. Depends on project-aware data model (#57). |
 
 **Exit criteria:** SeeBOM manages multiple clusters with namespace isolation, accepts SBOM pushes from CI/CD, generates PDF compliance reports, attestation verification, and doesn't depend on external OSV availability.
 
@@ -103,6 +103,10 @@ After Phase 2 completes, SeeBOM reaches **v1.0.0** — the first stable release:
 #134 (Auth) ──────────────────────────┘
 #136 (CORS) ──────────────────────────┘
 
+#57 (Project Model) ──────┬── #8  (Project List View)
+                          ├── #58 (Aggregated SBOM View)
+                          └── Per-project policies (license, severity, exceptions)
+
 #143 (Witness) ── standalone (feeds into #141 CRA Dashboard)
 #55 (CycloneDX) ── standalone
 #144 (SBOM Download) ── standalone
@@ -133,6 +137,22 @@ The EU Cyber Resilience Act enforcement begins 2027. Organizations need 6-12 mon
 ### Why EPSS/Scorecard/Lottery Factor together?
 
 These are all "data enrichment" features that follow the same pattern: fetch external data → store in ClickHouse → expose via API → display in frontend. Implementing them as a batch maximizes code reuse and architectural consistency.
+
+### Why project model is separate from cluster model?
+
+**Cluster** and **project** are orthogonal dimensions:
+
+| Dimension | Cluster | Project |
+|-----------|---------|---------|
+| Question answered | Where is it deployed? | What is it / who owns it? |
+| Example | `prod-eu`, `staging-us` | `payment-service`, `mobile-app` |
+| Cardinality | Low (1-50) | High (50-5000) |
+| Ownership | Platform team | Dev teams |
+| Lifecycle | Stable (years) | Volatile |
+
+A single SBOM can simultaneously belong to cluster `prod-eu` AND project `payment-service`. We model these as independent low-cardinality columns rather than overloading one field.
+
+Cluster lands first (Phase 1, #131) because it's a smaller change with no UI implications. Project (#57) lands in Phase 2 because it requires UI work (project picker, per-project dashboards) and benefits from the Upload endpoint (#135) where the client can declare the project at push time.
 
 ---
 

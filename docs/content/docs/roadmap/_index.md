@@ -8,7 +8,7 @@ description: >
 ---
 
 {{% alert title="Last Updated" color="info" %}}
-2026-05-21 · [Project Board →](https://github.com/orgs/seebom-labs/projects/1)
+2026-05-22 · [Project Board →](https://github.com/orgs/seebom-labs/projects/1)
 {{% /alert %}}
 
 ## Vision
@@ -55,9 +55,9 @@ SeeBOM is transitioning from a single-instance SBOM visualization tool into an *
 | 🔲 | [#140 — Workload vulnerability summary](https://github.com/seebom-labs/seebom/issues/140) | Image → posture cross-reference for compliance dashboards. |
 | 🔲 | [#62 — Exportable Auditor Reports](https://github.com/seebom-labs/seebom/issues/62) | PDF/CSV compliance exports for CRA audits. |
 | 🔲 | [#60 — Local OSV Mirror](https://github.com/seebom-labs/seebom/issues/60) | Clone osv.dev into ClickHouse — offline, no rate limits. |
-| 🔲 | [#57 — Per-project license policies](https://github.com/seebom-labs/seebom/issues/57) | Scoped compliance rules for different product lines. |
+| 🔲 | [#57 — Project-aware data model + per-project policies](https://github.com/seebom-labs/seebom/issues/57) | **Expanded scope.** Adds a `project` column to all core tables (same pattern as `cluster`), enabling per-project license policies, severity thresholds, and exception scopes. Powers Project List View (#8) and Aggregated SBOM View (#58). |
 | 🔲 | [#143 — In-toto Witness Integration](https://github.com/seebom-labs/seebom/issues/143) | Supply chain attestation verification + provenance display. |
-| 🔲 | [#58 — Aggregated SBOM View](https://github.com/seebom-labs/seebom/issues/58) | Group version history under project names. |
+| 🔲 | [#58 — Aggregated SBOM View](https://github.com/seebom-labs/seebom/issues/58) | Group version history under project names. Depends on #57. |
 
 **Exit criteria:** Multi-cluster management with namespace isolation, SBOM push from CI/CD, PDF compliance reports, attestation verification, no external OSV dependency.
 
@@ -129,6 +129,10 @@ The following diagram shows blocking dependencies between issues:
 #134 (Auth) ──────────────────────────┘
 #136 (CORS) ──────────────────────────┘
 
+#57 (Project Model) ──────┬── #8  (Project List View)
+                          ├── #58 (Aggregated SBOM View)
+                          └── Per-project policies (license, severity, exceptions)
+
 #143 (Witness) ── standalone (feeds into #141 CRA Dashboard)
 #55 (CycloneDX) ── standalone
 #144 (SBOM Download) ── standalone
@@ -140,7 +144,7 @@ The following diagram shows blocking dependencies between issues:
 #61 (Scorecard) ── extends internal/github
 ```
 
-Key insight: **#131 (Cluster Model)** and **#134 (Auth)** are the critical-path items — most Phase 2 features depend on them.
+Key insight: **#131 (Cluster Model)**, **#134 (Auth)**, and **#57 (Project Model)** are the critical-path items — most Phase 2 features depend on them. Cluster and project are orthogonal dimensions (infrastructure vs. ownership) and intentionally modeled as separate low-cardinality columns.
 
 ---
 

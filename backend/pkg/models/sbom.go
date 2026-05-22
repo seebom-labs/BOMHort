@@ -17,6 +17,7 @@ type SBOM struct {
 	SHA256Hash        string    `json:"sha256_hash"`
 	CreationDate      time.Time `json:"creation_date"`
 	CreatorTools      []string  `json:"creator_tools"`
+	Cluster           string    `json:"cluster,omitempty"`
 }
 
 // SBOMPackages stores the full dependency tree of an SBOM as parallel arrays.
@@ -33,6 +34,7 @@ type SBOMPackages struct {
 	RelSourceIndices []uint32  `json:"rel_source_indices"`
 	RelTargetIndices []uint32  `json:"rel_target_indices"`
 	RelTypes         []string  `json:"rel_types"`
+	Cluster          string    `json:"cluster,omitempty"`
 }
 
 // Vulnerability represents a single vulnerability discovered via the OSV API.
@@ -47,6 +49,7 @@ type Vulnerability struct {
 	AffectedVersions []string  `json:"affected_versions"`
 	FixedVersion     string    `json:"fixed_version"`
 	OSVJSON          string    `json:"osv_json"`
+	Cluster          string    `json:"cluster,omitempty"`
 }
 
 // LicenseCompliance represents the compliance status for a license within an SBOM.
@@ -60,6 +63,7 @@ type LicenseCompliance struct {
 	NonCompliantPackages []string  `json:"non_compliant_packages"`
 	ExemptedPackages     []string  `json:"exempted_packages"`
 	ExemptionReason      string    `json:"exemption_reason"`
+	Cluster              string    `json:"cluster,omitempty"`
 }
 
 // IngestionJob represents a job in the ClickHouse-based queue.
@@ -74,6 +78,7 @@ type IngestionJob struct {
 	ClaimedAt    *time.Time `json:"claimed_at,omitempty"`
 	FinishedAt   *time.Time `json:"finished_at,omitempty"`
 	ErrorMessage string     `json:"error_message,omitempty"`
+	Cluster      string     `json:"cluster,omitempty"`
 }
 
 // Job status constants.
@@ -103,6 +108,7 @@ type VEXStatement struct {
 	ImpactStatement string    `json:"impact_statement"`
 	ActionStatement string    `json:"action_statement"`
 	VEXTimestamp    time.Time `json:"vex_timestamp"`
+	Cluster         string    `json:"cluster,omitempty"`
 }
 
 // VEX status constants (OpenVEX spec).

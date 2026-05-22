@@ -20,7 +20,7 @@ Key shared packages:
 - `internal/osvutil` – Shared OSV helpers (ClassifySeverity, ExtractFixedVersion, ExtractAffectedVersions)
 - `internal/license` – License compliance + externalized policy + exceptions with prefix-matching
 - `internal/osv` – OSV API client with rate limiting and exponential backoff
-- `internal/s3` – S3-compatible bucket client (AWS S3, MinIO, GCS) for streaming SBOM ingestion from multiple buckets
+- `internal/s3` – S3-compatible bucket client (AWS S3, MinIO, GCS) for streaming SBOM ingestion from multiple buckets. Supports per-bucket `cluster` assignment for multi-cluster differentiation from a single instance.
 - `internal/github` – GitHub API client for resolving unknown licenses from PURL (rate-limited, cached). Includes 50+ well-known Go module→GitHub repo mappings (`golang.org/x/*`, `gopkg.in/*`, `go.uber.org/*`, `k8s.io/*`, `oras.land/*`, `dario.cat/*`, etc.), fallback to the dedicated `/repos/{owner}/{repo}/license` endpoint, and static license overrides for repos where GitHub misdetects the license.
 - `internal/spdx` – SPDX JSON streaming parser. Supports both plain SPDX documents and **in-toto attestation envelopes** where the SPDX content is wrapped inside the `predicate` field (common with Syft/BuildKit-generated container SBOMs).
 - `internal/vex` – OpenVEX parser with URL normalization
@@ -116,7 +116,7 @@ Frontend Test:   cd ui && npx ng test            # uses Vitest
 - When designing schemas, ensure the ORDER BY clause starts with low-cardinality columns (e.g., timestamp, category) to minimize data scanning and optimize performance.
 - Extract frequently queried JSON keys into top-level columns rather than relying entirely on generic Map or String types.
 - Avoid single-row inserts; always aggregate and batch inserts in Go.
-- Current tables: `sboms`, `sbom_packages`, `vulnerabilities`, `license_compliance`, `ingestion_queue`, `dashboard_stats_mv`, `vex_statements`, `cve_refresh_log`, `github_license_cache`, `github_repo_metadata` (11 migrations in `db/migrations/`).
+- Current tables: `sboms`, `sbom_packages`, `vulnerabilities`, `license_compliance`, `ingestion_queue`, `dashboard_stats_mv`, `vex_statements`, `cve_refresh_log`, `github_license_cache`, `github_repo_metadata` (12 migrations in `db/migrations/`). All core tables include a `cluster LowCardinality(String) DEFAULT ''` column for multi-cluster support.
 
 ## Angular (Frontend)
 - Use strict TypeScript mode and standalone components.
