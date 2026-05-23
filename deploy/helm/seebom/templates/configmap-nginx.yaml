@@ -6,7 +6,21 @@ metadata:
     app.kubernetes.io/name: seebom
     app.kubernetes.io/instance: {{ .Release.Name }}
 data:
-  seebom.conf: |
+  # Stored under the .template suffix so the nginx image's built-in
+  # /docker-entrypoint.d/20-envsubst-on-templates.sh renders ${VAR} placeholders
+  # at container startup. The companion init script
+  # /docker-entrypoint.d/15-seebom-auth.envsh (baked into the image) populates
+  # SEEBOM_AUTH_HEADER_VALUE from the SERVICE_TOKEN env var.
+  seebom.conf.template: |
+    # If the client already supplied an Authorization header, pass it through.
+    # Otherwise inject the SERVICE_TOKEN configured for the API Gateway (only
+    # used when apiGateway.auth.enabled=true). When SERVICE_TOKEN is empty,
+    # SEEBOM_AUTH_HEADER_VALUE is empty and nginx omits the header entirely.
+    map $http_authorization $seebom_effective_auth {
+        default $http_authorization;
+        ""      "${SEEBOM_AUTH_HEADER_VALUE}";
+    }
+
     server {
         listen 80;
         server_name _;
@@ -24,6 +38,8 @@ data:
 
         # Proxy API requests to the API Gateway Kubernetes service.
         # Using a variable forces nginx to re-resolve DNS at runtime instead of only at startup.
+        # When apiGateway.auth.enabled=true, the UI is authenticated via the
+        # SERVICE_TOKEN injected here — the token never reaches the browser.
         location /api/ {
             set $backend "http://{{ .Release.Name }}-api-gateway.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.apiGateway.service.port }}";
             proxy_pass $backend;
@@ -31,6 +47,7 @@ data:
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header Authorization $seebom_effective_auth;
         }
 
         # Runtime config files: no cache so edits take effect on reload.

@@ -14,8 +14,19 @@ FROM nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef
 # Remove default nginx config.
 RUN rm /etc/nginx/conf.d/default.conf
 
-# Add our custom nginx config.
-COPY nginx.conf /etc/nginx/conf.d/seebom.conf
+# Default values for envsubst — overridable at runtime via container env.
+# Empty SERVICE_TOKEN means the UI's nginx will NOT inject an Authorization
+# header on proxied API calls (compatible with AUTH_ENABLED=false on the API).
+ENV SERVICE_TOKEN=""
+
+# Install the nginx config as a template. The nginx official image runs
+# /docker-entrypoint.d/20-envsubst-on-templates.sh at startup, which renders
+# /etc/nginx/templates/*.template into /etc/nginx/conf.d/*.conf using envsubst.
+COPY nginx.conf.template /etc/nginx/templates/seebom.conf.template
+
+# Install the auth-header init script (sourced before envsubst runs).
+COPY docker-entrypoint.d/15-seebom-auth.envsh /docker-entrypoint.d/15-seebom-auth.envsh
+RUN chmod +x /docker-entrypoint.d/15-seebom-auth.envsh
 
 # Copy built Angular assets.
 COPY --from=builder /app/dist/ui/browser /usr/share/nginx/html

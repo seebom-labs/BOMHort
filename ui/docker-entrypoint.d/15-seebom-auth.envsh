@@ -1,0 +1,18 @@
+#!/bin/sh
+# Compute the proxy Authorization header value injected by nginx when the
+# browser does not supply its own. Sourced as .envsh by the official nginx
+# entrypoint before envsubst runs against the template files.
+#
+# Behavior:
+#   SERVICE_TOKEN unset/empty -> SEEBOM_AUTH_HEADER_VALUE=""
+#     (nginx will omit the Authorization header when the client also sends none)
+#   SERVICE_TOKEN=<secret>    -> SEEBOM_AUTH_HEADER_VALUE="Bearer <secret>"
+#     (nginx injects this as Authorization on every /api/ proxy call that has
+#      no client-supplied Authorization header)
+
+if [ -n "${SERVICE_TOKEN:-}" ]; then
+    export SEEBOM_AUTH_HEADER_VALUE="Bearer ${SERVICE_TOKEN}"
+else
+    export SEEBOM_AUTH_HEADER_VALUE=""
+fi
+

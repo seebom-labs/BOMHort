@@ -252,14 +252,16 @@ API authentication is **fully optional and disabled by default**. When you expos
 
 ### Two authentication modes (combinable)
 
-**Mode 1: Service Token** — a single shared secret, ideal for upstream proxy/gateway integrations (Kong, oauth2-proxy, custom auth):
+**Mode 1: Service Token** — a single shared secret, ideal for upstream proxy/gateway integrations (Kong, oauth2-proxy, custom auth) **and** for letting the bundled UI authenticate against the API Gateway:
 
 ```yaml
 apiGateway:
-  env:
-    AUTH_ENABLED: "true"
-    SERVICE_TOKEN: "your-strong-random-secret-here"
+  auth:
+    enabled: true
+    serviceToken: "your-strong-random-secret-here"
 ```
+
+> **UI ⇄ API Gateway:** When you deploy the bundled Angular UI alongside the API Gateway, the chart automatically injects the same `SERVICE_TOKEN` into the UI's nginx container. Nginx adds the `Authorization: Bearer …` header on every `/api/` proxy call before forwarding to the API Gateway, so the browser never sees the token. No extra configuration is required — flip `auth.enabled` to `true` and both sides are wired up.
 
 Clients send the token via either header:
 
@@ -276,9 +278,9 @@ curl -H "X-Service-Token: your-strong-random-secret-here" \
 
 ```yaml
 apiGateway:
-  env:
-    AUTH_ENABLED: "true"
-    API_KEYS: "ci-cd-pipeline-key,monitoring-key,backup-script-key"
+  auth:
+    enabled: true
+    apiKeys: "ci-cd-pipeline-key,monitoring-key,backup-script-key"
 ```
 
 Clients send the key via:
@@ -292,6 +294,8 @@ curl -H "X-API-Key: ci-cd-pipeline-key" \
 
 ### Using Kubernetes Secrets (recommended for production)
 
+Reference a pre-existing Secret instead of inlining the token in Helm values — same pattern as `s3.credentialsSecret` and `clickhouse.userPasswordSecret`:
+
 ```bash
 kubectl create secret generic seebom-api-auth \
   --from-literal=SERVICE_TOKEN="$(openssl rand -hex 32)" \
@@ -301,11 +305,19 @@ kubectl create secret generic seebom-api-auth \
 
 ```yaml
 apiGateway:
-  env:
-    AUTH_ENABLED: "true"
-  envFrom:
-    - secretRef:
-        name: seebom-api-auth
+  auth:
+    enabled: true
+    existingSecret:
+      enabled: true
+      secretName: "seebom-api-auth"
+      serviceTokenKey: "SERVICE_TOKEN"   # key inside the Secret
+      apiKeysKey: "API_KEYS"
+```
+
+Both the API Gateway and the UI nginx container automatically read `SERVICE_TOKEN` from this Secret. To rotate the token, update the Secret and restart both Deployments:
+
+```bash
+kubectl rollout restart deployment seebom-api-gateway seebom-ui
 ```
 
 ### Public endpoints (always accessible)

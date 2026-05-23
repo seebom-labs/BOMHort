@@ -26,6 +26,25 @@ spec:
             - name: http
               containerPort: 80
               protocol: TCP
+          {{- if .Values.apiGateway.auth.enabled }}
+          # When apiGateway.auth.enabled=true, surface the SERVICE_TOKEN to
+          # nginx so its /docker-entrypoint.d/15-seebom-auth.envsh init script
+          # can derive SEEBOM_AUTH_HEADER_VALUE for envsubst. The token never
+          # leaves the cluster — nginx adds it as the Authorization header
+          # only on upstream /api/ proxy calls, not in responses to browsers.
+          env:
+            - name: SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  {{- if .Values.apiGateway.auth.existingSecret.enabled }}
+                  name: {{ .Values.apiGateway.auth.existingSecret.secretName }}
+                  key: {{ .Values.apiGateway.auth.existingSecret.serviceTokenKey }}
+                  {{- else }}
+                  name: {{ .Release.Name }}-api-auth
+                  key: SERVICE_TOKEN
+                  {{- end }}
+                  optional: true
+          {{- end }}
           livenessProbe:
             httpGet:
               path: /
@@ -41,9 +60,11 @@ spec:
           resources:
             {{- toYaml .Values.ui.resources | nindent 12 }}
           volumeMounts:
+            # Mount as a template so the nginx entrypoint runs envsubst on it
+            # at container startup (renders ${SEEBOM_AUTH_HEADER_VALUE}).
             - name: nginx-config
-              mountPath: /etc/nginx/conf.d/seebom.conf
-              subPath: seebom.conf
+              mountPath: /etc/nginx/templates/seebom.conf.template
+              subPath: seebom.conf.template
               readOnly: true
             {{- if .Values.ui.customTheme.enabled }}
             - name: custom-theme

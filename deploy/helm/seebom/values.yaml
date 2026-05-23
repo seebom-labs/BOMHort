@@ -132,6 +132,27 @@ apiGateway:
     limits:
       cpu: 500m
       memory: 256Mi
+  # API Authentication (opt-in, off by default).
+  # When enabled, the API Gateway requires either a Bearer SERVICE_TOKEN
+  # (X-Service-Token / Authorization header) or an X-API-Key from one of the
+  # configured API_KEYS. The UI Deployment automatically receives the
+  # SERVICE_TOKEN and injects it as the proxy Authorization header when the
+  # browser does not supply its own — so the secret never leaves the cluster.
+  auth:
+    enabled: false
+    # Inline secrets (created via the chart's Secret). Override via --set
+    # for ad-hoc use; prefer existingSecret for production deployments.
+    serviceToken: ""
+    apiKeys: ""    # comma-separated list, e.g. "ci-key,monitoring-key"
+    # Reference a pre-existing Kubernetes Secret instead of generating one.
+    # The Secret must contain the keys named below (SERVICE_TOKEN / API_KEYS
+    # by default). Same pattern as clickhouse.userPasswordSecret /
+    # s3.credentialsSecret / github.tokenSecret.
+    existingSecret:
+      enabled: false
+      secretName: ""
+      serviceTokenKey: "SERVICE_TOKEN"
+      apiKeysKey: "API_KEYS"
 
 # UI (Deployment)
 ui:
