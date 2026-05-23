@@ -147,6 +147,7 @@ Frontend Test:   cd ui && npx ng test            # uses Vitest
 - **Security headers** are set via `securityHeadersMiddleware`: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Content-Security-Policy`, `Referrer-Policy`, `Permissions-Policy`.
 - **CORS** is configurable via `CORS_ALLOWED_ORIGINS` env var (default `*` for dev, restrict in production). Only `GET` and `OPTIONS` methods are allowed.
 - **Rate limiting** via `rateLimitMiddleware`: 100 requests per 10s per IP, with background cleanup to prevent memory leaks.
+- **Authentication** via `authMiddleware` (opt-in, default off). Set `AUTH_ENABLED=true` plus either `SERVICE_TOKEN` (shared secret for upstream proxies, accepted as `Authorization: Bearer` or `X-Service-Token`) and/or `API_KEYS` (comma-separated list, accepted as `X-API-Key`). Uses `crypto/subtle.ConstantTimeCompare` to prevent timing attacks. Public paths (`/healthz`, `/livez`, `/readyz`) and `OPTIONS` preflight always bypass auth.
 - **Input validation**: All UUID path parameters (`sbomID`) are validated against `uuidPattern` regex. Vulnerability IDs (`vulnID`) are validated against `vulnIDPattern`. Query parameters like `vex_filter` are whitelisted to known values.
 - **Pagination bounds**: `clampPageSize()` enforces max 500 items per page to prevent abusive queries.
 - **Log injection prevention**: `sanitizeLogParam()` strips newlines/control characters and truncates to 200 chars before logging user-supplied values.

@@ -79,6 +79,9 @@ cp .env.example .env
 | `SKIP_GITHUB_RESOLVE` | `false` | Skip GitHub license resolution for packages with `NOASSERTION`/empty licenses. |
 | `GITHUB_TOKEN` | *(empty)* | GitHub personal access token for license resolution. Increases rate limit from 60 to 5000 req/h. No scopes needed. |
 | `CLUSTER_NAME` | *(empty)* | Cluster identifier for multi-cluster deployments. All ingested data is tagged with this value. Empty = single-instance mode. |
+| `AUTH_ENABLED` | `false` | Enable API authentication middleware. When `false` (default), all API endpoints are unauthenticated. |
+| `SERVICE_TOKEN` | *(empty)* | Shared secret for upstream proxy/gateway integrations. Accepted via `Authorization: Bearer <token>` or `X-Service-Token: <token>`. |
+| `API_KEYS` | *(empty)* | Comma-separated list of API keys for direct API consumers (CI/CD, scripts). Accepted via `X-API-Key: <key>`. |
 | `CUSTOM_THEME` | (example file) | Path to a custom CSS theme file for the UI. See "Custom Theme" section. |
 | `UI_CONFIG` | `./ui/public/ui-config.json` | Path to a JSON file with UI text overrides (brand name, dashboard texts, disclaimer). See "Site Configuration" section. |
 | `S3_BUCKETS` | *(empty)* | JSON array of S3 bucket configs (supports per-bucket `cluster` override). See "S3 Ingestion" section. |

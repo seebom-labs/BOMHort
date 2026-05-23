@@ -21,8 +21,49 @@ In headless mode (Helm: `ui.enabled: false`), only the API Gateway is deployed. 
 
 ## Authentication
 
-{{% alert title="Coming in v1.0" color="warning" %}}
-Authentication (service token + API key) is planned for Phase 1. Currently all endpoints are unauthenticated. Restrict access via network policy or ingress rules until then.
+Authentication is **fully optional** and disabled by default. Enable it via the `AUTH_ENABLED=true` environment variable on the API Gateway. See the [Deployment Guide](/docs/deployment/#6-api-authentication-optional) for full setup instructions.
+
+### Two modes (combinable)
+
+**Service Token** — single shared secret, typically used by upstream proxies (oauth2-proxy, Kong, custom auth gateways):
+
+```bash
+# Either header works:
+curl -H "Authorization: Bearer <service-token>" \
+  https://api.seebom.example.com/api/v1/stats/dashboard
+
+curl -H "X-Service-Token: <service-token>" \
+  https://api.seebom.example.com/api/v1/stats/dashboard
+```
+
+**API Keys** — multiple pre-shared keys for direct API consumers (CI/CD pipelines, scripts):
+
+```bash
+curl -H "X-API-Key: <api-key>" \
+  https://api.seebom.example.com/api/v1/stats/dashboard
+```
+
+### Public endpoints (always accessible)
+
+Even when authentication is enabled, the following endpoints bypass auth so Kubernetes probes and CORS preflight work:
+
+| Endpoint | Reason |
+|----------|--------|
+| `/healthz` | K8s liveness/readiness probe |
+| `/livez` | Reserved for liveness probe (#137) |
+| `/readyz` | Reserved for readiness probe (#137) |
+| `OPTIONS *` | CORS preflight |
+
+### Responses
+
+| Status | Condition |
+|--------|-----------|
+| `200 OK` | Auth disabled, or valid token/key presented |
+| `401 Unauthorized` (with `WWW-Authenticate: Bearer realm="seebom"`) | Auth enabled, no credential sent |
+| `401 Unauthorized` | Auth enabled, invalid token/key |
+
+{{% alert title="Security" color="info" %}}
+All credential comparisons are constant-time (`crypto/subtle.ConstantTimeCompare`) to prevent timing attacks. Failed auth attempts are logged with sanitized client IPs.
 {{% /alert %}}
 
 ## Common Patterns

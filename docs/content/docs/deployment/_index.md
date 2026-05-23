@@ -234,7 +234,110 @@ ui:
 
 ---
 
-## 6. GitHub Token (License Resolution)
+## 6. API Authentication (Optional)
+
+API authentication is **fully optional and disabled by default**. When you expose the API Gateway externally (e.g. via Ingress), enable it to prevent unauthenticated access.
+
+### When you need it
+
+- ✅ API Gateway exposed via Ingress / public endpoint
+- ✅ CI/CD pipelines pushing data (when upload endpoint lands in #135)
+- ✅ Multi-tenant or shared deployments
+
+### When you don't need it
+
+- ❌ Internal cluster-only deployments (network policy is enough)
+- ❌ Local development (`make dev`)
+- ❌ Air-gapped environments behind a corporate VPN
+
+### Two authentication modes (combinable)
+
+**Mode 1: Service Token** — a single shared secret, ideal for upstream proxy/gateway integrations (Kong, oauth2-proxy, custom auth):
+
+```yaml
+apiGateway:
+  env:
+    AUTH_ENABLED: "true"
+    SERVICE_TOKEN: "your-strong-random-secret-here"
+```
+
+Clients send the token via either header:
+
+```bash
+curl -H "Authorization: Bearer your-strong-random-secret-here" \
+  https://seebom.example.com/api/v1/stats/dashboard
+
+# Or:
+curl -H "X-Service-Token: your-strong-random-secret-here" \
+  https://seebom.example.com/api/v1/stats/dashboard
+```
+
+**Mode 2: API Keys** — multiple pre-shared keys for direct consumers (CI/CD pipelines, scripts):
+
+```yaml
+apiGateway:
+  env:
+    AUTH_ENABLED: "true"
+    API_KEYS: "ci-cd-pipeline-key,monitoring-key,backup-script-key"
+```
+
+Clients send the key via:
+
+```bash
+curl -H "X-API-Key: ci-cd-pipeline-key" \
+  https://seebom.example.com/api/v1/stats/dashboard
+```
+
+**Both modes can be enabled at the same time** — useful when a proxy uses the service token while direct CI/CD jobs use API keys.
+
+### Using Kubernetes Secrets (recommended for production)
+
+```bash
+kubectl create secret generic seebom-api-auth \
+  --from-literal=SERVICE_TOKEN="$(openssl rand -hex 32)" \
+  --from-literal=API_KEYS="key1,key2,key3" \
+  -n seebom
+```
+
+```yaml
+apiGateway:
+  env:
+    AUTH_ENABLED: "true"
+  envFrom:
+    - secretRef:
+        name: seebom-api-auth
+```
+
+### Public endpoints (always accessible)
+
+Even when authentication is enabled, the following endpoints are always reachable without credentials:
+
+| Endpoint | Purpose |
+|----------|---------|
+| `/healthz` | Kubernetes liveness/readiness probe |
+| `/livez` | Reserved for #137 (liveness probe) |
+| `/readyz` | Reserved for #137 (readiness probe) |
+| `OPTIONS *` | CORS preflight |
+
+### Security notes
+
+- Use **at least 32 random bytes** for the service token: `openssl rand -hex 32`
+- Rotate tokens by restarting the API Gateway pod after updating the secret
+- All comparisons are **constant-time** to prevent timing attacks
+- Failed auth attempts are logged with sanitized client IPs
+- The frontend UI bundle is publicly served by Nginx — auth applies to the API Gateway only
+
+### Failure scenarios
+
+| Scenario | Response |
+|----------|----------|
+| No credentials sent (auth enabled) | `401 Unauthorized` with `WWW-Authenticate: Bearer realm="seebom"` |
+| Invalid token/key | `401 Unauthorized` |
+| `AUTH_ENABLED=true` but no `SERVICE_TOKEN` and no `API_KEYS` configured | All requests rejected (misconfiguration warning logged at startup) |
+
+---
+
+## 7. GitHub Token (License Resolution)
 
 SeeBOM resolves unknown package licenses (`NOASSERTION`) by querying the GitHub API. Without a token, you are limited to **60 requests per hour**. With a token, the limit increases to **5,000 req/h**.
 
@@ -258,7 +361,7 @@ See [FAQ: Should I use a GitHub token?](/docs/faq/#should-i-use-a-github-token) 
 
 ---
 
-## 7. Full Deployment Example
+## 8. Full Deployment Example
 
 ### S3-based (recommended)
 
@@ -274,7 +377,7 @@ helm install seebom ./deploy/helm/seebom \
 
 ---
 
-## 8. Verifying the Deployment
+## 9. Verifying the Deployment
 
 ```bash
 kubectl get pods -l app.kubernetes.io/name=seebom
@@ -297,4 +400,5 @@ kubectl exec -it $(kubectl get pod -l app.kubernetes.io/component=api-gateway -o
 | **Custom Theme** | ConfigMap | `kubectl create configmap` → restart UI |
 | **Site Config** | ConfigMap | Helm values `ui.siteConfig.content.*` → restart UI |
 | **S3 credentials** | Secret | `--set s3.accessKey=...` or `s3.credentialsSecret` (existing K8s Secret) |
+| **API Authentication** | Env vars (Secret recommended) | `AUTH_ENABLED=true` + `SERVICE_TOKEN` and/or `API_KEYS`; off by default |
 

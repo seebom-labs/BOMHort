@@ -54,6 +54,11 @@ type Config struct {
 
 	// Multi-cluster
 	ClusterName string // Cluster identifier for this instance (default "" = unassigned)
+
+	// API Authentication (opt-in, all empty by default)
+	AuthEnabled  bool     // Enable auth middleware (default false)
+	ServiceToken string   // Shared secret for upstream proxy/gateway integrations
+	APIKeys      []string // Pre-shared API keys for direct API consumers (CI/CD, scripts)
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -76,6 +81,9 @@ func Load() (*Config, error) {
 		LicensePolicyFile:  getEnv("LICENSE_POLICY_FILE", "/data/config/license-policy.json"),
 		GitHubToken:        getEnv("GITHUB_TOKEN", ""),
 		ClusterName:        getEnv("CLUSTER_NAME", ""),
+		AuthEnabled:        getEnvBool("AUTH_ENABLED", false),
+		ServiceToken:       getEnv("SERVICE_TOKEN", ""),
+		APIKeys:            parseAPIKeys(getEnv("API_KEYS", "")),
 	}
 
 	if cfg.WorkerID == "" {
@@ -191,6 +199,26 @@ func getEnvBool(key string, fallback bool) bool {
 }
 
 func boolPtr(v bool) *bool { return &v }
+
+// parseAPIKeys splits a comma-separated list of API keys, trimming whitespace
+// and filtering out empty entries.
+func parseAPIKeys(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	keys := make([]string, 0, len(parts))
+	for _, p := range parts {
+		k := strings.TrimSpace(p)
+		if k != "" {
+			keys = append(keys, k)
+		}
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	return keys
+}
 
 // S3BucketNames returns a comma-separated list of configured bucket names (for logging).
 func (c *Config) S3BucketNames() string {

@@ -279,3 +279,69 @@ func TestLoad_S3BucketClusterOverride(t *testing.T) {
 		t.Errorf("ClusterName = %q, want \"global-fallback\"", cfg.ClusterName)
 	}
 }
+func TestLoad_Auth_DefaultsDisabled(t *testing.T) {
+	for _, k := range []string{"AUTH_ENABLED", "SERVICE_TOKEN", "API_KEYS"} {
+		os.Unsetenv(k)
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.AuthEnabled {
+		t.Error("expected AuthEnabled=false by default")
+	}
+	if cfg.ServiceToken != "" {
+		t.Errorf("expected empty ServiceToken by default, got %q", cfg.ServiceToken)
+	}
+	if cfg.APIKeys != nil {
+		t.Errorf("expected nil APIKeys by default, got %v", cfg.APIKeys)
+	}
+}
+func TestLoad_Auth_ServiceTokenMode(t *testing.T) {
+	t.Setenv("AUTH_ENABLED", "true")
+	t.Setenv("SERVICE_TOKEN", "my-secret-token")
+	os.Unsetenv("API_KEYS")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if !cfg.AuthEnabled {
+		t.Error("expected AuthEnabled=true")
+	}
+	if cfg.ServiceToken != "my-secret-token" {
+		t.Errorf("ServiceToken = %q, want \"my-secret-token\"", cfg.ServiceToken)
+	}
+}
+func TestLoad_Auth_APIKeysMode(t *testing.T) {
+	t.Setenv("AUTH_ENABLED", "true")
+	t.Setenv("API_KEYS", "key1, key2 ,  key3,  ,key4")
+	os.Unsetenv("SERVICE_TOKEN")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if !cfg.AuthEnabled {
+		t.Error("expected AuthEnabled=true")
+	}
+	expected := []string{"key1", "key2", "key3", "key4"}
+	if len(cfg.APIKeys) != len(expected) {
+		t.Fatalf("expected %d keys, got %d: %v", len(expected), len(cfg.APIKeys), cfg.APIKeys)
+	}
+	for i, want := range expected {
+		if cfg.APIKeys[i] != want {
+			t.Errorf("APIKeys[%d] = %q, want %q", i, cfg.APIKeys[i], want)
+		}
+	}
+}
+func TestLoad_Auth_EmptyAPIKeysString(t *testing.T) {
+	t.Setenv("AUTH_ENABLED", "true")
+	t.Setenv("API_KEYS", "   ,   ,   ")
+	os.Unsetenv("SERVICE_TOKEN")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.APIKeys != nil {
+		t.Errorf("expected nil APIKeys for whitespace-only input, got %v", cfg.APIKeys)
+	}
+}

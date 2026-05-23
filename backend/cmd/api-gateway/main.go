@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -311,13 +312,33 @@ func main() {
 	})
 
 	// CORS + security middleware for Angular dev server.
+	// Order (outermost first): security headers → rate limit → CORS → auth → mux.
+	// Auth sits closest to the mux so 401s still get CORS + security headers.
 	handler := securityHeadersMiddleware(
 		rateLimitMiddleware(
-			corsMiddleware(cfg.CORSAllowedOrigins, mux),
+			corsMiddleware(cfg.CORSAllowedOrigins,
+				authMiddleware(cfg.AuthEnabled, cfg.ServiceToken, cfg.APIKeys, mux),
+			),
 		),
 	)
 
 	addr := ":" + strconv.Itoa(cfg.APIPort)
+	if cfg.AuthEnabled {
+		modes := []string{}
+		if cfg.ServiceToken != "" {
+			modes = append(modes, "service-token")
+		}
+		if len(cfg.APIKeys) > 0 {
+			modes = append(modes, "api-keys("+strconv.Itoa(len(cfg.APIKeys))+")")
+		}
+		if len(modes) == 0 {
+			log.Printf("WARNING: AUTH_ENABLED=true but neither SERVICE_TOKEN nor API_KEYS is configured — ALL authenticated requests will be rejected")
+		} else {
+			log.Printf("API authentication enabled (modes: %s)", strings.Join(modes, ", "))
+		}
+	} else {
+		log.Println("API authentication disabled (set AUTH_ENABLED=true to enforce)")
+	}
 	log.Printf("API Gateway listening on %s", addr)
 	if err := http.ListenAndServe(addr, handler); err != nil {
 		log.Fatalf("Server failed: %v", err)
@@ -432,7 +453,7 @@ func corsMiddleware(allowedOrigins string, next http.Handler) http.Handler {
 		}
 
 		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Service-Token, X-API-Key")
 		w.Header().Set("Access-Control-Max-Age", "86400")
 
 		if r.Method == http.MethodOptions {
@@ -505,4 +526,90 @@ func rateLimitMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// authPublicPaths lists request paths that bypass authentication even when
+// AUTH_ENABLED=true. K8s probes and CORS preflight must always succeed.
+var authPublicPaths = map[string]struct{}{
+	"/healthz": {},
+	"/livez":   {},
+	"/readyz":  {},
+}
+
+// authMiddleware enforces authentication when enabled. Accepts any of:
+//   - Authorization: Bearer <service-token>
+//   - X-Service-Token: <service-token>
+//   - X-API-Key: <api-key>
+//
+// All comparisons use constant-time equality to prevent timing attacks.
+// When AUTH_ENABLED=false, this middleware is a no-op pass-through.
+func authMiddleware(enabled bool, serviceToken string, apiKeys []string, next http.Handler) http.Handler {
+	if !enabled {
+		return next
+	}
+
+	// Pre-compute byte slices for constant-time comparison.
+	serviceTokenBytes := []byte(serviceToken)
+	apiKeyBytes := make([][]byte, len(apiKeys))
+	for i, k := range apiKeys {
+		apiKeyBytes[i] = []byte(k)
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Public paths bypass auth (health probes).
+		if _, ok := authPublicPaths[r.URL.Path]; ok {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// CORS preflight bypasses auth (cors middleware handles OPTIONS).
+		if r.Method == http.MethodOptions {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Extract candidate credential from any supported header.
+		var presented []byte
+		if h := r.Header.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
+			presented = []byte(strings.TrimPrefix(h, "Bearer "))
+		} else if h := r.Header.Get("X-Service-Token"); h != "" {
+			presented = []byte(h)
+		} else if h := r.Header.Get("X-API-Key"); h != "" {
+			presented = []byte(h)
+		}
+
+		if len(presented) == 0 {
+			log.Printf("AUTH: missing credential on %s %s from %s",
+				sanitizeLogParam(r.Method), sanitizeLogParam(r.URL.Path), clientIP(r))
+			w.Header().Set("WWW-Authenticate", `Bearer realm="seebom"`)
+			writeError(w, http.StatusUnauthorized, "Authentication required")
+			return
+		}
+
+		// Service token check (constant-time).
+		if len(serviceTokenBytes) > 0 && subtle.ConstantTimeCompare(presented, serviceTokenBytes) == 1 {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// API key check (constant-time over each configured key).
+		for _, k := range apiKeyBytes {
+			if subtle.ConstantTimeCompare(presented, k) == 1 {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
+
+		log.Printf("AUTH: invalid credential on %s %s from %s",
+			sanitizeLogParam(r.Method), sanitizeLogParam(r.URL.Path), clientIP(r))
+		writeError(w, http.StatusUnauthorized, "Invalid credentials")
+	})
+}
+
+// clientIP extracts the originating IP, preferring X-Forwarded-For.
+func clientIP(r *http.Request) string {
+	if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
+		ip = strings.SplitN(ip, ",", 2)[0]
+		return strings.TrimSpace(ip)
+	}
+	return r.RemoteAddr
 }
