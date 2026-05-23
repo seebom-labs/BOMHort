@@ -162,7 +162,7 @@ ClickHouse: sboms, sbom_packages, vulnerabilities, license_compliance, vex_state
        └── Dep Stats:      ARRAY JOIN + count(DISTINCT sbom_id) cross-project
        ▼
 API Gateway (REST) → 19 Endpoints
-       │ HTTP/JSON + CORS
+       │ HTTP/JSON + CORS + security headers + rate limit + optional auth (Bearer/X-Service-Token, X-API-Key)
        ▼
 Angular UI (13 lazy-loaded routes, virtual scrolling, OnPush, dark mode)
        │ Custom CSS theme mountable without Angular rebuild

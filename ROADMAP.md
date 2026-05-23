@@ -63,7 +63,7 @@ After Phase 2 completes, SeeBOM reaches **v1.0.0** — the first stable release:
 
 **v1.0 Criteria:**
 - [x] ~~Version Skew Detection~~ (#37)
-- [ ] API Authentication (#134)
+- [x] ~~API Authentication (Service Token + API Key)~~ (#134)
 - [ ] Cluster-aware schema (#131)
 - [ ] All cluster/namespace endpoints finalized (#132, #133, #138)
 - [ ] Upload endpoint stable (#135)

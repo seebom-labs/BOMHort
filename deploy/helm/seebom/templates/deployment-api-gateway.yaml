@@ -44,7 +44,7 @@ spec:
                 name: {{ .Release.Name }}-config
             - secretRef:
                 name: {{ .Release.Name }}-secret
-          {{- if or .Values.clickhouse.userPasswordSecret.enabled .Values.s3.credentialsSecret.enabled }}
+          {{- if or .Values.clickhouse.userPasswordSecret.enabled .Values.s3.credentialsSecret.enabled .Values.apiGateway.auth.enabled }}
           env:
             {{- if .Values.clickhouse.userPasswordSecret.enabled }}
             - name: CLICKHOUSE_PASSWORD
@@ -64,6 +64,32 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.s3.credentialsSecret.secretName }}
                   key: {{ .Values.s3.credentialsSecret.secretKeyKey }}
+            {{- end }}
+            {{- if .Values.apiGateway.auth.enabled }}
+            - name: AUTH_ENABLED
+              value: "true"
+            - name: SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  {{- if .Values.apiGateway.auth.existingSecret.enabled }}
+                  name: {{ .Values.apiGateway.auth.existingSecret.secretName }}
+                  key: {{ .Values.apiGateway.auth.existingSecret.serviceTokenKey }}
+                  {{- else }}
+                  name: {{ .Release.Name }}-api-auth
+                  key: SERVICE_TOKEN
+                  {{- end }}
+                  optional: true
+            - name: API_KEYS
+              valueFrom:
+                secretKeyRef:
+                  {{- if .Values.apiGateway.auth.existingSecret.enabled }}
+                  name: {{ .Values.apiGateway.auth.existingSecret.secretName }}
+                  key: {{ .Values.apiGateway.auth.existingSecret.apiKeysKey }}
+                  {{- else }}
+                  name: {{ .Release.Name }}-api-auth
+                  key: API_KEYS
+                  {{- end }}
+                  optional: true
             {{- end }}
           {{- end }}
           livenessProbe:

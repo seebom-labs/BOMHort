@@ -40,6 +40,10 @@ services:
       API_PORT: "8080"
       EXCEPTIONS_FILE: /data/config/license-exceptions.json
       LICENSE_POLICY_FILE: /data/config/license-policy.json
+      # API Authentication (off by default; set AUTH_ENABLED=true in .env to enable)
+      AUTH_ENABLED: ${AUTH_ENABLED:-false}
+      SERVICE_TOKEN: ${SERVICE_TOKEN:-}
+      API_KEYS: ${API_KEYS:-}
     volumes:
       - ./sboms/license-exceptions.json:/data/config/license-exceptions.json:ro
       - ./sboms/license-policy.json:/data/config/license-policy.json:ro
@@ -121,6 +125,10 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8090:80"
+    environment:
+      # When AUTH_ENABLED=true on the api-gateway, nginx injects this token
+      # as the Authorization header on proxied /api/ calls. Empty = no header.
+      SERVICE_TOKEN: ${SERVICE_TOKEN:-}
     volumes:
       - ${CUSTOM_THEME:-./ui/src/assets/custom-theme.example.css}:/usr/share/nginx/html/custom-theme.css:ro
       - ${UI_CONFIG:-./ui/public/ui-config.json}:/usr/share/nginx/html/ui-config.json:ro
