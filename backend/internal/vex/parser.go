@@ -68,7 +68,19 @@ func ParseFile(path, sourceFile string) (*ParseResult, error) {
 }
 
 // Parse reads an OpenVEX JSON document from a reader and extracts models.
-func Parse(r io.Reader, sourceFile string) (*ParseResult, error) {
+//
+// Parse is hardened against malformed input: the underlying goccy/go-json
+// decoder can panic on adversarial byte sequences. We recover from any
+// panic and surface it as a regular error so callers — including the
+// FuzzParse harness — observe deterministic, non-fatal failures.
+func Parse(r io.Reader, sourceFile string) (out *ParseResult, err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			out = nil
+			err = fmt.Errorf("panic while parsing OpenVEX JSON: %v", rec)
+		}
+	}()
+
 	var doc OpenVEXDocument
 
 	decoder := json.NewDecoder(r)

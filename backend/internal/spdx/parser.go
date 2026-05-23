@@ -121,7 +121,20 @@ type inTotoStatement struct {
 // Parse reads an SPDX JSON document from a reader and extracts models.
 // Supports both plain SPDX JSON and in-toto attestation envelopes where the
 // SPDX document is wrapped inside the "predicate" field.
-func Parse(r io.Reader, sourceFile, sha256Hash string) (*ParseResult, error) {
+//
+// Parse is hardened against malformed input: the underlying goccy/go-json
+// decoder can panic on adversarial byte sequences (out-of-range slice access
+// inside its struct decoder). We recover from any panic and surface it as a
+// regular error so callers — including the FuzzParse harness — observe
+// deterministic, non-fatal failures.
+func Parse(r io.Reader, sourceFile, sha256Hash string) (result *ParseResult, err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			result = nil
+			err = fmt.Errorf("panic while parsing SPDX JSON: %v", rec)
+		}
+	}()
+
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read SPDX data: %w", err)
