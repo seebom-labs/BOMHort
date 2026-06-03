@@ -1,7 +1,7 @@
 ---
 title: "SeeBOM"
 linkTitle: "SeeBOM"
-description: "SeeBOM is a Kubernetes-native SBOM visualization and governance platform. Ingest SPDX SBOMs from S3, detect CVEs via OSV, enforce license compliance, and apply VEX statements."
+description: "SeeBOM is a Kubernetes-native SBOM visualization and governance platform. Ingest SPDX and CycloneDX SBOMs from S3, detect CVEs via OSV, enforce license compliance, and apply VEX statements."
 ---
 
 {{< blocks/cover title="" image_anchor="top" height="med" color="dark" >}}
@@ -19,7 +19,7 @@ description: "SeeBOM is a Kubernetes-native SBOM visualization and governance pl
 
 {{% blocks/lead color="primary" %}}
 
-Ingest thousands of SPDX SBOMs, scan for vulnerabilities via OSV, enforce license compliance,
+Ingest thousands of SPDX and CycloneDX SBOMs, scan for vulnerabilities via OSV, enforce license compliance,
 and apply VEX statements — all visualized in a fast Angular dashboard backed by ClickHouse analytics.
 
 {{% /blocks/lead %}}
@@ -60,10 +60,10 @@ Stream SBOMs from any S3-compatible bucket — AWS, MinIO, GCS, Oracle Cloud.
 No PVCs, no git-sync, scales to any repo size.
 {{% /blocks/feature %}}
 
-{{% blocks/feature icon="fa-file-code" title="API &amp; UI" url="/docs/architecture/#api-endpoints" %}}
+{{% blocks/feature icon="fa-file-code" title="Multi-Format Support" url="/docs/architecture/#sbom-parsers" %}}
 <img class="fb-icon-lg me-1" src="/images/flowbite/code-branch.svg" alt="">
-REST endpoints power a modern Angular interface with search, virtual scrolling,
-and configurable theming.
+SPDX 2.3, CycloneDX 1.0–1.7, and in-toto attestation envelopes — all auto-detected.
+Optional protobom backend for maximum format coverage.
 {{% /blocks/feature %}}
 
 {{% blocks/feature icon="fa-server" title="Cloud Native" url="/docs/deployment/" %}}

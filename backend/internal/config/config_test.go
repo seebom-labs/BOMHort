@@ -345,3 +345,76 @@ func TestLoad_Auth_EmptyAPIKeysString(t *testing.T) {
 		t.Errorf("expected nil APIKeys for whitespace-only input, got %v", cfg.APIKeys)
 	}
 }
+
+func TestLoad_IgnorePrefix_Default(t *testing.T) {
+	os.Unsetenv("SBOM_IGNORE_PREFIX")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.IgnorePrefix != "_" {
+		t.Errorf("expected default IgnorePrefix=\"_\", got %q", cfg.IgnorePrefix)
+	}
+}
+
+func TestLoad_IgnorePrefix_Custom(t *testing.T) {
+	t.Setenv("SBOM_IGNORE_PREFIX", "demo-")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.IgnorePrefix != "demo-" {
+		t.Errorf("expected IgnorePrefix=\"demo-\", got %q", cfg.IgnorePrefix)
+	}
+}
+
+func TestLoad_S3SharedSettingsInheritance(t *testing.T) {
+	t.Setenv("S3_BUCKETS", `[{"name":"bucket-a"},{"name":"bucket-b","endpoint":"custom.endpoint.io","region":"ap-southeast-1","usePathStyle":true,"useSSL":false}]`)
+	t.Setenv("S3_ENDPOINT", "shared.endpoint.io")
+	t.Setenv("S3_REGION", "eu-central-1")
+	t.Setenv("S3_USE_PATH_STYLE", "true")
+	t.Setenv("S3_USE_SSL", "true")
+	os.Unsetenv("S3_BUCKET")
+	os.Unsetenv("S3_ACCESS_KEY")
+	os.Unsetenv("S3_SECRET_KEY")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if len(cfg.S3Buckets) != 2 {
+		t.Fatalf("expected 2 buckets, got %d", len(cfg.S3Buckets))
+	}
+
+	// bucket-a should inherit all shared settings.
+	a := cfg.S3Buckets[0]
+	if a.Endpoint != "shared.endpoint.io" {
+		t.Errorf("bucket-a.Endpoint = %q, want \"shared.endpoint.io\"", a.Endpoint)
+	}
+	if a.Region != "eu-central-1" {
+		t.Errorf("bucket-a.Region = %q, want \"eu-central-1\"", a.Region)
+	}
+	if !a.UsePathStyle {
+		t.Error("bucket-a.UsePathStyle should be true (inherited)")
+	}
+	if a.UseSSL == nil || !*a.UseSSL {
+		t.Error("bucket-a.UseSSL should be true (inherited)")
+	}
+
+	// bucket-b should keep its own settings.
+	b := cfg.S3Buckets[1]
+	if b.Endpoint != "custom.endpoint.io" {
+		t.Errorf("bucket-b.Endpoint = %q, want \"custom.endpoint.io\"", b.Endpoint)
+	}
+	if b.Region != "ap-southeast-1" {
+		t.Errorf("bucket-b.Region = %q, want \"ap-southeast-1\"", b.Region)
+	}
+	if !b.UsePathStyle {
+		t.Error("bucket-b.UsePathStyle should be true (own setting)")
+	}
+	if b.UseSSL == nil || *b.UseSSL {
+		t.Error("bucket-b.UseSSL should be false (own setting)")
+	}
+}
+

@@ -48,6 +48,7 @@ type Config struct {
 	SkipOSV           bool   // Skip OSV vulnerability lookups (fast ingestion, licenses only)
 	SkipGitHubResolve bool   // Skip GitHub license resolution for unknown licenses
 	SBOMLimit         int    // Max number of SBOMs to enqueue (0 = unlimited)
+	IgnorePrefix      string // Files with this prefix are skipped during local scan (default "_")
 	ExceptionsFile    string // Path to license-exceptions.json
 	LicensePolicyFile string // Path to license-policy.json
 	GitHubToken       string // GitHub personal access token (optional, increases rate limit)
@@ -77,6 +78,7 @@ func Load() (*Config, error) {
 		SkipOSV:            getEnvBool("SKIP_OSV", false),
 		SkipGitHubResolve:  getEnvBool("SKIP_GITHUB_RESOLVE", false),
 		SBOMLimit:          getEnvInt("SBOM_LIMIT", 0),
+		IgnorePrefix:       getEnv("SBOM_IGNORE_PREFIX", "_"),
 		ExceptionsFile:     getEnv("EXCEPTIONS_FILE", "/data/config/license-exceptions.json"),
 		LicensePolicyFile:  getEnv("LICENSE_POLICY_FILE", "/data/config/license-policy.json"),
 		GitHubToken:        getEnv("GITHUB_TOKEN", ""),
@@ -118,9 +120,13 @@ func Load() (*Config, error) {
 		})
 	}
 
-	// Apply shared credentials to buckets that don't have their own.
+	// Apply shared settings to buckets that don't have their own.
 	sharedAccessKey := getEnv("S3_ACCESS_KEY", "")
 	sharedSecretKey := getEnv("S3_SECRET_KEY", "")
+	sharedEndpoint := getEnv("S3_ENDPOINT", "")
+	sharedRegion := getEnv("S3_REGION", "us-east-1")
+	sharedPathStyle := getEnvBool("S3_USE_PATH_STYLE", false)
+	sharedUseSSL := getEnvBool("S3_USE_SSL", true)
 	for i := range cfg.S3Buckets {
 		if cfg.S3Buckets[i].AccessKey == "" && sharedAccessKey != "" {
 			cfg.S3Buckets[i].AccessKey = sharedAccessKey
@@ -128,12 +134,18 @@ func Load() (*Config, error) {
 		if cfg.S3Buckets[i].SecretKey == "" && sharedSecretKey != "" {
 			cfg.S3Buckets[i].SecretKey = sharedSecretKey
 		}
-		// Default region.
-		if cfg.S3Buckets[i].Region == "" {
-			cfg.S3Buckets[i].Region = "us-east-1"
+		if cfg.S3Buckets[i].Endpoint == "" && sharedEndpoint != "" {
+			cfg.S3Buckets[i].Endpoint = sharedEndpoint
 		}
-		// Endpoint is resolved at client creation time from region (not here),
-		// so we leave it empty to signal "use regional default".
+		if cfg.S3Buckets[i].Region == "" {
+			cfg.S3Buckets[i].Region = sharedRegion
+		}
+		if !cfg.S3Buckets[i].UsePathStyle && sharedPathStyle {
+			cfg.S3Buckets[i].UsePathStyle = true
+		}
+		if cfg.S3Buckets[i].UseSSL == nil {
+			cfg.S3Buckets[i].UseSSL = boolPtr(sharedUseSSL)
+		}
 	}
 
 	// Deduplicate bucket names.

@@ -21,7 +21,7 @@ Kubernetes-native SBOM platform as a monorepo. Go backend with four binaries (Cr
 |--------|------|---------|
 | `ingestion-watcher` | K8s CronJob | Scans SBOM/VEX directory, hash-dedup, enqueues jobs |
 | `parsing-worker` | Deployment (N replicas) | Processes SBOMs (SPDX→ClickHouse), VEX files, OSV lookups, license resolution, compliance checks |
-| `api-gateway` | Deployment | Stateless REST API (19 endpoints) |
+| `api-gateway` | Deployment | Stateless REST API (24 endpoints) |
 | `cve-refresher` | K8s CronJob (daily) | Checks all known PURLs for newly disclosed CVEs |
 
 ## Data Flow
@@ -64,7 +64,7 @@ ClickHouse: sboms, sbom_packages, vulnerabilities, license_compliance, vex_state
        │         │  Dedup + reverse-lookup + INSERT  │
        │         └──────────────────────────────────┘
        ▼
-API Gateway (REST) → 19 Endpoints → Angular UI
+API Gateway (REST) → 24 Endpoints → Angular UI
 ```
 
 ## ClickHouse Schema
@@ -139,8 +139,11 @@ SeeBOM supports tagging all ingested data with a **cluster identifier** for mult
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/healthz` | Health check |
+| GET | `/livez` | Liveness probe |
+| GET | `/readyz` | Readiness probe (checks ClickHouse) |
 | GET | `/api/v1/stats/dashboard` | Dashboard statistics |
 | GET | `/api/v1/stats/dependencies?limit=N` | Top-N dependencies cross-project |
+| GET | `/api/v1/stats/version-skew?page=&page_size=&search=` | Version skew detection |
 | GET | `/api/v1/sboms?page=&page_size=` | Paginated SBOM list |
 | GET | `/api/v1/sboms/{id}/detail` | SBOM detail with severity breakdown |
 | GET | `/api/v1/sboms/{id}/vulnerabilities` | Vulnerabilities for an SBOM |
@@ -149,6 +152,7 @@ SeeBOM supports tagging all ingested data with a **cluster identifier** for mult
 | GET | `/api/v1/vulnerabilities?page=&vex_filter=` | Paginated vulnerabilities |
 | GET | `/api/v1/vulnerabilities/{id}/affected-projects` | CVE impact across projects |
 | GET | `/api/v1/licenses/compliance` | Global license compliance |
+| GET | `/api/v1/projects?page=&page_size=&search=` | Grouped project listing |
 | GET | `/api/v1/projects/license-compliance` | Projects with license violations |
 | GET | `/api/v1/license-exceptions` | Active license exceptions |
 | GET | `/api/v1/license-policy` | Active license policy |
@@ -156,7 +160,9 @@ SeeBOM supports tagging all ingested data with a **cluster identifier** for mult
 | GET | `/api/v1/packages/archived` | Archived GitHub repo packages |
 | GET | `/api/v1/packages/search?q=&page=&page_size=` | Fuzzy package name search |
 | GET | `/api/v1/packages/detail?name=&page=&page_size=` | All projects using a specific package |
-| GET | `/api/v1/stats/version-skew?page=&page_size=&search=` | Version skew detection |
+| GET | `/api/v1/clusters` | List all clusters with summary stats |
+| GET | `/api/v1/clusters/{name}/stats` | Per-cluster dashboard statistics |
+| GET | `/api/v1/clusters/{name}/sboms?page=&page_size=` | SBOMs for a specific cluster |
 
 ## VEX Architecture
 
@@ -195,7 +201,9 @@ SeeBOM supports **multiple SBOM formats** through a format-detection dispatch la
 | CycloneDX 1.0–1.7 JSON | `bomFormat: "CycloneDX"` | Built-in (`internal/cyclonedx`) |
 | All above via protobom | (opt-in) | `internal/protobomparser` |
 
-**File extensions recognized:** `.spdx.json`, `.cdx.json`, `.json`
+**File extensions recognized:** `.spdx.json`, `.cdx.json`, `.json` (any JSON file — format auto-detected at parse time)
+
+Files starting with a configurable prefix (`SBOM_IGNORE_PREFIX`, default `_`) are skipped during local filesystem scanning. Config files (`license-policy.json`, `license-exceptions.json`) are always excluded.
 
 Two parser backends are available:
 

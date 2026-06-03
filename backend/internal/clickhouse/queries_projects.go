@@ -17,17 +17,25 @@ func (c *Client) QueryProjects(ctx context.Context, page, pageSize uint64, searc
 	}
 	offset := (page - 1) * pageSize
 
-	// project_key derivation: for S3 sources use org/project from path,
-	// otherwise fall back to document_name (without trailing version).
+	// project_key derivation: for S3 sources, detect path depth.
+	// - 5+ segments (bucket/org/project/version/file) → take org/project (segments 2+3)
+	// - 4 segments  (bucket/project/version/file)     → take project only (segment 2)
+	// Fallback: extract project name from document_name (format: "Project - component version")
+	// by taking the part before ' - '. If no ' - ', use the full document_name.
 	projectKeyExpr := `
 		multiIf(
 			position(s.source_file, 's3://') = 1,
-			arrayStringConcat(
-				arraySlice(splitByChar('/', replaceOne(s.source_file, 's3://', '')), 2, 2),
-				'/'
+			if(
+				length(splitByChar('/', replaceOne(s.source_file, 's3://', ''))) > 4,
+				arrayStringConcat(arraySlice(splitByChar('/', replaceOne(s.source_file, 's3://', '')), 2, 2), '/'),
+				arrayElement(splitByChar('/', replaceOne(s.source_file, 's3://', '')), 2)
 			),
 			s.document_name != '',
-			s.document_name,
+			if(
+				position(s.document_name, ' - ') > 0,
+				trim(BOTH ' ' FROM substring(s.document_name, 1, position(s.document_name, ' - ') - 1)),
+				s.document_name
+			),
 			s.source_file
 		)
 	`
@@ -120,12 +128,17 @@ func (c *Client) enrichProjectStats(ctx context.Context, items []dto.ProjectList
 	projectKeyExpr := `
 		multiIf(
 			position(s.source_file, 's3://') = 1,
-			arrayStringConcat(
-				arraySlice(splitByChar('/', replaceOne(s.source_file, 's3://', '')), 2, 2),
-				'/'
+			if(
+				length(splitByChar('/', replaceOne(s.source_file, 's3://', ''))) > 4,
+				arrayStringConcat(arraySlice(splitByChar('/', replaceOne(s.source_file, 's3://', '')), 2, 2), '/'),
+				arrayElement(splitByChar('/', replaceOne(s.source_file, 's3://', '')), 2)
 			),
 			s.document_name != '',
-			s.document_name,
+			if(
+				position(s.document_name, ' - ') > 0,
+				trim(BOTH ' ' FROM substring(s.document_name, 1, position(s.document_name, ' - ') - 1)),
+				s.document_name
+			),
 			s.source_file
 		)
 	`

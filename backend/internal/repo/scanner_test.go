@@ -138,3 +138,108 @@ func TestScanner_Scan_NonexistentDir(t *testing.T) {
 		t.Error("expected error for nonexistent directory")
 	}
 }
+
+func TestScanner_IgnorePrefix(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	testFiles := map[string]string{
+		"_demo.spdx.json":     `{"spdxVersion": "SPDX-2.3"}`,
+		"_example.cdx.json":   `{"bomFormat": "CycloneDX"}`,
+		"real-sbom.spdx.json": `{"spdxVersion": "SPDX-2.3"}`,
+		"other.json":          `{"spdxVersion": "SPDX-2.3"}`,
+	}
+
+	for name, content := range testFiles {
+		if err := os.WriteFile(filepath.Join(tmpDir, name), []byte(content), 0644); err != nil {
+			t.Fatalf("failed to write %s: %v", name, err)
+		}
+	}
+
+	// With ignore prefix "_" — should skip 2 files.
+	scanner := NewScannerWithIgnorePrefix(tmpDir, "_")
+	files, err := scanner.Scan()
+	if err != nil {
+		t.Fatalf("Scan() error: %v", err)
+	}
+	if len(files) != 2 {
+		t.Errorf("expected 2 files (ignore prefix='_'), got %d", len(files))
+		for _, f := range files {
+			t.Logf("  found: %s", f.RelPath)
+		}
+	}
+
+	// Without ignore prefix — should find all 4.
+	scanner2 := NewScanner(tmpDir)
+	files2, err := scanner2.Scan()
+	if err != nil {
+		t.Fatalf("Scan() error: %v", err)
+	}
+	if len(files2) != 4 {
+		t.Errorf("expected 4 files (no ignore prefix), got %d", len(files2))
+	}
+
+	// Empty string prefix — should find all 4.
+	scanner3 := NewScannerWithIgnorePrefix(tmpDir, "")
+	files3, err := scanner3.Scan()
+	if err != nil {
+		t.Fatalf("Scan() error: %v", err)
+	}
+	if len(files3) != 4 {
+		t.Errorf("expected 4 files (empty ignore prefix), got %d", len(files3))
+	}
+}
+
+func TestScanner_GenericJSON(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Generic .json files should be classified as "sbom" (format detected at parse time).
+	testFiles := map[string]string{
+		"unknown-format.json":      `{"some": "json"}`,
+		"my-bom.json":             `{"bomFormat": "CycloneDX"}`,
+		"project.spdx.json":       `{"spdxVersion": "SPDX-2.3"}`,
+		"advisory.openvex.json":   `{"@context": "openvex"}`,
+		"not-json.txt":            `plain text`,
+		"license-policy.json":     `{"permissive":["MIT"]}`,
+		"license-exceptions.json": `{"exceptions":[]}`,
+	}
+
+	for name, content := range testFiles {
+		if err := os.WriteFile(filepath.Join(tmpDir, name), []byte(content), 0644); err != nil {
+			t.Fatalf("failed to write %s: %v", name, err)
+		}
+	}
+
+	scanner := NewScanner(tmpDir)
+	files, err := scanner.Scan()
+	if err != nil {
+		t.Fatalf("Scan() error: %v", err)
+	}
+
+	// Expected: unknown-format.json (sbom), my-bom.json (sbom), project.spdx.json (sbom), advisory.openvex.json (vex)
+	// Excluded: not-json.txt (not .json), license-policy.json, license-exceptions.json (config files)
+	if len(files) != 4 {
+		t.Errorf("expected 4 files, got %d", len(files))
+		for _, f := range files {
+			t.Logf("  found: %s (type=%s)", f.RelPath, f.FileType)
+		}
+	}
+
+	sbomCount := 0
+	vexCount := 0
+	for _, f := range files {
+		switch f.FileType {
+		case "sbom":
+			sbomCount++
+		case "vex":
+			vexCount++
+		}
+	}
+	if sbomCount != 3 {
+		t.Errorf("expected 3 sbom files, got %d", sbomCount)
+	}
+	if vexCount != 1 {
+		t.Errorf("expected 1 vex file, got %d", vexCount)
+	}
+}
+
+

@@ -462,12 +462,13 @@ func (c *Client) QueryDependencyStats(ctx context.Context, limit uint64) (*dto.D
 			count(DISTINCT
 				multiIf(
 					position(source_file, 's3://') = 1,
-					arrayStringConcat(
-						arraySlice(splitByChar('/', replaceOne(source_file, 's3://', '')), 2, 2),
-						'/'
+					if(
+						length(splitByChar('/', replaceOne(source_file, 's3://', ''))) > 4,
+						arrayStringConcat(arraySlice(splitByChar('/', replaceOne(source_file, 's3://', '')), 2, 2), '/'),
+						arrayElement(splitByChar('/', replaceOne(source_file, 's3://', '')), 2)
 					),
 					doc_name != '',
-					doc_name,
+					if(position(doc_name, ' - ') > 0, trim(BOTH ' ' FROM substring(doc_name, 1, position(doc_name, ' - ') - 1)), doc_name),
 					source_file
 				)
 			) AS project_count,
@@ -577,12 +578,13 @@ func (c *Client) QueryVersionSkew(ctx context.Context, page, pageSize uint64, se
 				dep_version,
 				multiIf(
 					position(source_file, 's3://') = 1,
-					arrayStringConcat(
-						arraySlice(splitByChar('/', replaceOne(source_file, 's3://', '')), 2, 2),
-						'/'
+					if(
+						length(splitByChar('/', replaceOne(source_file, 's3://', ''))) > 4,
+						arrayStringConcat(arraySlice(splitByChar('/', replaceOne(source_file, 's3://', '')), 2, 2), '/'),
+						arrayElement(splitByChar('/', replaceOne(source_file, 's3://', '')), 2)
 					),
 					doc_name != '',
-					doc_name,
+					if(position(doc_name, ' - ') > 0, trim(BOTH ' ' FROM substring(doc_name, 1, position(doc_name, ' - ') - 1)), doc_name),
 					source_file
 				) AS project_key
 			FROM (
@@ -657,12 +659,13 @@ func (c *Client) QueryVersionSkew(ctx context.Context, page, pageSize uint64, se
 					dep_version,
 					multiIf(
 						position(source_file, 's3://') = 1,
-						arrayStringConcat(
-							arraySlice(splitByChar('/', replaceOne(source_file, 's3://', '')), 2, 2),
-							'/'
+						if(
+							length(splitByChar('/', replaceOne(source_file, 's3://', ''))) > 4,
+							arrayStringConcat(arraySlice(splitByChar('/', replaceOne(source_file, 's3://', '')), 2, 2), '/'),
+							arrayElement(splitByChar('/', replaceOne(source_file, 's3://', '')), 2)
 						),
 						doc_name != '',
-						doc_name,
+						if(position(doc_name, ' - ') > 0, trim(BOTH ' ' FROM substring(doc_name, 1, position(doc_name, ' - ') - 1)), doc_name),
 						source_file
 					) AS project_key
 				FROM (
@@ -753,12 +756,13 @@ func (c *Client) QueryDependencySearch(ctx context.Context, query string, page, 
 				dep_version,
 				multiIf(
 					position(source_file, 's3://') = 1,
-					arrayStringConcat(
-						arraySlice(splitByChar('/', replaceOne(source_file, 's3://', '')), 2, 2),
-						'/'
+					if(
+						length(splitByChar('/', replaceOne(source_file, 's3://', ''))) > 4,
+						arrayStringConcat(arraySlice(splitByChar('/', replaceOne(source_file, 's3://', '')), 2, 2), '/'),
+						arrayElement(splitByChar('/', replaceOne(source_file, 's3://', '')), 2)
 					),
 					doc_name != '',
-					doc_name,
+					if(position(doc_name, ' - ') > 0, trim(BOTH ' ' FROM substring(doc_name, 1, position(doc_name, ' - ') - 1)), doc_name),
 					source_file
 				) AS project_key
 			FROM (
@@ -808,12 +812,13 @@ func (c *Client) QueryDependencySearch(ctx context.Context, query string, page, 
 					dep_version,
 					multiIf(
 						position(p.source_file, 's3://') = 1,
-						arrayStringConcat(
-							arraySlice(splitByChar('/', replaceOne(p.source_file, 's3://', '')), 2, 2),
-							'/'
+						if(
+							length(splitByChar('/', replaceOne(p.source_file, 's3://', ''))) > 4,
+							arrayStringConcat(arraySlice(splitByChar('/', replaceOne(p.source_file, 's3://', '')), 2, 2), '/'),
+							arrayElement(splitByChar('/', replaceOne(p.source_file, 's3://', '')), 2)
 						),
 						doc_name != '',
-						doc_name,
+						if(position(doc_name, ' - ') > 0, trim(BOTH ' ' FROM substring(doc_name, 1, position(doc_name, ' - ') - 1)), doc_name),
 						p.source_file
 					) AS project_key
 				FROM (
@@ -879,12 +884,13 @@ func (c *Client) QueryPackageDetail(ctx context.Context, packageName string, pag
 			SELECT
 				multiIf(
 					position(p.source_file, 's3://') = 1,
-					arrayStringConcat(
-						arraySlice(splitByChar('/', replaceOne(p.source_file, 's3://', '')), 2, 2),
-						'/'
+					if(
+						length(splitByChar('/', replaceOne(p.source_file, 's3://', ''))) > 4,
+						arrayStringConcat(arraySlice(splitByChar('/', replaceOne(p.source_file, 's3://', '')), 2, 2), '/'),
+						arrayElement(splitByChar('/', replaceOne(p.source_file, 's3://', '')), 2)
 					),
 					doc_name != '',
-					doc_name,
+					if(position(doc_name, ' - ') > 0, trim(BOTH ' ' FROM substring(doc_name, 1, position(doc_name, ' - ') - 1)), doc_name),
 					p.source_file
 				) AS project_key
 			FROM (
@@ -912,12 +918,13 @@ func (c *Client) QueryPackageDetail(ctx context.Context, packageName string, pag
 				dep_version,
 				multiIf(
 					position(p.source_file, 's3://') = 1,
-					arrayStringConcat(
-						arraySlice(splitByChar('/', replaceOne(p.source_file, 's3://', '')), 2, 2),
-						'/'
+					if(
+						length(splitByChar('/', replaceOne(p.source_file, 's3://', ''))) > 4,
+						arrayStringConcat(arraySlice(splitByChar('/', replaceOne(p.source_file, 's3://', '')), 2, 2), '/'),
+						arrayElement(splitByChar('/', replaceOne(p.source_file, 's3://', '')), 2)
 					),
 					doc_name != '',
-					doc_name,
+					if(position(doc_name, ' - ') > 0, trim(BOTH ' ' FROM substring(doc_name, 1, position(doc_name, ' - ') - 1)), doc_name),
 					p.source_file
 				) AS project_key
 			FROM (

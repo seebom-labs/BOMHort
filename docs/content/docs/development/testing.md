@@ -35,53 +35,81 @@ go tool cover -html=coverage.out
 Tests live next to the code they test, using Go's `_test.go` convention:
 
 ```
-backend/internal/
-├── config/
-│   ├── config.go
-│   └── config_test.go
-├── github/
-│   ├── purl.go
-│   ├── purl_test.go
-│   ├── resolver.go
-│   └── resolver_test.go
-├── license/
-│   ├── checker.go
-│   └── checker_test.go
-├── osv/
-│   ├── client.go
-│   └── client_test.go
-├── osvutil/
-│   ├── osvutil.go
-│   └── osvutil_test.go
-├── repo/
-│   ├── scanner.go
-│   └── scanner_test.go
-├── s3/
-│   ├── client.go
-│   └── client_test.go
-├── spdx/
-│   ├── parser.go
-│   └── parser_test.go
-└── vex/
-    ├── parser.go
-    └── parser_test.go
+backend/
+├── cmd/
+│   └── api-gateway/
+│       ├── main.go
+│       └── main_test.go            ← auth middleware, input validation
+├── internal/
+│   ├── clickhouse/
+│   │   ├── client.go
+│   │   └── client_test.go          ← query method signatures, cluster helpers
+│   ├── config/
+│   │   ├── config.go
+│   │   └── config_test.go          ← Load(), S3 buckets, auth, ignore prefix, shared settings
+│   ├── cyclonedx/
+│   │   ├── parser.go
+│   │   └── parser_test.go          ← CycloneDX parsing
+│   ├── github/
+│   │   ├── purl.go
+│   │   ├── purl_test.go
+│   │   ├── resolver.go
+│   │   └── resolver_test.go
+│   ├── license/
+│   │   ├── checker.go
+│   │   └── checker_test.go
+│   ├── osv/
+│   │   ├── client.go
+│   │   └── client_test.go
+│   ├── osvutil/
+│   │   ├── osvutil.go
+│   │   └── osvutil_test.go
+│   ├── protobomparser/
+│   │   ├── parser.go
+│   │   └── parser_test.go          ← protobom backend detection
+│   ├── repo/
+│   │   ├── scanner.go
+│   │   └── scanner_test.go         ← file scanning, ignore prefix, generic JSON
+│   ├── s3/
+│   │   ├── client.go
+│   │   └── client_test.go
+│   ├── sbom/
+│   │   ├── dispatch.go
+│   │   └── dispatch_test.go        ← multi-format detection
+│   ├── spdx/
+│   │   ├── parser.go
+│   │   └── parser_test.go
+│   └── vex/
+│       ├── parser.go
+│       └── parser_test.go
+├── pkg/
+│   ├── dto/
+│   │   └── dto_test.go             ← JSON serialization, fields
+│   └── models/
+│       └── models_test.go          ← cluster fields, omitempty
 ```
 
 ## Current Test Inventory
 
 | Package | Tests | Subtests | What's Covered |
 |---------|-------|----------|---------------|
-| `config` | 7 | 0 | Default values, env vars, S3 buckets JSON, shared credentials |
-| `github/purl` | 2 | 22 | ExtractGitHubRepo (19 PURL patterns incl. well-known Go module mappings: `golang.org/x/*`, `gopkg.in/*`, `go.uber.org/*`, `k8s.io/*`, `oras.land/*`, `dario.cat/*`, `go.yaml.in/*`), RepoKey |
-| `github/resolver` | 11 | 0 | Resolve (incl. well-known mapping for golang.org/x/crypto), cache, metadata, preload, license overrides |
-| `license` | 24 | 20 | Categorize, Check, policy, exceptions, prefix matching |
-| `osv` | 6 | 0 | QueryBatch, errors, cancellation |
-| `osvutil` | 5 | 35 | Severity, CVSS, fixed versions |
-| `repo` | 5 | 0 | File scanning, SHA256, nested dirs |
-| `s3` | 4 | 15 | ClassifyKey, ParseURI, defaults |
-| `spdx` | 8 | 7 | Full parse, in-toto attestation envelope unwrapping, invalid JSON, deterministic IDs |
-| `vex` | 5 | 8 | Parse, normalizeVulnID, URL patterns |
-| **Total** | **77** | **107** | **184 test invocations** |
+| `cmd/api-gateway` | 23 | 7 | Auth middleware (Bearer/API-Key/disabled), input validation, public paths |
+| `internal/clickhouse` | 4 | 0 | Query method signatures, SanitizeClusterName |
+| `internal/config` | 17 | 0 | Defaults, env vars, S3 buckets JSON, shared credentials, shared settings inheritance, auth modes, IgnorePrefix |
+| `internal/cyclonedx` | 3 | 0 | CycloneDX parsing (minimal, full, rejection) |
+| `internal/github` | 35 | 22 | ExtractGitHubRepo (19 PURL patterns), RepoKey, Resolve, ResolveWithMetadata, cache, preload |
+| `internal/license` | 44 | 20 | Categorize, Check, policy, exceptions, prefix matching, Go temp names |
+| `internal/osv` | 6 | 0 | QueryBatch, errors, cancellation, cache |
+| `internal/osvutil` | 40 | 35 | Severity, CVSS, ComputeCVSSv3BaseScore, fixed versions, affected versions |
+| `internal/protobomparser` | 2 | 0 | Backend detection, opt-in dispatch |
+| `internal/repo` | 7 | 0 | File scanning, ignore prefix, generic JSON, SHA256, nested dirs |
+| `internal/s3` | 25 | 20 | ClassifyKey, ParseURI, BucketConfig defaults, ObjectInfo |
+| `internal/sbom` | 4 | 0 | Multi-format detection (SPDX, CycloneDX, in-toto) |
+| `internal/spdx` | 15 | 7 | Full parse, in-toto, invalid JSON, deterministic IDs, GoTemp, CleanPackageName |
+| `internal/vex` | 13 | 8 | Parse, normalizeVulnID, URL patterns |
+| `pkg/dto` | 3 | 0 | JSON serialization, ProjectListItem, ClusterStats |
+| `pkg/models` | 6 | 0 | Cluster fields, omitempty, propagation |
+| **Total** | **247** | **119** | **366 test invocations** |
 
 ## Test Patterns
 
@@ -169,16 +197,22 @@ npx ng test --watch=false
 
 | Spec File | Tests | What's Covered |
 |-----------|-------|---------------|
-| `app.spec.ts` | 3 | App creation, navbar brand, navigation links (10 routes) |
-| `dashboard.component.spec.ts` | 2 | Component creation, KPI rendering |
+| `app.spec.ts` | 3 | App creation, navbar brand, navigation links |
+| `api.service.spec.ts` | 16 | All HTTP methods, error handling, pagination params |
+| `dashboard.component.spec.ts` | 2 | Component creation, data loading |
+| `sbom-list.component.spec.ts` | 2 | Component creation, SBOM list loading |
 | `sbom-detail.component.spec.ts` | 4 | Tab switching, vuln/license/dep views |
+| `vulnerability-list.component.spec.ts` | 2 | Component creation, vuln list loading |
+| `license-overview.component.spec.ts` | 2 | Component creation, license data |
+| `vex-list.component.spec.ts` | 2 | Component creation, VEX statement loading |
 | `cve-impact.component.spec.ts` | 2 | CVE search, project listing |
-| `license-violations.component.spec.ts` | 2 | Violations tab, exceptions tab |
 | `dependency-stats.component.spec.ts` | 2 | Top dependencies, unique deps counter |
-| `version-skew.spec.ts` | 3 | Model parsing, empty results, sorting |
-| `package-search.spec.ts` | 8 | Search/detail response parsing, pagination, URL encoding, sorting |
-| plus more... | — | Various model and component tests |
-| **Total** | **53** | |
+| `license-violations.component.spec.ts` | 3 | Violations tab, exceptions tab |
+| `version-skew.spec.ts` | 3 | Paginated loading, search |
+| `package-search.spec.ts` | 8 | Search, expandable results, detail navigation |
+| `archived-packages.component.spec.ts` | 3 | Data loading, grouped display |
+| `project-list.component.spec.ts` | 3 | Project loading, search with debounce |
+| **Total** | **57** | **15 spec files** |
 
 ### Test Patterns (Angular)
 
