@@ -154,6 +154,28 @@ apiGateway:
       serviceTokenKey: "SERVICE_TOKEN"
       apiKeysKey: "API_KEYS"
 
+# Ingress (optional – exposes the API Gateway and/or UI externally)
+# Works with any Ingress controller (Envoy Gateway, Contour, AWS ALB, etc.)
+# For Gateway API support, use a dedicated Gateway/HTTPRoute instead.
+ingress:
+  enabled: false
+  className: ""   # e.g. "envoy", "contour", "alb"
+  annotations: {}
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: seebom.example.com
+      paths:
+        - path: /api
+          pathType: Prefix
+          # serviceSuffix defaults to "api-gateway" if omitted
+        - path: /
+          pathType: Prefix
+          serviceSuffix: ui
+  tls: []
+    # - secretName: seebom-tls
+    #   hosts:
+    #     - seebom.example.com
+
 # UI (Deployment)
 # Set ui.enabled to false for headless (API-only) deployments.
 # This skips all UI resources (Deployment, Service, ConfigMaps) and reduces

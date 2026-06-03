@@ -474,6 +474,110 @@ cp .env.example .env
 
 ---
 
+## 9. Ingress – Exposing the API Externally
+
+SeeBOM includes an optional Ingress resource to expose the API Gateway (and optionally the UI) outside the cluster. The template is controller-agnostic — it works with any Ingress controller that implements the Kubernetes Ingress spec (Envoy Gateway, Contour, AWS ALB, etc.).
+
+> **Note:** For the newer [Gateway API](https://gateway-api.sigs.k8s.io/), configure Gateway/HTTPRoute resources separately. The Helm chart provides the classic Ingress resource.
+
+### Basic (HTTP only, Envoy Gateway)
+
+```yaml
+ingress:
+  enabled: true
+  className: eg
+  hosts:
+    - host: seebom.example.com
+      paths:
+        - path: /api
+          pathType: Prefix
+        - path: /
+          pathType: Prefix
+          serviceSuffix: ui
+```
+
+### With TLS (cert-manager)
+
+```yaml
+ingress:
+  enabled: true
+  className: eg
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: seebom.example.com
+      paths:
+        - path: /api
+          pathType: Prefix
+        - path: /
+          pathType: Prefix
+          serviceSuffix: ui
+  tls:
+    - secretName: seebom-tls
+      hosts:
+        - seebom.example.com
+```
+
+### Contour Example
+
+```yaml
+ingress:
+  enabled: true
+  className: contour
+  annotations:
+    projectcontour.io/tls-cert-namespace: cert-manager
+  hosts:
+    - host: seebom.example.com
+      paths:
+        - path: /api
+          pathType: Prefix
+        - path: /
+          pathType: Prefix
+          serviceSuffix: ui
+  tls:
+    - secretName: seebom-tls
+      hosts:
+        - seebom.example.com
+```
+
+### API-only (headless, no UI)
+
+```yaml
+ingress:
+  enabled: true
+  className: eg
+  hosts:
+    - host: api.seebom.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+```
+
+> **Security Note:** When exposing the API externally, ensure `apiGateway.auth.enabled: true` is set. Without authentication, all SBOM data is publicly accessible.
+
+### AWS ALB Example
+
+```yaml
+ingress:
+  enabled: true
+  className: alb
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:...
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+  hosts:
+    - host: seebom.example.com
+      paths:
+        - path: /api
+          pathType: Prefix
+        - path: /
+          pathType: Prefix
+          serviceSuffix: ui
+```
+
+---
+
 ## Summary
 
 | What | Where | How to Change |
@@ -488,3 +592,4 @@ cp .env.example .env
 | **Dark Mode** | Built-in toggle (navbar) | User preference, stored in browser localStorage |
 | **ClickHouse password** | `seebom-secret` Secret | `kubectl edit secret` |
 | **S3 credentials** | `seebom-secret` Secret | `--set s3.accessKey=...` or `kubectl edit secret` |
+| **Ingress** | `seebom-ingress` Ingress resource | `ingress.enabled: true` + configure hosts/tls in Helm values |
