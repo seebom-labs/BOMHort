@@ -34,7 +34,11 @@ server {
     # When AUTH_ENABLED=true on the gateway, the UI is authenticated via the
     # SERVICE_TOKEN injected here — the token never reaches the browser.
     location /api/ {
-        proxy_pass http://api-gateway:8080;
+        # Use Docker's embedded DNS with 30s TTL to handle container restarts
+        # without requiring an nginx reload.
+        resolver 127.0.0.11 valid=30s;
+        set $backend "http://api-gateway:8080";
+        proxy_pass $backend;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

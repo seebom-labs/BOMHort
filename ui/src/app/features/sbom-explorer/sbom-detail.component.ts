@@ -167,7 +167,7 @@ type Tab = 'vulns' | 'licenses' | 'deps';
                [style.padding-left.px]="12 + node.level * 24">
             <span class="dep-name" [title]="node.purl || node.name">
               {{ node.name }}
-              <span class="archived-tag" *ngIf="isArchivedPurl(node.purl)" title="This package uses an archived GitHub repository">📦 ARCHIVED</span>
+              <span class="archived-tag" *ngIf="isArchivedPurl(node.purl)" title="This package uses an archived GitHub repository"> ARCHIVED</span>
             </span>
             <span class="dep-version">{{ node.version }}</span>
             <span class="dep-license"

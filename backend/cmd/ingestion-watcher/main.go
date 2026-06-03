@@ -63,7 +63,7 @@ func main() {
 // ingestLocalFiles scans the local SBOM directory and enqueues new files.
 // Returns (enqueued count, sbom files seen).
 func ingestLocalFiles(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, sbomCount *int) (int, int) {
-	scanner := repo.NewScanner(cfg.SBOMDir)
+	scanner := repo.NewScannerWithIgnorePrefix(cfg.SBOMDir, cfg.IgnorePrefix)
 	files, err := scanner.Scan()
 	if err != nil {
 		log.Printf("WARNING: Failed to scan local SBOM directory %s: %v", cfg.SBOMDir, err)

@@ -120,6 +120,13 @@ import { HorizontalBarChartComponent, BarItem } from '../../shared/charts/horizo
         <section class="disclaimer">
           <p [innerHTML]="dashDisclaimer"></p>
         </section>
+      } @else if (error) {
+        <div class="error-state">
+          <span class="error-icon">⚠️</span>
+          <p class="error-title">Unable to load dashboard data</p>
+          <p class="error-hint">Make sure the API Gateway is running and accessible.</p>
+          <button class="retry-btn" (click)="loadData()">Retry</button>
+        </div>
       } @else {
         <div class="loading-state">
           <div class="spinner"></div>
@@ -217,10 +224,22 @@ import { HorizontalBarChartComponent, BarItem } from '../../shared/charts/horizo
       border-radius: 50%; animation: spin 0.7s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    .error-state { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 80px 0; text-align: center; }
+    .error-icon { font-size: 2rem; }
+    .error-title { font-size: 0.9rem; font-weight: 600; color: var(--text); margin: 0; }
+    .error-hint { font-size: 0.78rem; color: var(--text-muted); margin: 0; }
+    .retry-btn {
+      margin-top: 12px; padding: 8px 20px; font-size: 0.8rem; font-weight: 500;
+      background: var(--accent); color: #fff; border: none; border-radius: 4px;
+      cursor: pointer; transition: opacity 0.15s;
+    }
+    .retry-btn:hover { opacity: 0.85; }
   `],
 })
 export class DashboardComponent implements OnInit {
   stats: DashboardStats | null = null;
+  error = false;
   severitySegments: DonutSegment[] = [];
   licenseSegments: DonutSegment[] = [];
   vexSegments: DonutSegment[] = [];
@@ -248,10 +267,24 @@ export class DashboardComponent implements OnInit {
     this.dashDescription = this.sanitizer.sanitize(SecurityContext.HTML, dc.description) ?? '';
     this.dashDisclaimer = this.sanitizer.sanitize(SecurityContext.HTML, dc.disclaimer) ?? '';
 
-    this.api.getDashboardStats().subscribe((data) => {
-      this.stats = data;
-      this.buildCharts(data);
-      this.cdr.markForCheck();
+    this.loadData();
+  }
+
+  loadData(): void {
+    this.error = false;
+    this.stats = null;
+    this.cdr.markForCheck();
+
+    this.api.getDashboardStats().subscribe({
+      next: (data) => {
+        this.stats = data;
+        this.buildCharts(data);
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.error = true;
+        this.cdr.markForCheck();
+      },
     });
   }
 

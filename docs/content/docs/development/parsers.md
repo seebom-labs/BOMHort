@@ -159,7 +159,10 @@ To add support for a new SBOM format:
 1. Create a new parser package at `internal/<format>/parser.go`
 2. Implement a `Parse(data []byte, sourceFile, sha256Hash string) (*ParseResult, error)` function
 3. Add format detection logic to `internal/sbom/parse.go` (probe a distinguishing JSON field)
-4. Add the file extension to `internal/repo/scanner.go`
-5. Write tests in `internal/<format>/parser_test.go`
-6. Update this documentation page
+4. Write tests in `internal/<format>/parser_test.go`
+5. Update this documentation page
+
+{{% alert title="Note" color="info" %}}
+No file extension changes are needed — the scanner accepts all `.json` files and format is detected at parse time by the dispatch layer.
+{{% /alert %}}
 

@@ -23,10 +23,11 @@ description: >
 # 1. Clone the repo
 git clone https://github.com/seebom-labs/seebom.git && cd seebom
 
-# 2. Place your SPDX files in the sboms/ directory
-#    (example files are included — see docs/faq for details)
-#    Included: _example.spdx.json, _example-intoto.spdx.json,
-#              _example-violations.spdx.json, _example.openvex.json
+# 2. Place your SBOM files in the sboms/ directory
+#    Supported formats: SPDX JSON, CycloneDX JSON, in-toto attestation envelopes
+#    (format is auto-detected — any .json file works)
+#    Included examples: _example.spdx.json, _example-intoto.spdx.json,
+#              _example.cdx.json, _example-violations.spdx.json, _example.openvex.json
 
 # 3. Start everything
 make dev
@@ -89,6 +90,7 @@ cp .env.example .env
 | `S3_BUCKET` | *(empty)* | Single S3 bucket name (alternative) |
 | `SBOM_SOURCE_DIR` | `./sboms` | Path to local SBOM files |
 | `SBOM_LIMIT` | `0` | Max SBOMs to enqueue (`0` = unlimited) |
+| `SBOM_IGNORE_PREFIX` | `_` | Skip local files starting with this prefix |
 | `WORKER_REPLICAS` | `1` | Number of parallel workers |
 | `WORKER_BATCH_SIZE` | `50` | Jobs per polling cycle |
 | `SKIP_OSV` | `false` | Skip vulnerability lookups for fast ingestion |

@@ -23,14 +23,20 @@ type FileInfo struct {
 	SourceURI  string // For S3: "s3://bucket/key". Empty for local files.
 }
 
-// Scanner walks a directory to discover SPDX JSON files and compute their hashes.
+// Scanner walks a directory to discover SBOM/VEX JSON files and compute their hashes.
 type Scanner struct {
-	rootDir string
+	rootDir      string
+	ignorePrefix string // Files with this prefix are skipped (e.g. "_" for demo files). Empty = no skip.
 }
 
 // NewScanner creates a new Scanner for the given root directory.
 func NewScanner(rootDir string) *Scanner {
 	return &Scanner{rootDir: rootDir}
+}
+
+// NewScannerWithIgnorePrefix creates a Scanner that skips files starting with the given prefix.
+func NewScannerWithIgnorePrefix(rootDir, ignorePrefix string) *Scanner {
+	return &Scanner{rootDir: rootDir, ignorePrefix: ignorePrefix}
 }
 
 // Scan walks the root directory and returns all .spdx.json files with their hashes.
@@ -61,8 +67,19 @@ func (s *Scanner) Scan() ([]FileInfo, error) {
 			return nil
 		}
 
+		// Skip files matching the ignore prefix (e.g. "_" for demo files).
+		if s.ignorePrefix != "" && strings.HasPrefix(info.Name(), s.ignorePrefix) {
+			return nil
+		}
+
 		// Classify file type: VEX or SBOM.
 		name := strings.ToLower(info.Name())
+
+		// Skip known config files that are not SBOMs.
+		if name == "license-policy.json" || name == "license-exceptions.json" {
+			return nil
+		}
+
 		fileType := ""
 		switch {
 		case strings.HasSuffix(name, ".openvex.json"), strings.HasSuffix(name, ".vex.json"):

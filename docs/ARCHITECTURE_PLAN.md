@@ -43,6 +43,7 @@ seebom/
 │   │   │   ├── queue.go       # ClickHouse queue (job_type: sbom|vex)
 │   │   │   ├── insert.go      # Batch INSERTs (SBOM, Packages, Vulns, Licenses, VEX)
 │   │   │   ├── queries.go     # Dashboard, SBOM list, vuln list, license, VEX, deps
+│   │   │   ├── queries_projects.go # Project listing (depth-aware key derivation)
 │   │   │   ├── queries_search.go  # SBOM detail, CVE impact, license violations, dep stats
 │   │   │   ├── queries_refresh.go # CVE Refresh: PURL dedup, reverse-lookup, refresh log
 │   │   │   └── queries_github_cache.go # GitHub license cache read/write
@@ -84,7 +85,7 @@ seebom/
 │               ├── license-compliance/ # License overview
 │               └── vex/                # VEX statements (with empty state)
 ├── db/
-│   └── migrations/            # 001-011 SQL migrations
+│   └── migrations/            # 001-012 SQL migrations
 ├── sboms/                     # Config files + example SBOMs/VEX
 │   ├── license-policy.json        # Permissive/copyleft classification
 │   ├── license-exceptions.json    # CNCF-format exceptions
@@ -131,6 +132,8 @@ seebom/
 └──────────────────────┬──────────────────────────────────┘
        │ S3 ListObjects (streamed) + filepath.Walk (local)
        │ SHA256 hashing + file-type detection (sbom|vex)
+       │ Accepts any .json file (format auto-detected at parse time)
+       │ Configurable ignore prefix (SBOM_IGNORE_PREFIX, default "_")
        ▼
 Ingestion Watcher (CronJob)
        │ Hash dedup → batch INSERT INTO ingestion_queue (500/batch)
@@ -171,7 +174,7 @@ Angular UI (13 lazy-loaded routes, virtual scrolling, OnPush, dark mode)
        │ Custom CSS theme mountable without Angular rebuild
 ```
 
-## 3. API Endpoints (23)
+## 3. API Endpoints (24)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -189,6 +192,7 @@ Angular UI (13 lazy-loaded routes, virtual scrolling, OnPush, dark mode)
 | GET | `/api/v1/vulnerabilities?page=&vex_filter=` | Paginated vuln list (optional: vex_filter=effective) |
 | GET | `/api/v1/vulnerabilities/{id}/affected-projects` | All projects affected by a CVE (direct + transitive) |
 | GET | `/api/v1/licenses/compliance` | Aggregated license overview |
+| GET | `/api/v1/projects?page=&page_size=&search=` | Grouped project listing (derived from S3 path or document_name) |
 | GET | `/api/v1/projects/license-compliance` | Projects with copyleft/unknown licenses (filtered by exceptions) |
 | GET | `/api/v1/license-exceptions` | Active license exceptions (read-only, from config file) |
 | GET | `/api/v1/license-policy` | Active license classification (permissive/copyleft lists) |
@@ -200,7 +204,7 @@ Angular UI (13 lazy-loaded routes, virtual scrolling, OnPush, dark mode)
 | GET | `/api/v1/clusters/{name}/stats` | Per-cluster dashboard statistics |
 | GET | `/api/v1/clusters/{name}/sboms?page=&page_size=` | Paginated SBOM list for a specific cluster |
 
-## 4. ClickHouse Schema (11 Migrations)
+## 4. ClickHouse Schema (12 Migrations)
 
 | Table | Engine | ORDER BY | Purpose |
 |-------|--------|----------|---------|
@@ -229,6 +233,8 @@ Angular UI (13 lazy-loaded routes, virtual scrolling, OnPush, dark mode)
 **Dependency Stats:** `ARRAY JOIN package_names, package_purls, package_versions` expands the parallel arrays, then `count(DISTINCT sbom_id)` for cross-project counting.
 
 **Package Search:** `dep_name ILIKE ?` with `ARRAY JOIN` for fuzzy matching. Search results include project count, versions, and a preview of 5 projects. Detail endpoint returns all projects paginated via `GROUP BY project_key ORDER BY project_key LIMIT ? OFFSET ?`.
+
+**Project Key Derivation:** Used consistently across all project-grouped queries. For S3 sources: path depth detection (5+ segments = org/project like `k3s-io/helm-controller`, 4 segments = project only like `aeraki-mesh`). Fallback for non-S3: extract project name from SBOM `document_name` field (text before ` - ` separator). Final fallback: full `source_file` path.
 
 ## 5. VEX Architecture
 
@@ -394,3 +400,7 @@ Moved to Section 10 for comprehensive coverage including exemptions and visual r
 | 30 | S3 bucket ingestion: Multi-bucket S3 support as default ingestion method via `minio-go/v7`. Streaming ListObjects with batched enqueue (500/batch). Worker fetches via `s3://` URIs. Local filesystem ingestion preserved. | ✅ Implemented |
 | 31 | Package search: Fuzzy ILIKE search on package names with detail page showing all projects using a package (paginated). Search preview shows first 5 projects; detail page shows all. | ✅ Implemented |
 | 32 | Multi-format SBOM parsing: Format-detection dispatch layer (`internal/sbom`) with built-in SPDX + CycloneDX parsers (default) and opt-in protobom backend (`USE_PROTOBOM=true`) for maximum format coverage. `.cdx.json` recognized alongside `.spdx.json`. | ✅ Implemented |
+| 33 | Project key derivation: Depth-aware S3 path parsing (5+ segments → org/project, 4 segments → project only). Fallback: extract project name from SBOM `document_name` field (before ` - ` separator). Non-S3 files without document_name use source_file as key. | ✅ Implemented |
+| 34 | Configurable file ignore prefix: `SBOM_IGNORE_PREFIX` env var (default `_`) skips local files starting with prefix during scanning. Empty string = no skip. Useful for excluding demo/example files from ingestion. | ✅ Implemented |
+| 35 | S3 shared settings inheritance: JSON-configured buckets (`S3_BUCKETS`) inherit shared env vars (`S3_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_USE_PATH_STYLE`, `S3_USE_SSL`) as fallback when bucket-specific values are empty. | ✅ Implemented |
+| 36 | Generic JSON file acceptance: Scanner accepts any `.json` file (not just `.spdx.json`/`.cdx.json`). Format is auto-detected at parse time by the `internal/sbom` dispatch layer. Config files (`license-policy.json`, `license-exceptions.json`) are still excluded. | ✅ Implemented |

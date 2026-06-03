@@ -42,8 +42,9 @@ Ingest 1000+ SPDX and CycloneDX SBOMs, scan for vulnerabilities via OSV, enforce
 # 1. Clone the repo
 git clone https://github.com/seebom-labs/seebom.git && cd seebom
 
-# 2. Place your SPDX files in the sboms/ directory
-#    (an example file is included: sboms/_example.spdx.json)
+# 2. Place your SBOM files in the sboms/ directory
+#    Supports SPDX JSON, CycloneDX JSON, and in-toto attestation envelopes (auto-detected)
+#    (examples included: sboms/_example.spdx.json, sboms/_example.cdx.json)
 
 # 3. Start everything
 make dev

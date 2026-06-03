@@ -10,13 +10,13 @@ The platform consists of **4 Go binaries**, an **Angular UI**, and a **ClickHous
 |--------|------|---------|
 | `ingestion-watcher` | K8s CronJob | Scans SBOM/VEX directory, hash-dedup, enqueues jobs |
 | `parsing-worker` | Deployment (N replicas) | Processes SBOMs (SPDX→ClickHouse), VEX files, OSV lookups, license checks |
-| `api-gateway` | Deployment | Stateless REST API (21 endpoints) |
+| `api-gateway` | Deployment | Stateless REST API (24 endpoints) |
 | `cve-refresher` | K8s CronJob (daily) | Checks all known PURLs for newly disclosed CVEs without re-scanning SBOMs |
 
 Key shared packages:
-- `internal/clickhouse` – ClickHouse client, batch inserts (`insert.go`), queue operations (`queue.go`), and all query logic split across `queries.go`, `queries_search.go`, `queries_refresh.go`, `queries_github_cache.go`
+- `internal/clickhouse` – ClickHouse client, batch inserts (`insert.go`), queue operations (`queue.go`), and all query logic split across `queries.go`, `queries_projects.go`, `queries_search.go`, `queries_refresh.go`, `queries_github_cache.go`
 - `internal/config` – Environment-based configuration loader (`config.Load()` reads env vars with sensible defaults)
-- `internal/repo` – Directory scanner with SHA256 hashing and file type classification (`.spdx.json` → sbom, `.openvex.json` → vex)
+- `internal/repo` – Directory scanner with SHA256 hashing and file type classification. Accepts any `.json` file (format auto-detected by parser), with configurable ignore prefix (`SBOM_IGNORE_PREFIX`, default `_`) to skip demo/example files. VEX files detected via `*.openvex.json` / `*.vex.json` suffix.
 - `internal/osvutil` – Shared OSV helpers (ClassifySeverity, ExtractFixedVersion, ExtractAffectedVersions)
 - `internal/license` – License compliance + externalized policy + exceptions with prefix-matching
 - `internal/osv` – OSV API client with rate limiting and exponential backoff

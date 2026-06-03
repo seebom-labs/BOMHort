@@ -1,6 +1,6 @@
 # SeeBOM – Testing Guide
 
-> **Updated:** 2026-03-28
+> **Updated:** 2026-06-03
 
 ## Quick Start
 
@@ -34,45 +34,68 @@ go tool cover -html=coverage.out
 Tests live next to the code they test, using Go's `_test.go` convention:
 
 ```
-backend/internal/
-├── config/
-│   ├── config.go
-│   └── config_test.go          ← tests for config.Load()
-├── github/
-│   ├── purl.go
-│   ├── purl_test.go            ← tests for ExtractGitHubRepo (19 PURL patterns incl. well-known Go module mappings)
-│   ├── resolver.go
-│   └── resolver_test.go        ← tests for Resolve, ResolveWithMetadata, cache, well-known overrides (httptest mock)
-├── license/
-│   ├── checker.go
-│   ├── checker_test.go         ← tests for Categorize, Check, LoadPolicy, etc.
-│   └── exceptions.go
-├── osv/
-│   ├── client.go
-│   └── client_test.go          ← tests for QueryBatch (with httptest mock)
-├── osvutil/
-│   ├── osvutil.go
-│   └── osvutil_test.go         ← tests for ClassifySeverity, ParseCVSSScore, ExtractFixedVersion, ExtractAffectedVersions
-├── repo/
-│   ├── scanner.go
-│   └── scanner_test.go         ← tests for Scan (with t.TempDir())
-├── s3/
-│   ├── client.go
-│   └── client_test.go          ← tests for ClassifyKey, ParseURI, ObjectInfo
-├── spdx/
-│   ├── parser.go
-│   └── parser_test.go          ← tests for Parse (plain SPDX + in-toto attestation envelope)
-└── vex/
-    ├── parser.go
-    └── parser_test.go          ← tests for Parse, normalizeVulnID
+backend/
+├── cmd/
+│   └── api-gateway/
+│       ├── main.go
+│       └── main_test.go            ← tests for auth middleware, download endpoint, input validation
+├── internal/
+│   ├── clickhouse/
+│   │   ├── client.go
+│   │   └── client_test.go          ← tests for query method signatures, cluster helpers
+│   ├── config/
+│   │   ├── config.go
+│   │   └── config_test.go          ← tests for Load() defaults, env vars, S3 buckets, auth, ignore prefix, shared settings
+│   ├── cyclonedx/
+│   │   ├── parser.go
+│   │   └── parser_test.go          ← tests for CycloneDX parsing (minimal, full, invalid)
+│   ├── github/
+│   │   ├── purl.go
+│   │   ├── purl_test.go            ← tests for ExtractGitHubRepo (19 PURL patterns incl. well-known Go module mappings)
+│   │   ├── resolver.go
+│   │   └── resolver_test.go        ← tests for Resolve, ResolveWithMetadata, cache, well-known overrides (httptest mock)
+│   ├── license/
+│   │   ├── checker.go
+│   │   ├── checker_test.go         ← tests for Categorize, Check, LoadPolicy, exceptions, prefix match, Go temp names
+│   │   └── exceptions.go
+│   ├── osv/
+│   │   ├── client.go
+│   │   └── client_test.go          ← tests for QueryBatch (with httptest mock)
+│   ├── osvutil/
+│   │   ├── osvutil.go
+│   │   └── osvutil_test.go         ← tests for ClassifySeverity, ParseCVSSScore, ComputeCVSSv3BaseScore, ExtractFixedVersion, ExtractAffectedVersions
+│   ├── protobomparser/
+│   │   ├── parser.go
+│   │   └── parser_test.go          ← tests for protobom backend detection
+│   ├── repo/
+│   │   ├── scanner.go
+│   │   └── scanner_test.go         ← tests for Scan, ignore prefix, generic JSON, nested dirs, SHA256 consistency
+│   ├── s3/
+│   │   ├── client.go
+│   │   └── client_test.go          ← tests for ClassifyKey, ParseURI, BucketConfig, ObjectInfo
+│   ├── sbom/
+│   │   ├── dispatch.go
+│   │   └── dispatch_test.go        ← tests for multi-format detection (SPDX, CycloneDX, in-toto)
+│   ├── spdx/
+│   │   ├── parser.go
+│   │   └── parser_test.go          ← tests for Parse (plain SPDX + in-toto attestation + GoTempModule + CleanPackageName)
+│   └── vex/
+│       ├── parser.go
+│       └── parser_test.go          ← tests for Parse, normalizeVulnID
+├── pkg/
+│   ├── dto/
+│   │   └── dto_test.go             ← tests for VersionSkew JSON, ProjectListItem fields, ClusterDTOs
+│   └── models/
+│       └── models_test.go          ← tests for Cluster fields, SBOM omitempty, IngestionJob propagation
 ```
 
 ### No Tests Needed
 
-These packages contain only data types (structs) with no logic:
+These packages contain only thin orchestration (`main()` functions) with no testable logic:
 
-- `pkg/models/` – SBOM, Vulnerability, VEXStatement structs
-- `pkg/dto/` – API response DTOs
+- `cmd/ingestion-watcher/` – Wires scanner + queue (all components tested individually)
+- `cmd/parsing-worker/` – Wires parser + OSV + license + ClickHouse (all components tested)
+- `cmd/cve-refresher/` – Wires OSV + ClickHouse refresh queries
 
 ---
 
@@ -80,17 +103,23 @@ These packages contain only data types (structs) with no logic:
 
 | Package | Top-Level | Subtests | What's Covered |
 |---------|-----------|----------|---------------|
-| `config` | 7 | 0 | Default values, custom env vars, S3 buckets JSON, single S3 bucket, shared S3 credentials, invalid S3 JSON, S3BucketNames |
-| `github/purl` | 2 | 22 | ExtractGitHubRepo (19 PURL patterns: golang github.com, subpath, pkg:github scheme, well-known Go module mappings for golang.org/x/crypto, gopkg.in/yaml.v3, go.uber.org/zap, k8s.io/client-go, oras.land/oras-go/v2 with version suffix stripping, dario.cat/mergo, go.yaml.in/yaml/v4, unknown non-github, npm, empty, qualifiers, fragments, missing repo, azure submodule, hamba v2), RepoKey (4 patterns) |
-| `github/resolver` | 11 | 0 | Resolve (happy path, cache hit, non-GitHub PURL, well-known mapping resolves golang.org/x/crypto), ResolveWithMetadata (archived repo, not-found, non-GitHub, cache hit), PreloadCache, PreloadMetadataCache, CacheEntries, MetadataCacheEntries |
-| `license` | 24 | 20 | Categorize (14 SPDX IDs incl. BSD-3-Clause, ISC, 0BSD, NOASSERTION, NONE), Check, CheckWithExceptions (blanket + package + prefix), LoadPolicy, LoadExceptions, LoadExceptionsWithFallback (4 scenarios), BuildIndex (empty, All CNCF Projects promoted to blanket, compound OR, compound AND), IsExempt substring matching (package+license, package-any), SplitLicenses (7 patterns), GoTempNamesFiltered, edge cases |
-| `osv` | 6 | 0 | Empty input, mock server, server error, context cancellation, no-vulns response, HydrateVulns cache |
-| `osvutil` | 5 | 35 | ClassifySeverity (16 CVSS scenarios incl. vector strings, database-specific fallback), ParseCVSSScore (8 inputs incl. vectors), ComputeCVSSv3BaseScore (4 scenarios), ExtractFixedVersion (4 scenarios), ExtractAffectedVersions (3 scenarios) |
-| `repo` | 5 | 0 | File scanning (SBOM + VEX detection), empty dir, nested dirs, SHA256 consistency, nonexistent dir |
-| `s3` | 4 | 15 | ClassifyKey (9 patterns incl. _spdx.json, case-insensitive), ParseURI (6 patterns), BucketConfig defaults, ObjectInfo URI |
-| `spdx` | 8 | 7 | Full parse, in-toto attestation envelope unwrapping, invalid JSON, empty packages, deterministic SBOM ID, license fallback, GoTempModuleName, CleanPackageName (8 patterns) |
-| `vex` | 5 | 8 | Full parse, invalid JSON, empty doc, normalizeVulnID (9 URL patterns), URL-based vuln @id |
-| **Total** | **77** | **107** | **184 test invocations** |
+| `cmd/api-gateway` | 23 | 7 | Auth middleware (12 scenarios: disabled/enabled, Bearer/X-Service-Token/X-API-Key, public paths, OPTIONS bypass, coexistence), download endpoint (content-disposition, invalid UUID), input validation |
+| `internal/clickhouse` | 4 | 0 | Query method signatures exist, cluster helper functions, SanitizeClusterName |
+| `internal/config` | 17 | 0 | Default values, custom env vars, S3 buckets JSON, single S3 bucket, shared S3 credentials, shared settings inheritance (endpoint/region/pathstyle/SSL), invalid S3 JSON, S3BucketNames, ClusterName, bucket cluster override, auth modes (disabled/token/apikeys/empty), IgnorePrefix (default/custom) |
+| `internal/cyclonedx` | 3 | 0 | CycloneDX parsing (minimal valid, full with licenses+deps, not-CycloneDX rejection) |
+| `internal/github` | 35 | 22 | ExtractGitHubRepo (19 PURL patterns: golang github.com, subpath, pkg:github, well-known Go module mappings for golang.org/x/crypto, gopkg.in/yaml.v3, go.uber.org/zap, k8s.io/client-go, oras.land/oras-go/v2, dario.cat/mergo, unknown non-github, npm, empty), RepoKey (5 patterns), Resolve (happy path, cache hit, non-GitHub PURL, well-known mapping), ResolveWithMetadata (archived repo, not-found, non-GitHub, cache hit), PreloadCache, PreloadMetadataCache, CacheEntries, MetadataCacheEntries, ETag sanitization |
+| `internal/license` | 44 | 20 | Categorize (15 SPDX IDs incl. BSD-3-Clause, ISC, 0BSD, NOASSERTION, NONE), Check, CheckWithExceptions (blanket + package + prefix), LoadPolicy, LoadExceptions, LoadExceptionsWithFallback (4 scenarios), BuildIndex (empty, All CNCF Projects promoted to blanket, compound OR, compound AND), IsExempt substring matching (package+license, package-any), SplitLicenses (7 patterns), GoTempNamesFiltered, GetPolicy, edge cases |
+| `internal/osv` | 6 | 0 | Empty input, mock server, server error, context cancellation, no-vulns response, HydrateVulns cache |
+| `internal/osvutil` | 40 | 35 | ClassifySeverity (17 CVSS scenarios incl. vector strings, database-specific fallback), ParseCVSSScore (9 inputs incl. vectors), ComputeCVSSv3BaseScore (5 scenarios), ExtractFixedVersion (5 scenarios), ExtractAffectedVersions (4 scenarios) |
+| `internal/protobomparser` | 2 | 0 | Backend detection, opt-in dispatch |
+| `internal/repo` | 7 | 0 | File scanning (SBOM + VEX detection), empty dir, nested dirs, SHA256 consistency, nonexistent dir, ignore prefix (skip/noskip/empty), generic JSON acceptance (with config file exclusion) |
+| `internal/s3` | 25 | 20 | ClassifyKey (10 patterns incl. _spdx.json, case-insensitive, generic .json), ParseURI (7 patterns), BucketConfig defaults, ObjectInfo URI |
+| `internal/sbom` | 4 | 0 | Multi-format detection: detects SPDX, detects CycloneDX, detects in-toto envelope, protobom backend |
+| `internal/spdx` | 15 | 7 | Full parse, in-toto attestation envelope unwrapping, invalid JSON, empty packages, deterministic SBOM ID, license fallback, GoTempModuleName, CleanPackageName (8 patterns) |
+| `internal/vex` | 13 | 8 | Full parse, invalid JSON, empty doc, normalizeVulnID (9 URL patterns), URL-based vuln @id |
+| `pkg/dto` | 3 | 0 | VersionSkew JSON serialization, ProjectListItem fields, ClusterStats DTO |
+| `pkg/models` | 6 | 0 | Cluster fields, SBOM ClusterOmitEmpty, VEXStatement cluster, LicenseCompliance cluster, IngestionJob cluster propagation, Vulnerability cluster |
+| **Total** | **247** | **119** | **366 test invocations** |
 
 ---
 
@@ -256,12 +285,55 @@ For each function, write tests for:
 Tests run automatically on every push/PR via GitHub Actions (`.github/workflows/ci.yml`):
 
 ```yaml
-- name: Test
+- name: Test Backend
   working-directory: backend
   run: go test ./... -count=1 -race
+
+- name: Test Frontend
+  working-directory: ui
+  run: npx ng test --watch=false
 ```
 
 The `-race` flag enables Go's race detector – this catches concurrent access bugs in the workers/queue code.
+
+---
+
+## Frontend Tests (Angular / Vitest)
+
+### Quick Start
+
+```bash
+cd ui
+npx ng test                    # Watch mode (interactive)
+npx ng test --watch=false      # Single run (CI mode)
+```
+
+### Test Inventory (15 spec files, 57 tests)
+
+| Component | Tests | What's Covered |
+|-----------|-------|---------------|
+| `app.spec.ts` | 3 | App creation, navbar rendering, route structure |
+| `api.service.spec.ts` | 16 | All HTTP methods, error handling, pagination params |
+| `dashboard.component.spec.ts` | 2 | Component creation, initial data load |
+| `sbom-list.component.spec.ts` | 2 | Component creation, SBOM list loading |
+| `sbom-detail.component.spec.ts` | 4 | Component creation, tab switching, vuln/license/deps loading |
+| `vulnerability-list.component.spec.ts` | 2 | Component creation, vuln list loading |
+| `license-overview.component.spec.ts` | 2 | Component creation, license data loading |
+| `vex-list.component.spec.ts` | 2 | Component creation, VEX statement loading |
+| `cve-impact.component.spec.ts` | 2 | Component creation, CVE search |
+| `dependency-stats.component.spec.ts` | 2 | Component creation, top deps loading |
+| `license-violations.component.spec.ts` | 3 | Component creation, violations loading, exception tab |
+| `version-skew.spec.ts` | 3 | Component creation, paginated loading, search |
+| `package-search.spec.ts` | 8 | Component creation, search, expandable results, detail navigation |
+| `archived-packages.component.spec.ts` | 3 | Component creation, data loading, grouped display |
+| `project-list.component.spec.ts` | 3 | Component creation, project loading, search with debounce |
+
+### Test Patterns
+
+- **`provideHttpClientTesting()`** – Mock HTTP layer for all API calls
+- **`httpMock.expectOne()`** – Verify exact API URL + params
+- **`fixture.detectChanges()`** – Trigger OnPush change detection
+- **`setTimeout` + `await`** – Test debounced search inputs
 
 ---
 
@@ -283,10 +355,10 @@ When adding a new feature, follow this checklist:
 
 ## Packages That Still Need More Tests
 
-The `internal/clickhouse/` package (client, queue, insert, queries) contains no unit tests because it requires a running ClickHouse instance. Future work:
+The `internal/clickhouse/` package (queries, insert, queue) has basic signature tests but no full integration tests because it requires a running ClickHouse instance. Future work:
 
 - **Option A:** Integration tests with [testcontainers-go](https://golang.testcontainers.org/) spinning up a ClickHouse container
 - **Option B:** Interface-based mocking of the ClickHouse client for query logic tests
 
-The `cmd/` packages (main functions) are tested implicitly through integration via Docker Compose but have no unit tests. These are thin orchestration layers that wire together the tested internal packages.
+The `cmd/` packages (ingestion-watcher, parsing-worker, cve-refresher) are tested implicitly through integration via Docker Compose but have no unit tests. These are thin orchestration layers that wire together the tested internal packages. The `cmd/api-gateway` package has 23 unit tests covering auth middleware and endpoint validation.
 
