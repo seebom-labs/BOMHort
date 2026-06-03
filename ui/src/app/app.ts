@@ -14,6 +14,7 @@ import { SiteConfigService } from './core/site-config.service';
       </a>
       <div class="nav-links">
         <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}">Dashboard</a>
+        <a routerLink="/projects" routerLinkActive="active">Projects</a>
         <a routerLink="/sboms" routerLinkActive="active">SBOMs</a>
         <a routerLink="/vulnerabilities" routerLinkActive="active">Vulnerabilities</a>
         <a routerLink="/cve-impact" routerLinkActive="active">CVE Impact</a>

@@ -246,3 +246,13 @@ type ClusterStats struct {
 	LicenseBreakdown         map[string]uint64 `json:"license_breakdown"`
 	LastIngested             string            `json:"last_ingested,omitempty"`
 }
+
+// ProjectListItem is the response DTO for the project list view.
+type ProjectListItem struct {
+	ProjectName    string `json:"project_name"`
+	SBOMCount      uint64 `json:"sbom_count"`
+	PackageCount   uint64 `json:"package_count"`
+	VulnCount      uint64 `json:"vuln_count"`
+	LatestIngested string `json:"latest_ingested"`
+	LatestSBOMID   string `json:"latest_sbom_id"`
+}

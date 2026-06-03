@@ -7,6 +7,11 @@ export const routes: Routes = [
       import('./features/dashboard/dashboard.component').then((m) => m.DashboardComponent),
   },
   {
+    path: 'projects',
+    loadComponent: () =>
+      import('./features/projects/project-list.component').then((m) => m.ProjectListComponent),
+  },
+  {
     path: 'sboms',
     loadComponent: () =>
       import('./features/sbom-explorer/sbom-list.component').then((m) => m.SbomListComponent),

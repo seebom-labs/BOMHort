@@ -531,4 +531,3 @@ func (c *Client) QuerySBOMSourceFile(ctx context.Context, sbomID string) (string
 	}
 	return sourceFile, nil
 }
-

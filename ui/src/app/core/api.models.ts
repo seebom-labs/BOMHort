@@ -240,3 +240,13 @@ export interface PackageDetailResponse {
   page: number;
   page_size: number;
 }
+
+export interface ProjectListItem {
+  project_name: string;
+  sbom_count: number;
+  package_count: number;
+  vuln_count: number;
+  latest_ingested: string;
+  latest_sbom_id: string;
+}
+

@@ -216,6 +216,21 @@ func main() {
 		writeJSON(w, http.StatusOK, violations)
 	})
 
+	// Project list view – groups SBOMs by project with aggregated stats.
+	mux.HandleFunc("GET /api/v1/projects", func(w http.ResponseWriter, r *http.Request) {
+		page := parseUint64(r.URL.Query().Get("page"), 1)
+		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
+		search := sanitizeSearchTerm(r.URL.Query().Get("search"))
+
+		resp, err := chClient.QueryProjects(r.Context(), page, pageSize, search)
+		if err != nil {
+			log.Printf("ERROR: list projects: %v", err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch projects")
+			return
+		}
+		writeJSON(w, http.StatusOK, resp)
+	})
+
 	// Projects affected by a specific CVE (including transitive dependencies).
 	mux.HandleFunc("GET /api/v1/vulnerabilities/{id}/affected-projects", func(w http.ResponseWriter, r *http.Request) {
 		vulnID := r.PathValue("id")

@@ -88,4 +88,3 @@ func extractFilename(sourceFile string) string {
 	return sourceFile
 }
 
-

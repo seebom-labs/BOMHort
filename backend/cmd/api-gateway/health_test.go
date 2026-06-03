@@ -28,4 +28,3 @@ func TestSanitizeClusterName(t *testing.T) {
 		t.Errorf("expected newline stripped, got %q", result)
 	}
 }
-

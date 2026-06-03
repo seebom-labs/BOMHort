@@ -532,6 +532,39 @@ Aggregated license compliance overview across all projects, with exemption detai
 ]
 ```
 
+### `GET /api/v1/projects`
+
+Paginated list of projects grouped by source path or document name. Each project aggregates its SBOMs (versions), total packages, and vulnerability counts.
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `page` | integer | 1 | Page number |
+| `page_size` | integer | 50 | Items per page (max 500) |
+| `search` | string | — | Filter projects by name (ILIKE) |
+
+**Response:** `200 OK`
+```json
+{
+  "data": [
+    {
+      "project_name": "cncf-project-sboms/containerd",
+      "sbom_count": 12,
+      "package_count": 1847,
+      "vuln_count": 23,
+      "latest_ingested": "2026-05-28T14:30:00Z",
+      "latest_sbom_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    }
+  ],
+  "total": 142,
+  "page": 1,
+  "page_size": 50
+}
+```
+
+---
+
 ### `GET /api/v1/projects/license-compliance`
 
 Projects with copyleft or unknown license packages (filtered by active exceptions).

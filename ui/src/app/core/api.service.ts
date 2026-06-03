@@ -19,6 +19,7 @@ import {
   VersionSkewResponse,
   LicenseExceptionsFile,
   ArchivedPackageInfo,
+  ProjectListItem,
 } from './api.models';
 
 @Injectable({
@@ -136,6 +137,16 @@ export class ApiService {
    */
   getSbomDownloadUrl(sbomId: string): string {
     return `${this.baseUrl}/sboms/${sbomId}/download`;
+  }
+
+  getProjects(page = 1, pageSize = 50, search = ''): Observable<PaginatedResponse<ProjectListItem>> {
+    let params = new HttpParams()
+      .set('page', page.toString())
+      .set('page_size', pageSize.toString());
+    if (search) {
+      params = params.set('search', search);
+    }
+    return this.http.get<PaginatedResponse<ProjectListItem>>(`${this.baseUrl}/projects`, { params });
   }
 }
 

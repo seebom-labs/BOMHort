@@ -205,4 +205,3 @@ func (c *Client) QueryClusterSBOMs(ctx context.Context, cluster string, page, pa
 func (c *Client) Ping(ctx context.Context) error {
 	return c.Conn.Ping(ctx)
 }
-
