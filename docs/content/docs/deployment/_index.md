@@ -418,7 +418,109 @@ This is ideal for:
 
 ---
 
-## 10. Verifying the Deployment
+## 10. Ingress – Exposing the API Externally
+
+SeeBOM includes an optional Ingress resource to expose the API Gateway (and optionally the UI) outside the cluster. The template is controller-agnostic — it works with any Ingress controller that implements the Kubernetes Ingress spec (Envoy Gateway, Contour, AWS ALB, etc.).
+
+{{% alert title="Gateway API" color="info" %}}
+For the newer [Gateway API](https://gateway-api.sigs.k8s.io/), configure Gateway/HTTPRoute resources separately. The Helm chart provides the classic Ingress resource.
+{{% /alert %}}
+
+### Basic (Envoy Gateway)
+
+```yaml
+ingress:
+  enabled: true
+  className: eg
+  hosts:
+    - host: seebom.example.com
+      paths:
+        - path: /api
+          pathType: Prefix
+        - path: /
+          pathType: Prefix
+          serviceSuffix: ui
+```
+
+### With TLS (cert-manager)
+
+```yaml
+ingress:
+  enabled: true
+  className: eg
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: seebom.example.com
+      paths:
+        - path: /api
+          pathType: Prefix
+        - path: /
+          pathType: Prefix
+          serviceSuffix: ui
+  tls:
+    - secretName: seebom-tls
+      hosts:
+        - seebom.example.com
+```
+
+### Contour
+
+```yaml
+ingress:
+  enabled: true
+  className: contour
+  hosts:
+    - host: seebom.example.com
+      paths:
+        - path: /api
+          pathType: Prefix
+        - path: /
+          pathType: Prefix
+          serviceSuffix: ui
+```
+
+### AWS ALB
+
+```yaml
+ingress:
+  enabled: true
+  className: alb
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:...
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+  hosts:
+    - host: seebom.example.com
+      paths:
+        - path: /api
+          pathType: Prefix
+        - path: /
+          pathType: Prefix
+          serviceSuffix: ui
+```
+
+### API-only (headless)
+
+```yaml
+ingress:
+  enabled: true
+  className: eg
+  hosts:
+    - host: api.seebom.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+```
+
+{{% alert title="Security" color="warning" %}}
+When exposing the API externally, ensure `apiGateway.auth.enabled: true` is set. Without authentication, all SBOM data is publicly accessible.
+{{% /alert %}}
+
+---
+
+## 11. Verifying the Deployment
 
 ```bash
 kubectl get pods -l app.kubernetes.io/name=seebom
@@ -443,4 +545,4 @@ kubectl exec -it $(kubectl get pod -l app.kubernetes.io/component=api-gateway -o
 | **S3 credentials** | Secret | `--set s3.accessKey=...` or `s3.credentialsSecret` (existing K8s Secret) |
 | **API Authentication** | Env vars (Secret recommended) | `AUTH_ENABLED=true` + `SERVICE_TOKEN` and/or `API_KEYS`; off by default |
 | **Headless Mode** | Helm value | `ui.enabled: false` — skips UI Deployment/Service/ConfigMaps |
-
+| **Ingress** | Ingress resource | `ingress.enabled: true` + configure hosts/tls in Helm values |
