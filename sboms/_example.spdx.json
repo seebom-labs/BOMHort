@@ -23,21 +23,21 @@
     {
       "SPDXID": "SPDXRef-Package-lodash",
       "name": "lodash",
-      "versionInfo": "4.17.21",
-      "downloadLocation": "https://registry.npmjs.org/lodash/-/lodash-4.17.21.tgz",
+      "versionInfo": "4.18.0",
+      "downloadLocation": "https://registry.npmjs.org/lodash/-/lodash-4.18.0.tgz",
       "licenseConcluded": "MIT",
       "externalRefs": [
-        { "referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:npm/lodash@4.17.21" }
+        { "referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:npm/lodash@4.18.0" }
       ]
     },
     {
       "SPDXID": "SPDXRef-Package-express",
       "name": "express",
-      "versionInfo": "4.18.2",
-      "downloadLocation": "https://registry.npmjs.org/express/-/express-4.18.2.tgz",
+      "versionInfo": "4.21.2",
+      "downloadLocation": "https://registry.npmjs.org/express/-/express-4.21.2.tgz",
       "licenseConcluded": "MIT",
       "externalRefs": [
-        { "referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:npm/express@4.18.2" }
+        { "referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:npm/express@4.21.2" }
       ]
     },
     {

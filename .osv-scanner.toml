@@ -1,0 +1,25 @@
+# OSV Scanner Configuration
+# These are example/demo SBOM files used for testing — they contain intentionally
+# outdated packages to demonstrate vulnerability detection. They are NOT actual
+# project dependencies.
+
+[[IgnoredVulns]]
+id = "GHSA-f23m-r3pf-42rh"
+reason = "lodash in example SBOM files (sboms/_example*.spdx.json) — not a project dependency"
+
+[[IgnoredVulns]]
+id = "GHSA-r5fr-rjxr-66jc"
+reason = "lodash in example SBOM files (sboms/_example*.spdx.json) — not a project dependency"
+
+[[IgnoredVulns]]
+id = "GHSA-xxjr-mmjv-4gpg"
+reason = "lodash in example SBOM files (sboms/_example*.spdx.json) — not a project dependency"
+
+[[IgnoredVulns]]
+id = "GHSA-qw6h-vgh9-j6wx"
+reason = "express in example SBOM files (sboms/_example*.spdx.json) — not a project dependency"
+
+[[IgnoredVulns]]
+id = "GHSA-rv95-896h-c2vc"
+reason = "express in example SBOM files (sboms/_example*.spdx.json) — not a project dependency"
+
