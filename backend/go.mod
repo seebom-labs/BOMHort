@@ -7,12 +7,12 @@ require (
 	github.com/goccy/go-json v0.10.6
 	github.com/google/uuid v1.6.0
 	github.com/minio/minio-go/v7 v7.2.0
-	github.com/protobom/protobom v0.5.5
+	github.com/protobom/protobom v0.5.6
 )
 
 require (
 	github.com/ClickHouse/ch-go v0.71.0 // indirect
-	github.com/CycloneDX/cyclonedx-go v0.10.0 // indirect
+	github.com/CycloneDX/cyclonedx-go v0.11.0 // indirect
 	github.com/anchore/go-struct-converter v0.1.0 // indirect
 	github.com/andybalholm/brotli v1.2.0 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
