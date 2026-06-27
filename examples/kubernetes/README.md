@@ -1,6 +1,6 @@
-# SeeBOM – Kubernetes Deployment Examples
+# BOMHort – Kubernetes Deployment Examples
 
-Example Helm values for deploying SeeBOM to a real Kubernetes cluster
+Example Helm values for deploying BOMHort to a real Kubernetes cluster
 (EKS, GKE, AKS, self-hosted, etc.).
 
 ## Prerequisites
@@ -31,7 +31,7 @@ helm install seebom deploy/helm/seebom/ \
   --set 's3.buckets=[{"name":"cncf-subproject-sboms","region":"us-east-1"}]'
 
 # Or from the OCI registry:
-helm install seebom oci://ghcr.io/seebom-labs/seebom/charts/seebom \
+helm install seebom oci://ghcr.io/seebom-labs/bomhort/charts/seebom \
   --version 0.1.3 -n seebom -f my-values.yaml
 ```
 
@@ -46,7 +46,7 @@ helm install seebom oci://ghcr.io/seebom-labs/seebom/charts/seebom \
 
 ## How SBOMs Are Loaded
 
-SeeBOM supports multiple ingestion methods. **S3 is the default and recommended approach** — no PVCs, no volume scheduling, scales to any repo size. Volume-based methods are available as alternatives.
+BOMHort supports multiple ingestion methods. **S3 is the default and recommended approach** — no PVCs, no volume scheduling, scales to any repo size. Volume-based methods are available as alternatives.
 
 ### Method 1: S3 Buckets (default, recommended)
 

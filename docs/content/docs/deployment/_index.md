@@ -8,7 +8,7 @@ description: >
 ---
 
 {{% pageinfo %}}
-This guide covers deploying SeeBOM to a Kubernetes cluster using Helm.
+This guide covers deploying BOMHort to a Kubernetes cluster using Helm.
 {{% /pageinfo %}}
 
 ## Prerequisites
@@ -16,13 +16,13 @@ This guide covers deploying SeeBOM to a Kubernetes cluster using Helm.
 - Kubernetes cluster (1.27+)
 - [ClickHouse Operator](https://github.com/Altinity/clickhouse-operator) installed
 - Helm 3.x
-- Container images pushed to a registry (e.g. `ghcr.io/seebom-labs/seebom/*`)
+- Container images pushed to a registry (e.g. `ghcr.io/seebom-labs/bomhort/*`)
 
 ---
 
 ## 1. SBOMs – Getting Data Into the Cluster
 
-SeeBOM supports multiple SBOM ingestion methods. **S3 bucket ingestion** is the default and recommended approach — it requires no PVCs, no volume scheduling, and scales to any number of SBOMs.
+BOMHort supports multiple SBOM ingestion methods. **S3 bucket ingestion** is the default and recommended approach — it requires no PVCs, no volume scheduling, and scales to any number of SBOMs.
 
 ### Option A: S3 Buckets (default, recommended)
 
@@ -98,7 +98,7 @@ s3:
 
 ### Multi-Cluster Ingestion
 
-SeeBOM supports tagging data by **cluster** for multi-cluster visibility from a single instance. This is fully optional — omit all cluster config for single-instance mode.
+BOMHort supports tagging data by **cluster** for multi-cluster visibility from a single instance. This is fully optional — omit all cluster config for single-instance mode.
 
 **Option 1: Global cluster name (one instance per cluster)**
 
@@ -109,7 +109,7 @@ ingestionWatcher:
     CLUSTER_NAME: "prod-eu"
 ```
 
-Deploy one SeeBOM instance per cluster, each with its own `CLUSTER_NAME`.
+Deploy one BOMHort instance per cluster, each with its own `CLUSTER_NAME`.
 
 **Option 2: Per-bucket cluster assignment (one instance, multiple clusters)**
 
@@ -351,7 +351,7 @@ Even when authentication is enabled, the following endpoints are always reachabl
 
 ## 7. GitHub Token (License Resolution)
 
-SeeBOM resolves unknown package licenses (`NOASSERTION`) by querying the GitHub API. Without a token, you are limited to **60 requests per hour**. With a token, the limit increases to **5,000 req/h**.
+BOMHort resolves unknown package licenses (`NOASSERTION`) by querying the GitHub API. Without a token, you are limited to **60 requests per hour**. With a token, the limit increases to **5,000 req/h**.
 
 **We strongly recommend setting a GitHub token for any production deployment.**
 
@@ -391,7 +391,7 @@ helm install seebom ./deploy/helm/seebom \
 
 ## 9. Headless Mode (API-Only)
 
-For CI/CD integrations, custom dashboards, or environments where the Angular UI is not needed, SeeBOM can be deployed in **headless mode**. This skips all UI-related resources (Deployment, Service, nginx ConfigMap) and reduces the cluster's resource footprint.
+For CI/CD integrations, custom dashboards, or environments where the Angular UI is not needed, BOMHort can be deployed in **headless mode**. This skips all UI-related resources (Deployment, Service, nginx ConfigMap) and reduces the cluster's resource footprint.
 
 ```yaml
 # values-headless.yaml
@@ -420,7 +420,7 @@ This is ideal for:
 
 ## 10. Ingress – Exposing the API Externally
 
-SeeBOM includes an optional Ingress resource to expose the API Gateway (and optionally the UI) outside the cluster. The template is controller-agnostic — it works with any Ingress controller that implements the Kubernetes Ingress spec (Envoy Gateway, Contour, AWS ALB, etc.).
+BOMHort includes an optional Ingress resource to expose the API Gateway (and optionally the UI) outside the cluster. The template is controller-agnostic — it works with any Ingress controller that implements the Kubernetes Ingress spec (Envoy Gateway, Contour, AWS ALB, etc.).
 
 {{% alert title="Gateway API" color="info" %}}
 For the newer [Gateway API](https://gateway-api.sigs.k8s.io/), configure Gateway/HTTPRoute resources separately. The Helm chart provides the classic Ingress resource.

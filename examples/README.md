@@ -1,6 +1,6 @@
-# SeeBOM – Deployment Examples
+# BOMHort – Deployment Examples
 
-This directory contains ready-to-use example configurations for deploying SeeBOM.
+This directory contains ready-to-use example configurations for deploying BOMHort.
 
 | Directory | Description |
 |-----------|-------------|
@@ -41,7 +41,7 @@ cp examples/kubernetes/values-production.yaml my-values.yaml
 vi my-values.yaml
 
 # 2. Install via Helm
-helm install seebom oci://ghcr.io/seebom-labs/seebom/charts/seebom \
+helm install seebom oci://ghcr.io/seebom-labs/bomhort/charts/seebom \
   --version 0.1.3 \
   -f my-values.yaml
 ```

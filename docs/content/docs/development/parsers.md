@@ -9,7 +9,7 @@ description: >
 
 ## Overview
 
-SeeBOM supports multiple SBOM formats through a **format-detection dispatch layer** at `internal/sbom/parse.go`. When a file is processed, the dispatcher:
+BOMHort supports multiple SBOM formats through a **format-detection dispatch layer** at `internal/sbom/parse.go`. When a file is processed, the dispatcher:
 
 1. Reads the raw bytes
 2. Probes JSON fields to identify the format
@@ -30,7 +30,7 @@ This happens transparently — the parsing worker simply calls `sbom.Parse(reade
 
 ### Built-in (Default)
 
-The default parsers use `goccy/go-json` for high-performance streaming and add **zero additional dependencies** beyond what SeeBOM already requires.
+The default parsers use `goccy/go-json` for high-performance streaming and add **zero additional dependencies** beyond what BOMHort already requires.
 
 | Package | Format | Notes |
 |---------|--------|-------|
@@ -40,7 +40,7 @@ The default parsers use `goccy/go-json` for high-performance streaming and add *
 **Advantages:**
 - ✅ Minimal memory footprint (no protobuf overhead)
 - ✅ No additional transitive dependencies
-- ✅ Optimized for the specific fields SeeBOM needs
+- ✅ Optimized for the specific fields BOMHort needs
 - ✅ Handles in-toto attestation envelopes natively
 - ✅ Handles Go-specific temp module name cleanup
 
@@ -95,7 +95,7 @@ parsingWorker:
 ### Programmatic (tests)
 
 ```go
-import "github.com/seebom-labs/seebom/backend/internal/sbom"
+import "github.com/seebom-labs/BOMHort/backend/internal/sbom"
 
 sbom.SetUseProtobom(true)
 result, err := sbom.Parse(reader, "file.cdx.json", "sha256hash")
@@ -128,7 +128,7 @@ When `USE_PROTOBOM=true`, **all** SBOM parsing is routed through protobom — in
 
 ## CycloneDX Field Mapping
 
-| CycloneDX Field | SeeBOM Model Field | Notes |
+| CycloneDX Field | BOMHort Model Field | Notes |
 |-----------------|-------------------|-------|
 | `specVersion` | `SBOM.SPDXVersion` | Stored as `"CycloneDX-1.5"` |
 | `serialNumber` | `SBOM.DocumentNamespace` | URN format |

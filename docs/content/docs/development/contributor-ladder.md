@@ -9,7 +9,7 @@ description: >
 
 ## Overview
 
-SeeBOM uses a transparent contributor ladder inspired by the [CNCF contributor ladder template](https://github.com/cncf/project-template/blob/main/CONTRIBUTOR_LADDER.md). Each rung provides clear expectations and privileges, so you always know what the next step looks like.
+BOMHort uses a transparent contributor ladder inspired by the [CNCF contributor ladder template](https://github.com/cncf/project-template/blob/main/CONTRIBUTOR_LADDER.md). Each rung provides clear expectations and privileges, so you always know what the next step looks like.
 
 ```text
 ┌─────────────────────────────────────────────┐
@@ -27,12 +27,12 @@ SeeBOM uses a transparent contributor ladder inspired by the [CNCF contributor l
 
 ## 🌱 Community Member
 
-**Who:** Anyone who uses SeeBOM, files issues, or participates in discussions.
+**Who:** Anyone who uses BOMHort, files issues, or participates in discussions.
 
 **How to become one:** Just show up! No formal process.
 
 **Expectations:**
-- Follow the [Code of Conduct](https://github.com/seebom-labs/seebom/blob/main/CODE_OF_CONDUCT.md)
+- Follow the [Code of Conduct](https://github.com/seebom-labs/BOMHort/blob/main/CODE_OF_CONDUCT.md)
 - File bugs and feature requests using the issue templates
 - Help answer questions in discussions
 
@@ -65,7 +65,7 @@ SeeBOM uses a transparent contributor ladder inspired by the [CNCF contributor l
 |------|----------|
 | **Documentation** | Fix typos, improve examples, add FAQ entries |
 | **Tests** | Add unit tests for uncovered code paths |
-| **Bug fixes** | Issues labeled [`bug`](https://github.com/seebom-labs/seebom/labels/bug) |
+| **Bug fixes** | Issues labeled [`bug`](https://github.com/seebom-labs/BOMHort/labels/bug) |
 | **Frontend** | Small UI improvements, accessibility fixes |
 | **Backend** | Small query optimizations, error message improvements |
 
@@ -97,7 +97,7 @@ SeeBOM uses a transparent contributor ladder inspired by the [CNCF contributor l
 
 **Privileges:**
 - Can approve PRs in their area (final merge still requires maintainer)
-- Listed in [OWNERS](https://github.com/seebom-labs/seebom/blob/main/OWNERS) file
+- Listed in [OWNERS](https://github.com/seebom-labs/BOMHort/blob/main/OWNERS) file
 - Invited to architecture discussions
 
 ### Review Areas
@@ -186,7 +186,7 @@ We welcome AI-assisted contributions. See the dedicated [AI Usage Policy](/docs/
 - AI usage is welcome — you are responsible for the output
 - DCO sign-off (`git commit -s`) is mandatory — you sign, not the AI
 - No `Co-authored-by: AI` trailers — AI is a tool, not a co-author
-- Follow [AGENTS.md](https://github.com/seebom-labs/seebom/blob/main/AGENTS.md) conventions
+- Follow [AGENTS.md](https://github.com/seebom-labs/BOMHort/blob/main/AGENTS.md) conventions
 
 ---
 
@@ -194,13 +194,13 @@ We welcome AI-assisted contributions. See the dedicated [AI Usage Policy](/docs/
 
 Ready to climb the ladder? Here's how:
 
-1. **Browse issues** labeled [`good first issue`](https://github.com/seebom-labs/seebom/labels/good%20first%20issue) or [`help wanted`](https://github.com/seebom-labs/seebom/labels/help%20wanted)
+1. **Browse issues** labeled [`good first issue`](https://github.com/seebom-labs/BOMHort/labels/good%20first%20issue) or [`help wanted`](https://github.com/seebom-labs/BOMHort/labels/help%20wanted)
 2. **Set up your dev environment** — see [Development Guide](/docs/development/)
 3. **Read the architecture** — see [Architecture](/docs/architecture/)
-4. **Submit a PR** — follow the [Contributing Guide](https://github.com/seebom-labs/seebom/blob/main/CONTRIBUTING.md)
+4. **Submit a PR** — follow the [Contributing Guide](https://github.com/seebom-labs/BOMHort/blob/main/CONTRIBUTING.md)
 5. **Check the Roadmap** — see [Roadmap](/docs/roadmap/) for what's planned next
 
 {{% alert title="Questions?" color="info" %}}
-Don't hesitate to open a [Discussion](https://github.com/seebom-labs/seebom/discussions) if you're unsure where to start or how to contribute. We're happy to help!
+Don't hesitate to open a [Discussion](https://github.com/seebom-labs/BOMHort/discussions) if you're unsure where to start or how to contribute. We're happy to help!
 {{% /alert %}}
 

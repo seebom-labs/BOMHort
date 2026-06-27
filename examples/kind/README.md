@@ -1,6 +1,6 @@
-# SeeBOM – Local Kind Deployment
+# BOMHort – Local Kind Deployment
 
-Deploy SeeBOM to a local [Kind](https://kind.sigs.k8s.io/) cluster for development and testing.
+Deploy BOMHort to a local [Kind](https://kind.sigs.k8s.io/) cluster for development and testing.
 
 ## Prerequisites
 
@@ -43,7 +43,7 @@ make kind-up
 This will:
 1. Create a Kind cluster named `seebom` (see [`kind-config.yaml`](kind-config.yaml))
 2. Install the [Altinity ClickHouse Operator](https://github.com/Altinity/clickhouse-operator)
-3. Deploy SeeBOM via Helm with [`values-kind.yaml`](values-kind.yaml)
+3. Deploy BOMHort via Helm with [`values-kind.yaml`](values-kind.yaml)
 4. If S3 is configured: Ingestion Watcher streams SBOMs from your buckets
 5. If S3 is not configured: Seed job clones the CNCF SBOM repo into a PVC (6500+ SBOMs, ~14 GB)
 

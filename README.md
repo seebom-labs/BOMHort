@@ -1,27 +1,29 @@
 <p align="center">
-  <img src="docs/static/images/logo-with-text.png" alt="SeeBOM" width="400">
+  <img src="docs/assets/icons/BOMHORT.png" alt="BOMHort" width="340">
 </p>
 
 <h3 align="center">Kubernetes-native Software Bill of Materials (SBOM) Visualization & Governance Platform</h3>
 
 <p align="center">
-  <a href="https://github.com/seebom-labs/seebom/actions/workflows/ci.yml"><img src="https://github.com/seebom-labs/seebom/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://scorecard.dev/viewer/?uri=github.com/seebom-labs/seebom"><img src="https://api.scorecard.dev/projects/github.com/seebom-labs/seebom/badge" alt="OpenSSF Scorecard"></a>
+  <a href="https://github.com/seebom-labs/BOMHort/actions/workflows/ci.yml"><img src="https://github.com/seebom-labs/BOMHort/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/seebom-labs/BOMHort"><img src="https://api.scorecard.dev/projects/github.com/seebom-labs/BOMHort/badge" alt="OpenSSF Scorecard"></a>
   <a href="https://www.bestpractices.dev/projects/12903"><img src="https://www.bestpractices.dev/projects/12903/badge" alt="OpenSSF Best Practices"></a>
 </p>
 
 Ingest 1000+ SPDX and CycloneDX SBOMs, scan for vulnerabilities via OSV, enforce license compliance, and apply VEX statements — all visualized in a fast Angular dashboard backed by ClickHouse analytics.
 
+**BOMHort** (formerly known as SeeBOM) is the same project with a new name. Read more: [Why we renamed SeeBOM to BOMHort](docs/content/docs/getting-started/rename.md).
+
 <p align="center">
-  <a href="https://docs.seebom.dev/docs/getting-started/">Getting Started</a> ·
-  <a href="https://docs.seebom.dev/docs/architecture/">Architecture</a> ·
-  <a href="https://docs.seebom.dev/docs/roadmap/">Roadmap</a> ·
-  <a href="https://docs.seebom.dev/docs/development/contributor-ladder/">Contributing</a> ·
-  <a href="https://docs.seebom.dev/docs/development/ai-policy/">AI Policy</a>
+  <a href="https://docs.bomhort.dev/docs/getting-started/">Getting Started</a> ·
+  <a href="https://docs.bomhort.dev/docs/architecture/">Architecture</a> ·
+  <a href="https://docs.bomhort.dev/docs/roadmap/">Roadmap</a> ·
+  <a href="https://docs.bomhort.dev/docs/development/contributor-ladder/">Contributing</a> ·
+  <a href="https://docs.bomhort.dev/docs/development/ai-policy/">AI Policy</a>
 </p>
 
 <p align="center">
-  <img src="docs/static/images/dashboard-screenshot.png" alt="SeeBOM Dashboard" width="900">
+  <img src="docs/static/images/dashboard-screenshot.png" alt="BOMHort Dashboard" width="900">
 </p>
 
 ---
@@ -40,7 +42,7 @@ Ingest 1000+ SPDX and CycloneDX SBOMs, scan for vulnerabilities via OSV, enforce
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/seebom-labs/seebom.git && cd seebom
+git clone https://github.com/seebom-labs/BOMHort.git && cd BOMHort
 
 # 2. Place your SBOM files in the sboms/ directory
 #    Supports SPDX JSON, CycloneDX JSON, and in-toto attestation envelopes (auto-detected)
@@ -190,7 +192,7 @@ docker compose up -d --force-recreate ui
 }
 ```
 
-All fields are optional — any missing key falls back to the built-in SeeBOM default. HTML is supported in `description` and `disclaimer`.
+All fields are optional — any missing key falls back to the built-in BOMHort default. HTML is supported in `description` and `disclaimer`.
 
 **Kubernetes:** Enable the site config in Helm values:
 
@@ -390,7 +392,7 @@ See [docs/ARCHITECTURE_PLAN.md](docs/ARCHITECTURE_PLAN.md) for the full blueprin
 See [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) for Kubernetes deployment.  
 See [docs/RELEASE.md](docs/RELEASE.md) for building and publishing container images.  
 See [docs/TESTING.md](docs/TESTING.md) for writing and running tests.  
-See the [API Reference](https://docs.seebom.dev/docs/api-reference/) for complete endpoint documentation.
+See the [API Reference](https://docs.bomhort.dev/docs/api-reference/) for complete endpoint documentation.
 
 ---
 
@@ -410,7 +412,7 @@ See the [API Reference](https://docs.seebom.dev/docs/api-reference/) for complet
 | `make cve-refresh` | Check all known PURLs for new CVEs (without re-scanning SBOMs) |
 | `make migrate` | Run all pending database migrations |
 | **Kind (Local Kubernetes)** | |
-| `make kind-up` | Create Kind cluster and deploy SeeBOM via Helm |
+| `make kind-up` | Create Kind cluster and deploy BOMHort via Helm |
 | `make kind-down` | Destroy the Kind cluster (deletes everything) |
 | `make kind-stop` | Stop the Kind cluster without losing data (preserves volumes) |
 | `make kind-start` | Resume a stopped Kind cluster (all pods & data intact) |
@@ -461,7 +463,7 @@ See the [API Reference](https://docs.seebom.dev/docs/api-reference/) for complet
 | GET | `/api/v1/packages/search?q=&page=&page_size=` | Package name search across all SBOMs |
 | GET | `/api/v1/packages/detail?name=&page=&page_size=` | All projects using a specific package (paginated) |
 
-For complete API documentation with request/response examples, see the [API Reference](https://docs.seebom.dev/docs/api-reference/).
+For complete API documentation with request/response examples, see the [API Reference](https://docs.bomhort.dev/docs/api-reference/).
 
 ---
 
@@ -491,7 +493,7 @@ make dev-reset
 
 ## License Policy
 
-By default, SeeBOM enforces the [CNCF Allowed Third-Party License Policy](https://github.com/cncf/foundation/blob/main/policies-guidance/allowed-third-party-license-policy.md):
+By default, BOMHort enforces the [CNCF Allowed Third-Party License Policy](https://github.com/cncf/foundation/blob/main/policies-guidance/allowed-third-party-license-policy.md):
 
 - **Permissive (allowed):** Apache-2.0, MIT, MIT-0, 0BSD, BSD-2-Clause, BSD-3-Clause, ISC, PSF-2.0, Python-2.0, PostgreSQL, UPL-1.0, X11, Zlib, OpenSSL, and a few more (18 total)
 - **Copyleft (flagged):** GPL, LGPL, AGPL, MPL-2.0, EPL, EUPL, CPAL, and others (21 total)
@@ -541,10 +543,10 @@ kubectl edit configmap seebom-license-policy -n seebom
 
 We welcome contributions! See the [Contributing Guide](CONTRIBUTING.md) for how to get started.
 
-- 📖 [Full Documentation](https://docs.seebom.dev/)
-- 🗺️ [Roadmap](https://docs.seebom.dev/docs/roadmap/)
-- 🪜 [Contributor Ladder](https://docs.seebom.dev/docs/development/contributor-ladder/)
-- 🤖 [AI Usage Policy](https://docs.seebom.dev/docs/development/ai-policy/)
+- 📖 [Full Documentation](https://docs.bomhort.dev/)
+- 🗺️ [Roadmap](https://docs.bomhort.dev/docs/roadmap/)
+- 🪜 [Contributor Ladder](https://docs.bomhort.dev/docs/development/contributor-ladder/)
+- 🤖 [AI Usage Policy](https://docs.bomhort.dev/docs/development/ai-policy/)
 - 🛡️ [Security Policy](SECURITY.md)
 
 ---
@@ -555,4 +557,4 @@ We welcome contributions! See the [Contributing Guide](CONTRIBUTING.md) for how 
 
 ## Badges
 
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/seebom-labs/seebom/badge)](https://scorecard.dev/viewer/?uri=github.com/seebom-labs/seebom)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/seebom-labs/BOMHort/badge)](https://scorecard.dev/viewer/?uri=github.com/seebom-labs/BOMHort)

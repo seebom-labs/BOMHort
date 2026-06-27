@@ -4,11 +4,11 @@ linkTitle: "API Reference"
 type: docs
 weight: 3
 description: >
-  Complete REST API reference for the SeeBOM API Gateway. Essential for headless deployments, CI/CD integrations, and custom tooling.
+  Complete REST API reference for the BOMHort API Gateway. Essential for headless deployments, CI/CD integrations, and custom tooling.
 ---
 
 {{% alert title="Read-Only API" color="info" %}}
-The SeeBOM API is currently **read-only** (GET endpoints only). Write endpoints (SBOM upload) are planned for Phase 2 — see [Roadmap](/docs/roadmap/).
+The BOMHort API is currently **read-only** (GET endpoints only). Write endpoints (SBOM upload) are planned for Phase 2 — see [Roadmap](/docs/roadmap/).
 {{% /alert %}}
 
 ## Base URL
@@ -888,7 +888,7 @@ Configured via `CORS_ALLOWED_ORIGINS` environment variable.
 
 ## Headless Mode
 
-When deployed with `ui.enabled: false` in Helm values, SeeBOM runs as a pure API service:
+When deployed with `ui.enabled: false` in Helm values, BOMHort runs as a pure API service:
 
 - All endpoints above remain available
 - No UI container is deployed
