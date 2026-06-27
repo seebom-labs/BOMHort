@@ -4,11 +4,11 @@ linkTitle: "FAQ"
 type: docs
 weight: 8
 description: >
-  Frequently asked questions about operating and troubleshooting SeeBOM.
+  Frequently asked questions about operating and troubleshooting BOMHort.
 ---
 
 {{% pageinfo %}}
-Common questions about running SeeBOM — re-ingestion, database resets, GitHub token setup, example files, and day-to-day operations.
+Common questions about running BOMHort — re-ingestion, database resets, GitHub token setup, example files, and day-to-day operations.
 {{% /pageinfo %}}
 
 ## How do I force a re-ingestion?
@@ -192,7 +192,7 @@ See [Full re-ingestion from scratch](#full-re-ingestion-from-scratch) above — 
 
 ### Why?
 
-Many container-image SBOMs contain packages with `NOASSERTION` as the declared license. SeeBOM's parsing worker resolves these by querying the GitHub API. Without a token, GitHub enforces a rate limit of **60 requests per hour** — which is quickly exhausted when processing SBOMs with hundreds of packages.
+Many container-image SBOMs contain packages with `NOASSERTION` as the declared license. BOMHort's parsing worker resolves these by querying the GitHub API. Without a token, GitHub enforces a rate limit of **60 requests per hour** — which is quickly exhausted when processing SBOMs with hundreds of packages.
 
 | | Without token | With token |
 |---|---|---|

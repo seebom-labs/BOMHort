@@ -1,4 +1,4 @@
-# SeeBOM – Release & Publishing Guide
+# BOMHort – Release & Publishing Guide
 
 > **Updated:** 2026-05-05
 
@@ -11,11 +11,11 @@ All container images are published to **GitHub Container Registry (ghcr.io)**:
 
 | Image | Description |
 |-------|-------------|
-| `ghcr.io/seebom-labs/seebom/ingestion-watcher` | CronJob: scans SBOM/VEX files, enqueues jobs |
-| `ghcr.io/seebom-labs/seebom/parsing-worker` | Stateless worker: parses SBOMs, queries OSV, checks licenses |
-| `ghcr.io/seebom-labs/seebom/api-gateway` | REST API (16 endpoints) |
-| `ghcr.io/seebom-labs/seebom/cve-refresher` | CronJob: daily incremental CVE checks against OSV |
-| `ghcr.io/seebom-labs/seebom/ui` | Angular frontend (Nginx) |
+| `ghcr.io/seebom-labs/bomhort/ingestion-watcher` | CronJob: scans SBOM/VEX files, enqueues jobs |
+| `ghcr.io/seebom-labs/bomhort/parsing-worker` | Stateless worker: parses SBOMs, queries OSV, checks licenses |
+| `ghcr.io/seebom-labs/bomhort/api-gateway` | REST API (16 endpoints) |
+| `ghcr.io/seebom-labs/bomhort/cve-refresher` | CronJob: daily incremental CVE checks against OSV |
+| `ghcr.io/seebom-labs/bomhort/ui` | Angular frontend (Nginx) |
 
 Images are built for **linux/amd64** and **linux/arm64**.
 
@@ -53,10 +53,10 @@ The GitHub Actions workflow (`.github/workflows/release.yml`) triggers on any `v
 
 1. **Builds all 5 container images** (multi-arch: amd64 + arm64)
 2. **Pushes them to ghcr.io** with two tags each:
-   - `ghcr.io/seebom-labs/seebom/<component>:0.1.2` (version)
-   - `ghcr.io/seebom-labs/seebom/<component>:latest`
+   - `ghcr.io/seebom-labs/bomhort/<component>:0.1.2` (version)
+   - `ghcr.io/seebom-labs/bomhort/<component>:latest`
 3. **Packages the Helm chart** with the matching version
-4. **Pushes the Helm chart** as an OCI artifact to `oci://ghcr.io/seebom-labs/seebom/charts`
+4. **Pushes the Helm chart** as an OCI artifact to `oci://ghcr.io/seebom-labs/bomhort/charts`
 5. **Creates a GitHub Release** with:
    - Auto-generated release notes from commits since the last tag
    - `docker pull` commands for all 5 images
@@ -75,10 +75,10 @@ Release notes are grouped by PR labels (see `.github/release.yml`):
 
 ```bash
 # Check images exist
-docker pull ghcr.io/seebom-labs/seebom/api-gateway:0.1.2
+docker pull ghcr.io/seebom-labs/bomhort/api-gateway:0.1.2
 
 # Check Helm chart
-helm show chart oci://ghcr.io/seebom-labs/seebom/charts/seebom --version 0.1.2
+helm show chart oci://ghcr.io/seebom-labs/bomhort/charts/seebom --version 0.1.2
 ```
 
 ---
@@ -88,7 +88,7 @@ helm show chart oci://ghcr.io/seebom-labs/seebom/charts/seebom --version 0.1.2
 ### Helm (recommended)
 
 ```bash
-helm install seebom oci://ghcr.io/seebom-labs/seebom/charts/seebom \
+helm install seebom oci://ghcr.io/seebom-labs/bomhort/charts/seebom \
   --version 0.1.2 \
   -f values-production.yaml
 ```
@@ -96,7 +96,7 @@ helm install seebom oci://ghcr.io/seebom-labs/seebom/charts/seebom \
 ### Override image tag
 
 ```bash
-helm install seebom oci://ghcr.io/seebom-labs/seebom/charts/seebom \
+helm install seebom oci://ghcr.io/seebom-labs/bomhort/charts/seebom \
   --version 0.1.2 \
   --set image.tag=0.1.2
 ```
@@ -220,7 +220,7 @@ All runtime images run as `nobody:nobody` (backend) or `nginx` (UI) for security
 To use a different registry, override in Helm:
 
 ```bash
-helm install seebom oci://ghcr.io/seebom-labs/seebom/charts/seebom \
+helm install seebom oci://ghcr.io/seebom-labs/bomhort/charts/seebom \
   --set image.registry=my-registry.example.com \
   --set image.repository=my-org/seebom \
   --set image.tag=0.1.3

@@ -8,7 +8,7 @@ description: >
 ---
 
 {{% pageinfo %}}
-How to set up a local development environment, run the stack, and contribute to SeeBOM.
+How to set up a local development environment, run the stack, and contribute to BOMHort.
 {{% /pageinfo %}}
 
 ## Local Development Setup

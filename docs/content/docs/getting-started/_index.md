@@ -4,10 +4,14 @@ linkTitle: "Getting Started"
 type: docs
 weight: 1
 description: >
-  Quick start guide for running SeeBOM locally or on Kubernetes.
+  Quick start guide for running BOMHort locally or on Kubernetes.
 ---
 
-<img src="/images/dashboard-screenshot.png" alt="SeeBOM Dashboard" style="width: 100%; border-radius: 8px; border: 1px solid var(--sb-border); margin-bottom: 2rem;">
+<img src="/images/dashboard-screenshot.png" alt="BOMHort Dashboard" style="width: 100%; border-radius: 8px; border: 1px solid var(--sb-border); margin-bottom: 2rem;">
+
+{{% alert title="Project rename" color="info" %}}
+BOMHort is the new project name (formerly known as SeeBOM). Details: [Why we renamed SeeBOM to BOMHort](/docs/getting-started/rename/).
+{{% /alert %}}
 
 ## Prerequisites
 
@@ -21,7 +25,7 @@ description: >
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/seebom-labs/seebom.git && cd seebom
+git clone https://github.com/seebom-labs/BOMHort.git && cd BOMHort
 
 # 2. Place your SBOM files in the sboms/ directory
 #    Supported formats: SPDX JSON, CycloneDX JSON, in-toto attestation envelopes

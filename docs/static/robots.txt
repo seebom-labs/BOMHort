@@ -1,5 +1,5 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://docs.seebom.dev/sitemap.xml
+Sitemap: https://docs.bomhort.dev/sitemap.xml
 

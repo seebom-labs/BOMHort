@@ -2,7 +2,7 @@
   "name": "seebom-docs",
   "version": "0.1.0",
   "private": true,
-  "description": "SeeBOM documentation site",
+  "description": "BOMHort documentation site",
   "scripts": {
     "serve": "hugo server --buildDrafts --buildFuture",
     "build": "hugo --minify"

@@ -8,7 +8,7 @@ description: >
 ---
 
 {{% pageinfo %}}
-This page contains the full architecture blueprint for SeeBOM.
+This page contains the full architecture blueprint for BOMHort.
 {{% /pageinfo %}}
 
 ## TL;DR
@@ -86,7 +86,7 @@ All core tables (`sboms`, `sbom_packages`, `vulnerabilities`, `license_complianc
 
 ## Multi-Cluster Data Model
 
-SeeBOM supports tagging all ingested data with a **cluster identifier** for multi-cluster deployments. This is fully optional — single-instance deployments work without any configuration.
+BOMHort supports tagging all ingested data with a **cluster identifier** for multi-cluster deployments. This is fully optional — single-instance deployments work without any configuration.
 
 ### How it works
 
@@ -192,7 +192,7 @@ Lightweight daily CronJob that queries all unique PURLs (~20k) against the OSV A
 
 ## SBOM Parsers
 
-SeeBOM supports **multiple SBOM formats** through a format-detection dispatch layer (`internal/sbom`):
+BOMHort supports **multiple SBOM formats** through a format-detection dispatch layer (`internal/sbom`):
 
 | Format | Detection | Parser |
 |--------|-----------|--------|

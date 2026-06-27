@@ -9,7 +9,7 @@ import { SiteConfigService } from './core/site-config.service';
   template: `
     <nav class="navbar">
       <a class="brand" routerLink="/">
-        <img src="assets/logo.webp" alt="SeeBOM" class="brand-logo">
+        <img src="assets/logo.webp" alt="BOMHort" class="brand-logo">
         {{ siteConfig.brandName }}
       </a>
       <div class="nav-links">

@@ -1,5 +1,5 @@
-baseURL = "https://docs.seebom.dev/"
-title = "SeeBOM Documentation"
+baseURL = "https://docs.bomhort.dev/"
+title = "BOMHort Documentation"
 languageCode = "en-us"
 defaultContentLanguage = "en"
 defaultContentLanguageInSubdir = false
@@ -89,15 +89,15 @@ enableGitInfo = false
   [[menu.main]]
     name = "GitHub"
     weight = 90
-    url = "https://github.com/seebom-labs/seebom"
+    url = "https://github.com/seebom-labs/BOMHort"
     pre = "<i class='fab fa-github'></i>"
     identifier = "github"
 
 # Docsy parameters
 [params]
-  description = "SeeBOM is a Kubernetes-native SBOM visualization and governance platform. Ingest SPDX SBOMs, detect vulnerabilities via OSV, enforce license compliance, and apply VEX statements."
-  github_repo = "https://github.com/seebom-labs/seebom"
-  github_project_repo = "https://github.com/seebom-labs/seebom"
+  description = "BOMHort is a Kubernetes-native SBOM visualization and governance platform. Ingest SPDX SBOMs, detect vulnerabilities via OSV, enforce license compliance, and apply VEX statements."
+  github_repo = "https://github.com/seebom-labs/BOMHort"
+  github_project_repo = "https://github.com/seebom-labs/BOMHort"
   github_branch = "main"
   # SEO
   images = ["images/og-image.png"]
@@ -119,7 +119,7 @@ enableGitInfo = false
   [params.links]
     [[params.links.developer]]
       name = "GitHub"
-      url = "https://github.com/seebom-labs/seebom"
+      url = "https://github.com/seebom-labs/BOMHort"
       icon = "fab fa-github"
       desc = "Source code and issue tracker"
 

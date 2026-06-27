@@ -1,4 +1,4 @@
-# SeeBOM – Architecture Blueprint v7
+# BOMHort – Architecture Blueprint v7
 
 > **Status:** K8s-DEPLOYMENT READY + CVE REFRESH  
 > **Date:** 2026-03-12  

@@ -1,4 +1,4 @@
-# SeeBOM – Kubernetes Deployment Guide
+# BOMHort – Kubernetes Deployment Guide
 
 > **Updated:** 2026-03-13
 
@@ -13,7 +13,7 @@
 
 ## 1. SBOMs – Getting Data Into the Cluster
 
-SeeBOM supports multiple SBOM ingestion methods. **S3 bucket ingestion** is the default and recommended approach — it requires no PVCs, no volume scheduling, and scales to any number of SBOMs. Volume-based alternatives are available for environments without S3.
+BOMHort supports multiple SBOM ingestion methods. **S3 bucket ingestion** is the default and recommended approach — it requires no PVCs, no volume scheduling, and scales to any number of SBOMs. Volume-based alternatives are available for environments without S3.
 
 ### Option A: S3 Buckets (default, recommended)
 
@@ -301,7 +301,7 @@ See `ui/src/assets/custom-theme.example.css` for all available variables.
 
 All UI text content — brand name, page title, dashboard title/subtitle, description banner, and disclaimer — can be overridden **without rebuilding Angular** via a JSON config file (`ui-config.json`).
 
-The Angular app loads `/ui-config.json` at startup. Missing keys gracefully fall back to the built-in SeeBOM defaults.
+The Angular app loads `/ui-config.json` at startup. Missing keys gracefully fall back to the built-in BOMHort defaults.
 
 ### Enable the site config ConfigMap
 
@@ -327,11 +327,11 @@ ui:
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `brandName` | string | `SeeBOM` | Navbar brand text (top left) |
-| `pageTitle` | string | `SeeBOM` | Browser tab title (`<title>`) |
+| `brandName` | string | `BOMHort` | Navbar brand text (top left) |
+| `pageTitle` | string | `BOMHort` | Browser tab title (`<title>`) |
 | `dashboard.title` | string | `Dashboard` | Dashboard page heading |
 | `dashboard.subtitle` | string | `Software Bill of Materials — Governance Overview` | Dashboard subheading |
-| `dashboard.description` | HTML string | *(SeeBOM description)* | Description banner on dashboard. Supports HTML (links, bold, etc.) |
+| `dashboard.description` | HTML string | *(BOMHort description)* | Description banner on dashboard. Supports HTML (links, bold, etc.) |
 | `dashboard.disclaimer` | HTML string | *(default disclaimer)* | Disclaimer text at bottom of dashboard. Supports HTML. |
 | `footer.enabled` | boolean | `false` | Show a footer bar below the main content |
 | `footer.text` | string | `""` | Footer text content |
@@ -477,7 +477,7 @@ cp .env.example .env
 
 ## 9. Ingress – Exposing the API Externally
 
-SeeBOM includes an optional Ingress resource to expose the API Gateway (and optionally the UI) outside the cluster. The template is controller-agnostic — it works with any Ingress controller that implements the Kubernetes Ingress spec (Envoy Gateway, Contour, AWS ALB, etc.).
+BOMHort includes an optional Ingress resource to expose the API Gateway (and optionally the UI) outside the cluster. The template is controller-agnostic — it works with any Ingress controller that implements the Kubernetes Ingress spec (Envoy Gateway, Contour, AWS ALB, etc.).
 
 > **Note:** For the newer [Gateway API](https://gateway-api.sigs.k8s.io/), configure Gateway/HTTPRoute resources separately. The Helm chart provides the classic Ingress resource.
 

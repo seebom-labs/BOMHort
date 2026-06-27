@@ -1,17 +1,17 @@
 ---
-title: "SeeBOM"
-linkTitle: "SeeBOM"
-description: "SeeBOM is a Kubernetes-native SBOM visualization and governance platform. Ingest SPDX and CycloneDX SBOMs from S3, detect CVEs via OSV, enforce license compliance, and apply VEX statements."
+title: "BOMHort"
+linkTitle: "BOMHort"
+description: "BOMHort is a Kubernetes-native SBOM visualization and governance platform. Ingest SPDX and CycloneDX SBOMs from S3, detect CVEs via OSV, enforce license compliance, and apply VEX statements."
 ---
 
 {{< blocks/cover title="" image_anchor="top" height="med" color="dark" >}}
-<img src="/images/logo-with-text.svg" alt="SeeBOM" style="max-width: 420px; width: 100%; margin-bottom: 1rem;">
+<img src="/images/BOMHORT.png" alt="BOMHort" style="max-width: 300px; width: 100%; margin-bottom: 1rem;">
 <p class="lead mt-4">Kubernetes-native Software Bill of Materials (SBOM) Visualization &amp; Governance Platform</p>
 <a class="btn btn-lg btn-seebom me-3 mb-4" href="/docs/">
   <img class="fb-icon" src="/images/flowbite/book-open.svg" alt="" loading="lazy">
   Documentation
 </a>
-<a class="btn btn-lg btn-secondary me-3 mb-4" href="https://github.com/seebom-labs/seebom">
+<a class="btn btn-lg btn-secondary me-3 mb-4" href="https://github.com/seebom-labs/BOMHort">
   <img class="fb-icon" src="/images/flowbite/github.svg" alt="" loading="lazy">
   GitHub
 </a>
@@ -22,11 +22,13 @@ description: "SeeBOM is a Kubernetes-native SBOM visualization and governance pl
 Ingest thousands of SPDX and CycloneDX SBOMs, scan for vulnerabilities via OSV, enforce license compliance,
 and apply VEX statements — all visualized in a fast Angular dashboard backed by ClickHouse analytics.
 
+BOMHort was previously known as SeeBOM. See [Why we renamed SeeBOM to BOMHort](/docs/getting-started/rename/).
+
 {{% /blocks/lead %}}
 
 {{< blocks/section color="dark" >}}
 <div class="col-12 text-center">
-  <img src="/images/dashboard-screenshot.png" alt="SeeBOM Dashboard" style="width: 100%; max-width: 1100px; border-radius: 8px; box-shadow: 0 4px 24px rgba(0,0,0,0.4);">
+  <img src="/images/dashboard-screenshot.png" alt="BOMHort Dashboard" style="width: 100%; max-width: 1100px; border-radius: 8px; box-shadow: 0 4px 24px rgba(0,0,0,0.4);">
 </div>
 {{< /blocks/section >}}
 

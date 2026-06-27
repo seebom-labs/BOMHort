@@ -13,7 +13,7 @@ description: >
 This support policy applies starting with the first stable release (v1.0.0). All pre-1.0 releases are development milestones without backward-compatibility guarantees.
 {{% /alert %}}
 
-SeeBOM supports the **current stable release plus the two previous minor versions** (current − 2).
+BOMHort supports the **current stable release plus the two previous minor versions** (current − 2).
 
 ### Support Matrix (example)
 
@@ -32,7 +32,7 @@ When a new minor version is released (e.g., v1.3.0):
 
 ### What "supported" means
 
-- **Security fixes**: CVEs in SeeBOM's own code or critical dependency updates are backported
+- **Security fixes**: CVEs in BOMHort's own code or critical dependency updates are backported
 - **Bug fixes (current stable)**: All confirmed bugs are fixed
 - **Bug fixes (older supported)**: Only critical/data-loss bugs are backported
 - **Features**: Only land in `main` (next release), never backported
@@ -41,7 +41,7 @@ When a new minor version is released (e.g., v1.3.0):
 
 ## Versioning
 
-SeeBOM follows [Semantic Versioning](https://semver.org/):
+BOMHort follows [Semantic Versioning](https://semver.org/):
 
 | Component | Format | Example |
 |-----------|--------|---------|
@@ -57,7 +57,7 @@ SeeBOM follows [Semantic Versioning](https://semver.org/):
 
 ### Major Version Philosophy
 
-SeeBOM plans for **one major version bump every 2–3 years**, driven by accumulated breaking changes — not by calendar. We do not stay on 1.x forever, but we also don't bump majors for marketing reasons.
+BOMHort plans for **one major version bump every 2–3 years**, driven by accumulated breaking changes — not by calendar. We do not stay on 1.x forever, but we also don't bump majors for marketing reasons.
 
 **Triggers for a major version:**
 - ClickHouse schema redesign (ORDER BY changes, table splits/merges)
@@ -154,10 +154,10 @@ git push origin v1.2.4
 Docs are versioned at the **minor** level (not per patch):
 
 ```
-docs.seebom.dev/           ← latest (main)
-docs.seebom.dev/v1.2/      ← v1.2.0, v1.2.1, v1.2.2, ... share these docs
-docs.seebom.dev/v1.1/      ← v1.1.x docs (frozen at last patch)
-docs.seebom.dev/v1.0/      ← v1.0.x docs (frozen)
+docs.bomhort.dev/           ← latest (main)
+docs.bomhort.dev/v1.2/      ← v1.2.0, v1.2.1, v1.2.2, ... share these docs
+docs.bomhort.dev/v1.1/      ← v1.1.x docs (frozen at last patch)
+docs.bomhort.dev/v1.0/      ← v1.0.x docs (frozen)
 ```
 
 ### When releasing a new minor version:
@@ -173,7 +173,7 @@ docs.seebom.dev/v1.0/      ← v1.0.x docs (frozen)
 - Cherry-pick to the release branch if the fix is relevant for that version
 - Deploy triggers automatically on push to release branches
 
-See [#145](https://github.com/seebom-labs/seebom/issues/145) for the full versioned docs implementation plan.
+See [#145](https://github.com/seebom-labs/BOMHort/issues/145) for the full versioned docs implementation plan.
 
 ---
 
@@ -185,11 +185,11 @@ Images are built for **linux/amd64** and **linux/arm64**.
 
 | Image | Purpose |
 |-------|---------|
-| `ghcr.io/seebom-labs/seebom/api-gateway` | REST API server |
-| `ghcr.io/seebom-labs/seebom/parsing-worker` | SBOM processing worker |
-| `ghcr.io/seebom-labs/seebom/ingestion-watcher` | File scanner / queue enqueuer |
-| `ghcr.io/seebom-labs/seebom/cve-refresher` | Daily CVE refresh |
-| `ghcr.io/seebom-labs/seebom/ui` | Angular frontend (Nginx) |
+| `ghcr.io/seebom-labs/bomhort/api-gateway` | REST API server |
+| `ghcr.io/seebom-labs/bomhort/parsing-worker` | SBOM processing worker |
+| `ghcr.io/seebom-labs/bomhort/ingestion-watcher` | File scanner / queue enqueuer |
+| `ghcr.io/seebom-labs/bomhort/cve-refresher` | Daily CVE refresh |
+| `ghcr.io/seebom-labs/bomhort/ui` | Angular frontend (Nginx) |
 
 All images are:
 - Signed with [cosign](https://github.com/sigstore/cosign) (keyless via Fulcio)
@@ -199,15 +199,15 @@ All images are:
 
 ```bash
 cosign verify \
-  --certificate-identity-regexp="https://github.com/seebom-labs/seebom" \
+  --certificate-identity-regexp="https://github.com/seebom-labs/BOMHort" \
   --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
-  ghcr.io/seebom-labs/seebom/api-gateway:1.2.3
+  ghcr.io/seebom-labs/bomhort/api-gateway:1.2.3
 ```
 
 ## Installing from a Release
 
 ```bash
-helm install seebom oci://ghcr.io/seebom-labs/seebom/charts/seebom \
+helm install seebom oci://ghcr.io/seebom-labs/bomhort/charts/seebom \
   --version 1.2.3 \
   -f values-production.yaml
 ```

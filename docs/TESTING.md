@@ -1,4 +1,4 @@
-# SeeBOM – Testing Guide
+# BOMHort – Testing Guide
 
 > **Updated:** 2026-06-03
 

@@ -4,12 +4,12 @@ linkTitle: "AI Policy"
 type: docs
 weight: 4
 description: >
-  Guidelines for using AI tools (Copilot, ChatGPT, Claude, Cursor, etc.) when contributing to SeeBOM.
+  Guidelines for using AI tools (Copilot, ChatGPT, Claude, Cursor, etc.) when contributing to BOMHort.
 ---
 
 ## Policy
 
-SeeBOM **welcomes AI-assisted contributions**. We use AI tools extensively in our own development workflow (see [AGENTS.md](https://github.com/seebom-labs/seebom/blob/main/AGENTS.md)). However, we have clear rules to ensure accountability and code quality.
+BOMHort **welcomes AI-assisted contributions**. We use AI tools extensively in our own development workflow (see [AGENTS.md](https://github.com/seebom-labs/BOMHort/blob/main/AGENTS.md)). However, we have clear rules to ensure accountability and code quality.
 
 ---
 
@@ -33,7 +33,7 @@ AI is a tool, not a co-author. We do **not** accept commits with `Co-authored-by
 
 ### 4. Follow AGENTS.md
 
-If you use AI coding agents, they must follow our project conventions documented in [AGENTS.md](https://github.com/seebom-labs/seebom/blob/main/AGENTS.md). This includes:
+If you use AI coding agents, they must follow our project conventions documented in [AGENTS.md](https://github.com/seebom-labs/BOMHort/blob/main/AGENTS.md). This includes:
 
 - Architectural directives (monorepo, no custom operator, no polyrepo)
 - Dependency restrictions (only 4 Go deps, no new ones without asking)
@@ -86,7 +86,7 @@ Reviewers may ask if AI was used for a specific PR. Be honest. There is **no pen
 
 ## Recommended Workflow
 
-Here's how we recommend using AI effectively with SeeBOM:
+Here's how we recommend using AI effectively with BOMHort:
 
 ```bash
 # 1. Give your AI tool the project context

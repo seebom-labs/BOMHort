@@ -4,7 +4,7 @@ linkTitle: "Roadmap"
 type: docs
 weight: 6
 description: >
-  Product roadmap for SeeBOM — phased delivery from foundation to enterprise-grade supply chain security.
+  Product roadmap for BOMHort — phased delivery from foundation to enterprise-grade supply chain security.
 ---
 
 {{% alert title="Last Updated" color="info" %}}
@@ -13,7 +13,7 @@ description: >
 
 ## Vision
 
-SeeBOM is transitioning from a single-instance SBOM visualization tool into an **enterprise-grade, multi-cluster Software Supply Chain Security platform**. The roadmap spans three phases (Q1–Q3 2026), each building on the previous:
+BOMHort is transitioning from a single-instance SBOM visualization tool into an **enterprise-grade, multi-cluster Software Supply Chain Security platform**. The roadmap spans three phases (Q1–Q3 2026), each building on the previous:
 
 1. **Foundation & Security** — authentication, multi-cluster model, production readiness
 2. **Multi-Cluster & Push Model** — fleet operations, CI/CD integration, attestation verification
@@ -23,22 +23,22 @@ SeeBOM is transitioning from a single-instance SBOM visualization tool into an *
 
 ## Phase 1: Foundation & Security {#phase-1}
 
-**Q1 2026 (Apr–Jun) · Theme:** Make SeeBOM production-ready with real security requirements.
+**Q1 2026 (Apr–Jun) · Theme:** Make BOMHort production-ready with real security requirements.
 
 | Status | Issue | Description |
 |:------:|-------|-------------|
-| 🔲 | [#131 — Cluster-aware data model](https://github.com/seebom-labs/seebom/issues/131) | Add `cluster_id` to all tables. Every multi-cluster feature depends on this. |
-| 🔲 | [#134 — API Authentication](https://github.com/seebom-labs/seebom/issues/134) | Service token + API key modes. Gate for all write operations. |
-| 🔲 | [#137 — Enhanced health checks](https://github.com/seebom-labs/seebom/issues/137) | `/readyz`, `/livez` with dependency verification for K8s probes. |
-| 🔲 | [#136 — Enhanced CORS](https://github.com/seebom-labs/seebom/issues/136) | Support POST + custom headers for upload and cross-origin access. |
-| 🔲 | [#139 — Headless mode](https://github.com/seebom-labs/seebom/issues/139) | API-only deployment without Angular UI (Helm toggle). |
-| 🔲 | [#8 — Project List View](https://github.com/seebom-labs/seebom/issues/8) | Group SBOMs by project — foundational UX improvement. |
-| 🔲 | [#144 — SBOM Download](https://github.com/seebom-labs/seebom/issues/144) | Download original SBOM JSON from the platform. |
-| 🔲 | [#59 — Expose API externally](https://github.com/seebom-labs/seebom/issues/59) | Helm Ingress template for secure external access. |
-| 🔲 | [#55 — CycloneDX Support](https://github.com/seebom-labs/seebom/issues/55) | Parse CycloneDX 1.4+ SBOMs (doubles addressable market). |
-| ✅ | [~~#37 — Version Skew Detection~~](https://github.com/seebom-labs/seebom/issues/37) | Cross-org dependency consistency. Merged 2026-05-04. |
+| 🔲 | [#131 — Cluster-aware data model](https://github.com/seebom-labs/BOMHort/issues/131) | Add `cluster_id` to all tables. Every multi-cluster feature depends on this. |
+| 🔲 | [#134 — API Authentication](https://github.com/seebom-labs/BOMHort/issues/134) | Service token + API key modes. Gate for all write operations. |
+| 🔲 | [#137 — Enhanced health checks](https://github.com/seebom-labs/BOMHort/issues/137) | `/readyz`, `/livez` with dependency verification for K8s probes. |
+| 🔲 | [#136 — Enhanced CORS](https://github.com/seebom-labs/BOMHort/issues/136) | Support POST + custom headers for upload and cross-origin access. |
+| 🔲 | [#139 — Headless mode](https://github.com/seebom-labs/BOMHort/issues/139) | API-only deployment without Angular UI (Helm toggle). |
+| 🔲 | [#8 — Project List View](https://github.com/seebom-labs/BOMHort/issues/8) | Group SBOMs by project — foundational UX improvement. |
+| 🔲 | [#144 — SBOM Download](https://github.com/seebom-labs/BOMHort/issues/144) | Download original SBOM JSON from the platform. |
+| 🔲 | [#59 — Expose API externally](https://github.com/seebom-labs/BOMHort/issues/59) | Helm Ingress template for secure external access. |
+| 🔲 | [#55 — CycloneDX Support](https://github.com/seebom-labs/BOMHort/issues/55) | Parse CycloneDX 1.4+ SBOMs (doubles addressable market). |
+| ✅ | [~~#37 — Version Skew Detection~~](https://github.com/seebom-labs/BOMHort/issues/37) | Cross-org dependency consistency. Merged 2026-05-04. |
 
-**Exit criteria:** SeeBOM deployable with authentication, multi-cluster tagging, proper K8s probes, and CycloneDX parsing.
+**Exit criteria:** BOMHort deployable with authentication, multi-cluster tagging, proper K8s probes, and CycloneDX parsing.
 
 ---
 
@@ -48,16 +48,16 @@ SeeBOM is transitioning from a single-instance SBOM visualization tool into an *
 
 | Status | Issue | Description |
 |:------:|-------|-------------|
-| 🔲 | [#132 — Cluster listing endpoint](https://github.com/seebom-labs/seebom/issues/132) | First consumer-visible multi-cluster feature. |
-| 🔲 | [#133 — Cluster-detail endpoints](https://github.com/seebom-labs/seebom/issues/133) | Per-cluster deep-links for frontend routing. |
-| 🔲 | [#135 — SBOM Upload (Push Model)](https://github.com/seebom-labs/seebom/issues/135) | Accept SBOMs from CI/CD pipelines via POST API. |
-| 🔲 | [#138 — Namespace filtering](https://github.com/seebom-labs/seebom/issues/138) | Sub-cluster granularity for enterprise teams. |
-| 🔲 | [#140 — Workload vulnerability summary](https://github.com/seebom-labs/seebom/issues/140) | Image → posture cross-reference for compliance dashboards. |
-| 🔲 | [#62 — Exportable Auditor Reports](https://github.com/seebom-labs/seebom/issues/62) | PDF/CSV compliance exports for CRA audits. |
-| 🔲 | [#60 — Local OSV Mirror](https://github.com/seebom-labs/seebom/issues/60) | Clone osv.dev into ClickHouse — offline, no rate limits. |
-| 🔲 | [#57 — Project-aware data model + per-project policies](https://github.com/seebom-labs/seebom/issues/57) | **Expanded scope.** Adds a `project` column to all core tables (same pattern as `cluster`), enabling per-project license policies, severity thresholds, and exception scopes. Powers Project List View (#8) and Aggregated SBOM View (#58). |
-| 🔲 | [#143 — In-toto Witness Integration](https://github.com/seebom-labs/seebom/issues/143) | Supply chain attestation verification + provenance display. |
-| 🔲 | [#58 — Aggregated SBOM View](https://github.com/seebom-labs/seebom/issues/58) | Group version history under project names. Depends on #57. |
+| 🔲 | [#132 — Cluster listing endpoint](https://github.com/seebom-labs/BOMHort/issues/132) | First consumer-visible multi-cluster feature. |
+| 🔲 | [#133 — Cluster-detail endpoints](https://github.com/seebom-labs/BOMHort/issues/133) | Per-cluster deep-links for frontend routing. |
+| 🔲 | [#135 — SBOM Upload (Push Model)](https://github.com/seebom-labs/BOMHort/issues/135) | Accept SBOMs from CI/CD pipelines via POST API. |
+| 🔲 | [#138 — Namespace filtering](https://github.com/seebom-labs/BOMHort/issues/138) | Sub-cluster granularity for enterprise teams. |
+| 🔲 | [#140 — Workload vulnerability summary](https://github.com/seebom-labs/BOMHort/issues/140) | Image → posture cross-reference for compliance dashboards. |
+| 🔲 | [#62 — Exportable Auditor Reports](https://github.com/seebom-labs/BOMHort/issues/62) | PDF/CSV compliance exports for CRA audits. |
+| 🔲 | [#60 — Local OSV Mirror](https://github.com/seebom-labs/BOMHort/issues/60) | Clone osv.dev into ClickHouse — offline, no rate limits. |
+| 🔲 | [#57 — Project-aware data model + per-project policies](https://github.com/seebom-labs/BOMHort/issues/57) | **Expanded scope.** Adds a `project` column to all core tables (same pattern as `cluster`), enabling per-project license policies, severity thresholds, and exception scopes. Powers Project List View (#8) and Aggregated SBOM View (#58). |
+| 🔲 | [#143 — In-toto Witness Integration](https://github.com/seebom-labs/BOMHort/issues/143) | Supply chain attestation verification + provenance display. |
+| 🔲 | [#58 — Aggregated SBOM View](https://github.com/seebom-labs/BOMHort/issues/58) | Group version history under project names. Depends on #57. |
 
 **Exit criteria:** Multi-cluster management with namespace isolation, SBOM push from CI/CD, PDF compliance reports, attestation verification, no external OSV dependency.
 
@@ -65,23 +65,23 @@ SeeBOM is transitioning from a single-instance SBOM visualization tool into an *
 
 ## 🎯 v1.0.0 Milestone {#v1}
 
-**Target: October 2026** · [GitHub Milestone →](https://github.com/seebom-labs/seebom/milestone/1)
+**Target: October 2026** · [GitHub Milestone →](https://github.com/seebom-labs/BOMHort/milestone/1)
 
-After Phase 2 completes, SeeBOM reaches **v1.0.0** — the first stable release. From this point forward, the [Support Policy](/docs/release/#support-policy) (current − 2) takes effect and breaking changes require a major version bump.
+After Phase 2 completes, BOMHort reaches **v1.0.0** — the first stable release. From this point forward, the [Support Policy](/docs/release/#support-policy) (current − 2) takes effect and breaking changes require a major version bump.
 
 ### v1.0 Criteria
 
 | Requirement | Status | Issue |
 |-------------|:------:|-------|
-| API Authentication (service token + API key) | 🔲 | [#134](https://github.com/seebom-labs/seebom/issues/134) |
-| Cluster-aware data model (schema stable) | 🔲 | [#131](https://github.com/seebom-labs/seebom/issues/131) |
-| Cluster listing + detail endpoints | 🔲 | [#132](https://github.com/seebom-labs/seebom/issues/132), [#133](https://github.com/seebom-labs/seebom/issues/133) |
-| Namespace filtering | 🔲 | [#138](https://github.com/seebom-labs/seebom/issues/138) |
-| SBOM Upload endpoint | 🔲 | [#135](https://github.com/seebom-labs/seebom/issues/135) |
-| CycloneDX parsing | 🔲 | [#55](https://github.com/seebom-labs/seebom/issues/55) |
-| Enhanced health probes | 🔲 | [#137](https://github.com/seebom-labs/seebom/issues/137) |
-| Versioned documentation | 🔲 | [#145](https://github.com/seebom-labs/seebom/issues/145) |
-| Version Skew Detection | ✅ | [~~#37~~](https://github.com/seebom-labs/seebom/issues/37) |
+| API Authentication (service token + API key) | 🔲 | [#134](https://github.com/seebom-labs/BOMHort/issues/134) |
+| Cluster-aware data model (schema stable) | 🔲 | [#131](https://github.com/seebom-labs/BOMHort/issues/131) |
+| Cluster listing + detail endpoints | 🔲 | [#132](https://github.com/seebom-labs/BOMHort/issues/132), [#133](https://github.com/seebom-labs/BOMHort/issues/133) |
+| Namespace filtering | 🔲 | [#138](https://github.com/seebom-labs/BOMHort/issues/138) |
+| SBOM Upload endpoint | 🔲 | [#135](https://github.com/seebom-labs/BOMHort/issues/135) |
+| CycloneDX parsing | 🔲 | [#55](https://github.com/seebom-labs/BOMHort/issues/55) |
+| Enhanced health probes | 🔲 | [#137](https://github.com/seebom-labs/BOMHort/issues/137) |
+| Versioned documentation | 🔲 | [#145](https://github.com/seebom-labs/BOMHort/issues/145) |
+| Version Skew Detection | ✅ | [~~#37~~](https://github.com/seebom-labs/BOMHort/issues/37) |
 
 ### What v1.0 means
 
@@ -103,14 +103,14 @@ All v0.x releases are development milestones. They may contain breaking changes 
 
 | Status | Issue | Description |
 |:------:|-------|-------------|
-| 🔲 | [#141 — CRA Compliance Dashboard](https://github.com/seebom-labs/seebom/issues/141) | EU Cyber Resilience Act readiness scoring. |
-| 🔲 | [#38 — SBOM Diff](https://github.com/seebom-labs/seebom/issues/38) | Dependency tree divergence between versions. |
-| 🔲 | [#56 — Dependency Tree View](https://github.com/seebom-labs/seebom/issues/56) | Hierarchical visualization of transitive chains. |
-| 🔲 | [#63 — Blast Radius Search](https://github.com/seebom-labs/seebom/issues/63) | Version-constrained impact analysis with vuln context. |
-| 🔲 | [#64 — EPSS Scores](https://github.com/seebom-labs/seebom/issues/64) | Exploit probability scoring for prioritization. |
-| 🔲 | [#61 — OpenSSF Scorecard](https://github.com/seebom-labs/seebom/issues/61) | Upstream project health scoring per dependency. |
-| 🔲 | [#82 — Lottery Factor](https://github.com/seebom-labs/seebom/issues/82) | Single-maintainer risk detection. |
-| 🔲 | [#7 — CVE Fix Time (MTTR)](https://github.com/seebom-labs/seebom/issues/7) | Mean-time-to-remediate tracking per project. |
+| 🔲 | [#141 — CRA Compliance Dashboard](https://github.com/seebom-labs/BOMHort/issues/141) | EU Cyber Resilience Act readiness scoring. |
+| 🔲 | [#38 — SBOM Diff](https://github.com/seebom-labs/BOMHort/issues/38) | Dependency tree divergence between versions. |
+| 🔲 | [#56 — Dependency Tree View](https://github.com/seebom-labs/BOMHort/issues/56) | Hierarchical visualization of transitive chains. |
+| 🔲 | [#63 — Blast Radius Search](https://github.com/seebom-labs/BOMHort/issues/63) | Version-constrained impact analysis with vuln context. |
+| 🔲 | [#64 — EPSS Scores](https://github.com/seebom-labs/BOMHort/issues/64) | Exploit probability scoring for prioritization. |
+| 🔲 | [#61 — OpenSSF Scorecard](https://github.com/seebom-labs/BOMHort/issues/61) | Upstream project health scoring per dependency. |
+| 🔲 | [#82 — Lottery Factor](https://github.com/seebom-labs/BOMHort/issues/82) | Single-maintainer risk detection. |
+| 🔲 | [#7 — CVE Fix Time (MTTR)](https://github.com/seebom-labs/BOMHort/issues/7) | Mean-time-to-remediate tracking per project. |
 
 **Exit criteria:** CRA readiness scoring, EPSS-based prioritization, dependency health metrics, and SBOM diff.
 
@@ -161,7 +161,7 @@ Key insight: **#131 (Cluster Model)**, **#134 (Auth)**, and **#57 (Project Model
 ## Prioritization Philosophy
 
 ### Multi-cluster before analytics
-Organizations evaluating SeeBOM for production ask *"Can it handle our 5 clusters?"* before *"Does it have EPSS scores?"*
+Organizations evaluating BOMHort for production ask *"Can it handle our 5 clusters?"* before *"Does it have EPSS scores?"*
 
 ### Auth before upload
 A write endpoint without authentication is a security incident. Auth gates all write operations.
@@ -183,7 +183,7 @@ These items are **explicitly out of scope** for this roadmap:
 - ❌ Multi-repo split (monorepo is a hard constraint)
 - ❌ Real-time streaming (batch ingestion is sufficient)
 - ❌ RBAC/multi-tenancy (auth is binary for now)
-- ❌ Full OIDC in SeeBOM (upstream proxy responsibility)
+- ❌ Full OIDC in BOMHort (upstream proxy responsibility)
 
 ---
 
