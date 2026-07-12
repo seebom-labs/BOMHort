@@ -10,7 +10,7 @@ The platform consists of **4 Go binaries**, an **Angular UI**, and a **ClickHous
 |--------|------|---------|
 | `ingestion-watcher` | K8s CronJob | Scans SBOM/VEX directory, hash-dedup, enqueues jobs |
 | `parsing-worker` | Deployment (N replicas) | Processes SBOMs (SPDX→ClickHouse), VEX files, OSV lookups, license checks |
-| `api-gateway` | Deployment | Stateless REST API (24 endpoints) |
+| `api-gateway` | Deployment | Stateless REST API (25 endpoints) |
 | `cve-refresher` | K8s CronJob (daily) | Checks all known PURLs for newly disclosed CVEs without re-scanning SBOMs |
 
 Key shared packages:

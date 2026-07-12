@@ -746,6 +746,68 @@ Detailed information about a specific package, listing all projects that use it.
 **Errors:**
 - `400` — Missing required query parameter `name`
 
+---
+
+## Global Search
+
+### `GET /api/v1/search`
+
+Faceted search across packages, projects, vulnerabilities, and licenses in a single request. Powers the navbar typeahead and the `/search` results page in the UI.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `q` | string | ✅ | Search query, minimum 2 characters (case-insensitive substring match) |
+| `limit` | uint64 | — | Max results per facet (default 5, max 50) |
+
+Vulnerabilities match on both the vulnerability ID and the summary text. Projects match on the derived project key (`org/repo` for S3 sources, document name otherwise).
+
+**Response:** `200 OK`
+```json
+{
+  "query": "grpc",
+  "packages": [
+    {
+      "package_name": "google.golang.org/grpc",
+      "purl": "pkg:golang/google.golang.org/grpc@v1.60.0",
+      "project_count": 87
+    }
+  ],
+  "total_packages": 3,
+  "projects": [
+    {
+      "project_name": "grpc/grpc-go",
+      "sbom_count": 4,
+      "latest_sbom_id": "a1b2c3d4-..."
+    }
+  ],
+  "total_projects": 1,
+  "vulnerabilities": [
+    {
+      "vuln_id": "CVE-2024-9999",
+      "severity": "HIGH",
+      "summary": "gRPC denial of service",
+      "affected_sboms": 7
+    }
+  ],
+  "total_vulnerabilities": 1,
+  "licenses": [
+    {
+      "license_id": "Apache-2.0",
+      "category": "permissive",
+      "sbom_count": 100
+    }
+  ],
+  "total_licenses": 1
+}
+```
+
+Facet arrays are always present (empty when no matches). Each facet returns at most `limit` items; the `total_*` fields report the full match counts.
+
+**Errors:**
+- `400` — Query parameter `q` missing or shorter than 2 characters
+
 ### `GET /api/v1/packages/archived`
 
 Packages from archived/unmaintained GitHub repositories (supply chain risk indicator).
