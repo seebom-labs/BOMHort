@@ -1,11 +1,12 @@
 import { Component, OnInit } from '@angular/core';
 import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 import { SiteConfigService } from './core/site-config.service';
+import { GlobalSearchComponent } from './shared/global-search/global-search.component';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, GlobalSearchComponent],
   template: `
     <nav class="navbar">
       <a class="brand" routerLink="/">
@@ -25,6 +26,7 @@ import { SiteConfigService } from './core/site-config.service';
         <a routerLink="/version-skew" routerLinkActive="active">Version Skew</a>
         <a routerLink="/vex" routerLinkActive="active">VEX</a>
       </div>
+      <app-global-search></app-global-search>
       <button class="theme-toggle" (click)="toggleTheme()" [title]="dark ? 'Light mode' : 'Dark mode'">
         {{ dark ? '☀' : '☾' }}
       </button>
@@ -89,6 +91,9 @@ import { SiteConfigService } from './core/site-config.service';
     }
     .theme-toggle:hover { background: rgba(255,255,255,0.1); color: #fff; }
     .content { flex: 1; overflow: auto; background: var(--bg); }
+    @media (max-width: 1000px) {
+      app-global-search { display: none; }
+    }
   `],
 })
 export class App implements OnInit {
