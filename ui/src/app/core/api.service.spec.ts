@@ -253,5 +253,29 @@ describe('ApiService', () => {
     const url = service.getSbomDownloadUrl(sbomId);
     expect(url).toBe(`/api/v1/sboms/${sbomId}/download`);
   });
+
+  it('should fetch global search results', () => {
+    const mockResp = {
+      query: 'test',
+      packages: [],
+      total_packages: 0,
+      projects: [],
+      total_projects: 0,
+      vulnerabilities: [],
+      total_vulnerabilities: 0,
+      licenses: [],
+      total_licenses: 0
+    };
+
+    service.globalSearch('test', 5).subscribe((resp) => {
+      expect(resp.query).toBe('test');
+    });
+
+    const req = httpMock.expectOne((r) => r.url === '/api/v1/search');
+    expect(req.request.method).toBe('GET');
+    expect(req.request.params.get('q')).toBe('test');
+    expect(req.request.params.get('limit')).toBe('5');
+    req.flush(mockResp);
+  });
 });
 

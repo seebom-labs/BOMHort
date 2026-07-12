@@ -250,3 +250,40 @@ export interface ProjectListItem {
   latest_sbom_id: string;
 }
 
+export interface GlobalSearchPackage {
+  package_name: string;
+  purl: string;
+  project_count: number;
+}
+
+export interface GlobalSearchProject {
+  project_name: string;
+  sbom_count: number;
+  latest_sbom_id: string;
+}
+
+export interface GlobalSearchVulnerability {
+  vuln_id: string;
+  severity: string;
+  summary: string;
+  affected_sboms: number;
+}
+
+export interface GlobalSearchLicense {
+  license_id: string;
+  category: string;
+  sbom_count: number;
+}
+
+export interface GlobalSearchResponse {
+  query: string;
+  packages: GlobalSearchPackage[];
+  total_packages: number;
+  projects: GlobalSearchProject[];
+  total_projects: number;
+  vulnerabilities: GlobalSearchVulnerability[];
+  total_vulnerabilities: number;
+  licenses: GlobalSearchLicense[];
+  total_licenses: number;
+}
+
