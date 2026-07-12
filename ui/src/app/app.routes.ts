@@ -87,5 +87,12 @@ export const routes: Routes = [
         (m) => m.ArchivedPackagesComponent
       ),
   },
+  {
+    path: 'search',
+    loadComponent: () =>
+      import('./features/search/global-search-results.component').then(
+        (m) => m.GlobalSearchResultsComponent
+      ),
+  },
   { path: '**', redirectTo: '' },
 ];
