@@ -200,6 +200,7 @@ Angular UI (13 lazy-loaded routes, virtual scrolling, OnPush, dark mode)
 | GET | `/api/v1/packages/archived` | Packages using archived GitHub repos (no longer maintained) |
 | GET | `/api/v1/packages/search?q=&page=&page_size=` | Fuzzy package name search across all SBOMs (ILIKE, paginated) |
 | GET | `/api/v1/packages/detail?name=&page=&page_size=` | All projects using a specific package (paginated) |
+| GET | `/api/v1/search?q=&limit=` | Global faceted search across packages, projects, vulnerabilities, licenses |
 | GET | `/api/v1/clusters` | List all clusters with summary stats (SBOM count, packages, vulns) |
 | GET | `/api/v1/clusters/{name}/stats` | Per-cluster dashboard statistics |
 | GET | `/api/v1/clusters/{name}/sboms?page=&page_size=` | Paginated SBOM list for a specific cluster |

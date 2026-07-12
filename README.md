@@ -461,6 +461,7 @@ See the [API Reference](https://docs.bomhort.dev/docs/api-reference/) for comple
 | GET | `/api/v1/vex/statements?page=&page_size=` | Paginated VEX statements |
 | GET | `/api/v1/packages/archived` | Packages using archived GitHub repos (no longer maintained) |
 | GET | `/api/v1/packages/search?q=&page=&page_size=` | Package name search across all SBOMs |
+| GET | `/api/v1/search?q=&limit=` | Global faceted search (packages, projects, CVEs, licenses) |
 | GET | `/api/v1/packages/detail?name=&page=&page_size=` | All projects using a specific package (paginated) |
 
 For complete API documentation with request/response examples, see the [API Reference](https://docs.bomhort.dev/docs/api-reference/).
