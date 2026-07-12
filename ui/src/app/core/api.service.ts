@@ -20,6 +20,7 @@ import {
   LicenseExceptionsFile,
   ArchivedPackageInfo,
   ProjectListItem,
+  GlobalSearchResponse,
 } from './api.models';
 
 @Injectable({
@@ -147,6 +148,14 @@ export class ApiService {
       params = params.set('search', search);
     }
     return this.http.get<PaginatedResponse<ProjectListItem>>(`${this.baseUrl}/projects`, { params });
+  }
+
+  globalSearch(q: string, limit?: number): Observable<GlobalSearchResponse> {
+    let params = new HttpParams().set('q', q);
+    if (limit !== undefined) {
+      params = params.set('limit', limit.toString());
+    }
+    return this.http.get<GlobalSearchResponse>(`${this.baseUrl}/search`, { params });
   }
 }
 
