@@ -41,3 +41,28 @@ func TestQueryGlobalSearchMethodExists(t *testing.T) {
 	var c *Client
 	var _ func(context.Context, string, uint64) (*dto.GlobalSearchResponse, error) = c.QueryGlobalSearch
 }
+
+func TestEscapeLikePattern(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"plain term unchanged", "grpc", "grpc"},
+		{"percent escaped", "100%", `100\%`},
+		{"only percent escaped", "%", `\%`},
+		{"underscore escaped", "my_pkg", `my\_pkg`},
+		{"multiple underscores escaped", "___", `\_\_\_`},
+		{"backslash escaped", `a\b`, `a\\b`},
+		{"backslash before wildcard escaped first", `\%`, `\\\%`},
+		{"mixed wildcards", `x_%\`, `x\_\%\\`},
+		{"empty string", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := escapeLikePattern(tt.in); got != tt.want {
+				t.Errorf("escapeLikePattern(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
