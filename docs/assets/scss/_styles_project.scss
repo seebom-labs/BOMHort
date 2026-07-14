@@ -198,3 +198,133 @@ pre code {
   text-decoration: underline;
 }
 
+/* ════════════════════════════════════════════════════════════════
+ *  Mobile / responsive optimizations
+ * ════════════════════════════════════════════════════════════════ */
+
+/* ── Navbar logo sizing ─────────────────────────────────────────
+ * The inlined brand SVG ships with width="100%"; constrain it to a
+ * fixed height so it never stretches across the navbar (all sizes). */
+.td-navbar .navbar-brand__logo svg,
+.td-navbar .navbar-logo svg {
+  height: 32px;
+  width: auto;
+  max-width: 180px;
+}
+
+/* ── Navbar nav: hide the horizontal scrollbar ──────────────────
+ * Docsy wraps the top links in a horizontally scrollable container
+ * (.td-navbar-nav-scroll). With a lean menu it rarely needs to
+ * scroll, but hide the visible scrollbar so it never looks broken;
+ * scrolling + the fade indicators still work for narrow screens. */
+.td-navbar-nav-scroll {
+  scrollbar-width: none;            /* Firefox */
+  -ms-overflow-style: none;         /* old Edge */
+}
+.td-navbar-nav-scroll::-webkit-scrollbar {
+  display: none;                    /* Chrome/Safari */
+}
+
+/* ── Prevent any element from forcing horizontal page scroll ──── */
+html,
+body {
+  overflow-x: hidden;
+}
+
+.td-content {
+  /* Media never exceeds the viewport */
+  img,
+  svg,
+  video {
+    max-width: 100%;
+    height: auto;
+  }
+
+  /* Code blocks scroll internally instead of widening the page */
+  pre {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  /* Break very long words / URLs / inline code instead of overflowing */
+  p,
+  li,
+  td,
+  th {
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+  }
+}
+
+/* ── Markdown tables: scroll horizontally when they don't fit ───
+ * Markdown renders bare <table> elements with no wrapper, so make
+ * the table itself the scroll container as a graceful fallback. */
+.td-content table {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ── Phones (< 768px) ──────────────────────────────────────────── */
+@media (max-width: 767.98px) {
+  /* Slightly smaller, denser tables */
+  .td-content table {
+    font-size: 0.82rem;
+  }
+
+  .td-content table th,
+  .td-content table td {
+    padding: 0.4rem 0.6rem;
+  }
+
+  /* Smaller code on narrow screens */
+  pre code {
+    font-size: 0.78rem;
+  }
+
+  /* Scale headings down so long words / inline code never overflow */
+  .td-content h1 {
+    font-size: 1.6rem;
+  }
+  .td-content h2 {
+    font-size: 1.35rem;
+  }
+  .td-content h3 {
+    font-size: 1.15rem;
+  }
+
+  /* Navbar logo a touch smaller on phones */
+  .td-navbar .navbar-brand__logo svg,
+  .td-navbar .navbar-logo svg {
+    height: 26px;
+  }
+
+  /* ── Homepage cover block ── */
+  .td-cover-block {
+    padding-top: 3rem !important;
+    padding-bottom: 3rem !important;
+  }
+
+  .td-cover-block img {
+    max-width: 220px;
+  }
+
+  .td-cover-block .lead {
+    font-size: 1rem;
+  }
+
+  /* Stack cover CTAs full-width for easy tapping */
+  .td-cover-block .btn-lg {
+    display: block;
+    width: 100%;
+    margin-right: 0 !important;
+  }
+
+  /* Tighter feature / section padding */
+  .td-box {
+    padding: 2.5rem 1rem;
+  }
+}
+

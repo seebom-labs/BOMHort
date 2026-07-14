@@ -44,7 +44,11 @@ enableGitInfo = false
   [markup.highlight]
     style = "monokai"
 
-# Top navbar
+# Top navbar – kept intentionally lean. The full documentation section tree
+# (Getting Started, Architecture, Deployment, Development, Release, …) lives in
+# the left sidebar, which is generated from the content tree, not from this
+# menu. Keeping only a few high-level links here avoids the cramped horizontal
+# scroll state on medium widths and keeps the mobile navbar clean.
 [menu]
   [[menu.main]]
     name = "Docs"
@@ -52,38 +56,13 @@ enableGitInfo = false
     url = "/docs/"
     identifier = "docs"
   [[menu.main]]
-    name = "Getting Started"
-    weight = 20
-    url = "/docs/getting-started/"
-    identifier = "getting-started"
-  [[menu.main]]
-    name = "Architecture"
-    weight = 30
-    url = "/docs/architecture/"
-    identifier = "architecture"
-  [[menu.main]]
-    name = "Deployment"
-    weight = 40
-    url = "/docs/deployment/"
-    identifier = "deployment"
-  [[menu.main]]
-    name = "Development"
-    weight = 50
-    url = "/docs/development/"
-    identifier = "development"
-  [[menu.main]]
-    name = "Release"
-    weight = 60
-    url = "/docs/release/"
-    identifier = "release"
-  [[menu.main]]
     name = "Roadmap"
-    weight = 65
+    weight = 20
     url = "/docs/roadmap/"
     identifier = "roadmap"
   [[menu.main]]
     name = "FAQ"
-    weight = 70
+    weight = 30
     url = "/docs/faq/"
     identifier = "faq"
   [[menu.main]]
