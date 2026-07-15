@@ -68,10 +68,17 @@ jobs:
           HUGO_ENVIRONMENT: production
           TZ: UTC
         run: |
+          # NOTE: We intentionally do NOT pass --baseURL here. The Hugo
+          # `baseURL` in docs/hugo.toml is the canonical HTTPS custom domain
+          # (https://docs.bomhort.dev/). The `actions/configure-pages` output
+          # `base_url` resolves the custom domain with an *http://* scheme,
+          # which would poison every canonical link, og:url, and sitemap <loc>
+          # with http:// — causing Google to treat the pages as redirect/
+          # duplicate targets and skip indexing. Relying on hugo.toml keeps all
+          # SEO URLs on https://.
           hugo \
             --gc \
-            --minify \
-            --baseURL "${{ steps.pages.outputs.base_url }}/"
+            --minify
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
