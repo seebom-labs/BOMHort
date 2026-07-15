@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"io"
@@ -76,11 +77,14 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	// Health check.
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	})
+	// Health check (legacy/general).
+	mux.HandleFunc("GET /healthz", livezHandler())
+	// Liveness probe: process is up. Must NOT depend on external systems so a
+	// transient DB outage does not cause K8s to kill otherwise-healthy pods.
+	mux.HandleFunc("GET /livez", livezHandler())
+	// Readiness probe: pod is ready only when ClickHouse is reachable. Returns
+	// 503 otherwise so K8s removes the pod from Service endpoints.
+	mux.HandleFunc("GET /readyz", readyzHandler(chClient))
 
 	// Dashboard stats.
 	mux.HandleFunc("GET /api/v1/stats/dashboard", func(w http.ResponseWriter, r *http.Request) {
@@ -801,4 +805,33 @@ func clientIP(r *http.Request) string {
 		return strings.TrimSpace(ip)
 	}
 	return r.RemoteAddr
+}
+
+// pinger is the minimal surface readyzHandler needs, kept small for testing.
+type pinger interface {
+	Ping(ctx context.Context) error
+}
+
+// livezHandler reports process liveness. It never touches external systems.
+func livezHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}
+}
+
+// readyzHandler reports readiness based on ClickHouse connectivity.
+func readyzHandler(p pinger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if err := p.Ping(ctx); err != nil {
+			log.Printf("ERROR: readiness check failed: %v", err)
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"status":"unavailable","reason":"clickhouse"}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}
 }

@@ -406,7 +406,7 @@ apiGateway:
 
 With `ui.enabled: false`:
 - No UI Deployment, Service, or ConfigMaps are rendered
-- All 19 API endpoints remain fully functional
+- All 24 API endpoints remain fully functional
 - The API Gateway is the only externally exposed component
 - Pair with `apiGateway.auth.enabled: true` to secure access
 

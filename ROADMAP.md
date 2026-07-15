@@ -1,6 +1,6 @@
 # SeeBOM Product Roadmap
 
-> Last updated: 2026-05-22
+> Last updated: 2026-07-15
 > Project Board: https://github.com/orgs/seebom-labs/projects/1
 
 ## Executive Summary
@@ -17,18 +17,20 @@ The sequencing is driven by dependency chains: multi-cluster support must land b
 
 | # | Issue | Rationale |
 |---|-------|-----------|
-| #131 | Cluster-aware data model | Foundational schema change — every multi-cluster feature depends on this. Non-destructive migration (ADD COLUMN DEFAULT). |
-| #134 | API Authentication (Service Token + API Key) | Zero dependencies, highest organizational demand. Cannot expose API externally or accept uploads without auth. OIDC explicitly out of scope — handled by upstream proxy/gateway. |
-| #137 | Enhanced health checks (/readyz, /livez) | Quick win. Production K8s deployments need proper probes before trusting traffic routing. |
-| #136 | Enhanced CORS configuration | Required by upload endpoint and external dashboard embedding. Small change, large enablement. |
+| ~~#131~~ | ~~Cluster-aware data model~~ | ✅ **Done** — `cluster` column added via migration `012_add_cluster_column.up.sql`. |
+| ~~#134~~ | ~~API Authentication (Service Token + API Key)~~ | ✅ **Done** — `authMiddleware` (service token + API keys, constant-time compare). |
+| ~~#137~~ | ~~Enhanced health checks (/readyz, /livez)~~ | ✅ **Done** — `/healthz`, `/livez` (liveness), `/readyz` (ClickHouse ping → 503 when down). |
+| ~~#136~~ | ~~Enhanced CORS configuration~~ | ✅ **Done** — `CORS_ALLOWED_ORIGINS` configurable (GET/OPTIONS). POST to be added with Upload (#135). |
 | #139 | Headless mode (API-only) | Helm-only change. Enables pure API consumers and reduces resource footprint for headless deployments. |
-| #8 | Project List View | Existing priority:high. Groups SBOMs by project — foundational UX improvement. |
-| #144 | SBOM Download | Small scope, high value. Users expect to download original SBOM JSON from the platform that aggregates them. Requires new API endpoint + UI button. |
+| ~~#8~~ | ~~Project List View~~ | ✅ **Done** — `GET /api/v1/projects` + UI project list. |
+| ~~#144~~ | ~~SBOM Download~~ | ✅ **Done** — `GET /api/v1/sboms/{id}/download` + UI download buttons. |
 | #59 | Expose API externally (Ingress) | Helm template + docs. Pairs with auth (#134) for secure external access. |
-| #55 | CycloneDX Support | Already in progress (PR #110). Doubles the addressable market (Trivy, Grype users). |
+| ~~#55~~ | ~~CycloneDX Support~~ | ✅ **Done** — `internal/cyclonedx` parser wired into the multi-format dispatch layer. |
 | ~~#37~~ | ~~Version Skew Detection~~ | ✅ **Done** (PRs #103, #126, merged 2026-05-04). |
 
 **Exit criteria:** SeeBOM can be deployed with authentication, multi-cluster tagging, and proper K8s health probes. CycloneDX SBOMs parse correctly.
+
+> **Delivered ahead of roadmap:** **Global Search** — faceted search across packages, projects and vulnerabilities (`GET /api/v1/search`, `internal/clickhouse/queries_global_search.go`, UI `global-search` component). Not originally scoped; shipped as a UX enhancement.
 
 ---
 
@@ -38,8 +40,8 @@ The sequencing is driven by dependency chains: multi-cluster support must land b
 
 | # | Issue | Rationale |
 |---|-------|-----------|
-| #132 | Cluster listing endpoint | First consumer-visible multi-cluster feature. Enables cluster picker in frontend. |
-| #133 | Cluster-detail endpoints | Per-cluster deep-links. Cleaner than query params for frontend routing. |
+| ~~#132~~ | ~~Cluster listing endpoint~~ | ✅ **Done** — `GET /api/v1/clusters`. |
+| ~~#133~~ | ~~Cluster-detail endpoints~~ | ✅ **Done** — `GET /api/v1/clusters/{name}/stats` and `/sboms`. |
 | #135 | SBOM Upload (Push Model) | Critical for CI/CD integration. Depends on auth (#134) and cluster model (#131). |
 | #138 | Namespace filtering | Sub-cluster granularity. Enterprise teams operate in namespaces, not just clusters. |
 | #140 | Workload vulnerability summary | The key cross-reference: image → posture. Powers compliance dashboards. |

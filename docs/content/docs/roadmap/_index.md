@@ -8,7 +8,7 @@ description: >
 ---
 
 {{% alert title="Last Updated" color="info" %}}
-2026-05-22 · [Project Board →](https://github.com/orgs/seebom-labs/projects/1)
+2026-07-15 · [Project Board →](https://github.com/orgs/seebom-labs/projects/1)
 {{% /alert %}}
 
 ## Vision
@@ -27,15 +27,15 @@ BOMHort is transitioning from a single-instance SBOM visualization tool into an 
 
 | Status | Issue | Description |
 |:------:|-------|-------------|
-| 🔲 | [#131 — Cluster-aware data model](https://github.com/seebom-labs/BOMHort/issues/131) | Add `cluster_id` to all tables. Every multi-cluster feature depends on this. |
-| 🔲 | [#134 — API Authentication](https://github.com/seebom-labs/BOMHort/issues/134) | Service token + API key modes. Gate for all write operations. |
-| 🔲 | [#137 — Enhanced health checks](https://github.com/seebom-labs/BOMHort/issues/137) | `/readyz`, `/livez` with dependency verification for K8s probes. |
-| 🔲 | [#136 — Enhanced CORS](https://github.com/seebom-labs/BOMHort/issues/136) | Support POST + custom headers for upload and cross-origin access. |
-| 🔲 | [#139 — Headless mode](https://github.com/seebom-labs/BOMHort/issues/139) | API-only deployment without Angular UI (Helm toggle). |
-| 🔲 | [#8 — Project List View](https://github.com/seebom-labs/BOMHort/issues/8) | Group SBOMs by project — foundational UX improvement. |
-| 🔲 | [#144 — SBOM Download](https://github.com/seebom-labs/BOMHort/issues/144) | Download original SBOM JSON from the platform. |
-| 🔲 | [#59 — Expose API externally](https://github.com/seebom-labs/BOMHort/issues/59) | Helm Ingress template for secure external access. |
-| 🔲 | [#55 — CycloneDX Support](https://github.com/seebom-labs/BOMHort/issues/55) | Parse CycloneDX 1.4+ SBOMs (doubles addressable market). |
+| ✅ | [~~#131 — Cluster-aware data model~~](https://github.com/seebom-labs/BOMHort/issues/131) | Add `cluster_id` to all tables. Every multi-cluster feature depends on this. |
+| ✅ | [~~#134 — API Authentication~~](https://github.com/seebom-labs/BOMHort/issues/134) | Service token + API key modes. Gate for all write operations. |
+| ✅ | [~~#137 — Enhanced health checks~~](https://github.com/seebom-labs/BOMHort/issues/137) | `/readyz`, `/livez` with dependency verification for K8s probes. |
+| ✅ | [~~#136 — Enhanced CORS~~](https://github.com/seebom-labs/BOMHort/issues/136) | Support POST + custom headers for upload and cross-origin access. |
+| ✅ | [~~#139 — Headless mode~~](https://github.com/seebom-labs/BOMHort/issues/139) | API-only deployment without Angular UI (Helm toggle). |
+| ✅ | [~~#8 — Project List View~~](https://github.com/seebom-labs/BOMHort/issues/8) | Group SBOMs by project — foundational UX improvement. |
+| ✅ | [~~#144 — SBOM Download~~](https://github.com/seebom-labs/BOMHort/issues/144) | Download original SBOM JSON from the platform. |
+| ✅ | [~~#59 — Expose API externally~~](https://github.com/seebom-labs/BOMHort/issues/59) | Helm Ingress template for secure external access. |
+| ✅ | [~~#55 — CycloneDX Support~~](https://github.com/seebom-labs/BOMHort/issues/55) | Parse CycloneDX 1.4+ SBOMs (doubles addressable market). |
 | ✅ | [~~#37 — Version Skew Detection~~](https://github.com/seebom-labs/BOMHort/issues/37) | Cross-org dependency consistency. Merged 2026-05-04. |
 
 **Exit criteria:** BOMHort deployable with authentication, multi-cluster tagging, proper K8s probes, and CycloneDX parsing.
@@ -48,8 +48,8 @@ BOMHort is transitioning from a single-instance SBOM visualization tool into an 
 
 | Status | Issue | Description |
 |:------:|-------|-------------|
-| 🔲 | [#132 — Cluster listing endpoint](https://github.com/seebom-labs/BOMHort/issues/132) | First consumer-visible multi-cluster feature. |
-| 🔲 | [#133 — Cluster-detail endpoints](https://github.com/seebom-labs/BOMHort/issues/133) | Per-cluster deep-links for frontend routing. |
+| ✅ | [~~#132 — Cluster listing endpoint~~](https://github.com/seebom-labs/BOMHort/issues/132) | First consumer-visible multi-cluster feature. |
+| ✅ | [~~#133 — Cluster-detail endpoints~~](https://github.com/seebom-labs/BOMHort/issues/133) | Per-cluster deep-links for frontend routing. |
 | 🔲 | [#135 — SBOM Upload (Push Model)](https://github.com/seebom-labs/BOMHort/issues/135) | Accept SBOMs from CI/CD pipelines via POST API. |
 | 🔲 | [#138 — Namespace filtering](https://github.com/seebom-labs/BOMHort/issues/138) | Sub-cluster granularity for enterprise teams. |
 | 🔲 | [#140 — Workload vulnerability summary](https://github.com/seebom-labs/BOMHort/issues/140) | Image → posture cross-reference for compliance dashboards. |
@@ -73,13 +73,13 @@ After Phase 2 completes, BOMHort reaches **v1.0.0** — the first stable release
 
 | Requirement | Status | Issue |
 |-------------|:------:|-------|
-| API Authentication (service token + API key) | 🔲 | [#134](https://github.com/seebom-labs/BOMHort/issues/134) |
-| Cluster-aware data model (schema stable) | 🔲 | [#131](https://github.com/seebom-labs/BOMHort/issues/131) |
-| Cluster listing + detail endpoints | 🔲 | [#132](https://github.com/seebom-labs/BOMHort/issues/132), [#133](https://github.com/seebom-labs/BOMHort/issues/133) |
+| API Authentication (service token + API key) | ✅ | [#134](https://github.com/seebom-labs/BOMHort/issues/134) |
+| Cluster-aware data model (schema stable) | ✅ | [#131](https://github.com/seebom-labs/BOMHort/issues/131) |
+| Cluster listing + detail endpoints | ✅ | [#132](https://github.com/seebom-labs/BOMHort/issues/132), [#133](https://github.com/seebom-labs/BOMHort/issues/133) |
 | Namespace filtering | 🔲 | [#138](https://github.com/seebom-labs/BOMHort/issues/138) |
 | SBOM Upload endpoint | 🔲 | [#135](https://github.com/seebom-labs/BOMHort/issues/135) |
-| CycloneDX parsing | 🔲 | [#55](https://github.com/seebom-labs/BOMHort/issues/55) |
-| Enhanced health probes | 🔲 | [#137](https://github.com/seebom-labs/BOMHort/issues/137) |
+| CycloneDX parsing | ✅ | [#55](https://github.com/seebom-labs/BOMHort/issues/55) |
+| Enhanced health probes | ✅ | [#137](https://github.com/seebom-labs/BOMHort/issues/137) |
 | Versioned documentation | 🔲 | [#145](https://github.com/seebom-labs/BOMHort/issues/145) |
 | Version Skew Detection | ✅ | [~~#37~~](https://github.com/seebom-labs/BOMHort/issues/37) |
 
