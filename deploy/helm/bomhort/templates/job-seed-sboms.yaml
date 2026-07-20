@@ -4,7 +4,7 @@ kind: Job
 metadata:
   name: {{ .Release.Name }}-seed-sboms-{{ .Release.Revision }}
   labels:
-    app.kubernetes.io/name: seebom
+    app.kubernetes.io/name: bomhort
     app.kubernetes.io/component: seed-sboms
     app.kubernetes.io/instance: {{ .Release.Name }}
 spec:
@@ -15,9 +15,9 @@ spec:
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: seebom
+        app.kubernetes.io/name: bomhort
         app.kubernetes.io/component: seed-sboms
-        seebom.io/sbom-volume: "true"
+        bomhort.io/sbom-volume: "true"
     spec:
       restartPolicy: OnFailure
       containers:

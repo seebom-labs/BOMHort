@@ -1,10 +1,10 @@
-# SeeBOM Governance
+# BOMHort Governance
 
-This document describes the governance model for the SeeBOM project.
+This document describes the governance model for the BOMHort project.
 
 ## Principles
 
-SeeBOM is an open-source project licensed under [Apache 2.0](LICENSE). The project follows these principles:
+BOMHort is an open-source project licensed under [Apache 2.0](LICENSE). The project follows these principles:
 
 - **Open** – All discussions, decisions, and code reviews happen in the open on GitHub.
 - **Transparent** – Roadmap, architecture decisions, and meeting notes are publicly available.
@@ -13,7 +13,7 @@ SeeBOM is an open-source project licensed under [Apache 2.0](LICENSE). The proje
 
 ## Project Scope
 
-SeeBOM is a Kubernetes-native SBOM visualization and governance platform. The project's scope includes:
+BOMHort is a Kubernetes-native SBOM visualization and governance platform. The project's scope includes:
 
 - Ingestion and parsing of SPDX SBOM files
 - Vulnerability scanning via OSV and VEX assessment
@@ -23,7 +23,7 @@ SeeBOM is a Kubernetes-native SBOM visualization and governance platform. The pr
 
 Out of scope:
 
-- SBOM generation (SeeBOM consumes SBOMs, it does not create them)
+- SBOM generation (BOMHort consumes SBOMs, it does not create them)
 - Container image scanning
 - Runtime security monitoring
 
@@ -31,7 +31,7 @@ Out of scope:
 
 ### Users
 
-Users are community members who use SeeBOM. They contribute by filing bug reports, feature requests, and providing feedback. Anyone can be a user.
+Users are community members who use BOMHort. They contribute by filing bug reports, feature requests, and providing feedback. Anyone can be a user.
 
 ### Contributors
 

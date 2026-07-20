@@ -4,11 +4,11 @@ kind: ConfigMap
 metadata:
   name: {{ .Release.Name }}-custom-theme
   labels:
-    app.kubernetes.io/name: seebom
+    app.kubernetes.io/name: bomhort
     app.kubernetes.io/instance: {{ .Release.Name }}
 data:
   custom-theme.css: |-
-    /* SeeBOM Custom Theme – edit this ConfigMap to rebrand the UI */
+    /* BOMHort Custom Theme – edit this ConfigMap to rebrand the UI */
     /* Run: kubectl edit configmap {{ .Release.Name }}-custom-theme */
     /* Then: kubectl rollout restart deployment {{ .Release.Name }}-ui */
 {{- end }}

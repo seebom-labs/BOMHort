@@ -41,7 +41,7 @@ make kind-up
 ```
 
 This will:
-1. Create a Kind cluster named `seebom` (see [`kind-config.yaml`](kind-config.yaml))
+1. Create a Kind cluster named `bomhort` (see [`kind-config.yaml`](kind-config.yaml))
 2. Install the [Altinity ClickHouse Operator](https://github.com/Altinity/clickhouse-operator)
 3. Deploy BOMHort via Helm with [`values-kind.yaml`](values-kind.yaml)
 4. If S3 is configured: Ingestion Watcher streams SBOMs from your buckets
@@ -58,13 +58,13 @@ This will:
 
 ```bash
 # Watch pods
-kubectl get pods -n seebom -w
+kubectl get pods -n bomhort -w
 
 # Check ingestion progress
 curl -s http://localhost:8080/api/v1/stats/dashboard | jq .total_sboms
 
 # Worker logs
-kubectl logs -n seebom -l app.kubernetes.io/component=parsing-worker --tail=20
+kubectl logs -n bomhort -l app.kubernetes.io/component=parsing-worker --tail=20
 ```
 
 ### 6. Re-ingest (without re-downloading)
@@ -101,7 +101,7 @@ make kind-down
                     └────────┬────────────┘
                              │ s3://
 ┌────────────────────────────┼────────────────────────────────┐
-│  Kind Cluster (seebom)     │                                │
+│  Kind Cluster (bomhort)     │                                │
 │                            ▼                                │
 │  ┌──────────┐  ┌───────────────┐  ┌──────────────────┐     │
 │  │ ClickHouse│  │Parsing Workers│  │  API Gateway     │     │
@@ -115,7 +115,7 @@ make kind-down
 │  └──────────┘                                               │
 │                                                             │
 │  ┌─────────────────────────────────────────────────────┐   │
-│  │  PVC: seebom-sbom-data (optional, fallback only)   │   │
+│  │  PVC: bomhort-sbom-data (optional, fallback only)   │   │
 │  └─────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
      :8090 (UI)          :8080 (API)

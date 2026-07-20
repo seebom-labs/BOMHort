@@ -1,16 +1,16 @@
-# Contributing to SeeBOM
+# Contributing to BOMHort
 
-Thank you for your interest in contributing to SeeBOM! We welcome contributions from everyone.
+Thank you for your interest in contributing to BOMHort! We welcome contributions from everyone.
 
-> 📖 **Full documentation:** [docs.seebom.dev](https://docs.seebom.dev/)  
-> 🪜 **Contributor Ladder:** [docs.seebom.dev/docs/development/contributor-ladder/](https://docs.seebom.dev/docs/development/contributor-ladder/)  
-> 🤖 **AI Usage Policy:** [docs.seebom.dev/docs/development/ai-policy/](https://docs.seebom.dev/docs/development/ai-policy/)  
-> 🗺️ **Roadmap:** [docs.seebom.dev/docs/roadmap/](https://docs.seebom.dev/docs/roadmap/)
+> 📖 **Full documentation:** [docs.bomhort.dev](https://docs.bomhort.dev/)  
+> 🪜 **Contributor Ladder:** [docs.bomhort.dev/docs/development/contributor-ladder/](https://docs.bomhort.dev/docs/development/contributor-ladder/)  
+> 🤖 **AI Usage Policy:** [docs.bomhort.dev/docs/development/ai-policy/](https://docs.bomhort.dev/docs/development/ai-policy/)  
+> 🗺️ **Roadmap:** [docs.bomhort.dev/docs/roadmap/](https://docs.bomhort.dev/docs/roadmap/)
 
 ## Getting Started
 
 1. **Fork** the repository and clone your fork
-2. Set up the development environment (see [Getting Started](https://docs.seebom.dev/docs/getting-started/))
+2. Set up the development environment (see [Getting Started](https://docs.bomhort.dev/docs/getting-started/))
 3. Create a feature branch from `main`
 4. Make your changes
 5. Submit a pull request
@@ -29,7 +29,7 @@ make worker   # Terminal 3
 make ui-dev   # Terminal 4
 ```
 
-See the [Development Guide](https://docs.seebom.dev/docs/development/) for details.
+See the [Development Guide](https://docs.bomhort.dev/docs/development/) for details.
 
 ## Coding Standards
 
@@ -53,7 +53,7 @@ See the [Development Guide](https://docs.seebom.dev/docs/development/) for detai
 
 - All new features must have tests
 - Run `cd backend && go test ./... -count=1 -race` before submitting
-- See [Testing Guide](https://docs.seebom.dev/docs/development/testing/) for patterns and conventions
+- See [Testing Guide](https://docs.bomhort.dev/docs/development/testing/) for patterns and conventions
 
 ## Pull Request Process
 
@@ -67,7 +67,7 @@ See the [Development Guide](https://docs.seebom.dev/docs/development/) for detai
 
 ## What to Contribute
 
-- **Bug fixes** — Check [open issues](https://github.com/seebom-labs/seebom/issues?q=is%3Aissue+is%3Aopen+label%3Abug)
+- **Bug fixes** — Check [open issues](https://github.com/bomhort-labs/bomhort/issues?q=is%3Aissue+is%3Aopen+label%3Abug)
 - **Documentation** — Improvements to docs, README, or code comments
 - **Tests** — Increase test coverage
 - **Features** — Discuss in an issue first before implementing large changes
@@ -88,16 +88,16 @@ We welcome AI-assisted contributions (Copilot, ChatGPT, Claude, Cursor, etc.). K
 - **Follow [AGENTS.md](AGENTS.md)** — feed it to your AI tool for project context
 - **Review everything** — you're responsible for what you submit
 
-See the full [AI Usage Policy](https://docs.seebom.dev/docs/development/ai-policy/) for details.
+See the full [AI Usage Policy](https://docs.bomhort.dev/docs/development/ai-policy/) for details.
 
 ## Contributor Ladder
 
-We have a transparent contributor ladder: Community → Contributor → Reviewer → Maintainer. See the [Contributor Ladder](https://docs.seebom.dev/docs/development/contributor-ladder/) for promotion criteria and expectations at each level.
+We have a transparent contributor ladder: Community → Contributor → Reviewer → Maintainer. See the [Contributor Ladder](https://docs.bomhort.dev/docs/development/contributor-ladder/) for promotion criteria and expectations at each level.
 
 ## Reporting Issues
 
-- **Bugs:** Use the [Bug Report](https://github.com/seebom-labs/seebom/issues/new?template=bug_report.yml) template
-- **Features:** Use the [Feature Request](https://github.com/seebom-labs/seebom/issues/new?template=feature_request.yml) template
+- **Bugs:** Use the [Bug Report](https://github.com/bomhort-labs/bomhort/issues/new?template=bug_report.yml) template
+- **Features:** Use the [Feature Request](https://github.com/bomhort-labs/bomhort/issues/new?template=feature_request.yml) template
 - **Security:** See [SECURITY.md](SECURITY.md) — **do not** use public issues
 
 ## Code of Conduct
@@ -106,5 +106,5 @@ All contributors must follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 
-By contributing to SeeBOM, you agree that your contributions will be licensed under the [Apache License 2.0](LICENSE).
+By contributing to BOMHort, you agree that your contributions will be licensed under the [Apache License 2.0](LICENSE).
 

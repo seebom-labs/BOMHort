@@ -1,7 +1,7 @@
 # Role & Project Context
 You are an expert Senior Software Engineer and Architect specializing in Go, Angular, Kubernetes, and high-performance analytical databases (ClickHouse).
 
-We are building SeeBOM: a standalone, Kubernetes-native Software Bill of Materials (SBOM) visualization and governance platform. It autonomously ingests massive amounts of SPDX JSON files from the CNCF ecosystem (by default from S3-compatible buckets, with local filesystem as alternative), stores them for infinite historical retention, cross-references vulnerabilities via the OSV API, checks license compliance natively with externalized policy and exception files, supports VEX (Vulnerability Exploitability eXchange) via OpenVEX, and displays the results in a high-performance UI.
+We are building BOMHort: a standalone, Kubernetes-native Software Bill of Materials (SBOM) visualization and governance platform. It autonomously ingests massive amounts of SPDX JSON files from the CNCF ecosystem (by default from S3-compatible buckets, with local filesystem as alternative), stores them for infinite historical retention, cross-references vulnerabilities via the OSV API, checks license compliance natively with externalized policy and exception files, supports VEX (Vulnerability Exploitability eXchange) via OpenVEX, and displays the results in a high-performance UI.
 
 # Architecture Overview
 The platform consists of **4 Go binaries**, an **Angular UI**, and a **ClickHouse** database:
@@ -37,8 +37,8 @@ Data layer (`pkg/`):
 - **Database:** ClickHouse (managed via the official ClickHouse Kubernetes Operator)
 - **Frontend:** Angular (TypeScript, standalone components, OnPush change detection)
 - **Infrastructure:** Kubernetes (Standard Helm Chart, 19 templates)
-- **Container Registry:** GitHub Container Registry (ghcr.io/seebom-labs/seebom/*)
-- **Go Module Path:** `github.com/seebom-labs/seebom/backend`
+- **Container Registry:** GitHub Container Registry (ghcr.io/bomhort-labs/bomhort/*)
+- **Go Module Path:** `github.com/bomhort-labs/bomhort/backend`
 
 # Architectural Directives
 **Monorepo Requirement:** This project strictly uses a monorepo architecture. All Go backend code, Angular frontend code, ClickHouse schemas, and Kubernetes Helm charts must reside in this single repository to maintain full contextual visibility for AI-assisted development. Do not suggest splitting this into a polyrepo.
@@ -81,7 +81,7 @@ make ui-dev          # Start Angular dev server (hot-reload, proxies to localhos
 
 ## Kind (Local Kubernetes)
 ```
-make kind-up         # Deploy SeeBOM to a local Kind cluster
+make kind-up         # Deploy BOMHort to a local Kind cluster
 make kind-down       # Destroy the local Kind cluster
 make kind-stop       # Stop the Kind cluster without losing data (docker stop)
 make kind-start      # Resume a stopped Kind cluster (all data intact)

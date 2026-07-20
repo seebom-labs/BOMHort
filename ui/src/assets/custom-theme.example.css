@@ -1,5 +1,5 @@
 /*
- * SeeBOM Custom Theme
+ * BOMHort Custom Theme
  * ────────────────────────────────────────────────────────────
  * Override any CSS variable from styles.scss here.
  * This file is loaded AFTER the Angular bundle, so all
@@ -9,7 +9,7 @@
  *   /usr/share/nginx/html/custom-theme.css
  *
  * Example (Kubernetes):
- *   kubectl create configmap seebom-theme \
+ *   kubectl create configmap bomhort-theme \
  *     --from-file=custom-theme.css=./my-theme.css
  *
  * Example (Docker Compose):
@@ -17,7 +17,7 @@
  *     - ./my-theme.css:/usr/share/nginx/html/custom-theme.css:ro
  *
  * ────────────────────────────────────────────────────────────
- * Below is the default SeeBOM theme for reference.
+ * Below is the default BOMHort theme for reference.
  * Uncomment and change values to customise.
  */
 

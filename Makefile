@@ -10,7 +10,7 @@
 
 SHELL := /bin/bash
 REGISTRY ?= ghcr.io
-REPO     ?= seebom-labs/seebom
+REPO     ?= bomhort-labs/bomhort
 TAG      ?= dev
 
 # ─── Help ────────────────────────────────────────────────────────────────────
@@ -20,7 +20,7 @@ help: ## Show this help
 
 # ─── Docker Compose (full stack) ────────────────────────────────────────────
 dev: dev-up ## Start entire stack (ClickHouse + all services + UI)
-	@echo "🚀 SeeBOM running at:"
+	@echo "🚀 BOMHort running at:"
 	@echo "   UI:          http://localhost:8090"
 	@echo "   API:         http://localhost:8080/healthz"
 	@echo "   ClickHouse:  http://localhost:8123 (HTTP) / localhost:9000 (TCP)"
@@ -38,7 +38,7 @@ migrate: ## Run all pending database migrations
 	@echo "⏳ Running migrations..."
 	@for f in db/migrations/*.sql; do \
 		echo "  → $$f"; \
-		docker compose exec -T clickhouse clickhouse-client --database=seebom --multiquery < "$$f" 2>/dev/null || true; \
+		docker compose exec -T clickhouse clickhouse-client --database=bomhort --multiquery < "$$f" 2>/dev/null || true; \
 	done
 	@echo "✅ Migrations complete."
 
@@ -54,20 +54,20 @@ re-scan: ## Reset all data + queue, then re-ingest (e.g. after enabling OSV)
 	@echo "⏳ Running pending migrations..."
 	@for f in db/migrations/*.sql; do \
 		echo "  → $$f"; \
-		docker compose exec -T clickhouse clickhouse-client --database=seebom --multiquery < "$$f" 2>/dev/null || true; \
+		docker compose exec -T clickhouse clickhouse-client --database=bomhort --multiquery < "$$f" 2>/dev/null || true; \
 	done
 	@echo "🗑️  Clearing all data tables and queue..."
-	@docker compose exec -T clickhouse clickhouse-client --database=seebom \
+	@docker compose exec -T clickhouse clickhouse-client --database=bomhort \
 		--query "TRUNCATE TABLE ingestion_queue"
-	@docker compose exec -T clickhouse clickhouse-client --database=seebom \
+	@docker compose exec -T clickhouse clickhouse-client --database=bomhort \
 		--query "TRUNCATE TABLE vulnerabilities"
-	@docker compose exec -T clickhouse clickhouse-client --database=seebom \
+	@docker compose exec -T clickhouse clickhouse-client --database=bomhort \
 		--query "TRUNCATE TABLE license_compliance"
-	@docker compose exec -T clickhouse clickhouse-client --database=seebom \
+	@docker compose exec -T clickhouse clickhouse-client --database=bomhort \
 		--query "TRUNCATE TABLE sbom_packages"
-	@docker compose exec -T clickhouse clickhouse-client --database=seebom \
+	@docker compose exec -T clickhouse clickhouse-client --database=bomhort \
 		--query "TRUNCATE TABLE sboms"
-	@docker compose exec -T clickhouse clickhouse-client --database=seebom \
+	@docker compose exec -T clickhouse clickhouse-client --database=bomhort \
 		--query "TRUNCATE TABLE vex_statements" 2>/dev/null || true
 	@echo "♻️  Rebuilding services with latest code..."
 	@docker compose up --build -d api-gateway parsing-worker
@@ -87,23 +87,23 @@ dev-status: ## Show status of all containers + ingestion progress
 	@docker compose ps
 	@echo ""
 	@echo "=== Ingestion Progress ==="
-	@docker compose exec -T clickhouse clickhouse-client --database=seebom \
+	@docker compose exec -T clickhouse clickhouse-client --database=bomhort \
 		--query "SELECT latest_status AS status, count() AS cnt FROM (SELECT argMax(status, created_at) AS latest_status FROM ingestion_queue GROUP BY job_id) GROUP BY latest_status ORDER BY latest_status" \
 		--format=PrettyCompact 2>/dev/null || echo "(ClickHouse not ready)"
 	@echo ""
 	@echo "=== Data Summary ==="
-	@docker compose exec -T clickhouse clickhouse-client --database=seebom \
+	@docker compose exec -T clickhouse clickhouse-client --database=bomhort \
 		--query "SELECT 'sboms' AS tbl, count() AS cnt FROM sboms FINAL UNION ALL SELECT 'packages', count() FROM sbom_packages FINAL UNION ALL SELECT 'vulns', count() FROM vulnerabilities FINAL UNION ALL SELECT 'licenses', count() FROM license_compliance FINAL" \
 		--format=PrettyCompact 2>/dev/null || echo "(ClickHouse not ready)"
 
 # ─── ClickHouse ──────────────────────────────────────────────────────────────
 ch-shell: ## Open a ClickHouse client shell
-	docker compose exec clickhouse clickhouse-client --database=seebom
+	docker compose exec clickhouse clickhouse-client --database=bomhort
 
 ch-migrate: ## Manually run all migrations against running ClickHouse
 	@for f in db/migrations/*.sql; do \
 		echo "⏳ Running $$f ..."; \
-		docker compose exec -T clickhouse clickhouse-client --database=seebom --multiquery < "$$f"; \
+		docker compose exec -T clickhouse clickhouse-client --database=bomhort --multiquery < "$$f"; \
 	done
 	@echo "✅ All migrations applied."
 
@@ -164,65 +164,65 @@ sync-labels: ## Sync GitHub labels from .github/labels.yml (requires gh + yq)
 	.github/scripts/sync-labels.sh
 
 # ─── Kind (local Kubernetes) ─────────────────────────────────────────────────
-kind-up: ## Deploy SeeBOM to a local Kind cluster (see local/secrets.env)
+kind-up: ## Deploy BOMHort to a local Kind cluster (see local/secrets.env)
 	./local/setup.sh
 
 kind-down: ## Destroy the local Kind cluster (deletes everything)
 	./local/teardown.sh
 
 kind-stop: ## Stop the Kind cluster without losing data (docker stop)
-	@echo "⏸️  Stopping Kind cluster 'seebom'..."
-	@docker stop seebom-control-plane 2>/dev/null || echo "Cluster not running"
+	@echo "⏸️  Stopping Kind cluster 'bomhort'..."
+	@docker stop bomhort-control-plane 2>/dev/null || echo "Cluster not running"
 	@echo "✅ Cluster stopped. Data and volumes preserved."
 	@echo "   Resume with: make kind-start"
 
 kind-start: ## Resume a stopped Kind cluster (docker start)
-	@echo "▶️  Starting Kind cluster 'seebom'..."
-	@docker start seebom-control-plane 2>/dev/null || { echo "❌ No stopped cluster found. Run: make kind-up"; exit 1; }
+	@echo "▶️  Starting Kind cluster 'bomhort'..."
+	@docker start bomhort-control-plane 2>/dev/null || { echo "❌ No stopped cluster found. Run: make kind-up"; exit 1; }
 	@echo "⏳ Waiting for API server..."
-	@until kubectl --context kind-seebom cluster-info >/dev/null 2>&1; do sleep 2; done
+	@until kubectl --context kind-bomhort cluster-info >/dev/null 2>&1; do sleep 2; done
 	@echo "✅ Cluster running. All pods and volumes intact."
 	@echo "   UI:   http://localhost:8090"
 	@echo "   API:  http://localhost:8080/healthz"
-	@echo "   Pods: kubectl get pods -n seebom"
+	@echo "   Pods: kubectl get pods -n bomhort"
 
 kind-status: ## Show Kind cluster and pod status
 	@echo "=== Kind Cluster ==="
-	@docker ps -a --filter "name=seebom-control-plane" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || echo "No Kind cluster found"
+	@docker ps -a --filter "name=bomhort-control-plane" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || echo "No Kind cluster found"
 	@echo ""
 	@echo "=== Pods ==="
-	@kubectl get pods -n seebom 2>/dev/null || echo "(cluster not reachable)"
+	@kubectl get pods -n bomhort 2>/dev/null || echo "(cluster not reachable)"
 
 kind-reingest: ## Re-ingest all SBOMs in Kind (no re-download, truncates data + re-queues)
 	@echo "🗑️  Truncating data tables..."
 	@source local/secrets.env 2>/dev/null; \
-	kubectl exec -n seebom chi-seebom-clickhouse-seebom-cluster-0-0-0 -c clickhouse -- \
-		clickhouse-client --database=seebom --password="$${CLICKHOUSE_PASSWORD:-seebom}" --multiquery \
+	kubectl exec -n bomhort chi-bomhort-clickhouse-bomhort-cluster-0-0-0 -c clickhouse -- \
+		clickhouse-client --database=bomhort --password="$${CLICKHOUSE_PASSWORD:-bomhort}" --multiquery \
 		--query "TRUNCATE TABLE ingestion_queue; TRUNCATE TABLE license_compliance; TRUNCATE TABLE vulnerabilities; TRUNCATE TABLE sbom_packages; TRUNCATE TABLE sboms; TRUNCATE TABLE vex_statements;"
 	@echo "♻️  Triggering ingestion watcher..."
-	@kubectl create job --from=cronjob/seebom-ingestion-watcher seebom-reingest-$$(date +%s) -n seebom
+	@kubectl create job --from=cronjob/bomhort-ingestion-watcher bomhort-reingest-$$(date +%s) -n bomhort
 	@echo "✅ Re-ingest started. Workers will re-process all SBOMs from the PVC."
 	@echo "   Monitor: curl -s http://localhost:8080/api/v1/stats/dashboard | jq .total_sboms"
 
 kind-build: images ## Build dev images and load them into the Kind cluster
 	@echo "📦 Loading images into Kind cluster..."
-	kind load docker-image $(REGISTRY)/$(REPO)/ingestion-watcher:$(TAG) --name seebom
-	kind load docker-image $(REGISTRY)/$(REPO)/parsing-worker:$(TAG)    --name seebom
-	kind load docker-image $(REGISTRY)/$(REPO)/api-gateway:$(TAG)       --name seebom
-	kind load docker-image $(REGISTRY)/$(REPO)/cve-refresher:$(TAG)     --name seebom
-	kind load docker-image $(REGISTRY)/$(REPO)/ui:$(TAG)                --name seebom
+	kind load docker-image $(REGISTRY)/$(REPO)/ingestion-watcher:$(TAG) --name bomhort
+	kind load docker-image $(REGISTRY)/$(REPO)/parsing-worker:$(TAG)    --name bomhort
+	kind load docker-image $(REGISTRY)/$(REPO)/api-gateway:$(TAG)       --name bomhort
+	kind load docker-image $(REGISTRY)/$(REPO)/cve-refresher:$(TAG)     --name bomhort
+	kind load docker-image $(REGISTRY)/$(REPO)/ui:$(TAG)                --name bomhort
 	@echo "✅ Loaded 5 images into Kind (tag: $(TAG))"
 
 kind-deploy: kind-build ## Build images, load into Kind, and upgrade Helm release
 	@source local/secrets.env 2>/dev/null; \
-	helm upgrade seebom deploy/helm/seebom/ \
-		-n seebom \
+	helm upgrade bomhort deploy/helm/bomhort/ \
+		-n bomhort \
 		-f local/values-local.yaml \
-		--set clickhouse.password="$${CLICKHOUSE_PASSWORD:-seebom}" \
+		--set clickhouse.password="$${CLICKHOUSE_PASSWORD:-bomhort}" \
 		--set github.token="$${GITHUB_TOKEN:-}" \
 		--set s3.accessKey="$${S3_ACCESS_KEY:-}" \
 		--set s3.secretKey="$${S3_SECRET_KEY:-}"
-	@kubectl rollout restart deployment/seebom-api-gateway deployment/seebom-parsing-worker -n seebom
+	@kubectl rollout restart deployment/bomhort-api-gateway deployment/bomhort-parsing-worker -n bomhort
 	@echo "✅ Deployed. Pods restarting with new images."
 
 # ─── Documentation (Hugo + Docsy) ────────────────────────────────────────────

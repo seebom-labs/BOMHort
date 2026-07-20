@@ -1,7 +1,7 @@
 {
   "@context": "https://openvex.dev/ns/v0.2.0",
   "@id": "https://example.com/vex/2025-001",
-  "author": "SeeBOM Example",
+  "author": "BOMHort Example",
   "role": "vendor",
   "timestamp": "2025-06-15T10:00:00Z",
   "version": 1,

@@ -3,7 +3,7 @@ kind: CronJob
 metadata:
   name: {{ .Release.Name }}-ingestion-watcher
   labels:
-    app.kubernetes.io/name: seebom
+    app.kubernetes.io/name: bomhort
     app.kubernetes.io/component: ingestion-watcher
     app.kubernetes.io/instance: {{ .Release.Name }}
 spec:
@@ -14,10 +14,10 @@ spec:
       template:
         metadata:
           labels:
-            app.kubernetes.io/name: seebom
+            app.kubernetes.io/name: bomhort
             app.kubernetes.io/component: ingestion-watcher
             {{- if not .Values.gitSync.enabled }}
-            seebom.io/sbom-volume: "true"
+            bomhort.io/sbom-volume: "true"
             {{- end }}
         spec:
           restartPolicy: OnFailure
@@ -27,7 +27,7 @@ spec:
               requiredDuringSchedulingIgnoredDuringExecution:
                 - labelSelector:
                     matchExpressions:
-                      - key: seebom.io/sbom-volume
+                      - key: bomhort.io/sbom-volume
                         operator: Exists
                   topologyKey: kubernetes.io/hostname
           {{- end }}

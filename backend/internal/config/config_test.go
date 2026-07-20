@@ -26,8 +26,8 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.ClickHousePort != 9000 {
 		t.Errorf("expected default port 9000, got %d", cfg.ClickHousePort)
 	}
-	if cfg.ClickHouseDatabase != "seebom" {
-		t.Errorf("expected default database seebom, got %s", cfg.ClickHouseDatabase)
+	if cfg.ClickHouseDatabase != "bomhort" {
+		t.Errorf("expected default database bomhort, got %s", cfg.ClickHouseDatabase)
 	}
 	if cfg.SBOMDir != "./sboms" {
 		t.Errorf("expected default SBOM dir ./sboms, got %s", cfg.SBOMDir)

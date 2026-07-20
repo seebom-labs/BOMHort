@@ -1,11 +1,11 @@
 {
-  "brandName": "SeeBOM",
-  "pageTitle": "SeeBOM",
+  "brandName": "BOMHort",
+  "pageTitle": "BOMHort",
   "dashboard": {
     "title": "Dashboard",
     "subtitle": "Software Bill of Materials — Governance Overview",
-    "description": "<strong>SeeBOM</strong> autonomously ingests SPDX SBOMs from the CNCF ecosystem, cross-references known vulnerabilities via the <a href=\"https://osv.dev\" target=\"_blank\" rel=\"noopener\">OSV database</a>, evaluates license compliance against a configurable policy, and applies <a href=\"https://openvex.dev\" target=\"_blank\" rel=\"noopener\">OpenVEX</a> statements to suppress non-applicable findings — giving you a single pane of glass for software supply-chain governance.",
-    "disclaimer": "<strong>Disclaimer:</strong> The data shown on this dashboard is provided on an \"as-is\" basis for informational purposes only. Vulnerability and license information is sourced from third-party databases (OSV, GitHub) and may be incomplete or delayed. SeeBOM does not guarantee the accuracy, completeness, or timeliness of any data and is not a substitute for professional security audits or legal advice. Use at your own risk."
+    "description": "<strong>BOMHort</strong> autonomously ingests SPDX SBOMs from the CNCF ecosystem, cross-references known vulnerabilities via the <a href=\"https://osv.dev\" target=\"_blank\" rel=\"noopener\">OSV database</a>, evaluates license compliance against a configurable policy, and applies <a href=\"https://openvex.dev\" target=\"_blank\" rel=\"noopener\">OpenVEX</a> statements to suppress non-applicable findings — giving you a single pane of glass for software supply-chain governance.",
+    "disclaimer": "<strong>Disclaimer:</strong> The data shown on this dashboard is provided on an \"as-is\" basis for informational purposes only. Vulnerability and license information is sourced from third-party databases (OSV, GitHub) and may be incomplete or delayed. BOMHort does not guarantee the accuracy, completeness, or timeliness of any data and is not a substitute for professional security audits or legal advice. Use at your own risk."
   },
   "footer": {
     "enabled": false,

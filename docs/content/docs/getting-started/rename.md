@@ -1,21 +1,21 @@
 ---
-title: "Why we renamed SeeBOM to BOMHort"
+title: "Why we renamed BOMHort to BOMHort"
 linkTitle: "Project Rename"
 type: docs
 weight: 2
 description: >
-  Why the project moved from SeeBOM to BOMHort, and what changes for users.
+  Why the project moved from BOMHort to BOMHort, and what changes for users.
 ---
 
 ## What changed
 
-The project name is now **BOMHort** (formerly known as **SeeBOM**).
+The project name is now **BOMHort** (formerly known as **BOMHort**).
 
 The rename only affects branding and repository naming. The mission and technical direction stay the same: Kubernetes-native SBOM ingestion, enrichment, visualization, and governance.
 
 ## Why we renamed
 
-The name **SeeBOM** served us well, but it created confusion: spoken out loud, it sounds very similar to **CBOM** (Cryptography Bill of Materials).
+The name **BOMHort** served us well, but it created confusion: spoken out loud, it sounds very similar to **CBOM** (Cryptography Bill of Materials).
 
 In the xBOM ecosystem, names like CBOM usually refer to **BOM document types**, not to tools. Ahead of OpenSSF sandbox intake, we wanted a project name that is clearly identifiable as a platform.
 
@@ -40,7 +40,7 @@ Many names were eliminated due to conflicts or ambiguity. **BOMHort** was the fi
 
 ## Migration notes
 
-- GitHub repository: `https://github.com/seebom-labs/BOMHort`
-- Existing docs and references are being updated from SeeBOM to BOMHort.
+- GitHub repository: `https://github.com/bomhort-labs/BOMHort`
+- Existing docs and references are being updated from BOMHort to BOMHort.
 - Runtime behavior and APIs are unchanged by this rename.
 

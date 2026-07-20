@@ -1,32 +1,32 @@
-# SeeBOM – Helm values for local Kind deployment
+# BOMHort – Helm values for local Kind deployment
 #
 # This file is an example. The actual file used at deploy time lives in
 # local/values-local.yaml (git-ignored, may contain site-specific tweaks).
 #
 # Usage:
-#   helm upgrade --install seebom deploy/helm/seebom/ \
-#     -n seebom -f examples/kind/values-kind.yaml \
+#   helm upgrade --install bomhort deploy/helm/bomhort/ \
+#     -n bomhort -f examples/kind/values-kind.yaml \
 #     --set clickhouse.password=<YOUR_PASSWORD>
 
 # ─── Images ──────────────────────────────────────────────────────────────────
 # For local dev, build images with `make images TAG=dev` and load them into
-# Kind with `kind load docker-image ... --name seebom`.
+# Kind with `kind load docker-image ... --name bomhort`.
 # For released versions, set tag to a release like "0.1.3" and pullPolicy to IfNotPresent.
 image:
   registry: ghcr.io
-  repository: seebom-labs/seebom
+  repository: bomhort-labs/bomhort
   tag: "0.1.3"
   pullPolicy: IfNotPresent
 
 # ─── ClickHouse ──────────────────────────────────────────────────────────────
 clickhouse:
-  host: chi-seebom-clickhouse-seebom-cluster-0-0
+  host: chi-bomhort-clickhouse-bomhort-cluster-0-0
   port: 9000
-  database: seebom
+  database: bomhort
   user: default
   password: ""   # injected via --set or K8s Secret
   cluster:
-    name: seebom-cluster
+    name: bomhort-cluster
     shardsCount: 1
     replicasCount: 1
   installation:
@@ -75,7 +75,7 @@ seedJob:
   cncfExceptionsURL: "https://raw.githubusercontent.com/cncf/foundation/main/license-exceptions/exceptions.json"
 
 sbomSource:
-  pvcName: seebom-sbom-data
+  pvcName: bomhort-sbom-data
   mountPath: /data/sboms
   storageSize: 15Gi     # CNCF repo = ~14 GB (6500+ SBOMs)
 

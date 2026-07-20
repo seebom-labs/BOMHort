@@ -23,12 +23,12 @@ Trigger the CronJob manually instead of waiting for the next scheduled run:
 kubectl create job --from=cronjob/<RELEASE>-ingestion-watcher manual-ingest-$(date +%s) -n <NAMESPACE>
 ```
 
-Replace `<RELEASE>` with your Helm release name (e.g. `seebom`) and `<NAMESPACE>` with your namespace.
+Replace `<RELEASE>` with your Helm release name (e.g. `bomhort`) and `<NAMESPACE>` with your namespace.
 
 **Example:**
 
 ```bash
-kubectl create job --from=cronjob/seebom-ingestion-watcher manual-ingest-$(date +%s) -n seebom
+kubectl create job --from=cronjob/bomhort-ingestion-watcher manual-ingest-$(date +%s) -n bomhort
 ```
 
 This creates a one-off Job from the CronJob spec. The Watcher scans all sources (S3 buckets + local PVC), skips already-processed files, and enqueues anything new.
@@ -41,7 +41,7 @@ If you need to **reprocess everything** (e.g. after changing the license policy,
 
 ```bash
 kubectl exec -n <NAMESPACE> <CLICKHOUSE_POD> -c clickhouse -- \
-  clickhouse-client --database=seebom --password="<PASSWORD>" --multiquery \
+  clickhouse-client --database=bomhort --password="<PASSWORD>" --multiquery \
   --query "TRUNCATE TABLE ingestion_queue; \
            TRUNCATE TABLE license_compliance; \
            TRUNCATE TABLE vulnerabilities; \
@@ -56,8 +56,8 @@ The default ClickHouse pod name follows this pattern:
 For a typical installation this would be:
 
 ```bash
-kubectl exec -n seebom chi-seebom-clickhouse-seebom-cluster-0-0-0 -c clickhouse -- \
-  clickhouse-client --database=seebom --password="$CLICKHOUSE_PASSWORD" --multiquery \
+kubectl exec -n bomhort chi-bomhort-clickhouse-bomhort-cluster-0-0-0 -c clickhouse -- \
+  clickhouse-client --database=bomhort --password="$CLICKHOUSE_PASSWORD" --multiquery \
   --query "TRUNCATE TABLE ingestion_queue; \
            TRUNCATE TABLE license_compliance; \
            TRUNCATE TABLE vulnerabilities; \
@@ -69,20 +69,20 @@ kubectl exec -n seebom chi-seebom-clickhouse-seebom-cluster-0-0-0 -c clickhouse 
 **Step 2 — Trigger re-ingestion:**
 
 ```bash
-kubectl create job --from=cronjob/seebom-ingestion-watcher reingest-$(date +%s) -n seebom
+kubectl create job --from=cronjob/bomhort-ingestion-watcher reingest-$(date +%s) -n bomhort
 ```
 
 **Step 3 — Monitor progress:**
 
 ```bash
 # Watch the watcher job
-kubectl logs -n seebom -l job-name=reingest-<TIMESTAMP> -f
+kubectl logs -n bomhort -l job-name=reingest-<TIMESTAMP> -f
 
 # Watch the parsing workers
-kubectl logs -n seebom -l app.kubernetes.io/component=parsing-worker --tail=20 -f
+kubectl logs -n bomhort -l app.kubernetes.io/component=parsing-worker --tail=20 -f
 
 # Check dashboard stats via API
-kubectl exec -n seebom deploy/seebom-api-gateway -- \
+kubectl exec -n bomhort deploy/bomhort-api-gateway -- \
   wget -qO- http://localhost:8080/api/v1/stats/dashboard | jq '.total_sboms, .total_packages'
 ```
 
@@ -123,8 +123,8 @@ Changes to **VEX files** do **not** require a full re-ingestion. VEX matching is
 
 ```bash
 # Job queue status
-kubectl exec -n seebom <CLICKHOUSE_POD> -c clickhouse -- \
-  clickhouse-client --database=seebom --password="$CLICKHOUSE_PASSWORD" \
+kubectl exec -n bomhort <CLICKHOUSE_POD> -c clickhouse -- \
+  clickhouse-client --database=bomhort --password="$CLICKHOUSE_PASSWORD" \
   --query "SELECT argMax(status, created_at) AS status, count() AS cnt \
            FROM ingestion_queue \
            GROUP BY job_id \
@@ -134,8 +134,8 @@ kubectl exec -n seebom <CLICKHOUSE_POD> -c clickhouse -- \
   --format=PrettyCompact
 
 # Data summary
-kubectl exec -n seebom <CLICKHOUSE_POD> -c clickhouse -- \
-  clickhouse-client --database=seebom --password="$CLICKHOUSE_PASSWORD" \
+kubectl exec -n bomhort <CLICKHOUSE_POD> -c clickhouse -- \
+  clickhouse-client --database=bomhort --password="$CLICKHOUSE_PASSWORD" \
   --query "SELECT 'sboms' AS table, count() AS rows FROM sboms FINAL \
            UNION ALL SELECT 'packages', count() FROM sbom_packages FINAL \
            UNION ALL SELECT 'vulns', count() FROM vulnerabilities FINAL \
@@ -229,7 +229,7 @@ github:
 Or via `--set`:
 
 ```bash
-helm upgrade seebom deploy/helm/seebom/ --set github.token="ghp_..."
+helm upgrade bomhort deploy/helm/bomhort/ --set github.token="ghp_..."
 ```
 
 {{% alert title="Important" color="warning" %}}
@@ -273,7 +273,7 @@ Files prefixed with `_` are treated as examples and are skipped by the scanner (
 The CVE Refresher runs as a CronJob (default: daily at 2 AM). To trigger it immediately:
 
 ```bash
-kubectl create job --from=cronjob/seebom-cve-refresher manual-cve-refresh-$(date +%s) -n seebom
+kubectl create job --from=cronjob/bomhort-cve-refresher manual-cve-refresh-$(date +%s) -n bomhort
 ```
 
 This checks all known PURLs against the [OSV database](https://osv.dev) for newly disclosed vulnerabilities.

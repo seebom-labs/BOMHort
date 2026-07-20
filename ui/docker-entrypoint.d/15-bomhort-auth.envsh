@@ -4,15 +4,15 @@
 # entrypoint before envsubst runs against the template files.
 #
 # Behavior:
-#   SERVICE_TOKEN unset/empty -> SEEBOM_AUTH_HEADER_VALUE=""
+#   SERVICE_TOKEN unset/empty -> BOMHORT_AUTH_HEADER_VALUE=""
 #     (nginx will omit the Authorization header when the client also sends none)
-#   SERVICE_TOKEN=<secret>    -> SEEBOM_AUTH_HEADER_VALUE="Bearer <secret>"
+#   SERVICE_TOKEN=<secret>    -> BOMHORT_AUTH_HEADER_VALUE="Bearer <secret>"
 #     (nginx injects this as Authorization on every /api/ proxy call that has
 #      no client-supplied Authorization header)
 
 if [ -n "${SERVICE_TOKEN:-}" ]; then
-    export SEEBOM_AUTH_HEADER_VALUE="Bearer ${SERVICE_TOKEN}"
+    export BOMHORT_AUTH_HEADER_VALUE="Bearer ${SERVICE_TOKEN}"
 else
-    export SEEBOM_AUTH_HEADER_VALUE=""
+    export BOMHORT_AUTH_HEADER_VALUE=""
 fi
 

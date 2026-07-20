@@ -4,7 +4,7 @@ kind: Ingress
 metadata:
   name: {{ .Release.Name }}-ingress
   labels:
-    app.kubernetes.io/name: seebom
+    app.kubernetes.io/name: bomhort
     app.kubernetes.io/component: ingress
     app.kubernetes.io/instance: {{ .Release.Name }}
   {{- with .Values.ingress.annotations }}

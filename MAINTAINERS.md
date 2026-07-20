@@ -1,6 +1,6 @@
-# SeeBOM Maintainers
+# BOMHort Maintainers
 
-This file lists the current maintainers and approvers of the SeeBOM project. See [GOVERNANCE.md](GOVERNANCE.md) for the roles and responsibilities.
+This file lists the current maintainers and approvers of the BOMHort project. See [GOVERNANCE.md](GOVERNANCE.md) for the roles and responsibilities.
 
 ## Maintainers
 

@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "lastUpdated": "2026-03-07",
-  "description": "License exceptions for SeeBOM governance. Packages listed here are exempt from license violation reporting.",
+  "description": "License exceptions for BOMHort governance. Packages listed here are exempt from license violation reporting.",
   "blanketExceptions": [
     {
       "id": "blanket-mpl-2.0",

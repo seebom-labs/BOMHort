@@ -67,7 +67,7 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		ClickHouseHost:     getEnv("CLICKHOUSE_HOST", "localhost"),
 		ClickHousePort:     getEnvInt("CLICKHOUSE_PORT", 9000),
-		ClickHouseDatabase: getEnv("CLICKHOUSE_DATABASE", "seebom"),
+		ClickHouseDatabase: getEnv("CLICKHOUSE_DATABASE", "bomhort"),
 		ClickHouseUser:     getEnv("CLICKHOUSE_USER", "default"),
 		ClickHousePassword: getEnv("CLICKHOUSE_PASSWORD", ""),
 		SBOMDir:            getEnv("SBOM_DIR", "./sboms"),

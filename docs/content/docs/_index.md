@@ -9,4 +9,4 @@ description: >
 
 Welcome to the BOMHort documentation. Use the sidebar to navigate through the sections.
 
-BOMHort was formerly known as SeeBOM. For context, see [Why we renamed SeeBOM to BOMHort](/docs/getting-started/rename/).
+BOMHort was formerly known as BOMHort. For context, see [Why we renamed BOMHort to BOMHort](/docs/getting-started/rename/).

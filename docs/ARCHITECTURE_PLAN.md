@@ -13,7 +13,7 @@ Kubernetes-native SBOM platform as a monorepo. Go backend with four binaries (Cr
 ## 1. Monorepo Directory Structure
 
 ```
-seebom/
+bomhort/
 ├── AGENTS.md
 ├── README.md
 ├── LICENSE
@@ -94,7 +94,7 @@ seebom/
 │   ├── golang-common.openvex.json
 │   └── otel-protobuf.openvex.json
 └── deploy/
-    └── helm/seebom/           # 19 Helm templates
+    └── helm/bomhort/           # 19 Helm templates
         ├── configmap.yaml
         ├── configmap-license-exceptions.yaml
         ├── configmap-license-policy.yaml
@@ -292,10 +292,10 @@ Moved to Section 10 for comprehensive coverage including exemptions and visual r
 - 60+ CSS custom properties in `styles.scss` (layout, brand, navbar, text, severity, status, license, charts)
 - **Dark Mode Toggle** in the navbar (top right), persisted to `localStorage`, respects `prefers-color-scheme`
 - **Custom Theme CSS:** External `custom-theme.css` mountable without Angular rebuild. Overrides any CSS variables.
-  - K8s: `seebom-custom-theme` ConfigMap (`ui.customTheme.enabled: true`)
+  - K8s: `bomhort-custom-theme` ConfigMap (`ui.customTheme.enabled: true`)
   - Local: `CUSTOM_THEME=./my-theme.css` in `.env`
 - **Site Configuration (ui-config.json):** All UI texts (brand name, page title, dashboard title/description/disclaimer, footer) configurable via external JSON file without Angular rebuild. Loaded via `APP_INITIALIZER` at app startup. Missing keys fall back to built-in defaults.
-  - K8s: `seebom-ui-config` ConfigMap (`ui.siteConfig.enabled: true`, content via `ui.siteConfig.content.*` in Helm values)
+  - K8s: `bomhort-ui-config` ConfigMap (`ui.siteConfig.enabled: true`, content via `ui.siteConfig.content.*` in Helm values)
   - Local: `UI_CONFIG=./my-ui-config.json` in `.env` or edit `ui/public/ui-config.json` directly
 
 ## 9. CVE Refresher (Background Job)
@@ -335,7 +335,7 @@ Moved to Section 10 for comprehensive coverage including exemptions and visual r
 
 **Configuration:**
 - Local: JSON files in `sboms/`, mounted via Docker Compose
-- K8s: ConfigMaps (`seebom-license-policy`, `seebom-license-exceptions`)
+- K8s: ConfigMaps (`bomhort-license-policy`, `bomhort-license-exceptions`)
 
 ## 10a. GitHub Dependency Health
 

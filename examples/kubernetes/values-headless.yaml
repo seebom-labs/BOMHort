@@ -4,7 +4,7 @@
 # resource-constrained clusters where the Angular frontend is not needed.
 #
 # Usage:
-#   helm install seebom ./deploy/helm/seebom -f examples/kubernetes/values-headless.yaml
+#   helm install bomhort ./deploy/helm/bomhort -f examples/kubernetes/values-headless.yaml
 #
 # All 19 REST API endpoints remain fully functional at the API Gateway service.
 

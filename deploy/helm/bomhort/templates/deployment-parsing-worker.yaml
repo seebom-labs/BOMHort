@@ -3,22 +3,22 @@ kind: Deployment
 metadata:
   name: {{ .Release.Name }}-parsing-worker
   labels:
-    app.kubernetes.io/name: seebom
+    app.kubernetes.io/name: bomhort
     app.kubernetes.io/component: parsing-worker
     app.kubernetes.io/instance: {{ .Release.Name }}
 spec:
   replicas: {{ .Values.parsingWorker.replicas }}
   selector:
     matchLabels:
-      app.kubernetes.io/name: seebom
+      app.kubernetes.io/name: bomhort
       app.kubernetes.io/component: parsing-worker
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: seebom
+        app.kubernetes.io/name: bomhort
         app.kubernetes.io/component: parsing-worker
         {{- if not .Values.gitSync.enabled }}
-        seebom.io/sbom-volume: "true"
+        bomhort.io/sbom-volume: "true"
         {{- end }}
     spec:
       {{- if not .Values.gitSync.enabled }}
@@ -27,7 +27,7 @@ spec:
           requiredDuringSchedulingIgnoredDuringExecution:
             - labelSelector:
                 matchExpressions:
-                  - key: seebom.io/sbom-volume
+                  - key: bomhort.io/sbom-volume
                     operator: Exists
               topologyKey: kubernetes.io/hostname
       {{- end }}
