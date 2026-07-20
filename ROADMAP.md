@@ -1,11 +1,11 @@
-# SeeBOM Product Roadmap
+# BOMHort Product Roadmap
 
 > Last updated: 2026-07-15
-> Project Board: https://github.com/orgs/seebom-labs/projects/1
+> Project Board: https://github.com/orgs/bomhort-labs/projects/1
 
 ## Executive Summary
 
-SeeBOM is transitioning from a single-instance SBOM visualization tool into an **enterprise-grade, multi-cluster Software Supply Chain Security platform**. This roadmap outlines three phases spanning Q1-Q3 2026, progressing from foundational infrastructure (authentication, multi-cluster data model) through fleet-scale operations (push ingestion, namespace isolation) to advanced analytics (CRA compliance scoring, exploit prediction, dependency health).
+BOMHort is transitioning from a single-instance SBOM visualization tool into an **enterprise-grade, multi-cluster Software Supply Chain Security platform**. This roadmap outlines three phases spanning Q1-Q3 2026, progressing from foundational infrastructure (authentication, multi-cluster data model) through fleet-scale operations (push ingestion, namespace isolation) to advanced analytics (CRA compliance scoring, exploit prediction, dependency health).
 
 The sequencing is driven by dependency chains: multi-cluster support must land before fleet APIs, authentication must exist before write endpoints, and data enrichment (EPSS, Scorecard, Lottery Factor) builds on the mature query layer.
 
@@ -13,7 +13,7 @@ The sequencing is driven by dependency chains: multi-cluster support must land b
 
 ## Phase 1: Foundation & Security (Q1 2026 — Apr-Jun)
 
-**Theme:** Make SeeBOM deployable in production environments with real security requirements.
+**Theme:** Make BOMHort deployable in production environments with real security requirements.
 
 | # | Issue | Rationale |
 |---|-------|-----------|
@@ -28,7 +28,7 @@ The sequencing is driven by dependency chains: multi-cluster support must land b
 | ~~#55~~ | ~~CycloneDX Support~~ | ✅ **Done** — `internal/cyclonedx` parser wired into the multi-format dispatch layer. |
 | ~~#37~~ | ~~Version Skew Detection~~ | ✅ **Done** (PRs #103, #126, merged 2026-05-04). |
 
-**Exit criteria:** SeeBOM can be deployed with authentication, multi-cluster tagging, and proper K8s health probes. CycloneDX SBOMs parse correctly.
+**Exit criteria:** BOMHort can be deployed with authentication, multi-cluster tagging, and proper K8s health probes. CycloneDX SBOMs parse correctly.
 
 > **Delivered ahead of roadmap:** **Global Search** — faceted search across packages, projects and vulnerabilities (`GET /api/v1/search`, `internal/clickhouse/queries_global_search.go`, UI `global-search` component). Not originally scoped; shipped as a UX enhancement.
 
@@ -51,11 +51,11 @@ The sequencing is driven by dependency chains: multi-cluster support must land b
 | #143 | In-toto Witness Integration | Supply chain attestation verification for ingested SBOMs. Provenance display, signature verification. Prerequisite for CRA compliance scoring (#141). |
 | #58 | Aggregated SBOM View | UX fix: group 50 versions of containerd into one expandable row. Depends on project-aware data model (#57). |
 
-**Exit criteria:** SeeBOM manages multiple clusters with namespace isolation, accepts SBOM pushes from CI/CD, generates PDF compliance reports, attestation verification, and doesn't depend on external OSV availability.
+**Exit criteria:** BOMHort manages multiple clusters with namespace isolation, accepts SBOM pushes from CI/CD, generates PDF compliance reports, attestation verification, and doesn't depend on external OSV availability.
 
 ### 🎯 v1.0.0 Milestone (Target: October 2026)
 
-After Phase 2 completes, SeeBOM reaches **v1.0.0** — the first stable release:
+After Phase 2 completes, BOMHort reaches **v1.0.0** — the first stable release:
 
 - API contract frozen (no breaking changes without major version bump)
 - ClickHouse schema stable (no ORDER BY changes)
@@ -91,7 +91,7 @@ After Phase 2 completes, SeeBOM reaches **v1.0.0** — the first stable release:
 | #82 | Lottery Factor | Single-maintainer risk detection. Supply chain resilience metric. |
 | #7 | CVE Fix Time (MTTR) | Mean-time-to-remediate is a key security KPI for audits (SOC2, ISO 27001). |
 
-**Exit criteria:** SeeBOM provides CRA readiness scoring, exploit-probability-based prioritization, dependency health metrics, and SBOM diff capabilities.
+**Exit criteria:** BOMHort provides CRA readiness scoring, exploit-probability-based prioritization, dependency health metrics, and SBOM diff capabilities.
 
 ---
 
@@ -127,11 +127,11 @@ After Phase 2 completes, SeeBOM reaches **v1.0.0** — the first stable release:
 
 ### Why multi-cluster before analytics?
 
-Organizations evaluating SeeBOM for production ask: "Can it handle our 5 clusters?" before they ask "Does it have EPSS scores?" The cluster model is table-stakes for enterprise adoption.
+Organizations evaluating BOMHort for production ask: "Can it handle our 5 clusters?" before they ask "Does it have EPSS scores?" The cluster model is table-stakes for enterprise adoption.
 
 ### Why auth before upload?
 
-A write endpoint without authentication is a security incident waiting to happen. Auth is the gate that unlocks all write operations safely. SeeBOM uses a lightweight service-token mode (shared secret with upstream proxy) rather than full OIDC — user authentication is the proxy's responsibility, not SeeBOM's.
+A write endpoint without authentication is a security incident waiting to happen. Auth is the gate that unlocks all write operations safely. BOMHort uses a lightweight service-token mode (shared secret with upstream proxy) rather than full OIDC — user authentication is the proxy's responsibility, not BOMHort's.
 
 ### Why CRA compliance in Q3?
 
@@ -164,7 +164,7 @@ Cluster lands first (Phase 1, #131) because it's a smaller change with no UI imp
 | Phase | Metric | Target |
 |-------|--------|--------|
 | Phase 1 | API can be deployed with auth in production | Service token + API key modes working, health probes passing |
-| Phase 2 | CI/CD pipeline pushes SBOM to SeeBOM | Upload endpoint processes 100 SBOMs/hour |
+| Phase 2 | CI/CD pipeline pushes SBOM to BOMHort | Upload endpoint processes 100 SBOMs/hour |
 | Phase 3 | CRA readiness score > 80% for managed clusters | All 5 CRA conditions evaluable |
 
 ---
@@ -176,7 +176,7 @@ Cluster lands first (Phase 1, #131) because it's a smaller change with no UI imp
 - **Multi-repo split**: Monorepo architecture is a hard constraint for AI-assisted development.
 - **Real-time streaming**: Batch ingestion (CronJob + queue) is sufficient for SBOM use cases.
 - **RBAC/multi-tenancy**: Auth is binary (authenticated or not). Fine-grained RBAC is a future consideration beyond this roadmap.
-- **Full OIDC in SeeBOM**: User-facing authentication is the upstream proxy/gateway's responsibility. SeeBOM only validates service tokens from trusted proxies.
+- **Full OIDC in BOMHort**: User-facing authentication is the upstream proxy/gateway's responsibility. BOMHort only validates service tokens from trusted proxies.
 
 
 

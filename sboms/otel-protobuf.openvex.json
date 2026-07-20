@@ -1,7 +1,7 @@
 {
   "@context": "https://openvex.dev/ns/v0.2.0",
-  "@id": "https://seebom.example.com/vex/otel-protobuf-2026-03-08",
-  "author": "SeeBOM Security Team",
+  "@id": "https://bomhort.example.com/vex/otel-protobuf-2026-03-08",
+  "author": "BOMHort Security Team",
   "timestamp": "2026-03-08T10:00:00Z",
   "version": 1,
   "statements": [

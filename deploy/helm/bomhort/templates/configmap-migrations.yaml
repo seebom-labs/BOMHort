@@ -3,7 +3,7 @@ kind: ConfigMap
 metadata:
   name: {{ .Release.Name }}-migrations
   labels:
-    app.kubernetes.io/name: seebom
+    app.kubernetes.io/name: bomhort
     app.kubernetes.io/instance: {{ .Release.Name }}
 data:
   {{- range $path, $_ := .Files.Glob "migrations/*.sql" }}

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/seebom-labs/seebom/backend/pkg/dto"
+	"github.com/bomhort-labs/bomhort/backend/pkg/dto"
 )
 
 // TestClusterDTOs verifies that cluster DTOs serialize correctly.

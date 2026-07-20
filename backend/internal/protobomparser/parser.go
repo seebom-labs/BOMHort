@@ -15,7 +15,7 @@ import (
 	"github.com/protobom/protobom/pkg/reader"
 	"github.com/protobom/protobom/pkg/sbom"
 
-	"github.com/seebom-labs/seebom/backend/pkg/models"
+	"github.com/bomhort-labs/bomhort/backend/pkg/models"
 )
 
 // ParseResult contains the extracted data from an SBOM document parsed via protobom.
@@ -25,7 +25,7 @@ type ParseResult struct {
 }
 
 // Parse reads an SBOM document (any format supported by protobom) from raw bytes
-// and converts it to SeeBOM's internal model. Supported formats:
+// and converts it to BOMHort's internal model. Supported formats:
 //   - SPDX 2.3 JSON
 //   - CycloneDX 1.0–1.7 JSON
 func Parse(data []byte, sourceFile, sha256Hash string) (*ParseResult, error) {
@@ -49,7 +49,7 @@ func ParseReader(input io.Reader, sourceFile, sha256Hash string) (*ParseResult, 
 	return Parse(data, sourceFile, sha256Hash)
 }
 
-// convertDocument maps a protobom Document to SeeBOM's internal models.
+// convertDocument maps a protobom Document to BOMHort's internal models.
 func convertDocument(doc *sbom.Document, sourceFile, sha256Hash string) (*ParseResult, error) {
 	if doc == nil || doc.NodeList == nil {
 		return nil, fmt.Errorf("protobom: empty document")

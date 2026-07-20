@@ -30,17 +30,17 @@ Authentication is **fully optional** and disabled by default. Enable it via the 
 ```bash
 # Either header works:
 curl -H "Authorization: Bearer <service-token>" \
-  https://api.seebom.example.com/api/v1/stats/dashboard
+  https://api.bomhort.example.com/api/v1/stats/dashboard
 
 curl -H "X-Service-Token: <service-token>" \
-  https://api.seebom.example.com/api/v1/stats/dashboard
+  https://api.bomhort.example.com/api/v1/stats/dashboard
 ```
 
 **API Keys** — multiple pre-shared keys for direct API consumers (CI/CD pipelines, scripts):
 
 ```bash
 curl -H "X-API-Key: <api-key>" \
-  https://api.seebom.example.com/api/v1/stats/dashboard
+  https://api.bomhort.example.com/api/v1/stats/dashboard
 ```
 
 ### Public endpoints (always accessible)
@@ -59,7 +59,7 @@ Even when authentication is enabled, the following endpoints bypass auth so Kube
 | Status | Condition |
 |--------|-----------|
 | `200 OK` | Auth disabled, or valid token/key presented |
-| `401 Unauthorized` (with `WWW-Authenticate: Bearer realm="seebom"`) | Auth enabled, no credential sent |
+| `401 Unauthorized` (with `WWW-Authenticate: Bearer realm="bomhort"`) | Auth enabled, no credential sent |
 | `401 Unauthorized` | Auth enabled, invalid token/key |
 
 {{% alert title="Security" color="info" %}}
@@ -997,7 +997,7 @@ curl -s "http://localhost:8080/api/v1/packages/search?q=crypto" | jq .
 ```yaml
 - name: Check for critical vulnerabilities
   run: |
-    CRITICAL=$(curl -sf "$SEEBOM_URL/api/v1/stats/dashboard" | jq '.critical_vulns')
+    CRITICAL=$(curl -sf "$BOMHORT_URL/api/v1/stats/dashboard" | jq '.critical_vulns')
     if [ "$CRITICAL" -gt 0 ]; then
       echo "::error::$CRITICAL critical vulnerabilities detected"
       exit 1

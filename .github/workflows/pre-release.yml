@@ -82,7 +82,7 @@ jobs:
         uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v2.3.2
         with:
           tag_name: v${{ inputs.version }}
-          name: SeeBOM ${{ inputs.version }}
+          name: BOMHort ${{ inputs.version }}
           generate_release_notes: true
           body: |
             > ⚠️ **Pre-release** — built from branch `${{ github.ref_name }}`

@@ -24,11 +24,11 @@ ENV SERVICE_TOKEN=""
 # Install the nginx config as a template. The nginx official image runs
 # /docker-entrypoint.d/20-envsubst-on-templates.sh at startup, which renders
 # /etc/nginx/templates/*.template into /etc/nginx/conf.d/*.conf using envsubst.
-COPY nginx.conf.template /etc/nginx/templates/seebom.conf.template
+COPY nginx.conf.template /etc/nginx/templates/bomhort.conf.template
 
 # Install the auth-header init script (sourced before envsubst runs).
-COPY docker-entrypoint.d/15-seebom-auth.envsh /docker-entrypoint.d/15-seebom-auth.envsh
-RUN chmod +x /docker-entrypoint.d/15-seebom-auth.envsh
+COPY docker-entrypoint.d/15-bomhort-auth.envsh /docker-entrypoint.d/15-bomhort-auth.envsh
+RUN chmod +x /docker-entrypoint.d/15-bomhort-auth.envsh
 
 # Copy built Angular assets.
 COPY --from=builder /app/dist/ui/browser /usr/share/nginx/html

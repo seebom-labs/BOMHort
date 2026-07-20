@@ -4,14 +4,14 @@ kind: ConfigMap
 metadata:
   name: {{ .Release.Name }}-license-exceptions
   labels:
-    app.kubernetes.io/name: seebom
+    app.kubernetes.io/name: bomhort
     app.kubernetes.io/instance: {{ .Release.Name }}
 data:
   license-exceptions.json: |-
     {
       "version": "1.0.0",
       "lastUpdated": "2026-03-07",
-      "description": "License exceptions for SeeBOM. Edit this ConfigMap to add/remove exceptions.",
+      "description": "License exceptions for BOMHort. Edit this ConfigMap to add/remove exceptions.",
       "blanketExceptions": [],
       "exceptions": []
     }

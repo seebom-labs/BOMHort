@@ -1,4 +1,4 @@
-# SeeBOM v0.1.3 – Release Notes
+# BOMHort v0.1.3 – Release Notes
 
 **Release Date:** 2026-03-12
 

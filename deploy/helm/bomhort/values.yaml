@@ -1,9 +1,9 @@
-# SeeBOM Helm values
+# BOMHort Helm values
 
 # Container image defaults
 image:
   registry: ghcr.io
-  repository: seebom-labs/seebom
+  repository: bomhort-labs/bomhort
   tag: "0.1.3"
   pullPolicy: IfNotPresent
 
@@ -35,9 +35,9 @@ s3:
 
 # ClickHouse (provisioned via ClickHouse Operator)
 clickhouse:
-  host: chi-seebom-clickhouse-seebom-cluster-0-0
+  host: chi-bomhort-clickhouse-bomhort-cluster-0-0
   port: 9000
-  database: seebom
+  database: bomhort
   user: default
   password: ""
   userPasswordSecret:
@@ -45,7 +45,7 @@ clickhouse:
     secretName: ""
     key: ""
   cluster:
-    name: seebom-cluster
+    name: bomhort-cluster
     shardsCount: 1
     replicasCount: 1
   installation:
@@ -64,7 +64,7 @@ clickhouse:
 
 # SBOM source via PVC (alternative to S3, for environments without S3 access)
 sbomSource:
-  pvcName: seebom-sbom-data
+  pvcName: bomhort-sbom-data
   mountPath: /data/sboms
   storageSize: 1Gi
 
@@ -163,7 +163,7 @@ ingress:
   annotations: {}
     # cert-manager.io/cluster-issuer: letsencrypt-prod
   hosts: []
-    # - host: seebom.example.com
+    # - host: bomhort.example.com
     #   paths:
     #     - path: /api
     #       pathType: Prefix
@@ -172,9 +172,9 @@ ingress:
     #       pathType: Prefix
     #       serviceSuffix: ui
   tls: []
-    # - secretName: seebom-tls
+    # - secretName: bomhort-tls
     #   hosts:
-    #     - seebom.example.com
+    #     - bomhort.example.com
 
 # UI (Deployment)
 # Set ui.enabled to false for headless (API-only) deployments.
@@ -202,13 +202,13 @@ ui:
   siteConfig:
     enabled: false
     content:
-      brandName: "SeeBOM"
-      pageTitle: "SeeBOM"
+      brandName: "BOMHort"
+      pageTitle: "BOMHort"
       dashboard:
         title: "Dashboard"
         subtitle: "Software Bill of Materials — Governance Overview"
-        description: '<strong>SeeBOM</strong> autonomously ingests SPDX SBOMs from the CNCF ecosystem, cross-references known vulnerabilities via the <a href="https://osv.dev" target="_blank" rel="noopener">OSV database</a>, evaluates license compliance against a configurable policy, and applies <a href="https://openvex.dev" target="_blank" rel="noopener">OpenVEX</a> statements to suppress non-applicable findings — giving you a single pane of glass for software supply-chain governance.'
-        disclaimer: '<strong>Disclaimer:</strong> The data shown on this dashboard is provided on an "as-is" basis for informational purposes only. Vulnerability and license information is sourced from third-party databases (OSV, GitHub) and may be incomplete or delayed. SeeBOM does not guarantee the accuracy, completeness, or timeliness of any data and is not a substitute for professional security audits or legal advice. Use at your own risk.'
+        description: '<strong>BOMHort</strong> autonomously ingests SPDX SBOMs from the CNCF ecosystem, cross-references known vulnerabilities via the <a href="https://osv.dev" target="_blank" rel="noopener">OSV database</a>, evaluates license compliance against a configurable policy, and applies <a href="https://openvex.dev" target="_blank" rel="noopener">OpenVEX</a> statements to suppress non-applicable findings — giving you a single pane of glass for software supply-chain governance.'
+        disclaimer: '<strong>Disclaimer:</strong> The data shown on this dashboard is provided on an "as-is" basis for informational purposes only. Vulnerability and license information is sourced from third-party databases (OSV, GitHub) and may be incomplete or delayed. BOMHort does not guarantee the accuracy, completeness, or timeliness of any data and is not a substitute for professional security audits or legal advice. Use at your own risk.'
       footer:
         enabled: false
         text: ""

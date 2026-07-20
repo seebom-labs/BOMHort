@@ -15,10 +15,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/seebom-labs/seebom/backend/internal/clickhouse"
-	"github.com/seebom-labs/seebom/backend/internal/config"
-	"github.com/seebom-labs/seebom/backend/internal/license"
-	s3client "github.com/seebom-labs/seebom/backend/internal/s3"
+	"github.com/bomhort-labs/bomhort/backend/internal/clickhouse"
+	"github.com/bomhort-labs/bomhort/backend/internal/config"
+	"github.com/bomhort-labs/bomhort/backend/internal/license"
+	s3client "github.com/bomhort-labs/bomhort/backend/internal/s3"
 )
 
 // uuidPattern validates UUID path parameters to prevent injection.
@@ -28,7 +28,7 @@ var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]
 var vulnIDPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
 
 func main() {
-	log.Println("SeeBOM API Gateway starting...")
+	log.Println("BOMHort API Gateway starting...")
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -773,7 +773,7 @@ func authMiddleware(enabled bool, serviceToken string, apiKeys []string, next ht
 		if len(presented) == 0 {
 			log.Printf("AUTH: missing credential on %s %s from %s",
 				sanitizeLogParam(r.Method), sanitizeLogParam(r.URL.Path), clientIP(r))
-			w.Header().Set("WWW-Authenticate", `Bearer realm="seebom"`)
+			w.Header().Set("WWW-Authenticate", `Bearer realm="bomhort"`)
 			writeError(w, http.StatusUnauthorized, "Authentication required")
 			return
 		}

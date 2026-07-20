@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/seebom-labs/seebom/backend/pkg/models"
+	"github.com/bomhort-labs/bomhort/backend/pkg/models"
 )
 
 // InsertSBOM inserts a single SBOM metadata row.

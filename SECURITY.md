@@ -1,6 +1,6 @@
 # Security Policy
 
-The SeeBOM maintainers take security seriously. We appreciate your efforts to responsibly disclose your findings and will make every effort to acknowledge your contributions.
+The BOMHort maintainers take security seriously. We appreciate your efforts to responsibly disclose your findings and will make every effort to acknowledge your contributions.
 
 ## Reporting a Vulnerability
 
@@ -9,7 +9,7 @@ The SeeBOM maintainers take security seriously. We appreciate your efforts to re
 Instead, report them through one of these channels:
 
 1. **GitHub Security Advisories** (preferred):  
-   [https://github.com/seebom-labs/seebom/security/advisories/new](https://github.com/seebom-labs/seebom/security/advisories/new)
+   [https://github.com/bomhort-labs/bomhort/security/advisories/new](https://github.com/bomhort-labs/bomhort/security/advisories/new)
 
 2. **Email:**  
    Contact the maintainers listed in [MAINTAINERS.md](MAINTAINERS.md) directly.
@@ -63,15 +63,15 @@ We follow the [CVSS v3.1](https://www.first.org/cvss/calculator/3.1) scoring sys
 
 ## Security-Related Configuration
 
-When deploying SeeBOM, pay attention to:
+When deploying BOMHort, pay attention to:
 
-- **ClickHouse credentials**: Always change the default password. Use the `seebom-secret` Kubernetes Secret.
+- **ClickHouse credentials**: Always change the default password. Use the `bomhort-secret` Kubernetes Secret.
 - **API authentication (opt-in)**: The API Gateway ships with an authentication middleware that is **disabled by default**. Set `AUTH_ENABLED=true` plus `SERVICE_TOKEN` (Bearer / `X-Service-Token`) and/or `API_KEYS` (`X-API-Key`, comma-separated) to require credentials on every non-health endpoint. The bundled UI is automatically wired up — nginx injects the `SERVICE_TOKEN` on upstream `/api/` proxy calls so the secret never reaches the browser. Constant-time comparisons (`crypto/subtle`) prevent timing attacks. See [Deployment Guide § 6](./docs/content/docs/deployment/_index.md#6-api-authentication-optional).
 - **UI is unauthenticated by default**: The Angular frontend has no built-in login. When `apiGateway.auth.enabled=true` the UI authenticates to the backend on the user's behalf, but the UI itself remains world-readable. For per-user authentication, place the UI behind an authentication proxy (e.g. OAuth2 Proxy, Pomerium, Cloudflare Access).
 - **License exceptions are read-only**: By design, no API endpoint can modify license exceptions or policy — they are loaded from config files to prevent tampering via the public UI.
 - **SBOM source directory**: Ensure only trusted SBOM/VEX files are placed in the ingestion directory. Malicious JSON payloads could attempt to exploit the parsers.
 - **Container images**: All backend containers run as `nobody:nobody`. The UI runs as the `nginx` user. No container requires root privileges.
-- **Network policies**: In production, restrict ClickHouse access to only the SeeBOM pods.
+- **Network policies**: In production, restrict ClickHouse access to only the BOMHort pods.
 
 ## Disclosure Policy
 
@@ -82,9 +82,9 @@ When deploying SeeBOM, pay attention to:
 
 ## Security Audits
 
-SeeBOM has not yet undergone a formal security audit. If you are interested in sponsoring or conducting one, please reach out to the maintainers.
+BOMHort has not yet undergone a formal security audit. If you are interested in sponsoring or conducting one, please reach out to the maintainers.
 
 ---
 
-Thank you for helping keep SeeBOM and its users safe.
+Thank you for helping keep BOMHort and its users safe.
 

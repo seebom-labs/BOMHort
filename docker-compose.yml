@@ -15,7 +15,7 @@ services:
       - ./db/init/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
       - ./db/migrations:/docker-entrypoint-initdb.d/migrations:ro
     environment:
-      CLICKHOUSE_DB: seebom
+      CLICKHOUSE_DB: bomhort
       CLICKHOUSE_USER: default
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
     healthcheck:
@@ -34,7 +34,7 @@ services:
     environment:
       CLICKHOUSE_HOST: clickhouse
       CLICKHOUSE_PORT: "9000"
-      CLICKHOUSE_DATABASE: seebom
+      CLICKHOUSE_DATABASE: bomhort
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: ""
       API_PORT: "8080"
@@ -71,7 +71,7 @@ services:
     environment:
       CLICKHOUSE_HOST: clickhouse
       CLICKHOUSE_PORT: "9000"
-      CLICKHOUSE_DATABASE: seebom
+      CLICKHOUSE_DATABASE: bomhort
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: ""
       SBOM_DIR: /data/sboms
@@ -103,7 +103,7 @@ services:
     environment:
       CLICKHOUSE_HOST: clickhouse
       CLICKHOUSE_PORT: "9000"
-      CLICKHOUSE_DATABASE: seebom
+      CLICKHOUSE_DATABASE: bomhort
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: ""
       SBOM_DIR: /data/sboms
@@ -156,7 +156,7 @@ services:
     environment:
       CLICKHOUSE_HOST: clickhouse
       CLICKHOUSE_PORT: "9000"
-      CLICKHOUSE_DATABASE: seebom
+      CLICKHOUSE_DATABASE: bomhort
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: ""
     depends_on:

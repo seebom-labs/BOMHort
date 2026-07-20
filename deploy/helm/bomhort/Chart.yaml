@@ -1,6 +1,6 @@
 apiVersion: v2
-name: seebom
-description: SeeBOM - Kubernetes-native SBOM visualization and governance platform
+name: bomhort
+description: BOMHort - Kubernetes-native SBOM visualization and governance platform
 type: application
 version: 0.1.3
 appVersion: "0.1.3"
@@ -12,4 +12,4 @@ keywords:
   - clickhouse
 maintainers:
   - name: mfahlandt
-
+  - name: koksay

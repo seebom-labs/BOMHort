@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/seebom-labs/seebom/backend/pkg/dto"
+	"github.com/bomhort-labs/bomhort/backend/pkg/dto"
 )
 
 // QueryProjects fetches a grouped project listing.

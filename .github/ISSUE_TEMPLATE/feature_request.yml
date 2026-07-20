@@ -1,5 +1,5 @@
 name: Feature Request
-description: Suggest a new feature or enhancement for SeeBOM
+description: Suggest a new feature or enhancement for BOMHort
 title: "[Feature]: "
 labels: ["enhancement", "triage"]
 body:
@@ -35,7 +35,7 @@ body:
     id: component
     attributes:
       label: Component
-      description: Which part of SeeBOM would this affect?
+      description: Which part of BOMHort would this affect?
       multiple: true
       options:
         - UI / Dashboard
@@ -72,5 +72,5 @@ body:
       options:
         - label: I have searched existing issues and this has not been requested before.
           required: true
-        - label: This feature is within the [project scope](https://github.com/seebom-labs/seebom/blob/main/GOVERNANCE.md#project-scope).
+        - label: This feature is within the [project scope](https://github.com/bomhort-labs/bomhort/blob/main/GOVERNANCE.md#project-scope).
 

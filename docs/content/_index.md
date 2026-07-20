@@ -7,11 +7,11 @@ description: "BOMHort is a Kubernetes-native SBOM visualization and governance p
 {{< blocks/cover title="" image_anchor="top" height="med" color="dark" >}}
 <img src="/images/BOMHORT.png" alt="BOMHort" style="max-width: 300px; width: 100%; margin-bottom: 1rem;">
 <p class="lead mt-4">Kubernetes-native Software Bill of Materials (SBOM) Visualization &amp; Governance Platform</p>
-<a class="btn btn-lg btn-seebom me-3 mb-4" href="/docs/">
+<a class="btn btn-lg btn-bomhort me-3 mb-4" href="/docs/">
   <img class="fb-icon" src="/images/flowbite/book-open.svg" alt="" loading="lazy">
   Documentation
 </a>
-<a class="btn btn-lg btn-secondary me-3 mb-4" href="https://github.com/seebom-labs/BOMHort">
+<a class="btn btn-lg btn-secondary me-3 mb-4" href="https://github.com/bomhort-labs/BOMHort">
   <img class="fb-icon" src="/images/flowbite/github.svg" alt="" loading="lazy">
   GitHub
 </a>
@@ -22,7 +22,7 @@ description: "BOMHort is a Kubernetes-native SBOM visualization and governance p
 Ingest thousands of SPDX and CycloneDX SBOMs, scan for vulnerabilities via OSV, enforce license compliance,
 and apply VEX statements — all visualized in a fast Angular dashboard backed by ClickHouse analytics.
 
-BOMHort was previously known as SeeBOM. See [Why we renamed SeeBOM to BOMHort](/docs/getting-started/rename/).
+BOMHort was previously known as BOMHort. See [Why we renamed BOMHort to BOMHort](/docs/getting-started/rename/).
 
 {{% /blocks/lead %}}
 

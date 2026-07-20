@@ -16,7 +16,7 @@ This guide covers deploying BOMHort to a Kubernetes cluster using Helm.
 - Kubernetes cluster (1.27+)
 - [ClickHouse Operator](https://github.com/Altinity/clickhouse-operator) installed
 - Helm 3.x
-- Container images pushed to a registry (e.g. `ghcr.io/seebom-labs/bomhort/*`)
+- Container images pushed to a registry (e.g. `ghcr.io/bomhort-labs/bomhort/*`)
 
 ---
 
@@ -52,7 +52,7 @@ s3:
 ```
 
 ```bash
-helm install seebom deploy/helm/seebom/ -n seebom -f my-values.yaml \
+helm install bomhort deploy/helm/bomhort/ -n bomhort -f my-values.yaml \
   --set s3.accessKey="AKIA..." \
   --set s3.secretKey="..."
 ```
@@ -77,7 +77,7 @@ Create the Secret first:
 kubectl create secret generic my-s3-credentials \
   --from-literal=S3_ACCESS_KEY="AKIA..." \
   --from-literal=S3_SECRET_KEY="..." \
-  -n seebom
+  -n bomhort
 ```
 
 This avoids storing credentials in Helm values files or command history.
@@ -184,8 +184,8 @@ sbomSource:
 License exceptions suppress specific license violations. They are stored in a **ConfigMap** that is mounted read-only into the API Gateway and Workers.
 
 ```bash
-kubectl edit configmap seebom-license-exceptions
-kubectl rollout restart deployment seebom-api-gateway
+kubectl edit configmap bomhort-license-exceptions
+kubectl rollout restart deployment bomhort-api-gateway
 ```
 
 ---
@@ -195,8 +195,8 @@ kubectl rollout restart deployment seebom-api-gateway
 The license policy defines which SPDX IDs are classified as **permissive**, **copyleft**, or **unknown**.
 
 ```bash
-kubectl edit configmap seebom-license-policy
-kubectl rollout restart deployment seebom-api-gateway seebom-parsing-worker
+kubectl edit configmap bomhort-license-policy
+kubectl rollout restart deployment bomhort-api-gateway bomhort-parsing-worker
 ```
 
 ---
@@ -210,10 +210,10 @@ ui:
 ```
 
 ```bash
-kubectl create configmap seebom-custom-theme \
+kubectl create configmap bomhort-custom-theme \
   --from-file=custom-theme.css=./my-theme.css \
   --dry-run=client -o yaml | kubectl apply -f -
-kubectl rollout restart deployment seebom-ui
+kubectl rollout restart deployment bomhort-ui
 ```
 
 ---
@@ -267,11 +267,11 @@ Clients send the token via either header:
 
 ```bash
 curl -H "Authorization: Bearer your-strong-random-secret-here" \
-  https://seebom.example.com/api/v1/stats/dashboard
+  https://bomhort.example.com/api/v1/stats/dashboard
 
 # Or:
 curl -H "X-Service-Token: your-strong-random-secret-here" \
-  https://seebom.example.com/api/v1/stats/dashboard
+  https://bomhort.example.com/api/v1/stats/dashboard
 ```
 
 **Mode 2: API Keys** — multiple pre-shared keys for direct consumers (CI/CD pipelines, scripts):
@@ -287,7 +287,7 @@ Clients send the key via:
 
 ```bash
 curl -H "X-API-Key: ci-cd-pipeline-key" \
-  https://seebom.example.com/api/v1/stats/dashboard
+  https://bomhort.example.com/api/v1/stats/dashboard
 ```
 
 **Both modes can be enabled at the same time** — useful when a proxy uses the service token while direct CI/CD jobs use API keys.
@@ -297,10 +297,10 @@ curl -H "X-API-Key: ci-cd-pipeline-key" \
 Reference a pre-existing Secret instead of inlining the token in Helm values — same pattern as `s3.credentialsSecret` and `clickhouse.userPasswordSecret`:
 
 ```bash
-kubectl create secret generic seebom-api-auth \
+kubectl create secret generic bomhort-api-auth \
   --from-literal=SERVICE_TOKEN="$(openssl rand -hex 32)" \
   --from-literal=API_KEYS="key1,key2,key3" \
-  -n seebom
+  -n bomhort
 ```
 
 ```yaml
@@ -309,7 +309,7 @@ apiGateway:
     enabled: true
     existingSecret:
       enabled: true
-      secretName: "seebom-api-auth"
+      secretName: "bomhort-api-auth"
       serviceTokenKey: "SERVICE_TOKEN"   # key inside the Secret
       apiKeysKey: "API_KEYS"
 ```
@@ -317,7 +317,7 @@ apiGateway:
 Both the API Gateway and the UI nginx container automatically read `SERVICE_TOKEN` from this Secret. To rotate the token, update the Secret and restart both Deployments:
 
 ```bash
-kubectl rollout restart deployment seebom-api-gateway seebom-ui
+kubectl rollout restart deployment bomhort-api-gateway bomhort-ui
 ```
 
 ### Public endpoints (always accessible)
@@ -343,7 +343,7 @@ Even when authentication is enabled, the following endpoints are always reachabl
 
 | Scenario | Response |
 |----------|----------|
-| No credentials sent (auth enabled) | `401 Unauthorized` with `WWW-Authenticate: Bearer realm="seebom"` |
+| No credentials sent (auth enabled) | `401 Unauthorized` with `WWW-Authenticate: Bearer realm="bomhort"` |
 | Invalid token/key | `401 Unauthorized` |
 | `AUTH_ENABLED=true` but no `SERVICE_TOKEN` and no `API_KEYS` configured | All requests rejected (misconfiguration warning logged at startup) |
 
@@ -365,7 +365,7 @@ github:
 Or pass it securely via `--set`:
 
 ```bash
-helm install seebom deploy/helm/seebom/ -n seebom -f values.yaml \
+helm install bomhort deploy/helm/bomhort/ -n bomhort -f values.yaml \
   --set github.token="ghp_..."
 ```
 
@@ -378,7 +378,7 @@ See [FAQ: Should I use a GitHub token?](/docs/faq/#should-i-use-a-github-token) 
 ### S3-based (recommended)
 
 ```bash
-helm install seebom ./deploy/helm/seebom \
+helm install bomhort ./deploy/helm/bomhort \
   -f values-production.yaml \
   --set image.tag=0.1.3 \
   --set 's3.buckets=[{"name":"cncf-subproject-sboms","region":"us-east-1"}]' \
@@ -433,7 +433,7 @@ ingress:
   enabled: true
   className: eg
   hosts:
-    - host: seebom.example.com
+    - host: bomhort.example.com
       paths:
         - path: /api
           pathType: Prefix
@@ -451,7 +451,7 @@ ingress:
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
   hosts:
-    - host: seebom.example.com
+    - host: bomhort.example.com
       paths:
         - path: /api
           pathType: Prefix
@@ -459,9 +459,9 @@ ingress:
           pathType: Prefix
           serviceSuffix: ui
   tls:
-    - secretName: seebom-tls
+    - secretName: bomhort-tls
       hosts:
-        - seebom.example.com
+        - bomhort.example.com
 ```
 
 ### Contour
@@ -471,7 +471,7 @@ ingress:
   enabled: true
   className: contour
   hosts:
-    - host: seebom.example.com
+    - host: bomhort.example.com
       paths:
         - path: /api
           pathType: Prefix
@@ -492,7 +492,7 @@ ingress:
     alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:...
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
   hosts:
-    - host: seebom.example.com
+    - host: bomhort.example.com
       paths:
         - path: /api
           pathType: Prefix
@@ -508,7 +508,7 @@ ingress:
   enabled: true
   className: eg
   hosts:
-    - host: api.seebom.example.com
+    - host: api.bomhort.example.com
       paths:
         - path: /
           pathType: Prefix
@@ -523,7 +523,7 @@ When exposing the API externally, ensure `apiGateway.auth.enabled: true` is set.
 ## 11. Verifying the Deployment
 
 ```bash
-kubectl get pods -l app.kubernetes.io/name=seebom
+kubectl get pods -l app.kubernetes.io/name=bomhort
 
 kubectl exec -it $(kubectl get pod -l app.kubernetes.io/component=api-gateway -o name | head -1) \
   -- wget -qO- http://localhost:8080/api/v1/stats/dashboard

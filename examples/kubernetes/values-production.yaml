@@ -1,30 +1,30 @@
-# SeeBOM – Production Helm Values
+# BOMHort – Production Helm Values
 #
 # Suitable for a real Kubernetes cluster (EKS, GKE, AKS, self-hosted).
 # Default ingestion: S3 buckets (set s3.buckets). Fallback: seed job into PVC.
 # HA replicas, ClusterIP services.
 #
 # Usage:
-#   helm install seebom deploy/helm/seebom/ -n seebom -f values-production.yaml \
+#   helm install bomhort deploy/helm/bomhort/ -n bomhort -f values-production.yaml \
 #     --set clickhouse.password=<PASSWORD> \
 #     --set 's3.buckets=[{"name":"cncf-subproject-sboms","region":"us-east-1"}]'
 
 # ─── Images ──────────────────────────────────────────────────────────────────
 image:
   registry: ghcr.io
-  repository: seebom-labs/seebom
+  repository: bomhort-labs/bomhort
   tag: "0.1.3"
   pullPolicy: IfNotPresent
 
 # ─── ClickHouse ──────────────────────────────────────────────────────────────
 clickhouse:
-  host: chi-seebom-clickhouse-seebom-cluster-0-0
+  host: chi-bomhort-clickhouse-bomhort-cluster-0-0
   port: 9000
-  database: seebom
+  database: bomhort
   user: default
   password: ""   # pass via --set or reference an existing K8s Secret
   cluster:
-    name: seebom-cluster
+    name: bomhort-cluster
     shardsCount: 1
     replicasCount: 2         # 2 replicas for HA
   installation:
@@ -74,7 +74,7 @@ seedJob:
   cncfExceptionsURL: "https://raw.githubusercontent.com/cncf/foundation/main/license-exceptions/exceptions.json"
 
 sbomSource:
-  pvcName: seebom-sbom-data
+  pvcName: bomhort-sbom-data
   mountPath: /data/sboms
   storageSize: 20Gi
 

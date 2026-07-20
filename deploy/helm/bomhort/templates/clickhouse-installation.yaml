@@ -4,7 +4,7 @@ kind: "ClickHouseInstallation"
 metadata:
   name: {{ .Release.Name }}-clickhouse
   labels:
-    app.kubernetes.io/name: seebom
+    app.kubernetes.io/name: bomhort
     app.kubernetes.io/instance: {{ .Release.Name }}
 spec:
   defaults:

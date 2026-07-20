@@ -16,8 +16,8 @@ Example Helm values for deploying BOMHort to a real Kubernetes cluster
 kubectl apply -f https://raw.githubusercontent.com/Altinity/clickhouse-operator/master/deploy/operator/clickhouse-operator-install-bundle.yaml
 
 # 2. Create namespace + secret
-kubectl create namespace seebom
-kubectl create secret generic seebom-secret -n seebom \
+kubectl create namespace bomhort
+kubectl create secret generic bomhort-secret -n bomhort \
   --from-literal=CLICKHOUSE_PASSWORD='<your-password>' \
   --from-literal=GITHUB_TOKEN='<your-github-pat>'
 
@@ -26,13 +26,13 @@ cp examples/kubernetes/values-production.yaml my-values.yaml
 vi my-values.yaml
 
 # 4. Install (with S3 ingestion)
-helm install seebom deploy/helm/seebom/ \
-  -n seebom -f my-values.yaml \
+helm install bomhort deploy/helm/bomhort/ \
+  -n bomhort -f my-values.yaml \
   --set 's3.buckets=[{"name":"cncf-subproject-sboms","region":"us-east-1"}]'
 
 # Or from the OCI registry:
-helm install seebom oci://ghcr.io/seebom-labs/bomhort/charts/seebom \
-  --version 0.1.3 -n seebom -f my-values.yaml
+helm install bomhort oci://ghcr.io/bomhort-labs/bomhort/charts/bomhort \
+  --version 0.1.3 -n bomhort -f my-values.yaml
 ```
 
 ## Values Files
@@ -92,8 +92,8 @@ sbomSource:
 
 **Refreshing:** Delete the seed job and re-run Helm upgrade:
 ```bash
-kubectl delete job -n seebom -l app.kubernetes.io/component=seed-sboms
-helm upgrade seebom deploy/helm/seebom/ -n seebom -f my-values.yaml
+kubectl delete job -n bomhort -l app.kubernetes.io/component=seed-sboms
+helm upgrade bomhort deploy/helm/bomhort/ -n bomhort -f my-values.yaml
 ```
 
 > **Note:** Requires a `ReadWriteOnce` PVC. All pods are automatically co-scheduled on the same node via pod affinity.
@@ -130,14 +130,14 @@ gitSync:
   enabled: false
 
 sbomSource:
-  pvcName: seebom-sbom-data
+  pvcName: bomhort-sbom-data
   mountPath: /data/sboms
   storageSize: 10Gi
 ```
 
 After populating the PVC, trigger the Ingestion Watcher:
 ```bash
-kubectl create job --from=cronjob/seebom-ingestion-watcher manual-ingest -n seebom
+kubectl create job --from=cronjob/bomhort-ingestion-watcher manual-ingest -n bomhort
 ```
 
 ---
@@ -180,31 +180,31 @@ Both values files use `ClusterIP` services. To expose them:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: seebom
-  namespace: seebom
+  name: bomhort
+  namespace: bomhort
 spec:
   ingressClassName: nginx
   rules:
-    - host: seebom.example.com
+    - host: bomhort.example.com
       http:
         paths:
           - path: /api
             pathType: Prefix
             backend:
               service:
-                name: seebom-api-gateway
+                name: bomhort-api-gateway
                 port: { number: 80 }
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: seebom-ui
+                name: bomhort-ui
                 port: { number: 80 }
 ```
 
 ### Option B: kubectl port-forward
 
 ```bash
-kubectl port-forward -n seebom svc/seebom-ui 8090:80 &
-kubectl port-forward -n seebom svc/seebom-api-gateway 8080:80 &
+kubectl port-forward -n bomhort svc/bomhort-ui 8090:80 &
+kubectl port-forward -n bomhort svc/bomhort-api-gateway 8080:80 &
 ```

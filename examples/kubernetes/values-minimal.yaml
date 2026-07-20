@@ -1,4 +1,4 @@
-# SeeBOM – Minimal Helm Values
+# BOMHort – Minimal Helm Values
 #
 # Single-replica deployment suitable for CI, staging, or quick evaluation.
 # Default ingestion: S3 buckets (set s3.buckets). Fallback: git-sync from a Git repo.
@@ -7,26 +7,26 @@
 #     For large repos or production use, configure S3 buckets instead.
 #
 # Usage:
-#   helm install seebom deploy/helm/seebom/ -n seebom -f values-minimal.yaml \
+#   helm install bomhort deploy/helm/bomhort/ -n bomhort -f values-minimal.yaml \
 #     --set clickhouse.password=<PASSWORD> \
 #     --set 's3.buckets=[{"name":"my-sbom-bucket","region":"us-east-1"}]'
 
 # ─── Images ──────────────────────────────────────────────────────────────────
 image:
   registry: ghcr.io
-  repository: seebom-labs/seebom
+  repository: bomhort-labs/bomhort
   tag: "0.1.3"
   pullPolicy: IfNotPresent
 
 # ─── ClickHouse ──────────────────────────────────────────────────────────────
 clickhouse:
-  host: chi-seebom-clickhouse-seebom-cluster-0-0
+  host: chi-bomhort-clickhouse-bomhort-cluster-0-0
   port: 9000
-  database: seebom
+  database: bomhort
   user: default
   password: ""
   cluster:
-    name: seebom-cluster
+    name: bomhort-cluster
     shardsCount: 1
     replicasCount: 1
   installation:
@@ -72,7 +72,7 @@ gitSync:
   # secretName: git-sync-credentials
 
 sbomSource:
-  pvcName: seebom-sbom-data
+  pvcName: bomhort-sbom-data
   mountPath: /data/sboms
   storageSize: 5Gi
 

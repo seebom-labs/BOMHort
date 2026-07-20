@@ -11,11 +11,11 @@ All container images are published to **GitHub Container Registry (ghcr.io)**:
 
 | Image | Description |
 |-------|-------------|
-| `ghcr.io/seebom-labs/bomhort/ingestion-watcher` | CronJob: scans SBOM/VEX files, enqueues jobs |
-| `ghcr.io/seebom-labs/bomhort/parsing-worker` | Stateless worker: parses SBOMs, queries OSV, checks licenses |
-| `ghcr.io/seebom-labs/bomhort/api-gateway` | REST API (16 endpoints) |
-| `ghcr.io/seebom-labs/bomhort/cve-refresher` | CronJob: daily incremental CVE checks against OSV |
-| `ghcr.io/seebom-labs/bomhort/ui` | Angular frontend (Nginx) |
+| `ghcr.io/bomhort-labs/bomhort/ingestion-watcher` | CronJob: scans SBOM/VEX files, enqueues jobs |
+| `ghcr.io/bomhort-labs/bomhort/parsing-worker` | Stateless worker: parses SBOMs, queries OSV, checks licenses |
+| `ghcr.io/bomhort-labs/bomhort/api-gateway` | REST API (16 endpoints) |
+| `ghcr.io/bomhort-labs/bomhort/cve-refresher` | CronJob: daily incremental CVE checks against OSV |
+| `ghcr.io/bomhort-labs/bomhort/ui` | Angular frontend (Nginx) |
 
 Images are built for **linux/amd64** and **linux/arm64**.
 
@@ -53,10 +53,10 @@ The GitHub Actions workflow (`.github/workflows/release.yml`) triggers on any `v
 
 1. **Builds all 5 container images** (multi-arch: amd64 + arm64)
 2. **Pushes them to ghcr.io** with two tags each:
-   - `ghcr.io/seebom-labs/bomhort/<component>:0.1.2` (version)
-   - `ghcr.io/seebom-labs/bomhort/<component>:latest`
+   - `ghcr.io/bomhort-labs/bomhort/<component>:0.1.2` (version)
+   - `ghcr.io/bomhort-labs/bomhort/<component>:latest`
 3. **Packages the Helm chart** with the matching version
-4. **Pushes the Helm chart** as an OCI artifact to `oci://ghcr.io/seebom-labs/bomhort/charts`
+4. **Pushes the Helm chart** as an OCI artifact to `oci://ghcr.io/bomhort-labs/bomhort/charts`
 5. **Creates a GitHub Release** with:
    - Auto-generated release notes from commits since the last tag
    - `docker pull` commands for all 5 images
@@ -75,10 +75,10 @@ Release notes are grouped by PR labels (see `.github/release.yml`):
 
 ```bash
 # Check images exist
-docker pull ghcr.io/seebom-labs/bomhort/api-gateway:0.1.2
+docker pull ghcr.io/bomhort-labs/bomhort/api-gateway:0.1.2
 
 # Check Helm chart
-helm show chart oci://ghcr.io/seebom-labs/bomhort/charts/seebom --version 0.1.2
+helm show chart oci://ghcr.io/bomhort-labs/bomhort/charts/bomhort --version 0.1.2
 ```
 
 ---
@@ -88,7 +88,7 @@ helm show chart oci://ghcr.io/seebom-labs/bomhort/charts/seebom --version 0.1.2
 ### Helm (recommended)
 
 ```bash
-helm install seebom oci://ghcr.io/seebom-labs/bomhort/charts/seebom \
+helm install bomhort oci://ghcr.io/bomhort-labs/bomhort/charts/bomhort \
   --version 0.1.2 \
   -f values-production.yaml
 ```
@@ -96,7 +96,7 @@ helm install seebom oci://ghcr.io/seebom-labs/bomhort/charts/seebom \
 ### Override image tag
 
 ```bash
-helm install seebom oci://ghcr.io/seebom-labs/bomhort/charts/seebom \
+helm install bomhort oci://ghcr.io/bomhort-labs/bomhort/charts/bomhort \
   --version 0.1.2 \
   --set image.tag=0.1.2
 ```
@@ -160,17 +160,17 @@ make images-push TAG=0.2.0-rc1
 
 ```bash
 # Backend images (multi-target Dockerfile)
-docker build -t my-registry/seebom/api-gateway:test \
+docker build -t my-registry/bomhort/api-gateway:test \
   --target api-gateway backend/
 
-docker build -t my-registry/seebom/parsing-worker:test \
+docker build -t my-registry/bomhort/parsing-worker:test \
   --target parsing-worker backend/
 
-docker build -t my-registry/seebom/ingestion-watcher:test \
+docker build -t my-registry/bomhort/ingestion-watcher:test \
   --target ingestion-watcher backend/
 
 # UI image
-docker build -t my-registry/seebom/ui:test ui/
+docker build -t my-registry/bomhort/ui:test ui/
 ```
 
 ---
@@ -220,15 +220,15 @@ All runtime images run as `nobody:nobody` (backend) or `nginx` (UI) for security
 To use a different registry, override in Helm:
 
 ```bash
-helm install seebom oci://ghcr.io/seebom-labs/bomhort/charts/seebom \
+helm install bomhort oci://ghcr.io/bomhort-labs/bomhort/charts/bomhort \
   --set image.registry=my-registry.example.com \
-  --set image.repository=my-org/seebom \
+  --set image.repository=my-org/bomhort \
   --set image.tag=0.1.3
 ```
 
 Or build + push locally:
 
 ```bash
-make images-push REGISTRY=my-registry.example.com REPO=my-org/seebom TAG=0.1.3
+make images-push REGISTRY=my-registry.example.com REPO=my-org/bomhort TAG=0.1.3
 ```
 

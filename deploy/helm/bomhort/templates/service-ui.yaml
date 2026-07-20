@@ -4,7 +4,7 @@ kind: Service
 metadata:
   name: {{ .Release.Name }}-ui
   labels:
-    app.kubernetes.io/name: seebom
+    app.kubernetes.io/name: bomhort
     app.kubernetes.io/component: ui
     app.kubernetes.io/instance: {{ .Release.Name }}
 spec:
@@ -18,7 +18,7 @@ spec:
       nodePort: {{ .Values.ui.service.nodePort }}
       {{- end }}
   selector:
-    app.kubernetes.io/name: seebom
+    app.kubernetes.io/name: bomhort
     app.kubernetes.io/component: ui
 
 {{- end }}

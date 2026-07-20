@@ -102,7 +102,7 @@ export class App implements OnInit {
   constructor(readonly siteConfig: SiteConfigService) {}
 
   ngOnInit(): void {
-    const saved = localStorage.getItem('seebom-theme');
+    const saved = localStorage.getItem('bomhort-theme');
     if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
       this.dark = true;
       document.documentElement.setAttribute('data-theme', 'dark');
@@ -113,10 +113,10 @@ export class App implements OnInit {
     this.dark = !this.dark;
     if (this.dark) {
       document.documentElement.setAttribute('data-theme', 'dark');
-      localStorage.setItem('seebom-theme', 'dark');
+      localStorage.setItem('bomhort-theme', 'dark');
     } else {
       document.documentElement.removeAttribute('data-theme');
-      localStorage.setItem('seebom-theme', 'light');
+      localStorage.setItem('bomhort-theme', 'light');
     }
   }
 }

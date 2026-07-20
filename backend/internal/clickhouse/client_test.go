@@ -9,7 +9,7 @@ package clickhouse
 //
 // Then run the tests:
 //
-//   CLICKHOUSE_HOST=localhost CLICKHOUSE_PORT=9000 CLICKHOUSE_DATABASE=seebom \
+//   CLICKHOUSE_HOST=localhost CLICKHOUSE_PORT=9000 CLICKHOUSE_DATABASE=bomhort \
 //     go test -v -tags=integration ./internal/clickhouse/
 //
 // Integration tests are tagged with //go:build integration

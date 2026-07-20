@@ -5,14 +5,14 @@
 <h3 align="center">Kubernetes-native Software Bill of Materials (SBOM) Visualization & Governance Platform</h3>
 
 <p align="center">
-  <a href="https://github.com/seebom-labs/BOMHort/actions/workflows/ci.yml"><img src="https://github.com/seebom-labs/BOMHort/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://scorecard.dev/viewer/?uri=github.com/seebom-labs/BOMHort"><img src="https://api.scorecard.dev/projects/github.com/seebom-labs/BOMHort/badge" alt="OpenSSF Scorecard"></a>
+  <a href="https://github.com/bomhort-labs/BOMHort/actions/workflows/ci.yml"><img src="https://github.com/bomhort-labs/BOMHort/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/bomhort-labs/BOMHort"><img src="https://api.scorecard.dev/projects/github.com/bomhort-labs/BOMHort/badge" alt="OpenSSF Scorecard"></a>
   <a href="https://www.bestpractices.dev/projects/12903"><img src="https://www.bestpractices.dev/projects/12903/badge" alt="OpenSSF Best Practices"></a>
 </p>
 
 Ingest 1000+ SPDX and CycloneDX SBOMs, scan for vulnerabilities via OSV, enforce license compliance, and apply VEX statements — all visualized in a fast Angular dashboard backed by ClickHouse analytics.
 
-**BOMHort** (formerly known as SeeBOM) is the same project with a new name. Read more: [Why we renamed SeeBOM to BOMHort](docs/content/docs/getting-started/rename.md).
+**BOMHort** (formerly known as BOMHort) is the same project with a new name. Read more: [Why we renamed BOMHort to BOMHort](docs/content/docs/getting-started/rename.md).
 
 <p align="center">
   <a href="https://docs.bomhort.dev/docs/getting-started/">Getting Started</a> ·
@@ -42,7 +42,7 @@ Ingest 1000+ SPDX and CycloneDX SBOMs, scan for vulnerabilities via OSV, enforce
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/seebom-labs/BOMHort.git && cd BOMHort
+git clone https://github.com/bomhort-labs/BOMHort.git && cd BOMHort
 
 # 2. Place your SBOM files in the sboms/ directory
 #    Supports SPDX JSON, CycloneDX JSON, and in-toto attestation envelopes (auto-detected)
@@ -150,10 +150,10 @@ ui:
 Then edit the ConfigMap:
 
 ```bash
-kubectl create configmap seebom-custom-theme \
+kubectl create configmap bomhort-custom-theme \
   --from-file=custom-theme.css=./my-theme.css \
   --dry-run=client -o yaml | kubectl apply -f -
-kubectl rollout restart deployment seebom-ui
+kubectl rollout restart deployment bomhort-ui
 ```
 
 See `ui/src/assets/custom-theme.example.css` for all available variables.
@@ -210,7 +210,7 @@ ui:
         disclaimer: "Internal use only."
 ```
 
-Changes take effect after a pod restart (`kubectl rollout restart deployment seebom-ui`). No rebuild needed.
+Changes take effect after a pod restart (`kubectl rollout restart deployment bomhort-ui`). No rebuild needed.
 
 ### S3 Ingestion (Default)
 
@@ -522,7 +522,7 @@ licensePolicy:
 Or edit the ConfigMap directly:
 
 ```bash
-kubectl edit configmap seebom-license-policy -n seebom
+kubectl edit configmap bomhort-license-policy -n bomhort
 ```
 
 ---
@@ -558,4 +558,4 @@ We welcome contributions! See the [Contributing Guide](CONTRIBUTING.md) for how 
 
 ## Badges
 
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/seebom-labs/BOMHort/badge)](https://scorecard.dev/viewer/?uri=github.com/seebom-labs/BOMHort)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/bomhort-labs/BOMHort/badge)](https://scorecard.dev/viewer/?uri=github.com/bomhort-labs/BOMHort)

@@ -3,7 +3,7 @@ kind: Service
 metadata:
   name: {{ .Release.Name }}-api-gateway
   labels:
-    app.kubernetes.io/name: seebom
+    app.kubernetes.io/name: bomhort
     app.kubernetes.io/component: api-gateway
     app.kubernetes.io/instance: {{ .Release.Name }}
 spec:
@@ -17,6 +17,6 @@ spec:
       nodePort: {{ .Values.apiGateway.service.nodePort }}
       {{- end }}
   selector:
-    app.kubernetes.io/name: seebom
+    app.kubernetes.io/name: bomhort
     app.kubernetes.io/component: api-gateway
 

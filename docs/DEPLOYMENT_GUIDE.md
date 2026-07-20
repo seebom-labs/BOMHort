@@ -7,7 +7,7 @@
 - Kubernetes cluster (1.27+)
 - [ClickHouse Operator](https://github.com/Altinity/clickhouse-operator) installed
 - Helm 3.x
-- Container images pushed to a registry (e.g. `ghcr.io/your-org/seebom/*`)
+- Container images pushed to a registry (e.g. `ghcr.io/your-org/bomhort/*`)
 
 ---
 
@@ -43,7 +43,7 @@ s3:
 ```
 
 ```bash
-helm install seebom deploy/helm/seebom/ -n seebom -f my-values.yaml \
+helm install bomhort deploy/helm/bomhort/ -n bomhort -f my-values.yaml \
   --set s3.accessKey="AKIA..." \
   --set s3.secretKey="..."
 ```
@@ -108,8 +108,8 @@ The seed job flattens nested directory structures (`org/project/version/file.spd
 
 **To refresh SBOMs**, delete the seed job and re-run Helm upgrade:
 ```bash
-kubectl delete job -n seebom -l app.kubernetes.io/component=seed-sboms
-helm upgrade seebom deploy/helm/seebom/ -n seebom -f my-values.yaml
+kubectl delete job -n bomhort -l app.kubernetes.io/component=seed-sboms
+helm upgrade bomhort deploy/helm/bomhort/ -n bomhort -f my-values.yaml
 ```
 
 > **Note:** When using a PVC, the SBOM volume is `ReadWriteOnce` (RWO). The Helm chart automatically adds pod affinity to co-schedule all workloads on the same node.
@@ -149,7 +149,7 @@ sbomSource:
 
 Populate the PVC however you prefer, then trigger the Ingestion Watcher:
 ```bash
-kubectl create job --from=cronjob/seebom-ingestion-watcher manual-ingest -n seebom
+kubectl create job --from=cronjob/bomhort-ingestion-watcher manual-ingest -n bomhort
 ```
 
 ### Supported File Types
@@ -175,7 +175,7 @@ License exceptions suppress specific license violations. They are stored in a **
 After `helm install`, edit the ConfigMap directly:
 
 ```bash
-kubectl edit configmap seebom-license-exceptions
+kubectl edit configmap bomhort-license-exceptions
 ```
 
 The JSON format follows the [CNCF exceptions format](https://github.com/cncf/foundation/blob/main/license-exceptions/exceptions.json):
@@ -211,7 +211,7 @@ The JSON format follows the [CNCF exceptions format](https://github.com/cncf/fou
 After editing, restart the API Gateway to pick up changes:
 
 ```bash
-kubectl rollout restart deployment seebom-api-gateway
+kubectl rollout restart deployment bomhort-api-gateway
 ```
 
 > **Note:** Violations are filtered at query time, so no re-ingestion is needed.
@@ -225,7 +225,7 @@ The license policy defines which SPDX IDs are classified as **permissive**, **co
 ### Edit the default ConfigMap
 
 ```bash
-kubectl edit configmap seebom-license-policy
+kubectl edit configmap bomhort-license-policy
 ```
 
 The format:
@@ -248,7 +248,7 @@ The format:
 After editing, restart **both** the API Gateway and Workers:
 
 ```bash
-kubectl rollout restart deployment seebom-api-gateway seebom-parsing-worker
+kubectl rollout restart deployment bomhort-api-gateway bomhort-parsing-worker
 ```
 
 > **Note:** Policy changes affect new ingestions. To reclassify existing data,
@@ -272,10 +272,10 @@ ui:
 ### Apply a custom theme
 
 ```bash
-kubectl create configmap seebom-custom-theme \
+kubectl create configmap bomhort-custom-theme \
   --from-file=custom-theme.css=./my-theme.css \
   --dry-run=client -o yaml | kubectl apply -f -
-kubectl rollout restart deployment seebom-ui
+kubectl rollout restart deployment bomhort-ui
 ```
 
 ### Example theme file
@@ -343,7 +343,7 @@ All fields are **optional**. Omitted keys use the built-in defaults.
 After editing the ConfigMap, restart the UI deployment:
 
 ```bash
-kubectl rollout restart deployment seebom-ui
+kubectl rollout restart deployment bomhort-ui
 ```
 
 ### Local development (Docker Compose)
@@ -371,7 +371,7 @@ UI_CONFIG=./my-ui-config.json docker compose up -d --force-recreate ui
 
 ```bash
 # 1. Install with S3 ingestion
-helm install seebom ./deploy/helm/seebom \
+helm install bomhort ./deploy/helm/bomhort \
   -f values-production.yaml \
   --set image.tag=0.1.3 \
   --set 's3.buckets=[{"name":"cncf-subproject-sboms","region":"us-east-1"},{"name":"cncf-project-sboms","region":"us-east-1"}]' \
@@ -381,31 +381,31 @@ helm install seebom ./deploy/helm/seebom \
   --set ui.customTheme.enabled=true
 
 # 2. Override license exceptions from a local file
-kubectl create configmap seebom-license-exceptions \
+kubectl create configmap bomhort-license-exceptions \
   --from-file=license-exceptions.json=./my-exceptions.json \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # 3. Override license policy from a local file
-kubectl create configmap seebom-license-policy \
+kubectl create configmap bomhort-license-policy \
   --from-file=license-policy.json=./my-policy.json \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # 4. Apply a custom theme
-kubectl create configmap seebom-custom-theme \
+kubectl create configmap bomhort-custom-theme \
   --from-file=custom-theme.css=./my-theme.css \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # 5. Restart to pick up new configs
-kubectl rollout restart deployment seebom-api-gateway seebom-parsing-worker seebom-ui
+kubectl rollout restart deployment bomhort-api-gateway bomhort-parsing-worker bomhort-ui
 
 # 6. Trigger initial ingestion manually
-kubectl create job --from=cronjob/seebom-ingestion-watcher seebom-initial-ingest
+kubectl create job --from=cronjob/bomhort-ingestion-watcher bomhort-initial-ingest
 ```
 
 ### Volume-based (alternative)
 
 ```bash
-helm install seebom ./deploy/helm/seebom \
+helm install bomhort ./deploy/helm/bomhort \
   -f values-production.yaml \
   --set image.tag=0.1.3 \
   --set gitSync.repo=https://github.com/your-org/sbom-repo.git \
@@ -418,7 +418,7 @@ helm install seebom ./deploy/helm/seebom \
 
 ```bash
 # Check all pods are running
-kubectl get pods -l app.kubernetes.io/name=seebom
+kubectl get pods -l app.kubernetes.io/name=bomhort
 
 # Check ingestion progress
 kubectl exec -it $(kubectl get pod -l app.kubernetes.io/component=api-gateway -o name | head -1) \
@@ -488,7 +488,7 @@ ingress:
   enabled: true
   className: eg
   hosts:
-    - host: seebom.example.com
+    - host: bomhort.example.com
       paths:
         - path: /api
           pathType: Prefix
@@ -506,7 +506,7 @@ ingress:
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
   hosts:
-    - host: seebom.example.com
+    - host: bomhort.example.com
       paths:
         - path: /api
           pathType: Prefix
@@ -514,9 +514,9 @@ ingress:
           pathType: Prefix
           serviceSuffix: ui
   tls:
-    - secretName: seebom-tls
+    - secretName: bomhort-tls
       hosts:
-        - seebom.example.com
+        - bomhort.example.com
 ```
 
 ### Contour Example
@@ -528,7 +528,7 @@ ingress:
   annotations:
     projectcontour.io/tls-cert-namespace: cert-manager
   hosts:
-    - host: seebom.example.com
+    - host: bomhort.example.com
       paths:
         - path: /api
           pathType: Prefix
@@ -536,9 +536,9 @@ ingress:
           pathType: Prefix
           serviceSuffix: ui
   tls:
-    - secretName: seebom-tls
+    - secretName: bomhort-tls
       hosts:
-        - seebom.example.com
+        - bomhort.example.com
 ```
 
 ### API-only (headless, no UI)
@@ -548,7 +548,7 @@ ingress:
   enabled: true
   className: eg
   hosts:
-    - host: api.seebom.example.com
+    - host: api.bomhort.example.com
       paths:
         - path: /
           pathType: Prefix
@@ -568,7 +568,7 @@ ingress:
     alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:...
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
   hosts:
-    - host: seebom.example.com
+    - host: bomhort.example.com
       paths:
         - path: /api
           pathType: Prefix
@@ -586,11 +586,11 @@ ingress:
 | **SBOMs (S3)** | S3-compatible buckets | Configure `s3.buckets` in Helm values, CronJob streams objects |
 | **SBOMs (volume)** | PVC via seed job or git-sync | Push to Git, seed job clones or git-sync re-syncs |
 | **VEX files** | Same S3 bucket or directory as SBOMs | Place `*.openvex.json` or `*.vex.json` alongside SBOMs |
-| **License Exceptions** | `seebom-license-exceptions` ConfigMap | `kubectl edit configmap` → restart API |
-| **License Policy** | `seebom-license-policy` ConfigMap | `kubectl edit configmap` → restart API + Workers |
-| **Custom Theme** | `seebom-custom-theme` ConfigMap | `kubectl create configmap` → restart UI |
-| **Site Config** | `seebom-ui-config` ConfigMap | Helm values `ui.siteConfig.content.*` → restart UI |
+| **License Exceptions** | `bomhort-license-exceptions` ConfigMap | `kubectl edit configmap` → restart API |
+| **License Policy** | `bomhort-license-policy` ConfigMap | `kubectl edit configmap` → restart API + Workers |
+| **Custom Theme** | `bomhort-custom-theme` ConfigMap | `kubectl create configmap` → restart UI |
+| **Site Config** | `bomhort-ui-config` ConfigMap | Helm values `ui.siteConfig.content.*` → restart UI |
 | **Dark Mode** | Built-in toggle (navbar) | User preference, stored in browser localStorage |
-| **ClickHouse password** | `seebom-secret` Secret | `kubectl edit secret` |
-| **S3 credentials** | `seebom-secret` Secret | `--set s3.accessKey=...` or `kubectl edit secret` |
-| **Ingress** | `seebom-ingress` Ingress resource | `ingress.enabled: true` + configure hosts/tls in Helm values |
+| **ClickHouse password** | `bomhort-secret` Secret | `kubectl edit secret` |
+| **S3 credentials** | `bomhort-secret` Secret | `--set s3.accessKey=...` or `kubectl edit secret` |
+| **Ingress** | `bomhort-ingress` Ingress resource | `ingress.enabled: true` + configure hosts/tls in Helm values |

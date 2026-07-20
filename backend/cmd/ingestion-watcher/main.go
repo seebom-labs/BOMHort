@@ -9,17 +9,17 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/seebom-labs/seebom/backend/internal/clickhouse"
-	"github.com/seebom-labs/seebom/backend/internal/config"
-	"github.com/seebom-labs/seebom/backend/internal/repo"
-	s3client "github.com/seebom-labs/seebom/backend/internal/s3"
-	"github.com/seebom-labs/seebom/backend/pkg/models"
+	"github.com/bomhort-labs/bomhort/backend/internal/clickhouse"
+	"github.com/bomhort-labs/bomhort/backend/internal/config"
+	"github.com/bomhort-labs/bomhort/backend/internal/repo"
+	s3client "github.com/bomhort-labs/bomhort/backend/internal/s3"
+	"github.com/bomhort-labs/bomhort/backend/pkg/models"
 )
 
 const enqueueBatchSize = 500
 
 func main() {
-	log.Println("SeeBOM Ingestion Watcher starting...")
+	log.Println("BOMHort Ingestion Watcher starting...")
 
 	cfg, err := config.Load()
 	if err != nil {
