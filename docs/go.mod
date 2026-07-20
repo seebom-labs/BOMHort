@@ -1,4 +1,4 @@
-module github.com/seebom-labs/seebom/docs
+module github.com/seebom-labs/bomhort/docs
 
 go 1.25.11
 

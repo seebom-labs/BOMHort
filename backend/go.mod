@@ -1,4 +1,4 @@
-module github.com/seebom-labs/seebom/backend
+module github.com/seebom-labs/bomhort/backend
 
 go 1.25.11
 
