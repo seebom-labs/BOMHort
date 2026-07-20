@@ -173,7 +173,7 @@ docs.bomhort.dev/v1.0/      ← v1.0.x docs (frozen)
 - Cherry-pick to the release branch if the fix is relevant for that version
 - Deploy triggers automatically on push to release branches
 
-See [#145](https://github.com/bomhort-labs/BOMHort/issues/145) for the full versioned docs implementation plan.
+See [#145](https://github.com/seebom-labs/BOMHort/issues/145) for the full versioned docs implementation plan.
 
 ---
 
@@ -185,11 +185,11 @@ Images are built for **linux/amd64** and **linux/arm64**.
 
 | Image | Purpose |
 |-------|---------|
-| `ghcr.io/bomhort-labs/bomhort/api-gateway` | REST API server |
-| `ghcr.io/bomhort-labs/bomhort/parsing-worker` | SBOM processing worker |
-| `ghcr.io/bomhort-labs/bomhort/ingestion-watcher` | File scanner / queue enqueuer |
-| `ghcr.io/bomhort-labs/bomhort/cve-refresher` | Daily CVE refresh |
-| `ghcr.io/bomhort-labs/bomhort/ui` | Angular frontend (Nginx) |
+| `ghcr.io/seebom-labs/bomhort/api-gateway` | REST API server |
+| `ghcr.io/seebom-labs/bomhort/parsing-worker` | SBOM processing worker |
+| `ghcr.io/seebom-labs/bomhort/ingestion-watcher` | File scanner / queue enqueuer |
+| `ghcr.io/seebom-labs/bomhort/cve-refresher` | Daily CVE refresh |
+| `ghcr.io/seebom-labs/bomhort/ui` | Angular frontend (Nginx) |
 
 All images are:
 - Signed with [cosign](https://github.com/sigstore/cosign) (keyless via Fulcio)
@@ -199,15 +199,15 @@ All images are:
 
 ```bash
 cosign verify \
-  --certificate-identity-regexp="https://github.com/bomhort-labs/BOMHort" \
+  --certificate-identity-regexp="https://github.com/seebom-labs/BOMHort" \
   --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
-  ghcr.io/bomhort-labs/bomhort/api-gateway:1.2.3
+  ghcr.io/seebom-labs/bomhort/api-gateway:1.2.3
 ```
 
 ## Installing from a Release
 
 ```bash
-helm install bomhort oci://ghcr.io/bomhort-labs/bomhort/charts/bomhort \
+helm install bomhort oci://ghcr.io/seebom-labs/bomhort/charts/bomhort \
   --version 1.2.3 \
   -f values-production.yaml
 ```

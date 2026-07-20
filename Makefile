@@ -10,7 +10,7 @@
 
 SHELL := /bin/bash
 REGISTRY ?= ghcr.io
-REPO     ?= bomhort-labs/bomhort
+REPO     ?= seebom-labs/bomhort
 TAG      ?= dev
 
 # ─── Help ────────────────────────────────────────────────────────────────────

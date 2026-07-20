@@ -3,7 +3,7 @@ package osvutil
 import (
 	"testing"
 
-	"github.com/bomhort-labs/bomhort/backend/internal/osv"
+	"github.com/seebom-labs/bomhort/backend/internal/osv"
 )
 
 func TestClassifySeverity_CVSS(t *testing.T) {

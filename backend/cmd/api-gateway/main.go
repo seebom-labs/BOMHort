@@ -15,10 +15,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bomhort-labs/bomhort/backend/internal/clickhouse"
-	"github.com/bomhort-labs/bomhort/backend/internal/config"
-	"github.com/bomhort-labs/bomhort/backend/internal/license"
-	s3client "github.com/bomhort-labs/bomhort/backend/internal/s3"
+	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
+	"github.com/seebom-labs/bomhort/backend/internal/config"
+	"github.com/seebom-labs/bomhort/backend/internal/license"
+	s3client "github.com/seebom-labs/bomhort/backend/internal/s3"
 )
 
 // uuidPattern validates UUID path parameters to prevent injection.

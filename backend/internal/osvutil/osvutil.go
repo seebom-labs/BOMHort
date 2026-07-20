@@ -6,7 +6,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/bomhort-labs/bomhort/backend/internal/osv"
+	"github.com/seebom-labs/bomhort/backend/internal/osv"
 )
 
 // ClassifySeverity maps OSV severity data to a simple category (CRITICAL/HIGH/MEDIUM/LOW).

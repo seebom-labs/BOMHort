@@ -95,7 +95,7 @@ parsingWorker:
 ### Programmatic (tests)
 
 ```go
-import "github.com/bomhort-labs/BOMHort/backend/internal/sbom"
+import "github.com/seebom-labs/BOMHort/backend/internal/sbom"
 
 sbom.SetUseProtobom(true)
 result, err := sbom.Parse(reader, "file.cdx.json", "sha256hash")

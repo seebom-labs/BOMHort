@@ -14,16 +14,16 @@ import (
 
 	json "github.com/goccy/go-json"
 
-	"github.com/bomhort-labs/bomhort/backend/internal/clickhouse"
-	"github.com/bomhort-labs/bomhort/backend/internal/config"
-	gh "github.com/bomhort-labs/bomhort/backend/internal/github"
-	"github.com/bomhort-labs/bomhort/backend/internal/license"
-	"github.com/bomhort-labs/bomhort/backend/internal/osv"
-	"github.com/bomhort-labs/bomhort/backend/internal/osvutil"
-	s3client "github.com/bomhort-labs/bomhort/backend/internal/s3"
-	"github.com/bomhort-labs/bomhort/backend/internal/sbom"
-	"github.com/bomhort-labs/bomhort/backend/internal/vex"
-	"github.com/bomhort-labs/bomhort/backend/pkg/models"
+	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
+	"github.com/seebom-labs/bomhort/backend/internal/config"
+	gh "github.com/seebom-labs/bomhort/backend/internal/github"
+	"github.com/seebom-labs/bomhort/backend/internal/license"
+	"github.com/seebom-labs/bomhort/backend/internal/osv"
+	"github.com/seebom-labs/bomhort/backend/internal/osvutil"
+	s3client "github.com/seebom-labs/bomhort/backend/internal/s3"
+	"github.com/seebom-labs/bomhort/backend/internal/sbom"
+	"github.com/seebom-labs/bomhort/backend/internal/vex"
+	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
 
 func main() {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/bomhort-labs/bomhort/backend/pkg/dto"
+	"github.com/seebom-labs/bomhort/backend/pkg/dto"
 )
 
 func TestGlobalSearchDTOs(t *testing.T) {

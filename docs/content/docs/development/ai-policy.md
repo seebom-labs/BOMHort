@@ -9,7 +9,7 @@ description: >
 
 ## Policy
 
-BOMHort **welcomes AI-assisted contributions**. We use AI tools extensively in our own development workflow (see [AGENTS.md](https://github.com/bomhort-labs/BOMHort/blob/main/AGENTS.md)). However, we have clear rules to ensure accountability and code quality.
+BOMHort **welcomes AI-assisted contributions**. We use AI tools extensively in our own development workflow (see [AGENTS.md](https://github.com/seebom-labs/BOMHort/blob/main/AGENTS.md)). However, we have clear rules to ensure accountability and code quality.
 
 ---
 
@@ -33,7 +33,7 @@ AI is a tool, not a co-author. We do **not** accept commits with `Co-authored-by
 
 ### 4. Follow AGENTS.md
 
-If you use AI coding agents, they must follow our project conventions documented in [AGENTS.md](https://github.com/bomhort-labs/BOMHort/blob/main/AGENTS.md). This includes:
+If you use AI coding agents, they must follow our project conventions documented in [AGENTS.md](https://github.com/seebom-labs/BOMHort/blob/main/AGENTS.md). This includes:
 
 - Architectural directives (monorepo, no custom operator, no polyrepo)
 - Dependency restrictions (only 4 Go deps, no new ones without asking)

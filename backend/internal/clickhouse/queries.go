@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/bomhort-labs/bomhort/backend/pkg/dto"
+	"github.com/seebom-labs/bomhort/backend/pkg/dto"
 )
 
 // QueryDashboardStats fetches aggregated dashboard statistics.

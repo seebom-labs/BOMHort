@@ -31,7 +31,7 @@ helm install bomhort deploy/helm/bomhort/ \
   --set 's3.buckets=[{"name":"cncf-subproject-sboms","region":"us-east-1"}]'
 
 # Or from the OCI registry:
-helm install bomhort oci://ghcr.io/bomhort-labs/bomhort/charts/bomhort \
+helm install bomhort oci://ghcr.io/seebom-labs/bomhort/charts/bomhort \
   --version 0.1.3 -n bomhort -f my-values.yaml
 ```
 

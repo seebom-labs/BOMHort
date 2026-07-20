@@ -15,7 +15,7 @@ import (
 	"github.com/protobom/protobom/pkg/reader"
 	"github.com/protobom/protobom/pkg/sbom"
 
-	"github.com/bomhort-labs/bomhort/backend/pkg/models"
+	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
 
 // ParseResult contains the extracted data from an SBOM document parsed via protobom.

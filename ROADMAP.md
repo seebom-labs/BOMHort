@@ -1,7 +1,7 @@
 # BOMHort Product Roadmap
 
 > Last updated: 2026-07-15
-> Project Board: https://github.com/orgs/bomhort-labs/projects/1
+> Project Board: https://github.com/orgs/seebom-labs/projects/1
 
 ## Executive Summary
 

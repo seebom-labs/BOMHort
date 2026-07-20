@@ -10,7 +10,7 @@ import (
 	json "github.com/goccy/go-json"
 	"github.com/google/uuid"
 
-	"github.com/bomhort-labs/bomhort/backend/pkg/models"
+	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
 
 // OpenVEXDocument represents the top-level structure of an OpenVEX document.

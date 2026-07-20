@@ -17,10 +17,10 @@ import (
 
 	json "github.com/goccy/go-json"
 
-	"github.com/bomhort-labs/bomhort/backend/internal/cyclonedx"
-	"github.com/bomhort-labs/bomhort/backend/internal/protobomparser"
-	"github.com/bomhort-labs/bomhort/backend/internal/spdx"
-	"github.com/bomhort-labs/bomhort/backend/pkg/models"
+	"github.com/seebom-labs/bomhort/backend/internal/cyclonedx"
+	"github.com/seebom-labs/bomhort/backend/internal/protobomparser"
+	"github.com/seebom-labs/bomhort/backend/internal/spdx"
+	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
 
 // ParseResult contains the extracted data from an SBOM document, ready for ClickHouse insertion.

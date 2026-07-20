@@ -5,8 +5,8 @@
 <h3 align="center">Kubernetes-native Software Bill of Materials (SBOM) Visualization & Governance Platform</h3>
 
 <p align="center">
-  <a href="https://github.com/bomhort-labs/BOMHort/actions/workflows/ci.yml"><img src="https://github.com/bomhort-labs/BOMHort/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://scorecard.dev/viewer/?uri=github.com/bomhort-labs/BOMHort"><img src="https://api.scorecard.dev/projects/github.com/bomhort-labs/BOMHort/badge" alt="OpenSSF Scorecard"></a>
+  <a href="https://github.com/seebom-labs/BOMHort/actions/workflows/ci.yml"><img src="https://github.com/seebom-labs/BOMHort/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/seebom-labs/BOMHort"><img src="https://api.scorecard.dev/projects/github.com/seebom-labs/BOMHort/badge" alt="OpenSSF Scorecard"></a>
   <a href="https://www.bestpractices.dev/projects/12903"><img src="https://www.bestpractices.dev/projects/12903/badge" alt="OpenSSF Best Practices"></a>
 </p>
 
@@ -42,7 +42,7 @@ Ingest 1000+ SPDX and CycloneDX SBOMs, scan for vulnerabilities via OSV, enforce
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/bomhort-labs/BOMHort.git && cd BOMHort
+git clone https://github.com/seebom-labs/BOMHort.git && cd BOMHort
 
 # 2. Place your SBOM files in the sboms/ directory
 #    Supports SPDX JSON, CycloneDX JSON, and in-toto attestation envelopes (auto-detected)
@@ -558,4 +558,4 @@ We welcome contributions! See the [Contributing Guide](CONTRIBUTING.md) for how 
 
 ## Badges
 
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/bomhort-labs/BOMHort/badge)](https://scorecard.dev/viewer/?uri=github.com/bomhort-labs/BOMHort)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/seebom-labs/BOMHort/badge)](https://scorecard.dev/viewer/?uri=github.com/seebom-labs/BOMHort)

@@ -3,7 +3,7 @@
 # Container image defaults
 image:
   registry: ghcr.io
-  repository: bomhort-labs/bomhort
+  repository: seebom-labs/bomhort
   tag: "0.1.3"
   pullPolicy: IfNotPresent
 

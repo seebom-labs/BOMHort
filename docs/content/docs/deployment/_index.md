@@ -16,7 +16,7 @@ This guide covers deploying BOMHort to a Kubernetes cluster using Helm.
 - Kubernetes cluster (1.27+)
 - [ClickHouse Operator](https://github.com/Altinity/clickhouse-operator) installed
 - Helm 3.x
-- Container images pushed to a registry (e.g. `ghcr.io/bomhort-labs/bomhort/*`)
+- Container images pushed to a registry (e.g. `ghcr.io/seebom-labs/bomhort/*`)
 
 ---
 

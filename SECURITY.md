@@ -9,7 +9,7 @@ The BOMHort maintainers take security seriously. We appreciate your efforts to r
 Instead, report them through one of these channels:
 
 1. **GitHub Security Advisories** (preferred):  
-   [https://github.com/bomhort-labs/bomhort/security/advisories/new](https://github.com/bomhort-labs/bomhort/security/advisories/new)
+   [https://github.com/seebom-labs/bomhort/security/advisories/new](https://github.com/seebom-labs/bomhort/security/advisories/new)
 
 2. **Email:**  
    Contact the maintainers listed in [MAINTAINERS.md](MAINTAINERS.md) directly.

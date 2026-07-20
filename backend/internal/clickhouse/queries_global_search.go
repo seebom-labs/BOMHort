@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/bomhort-labs/bomhort/backend/pkg/dto"
+	"github.com/seebom-labs/bomhort/backend/pkg/dto"
 )
 
 // globalSearchProjectKeyExpr derives a stable project key from an SBOM row

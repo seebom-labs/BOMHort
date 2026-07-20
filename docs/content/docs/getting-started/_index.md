@@ -25,7 +25,7 @@ BOMHort is the new project name (formerly known as BOMHort). Details: [Why we re
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/bomhort-labs/BOMHort.git && cd BOMHort
+git clone https://github.com/seebom-labs/BOMHort.git && cd BOMHort
 
 # 2. Place your SBOM files in the sboms/ directory
 #    Supported formats: SPDX JSON, CycloneDX JSON, in-toto attestation envelopes

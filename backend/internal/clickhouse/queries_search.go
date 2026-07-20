@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/bomhort-labs/bomhort/backend/internal/license"
-	"github.com/bomhort-labs/bomhort/backend/pkg/dto"
+	"github.com/seebom-labs/bomhort/backend/internal/license"
+	"github.com/seebom-labs/bomhort/backend/pkg/dto"
 )
 
 // QuerySBOMVulnerabilities fetches vulnerabilities for a specific SBOM with VEX status.

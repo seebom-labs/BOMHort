@@ -40,7 +40,7 @@ Many names were eliminated due to conflicts or ambiguity. **BOMHort** was the fi
 
 ## Migration notes
 
-- GitHub repository: `https://github.com/bomhort-labs/BOMHort`
+- GitHub repository: `https://github.com/seebom-labs/BOMHort`
 - Existing docs and references are being updated from BOMHort to BOMHort.
 - Runtime behavior and APIs are unchanged by this rename.
 

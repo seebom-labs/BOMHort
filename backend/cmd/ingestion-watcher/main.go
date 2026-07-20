@@ -9,11 +9,11 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/bomhort-labs/bomhort/backend/internal/clickhouse"
-	"github.com/bomhort-labs/bomhort/backend/internal/config"
-	"github.com/bomhort-labs/bomhort/backend/internal/repo"
-	s3client "github.com/bomhort-labs/bomhort/backend/internal/s3"
-	"github.com/bomhort-labs/bomhort/backend/pkg/models"
+	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
+	"github.com/seebom-labs/bomhort/backend/internal/config"
+	"github.com/seebom-labs/bomhort/backend/internal/repo"
+	s3client "github.com/seebom-labs/bomhort/backend/internal/s3"
+	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
 
 const enqueueBatchSize = 500

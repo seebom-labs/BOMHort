@@ -182,7 +182,7 @@ jobs:
 
             Verify signatures:
             ```bash
-            cosign verify --certificate-identity-regexp="https://github.com/bomhort-labs/bomhort" \
+            cosign verify --certificate-identity-regexp="https://github.com/seebom-labs/bomhort" \
               --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
               ${{ env.REGISTRY }}/${{ env.REPO }}/api-gateway:${{ steps.version.outputs.version }}
             ```

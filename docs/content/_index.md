@@ -11,7 +11,7 @@ description: "BOMHort is a Kubernetes-native SBOM visualization and governance p
   <img class="fb-icon" src="/images/flowbite/book-open.svg" alt="" loading="lazy">
   Documentation
 </a>
-<a class="btn btn-lg btn-secondary me-3 mb-4" href="https://github.com/bomhort-labs/BOMHort">
+<a class="btn btn-lg btn-secondary me-3 mb-4" href="https://github.com/seebom-labs/BOMHort">
   <img class="fb-icon" src="/images/flowbite/github.svg" alt="" loading="lazy">
   GitHub
 </a>

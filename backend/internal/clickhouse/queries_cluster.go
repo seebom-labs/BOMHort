@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/bomhort-labs/bomhort/backend/pkg/dto"
+	"github.com/seebom-labs/bomhort/backend/pkg/dto"
 )
 
 // QueryClusters returns a list of all known clusters with summary statistics.

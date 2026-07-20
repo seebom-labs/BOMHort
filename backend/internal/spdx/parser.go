@@ -11,7 +11,7 @@ import (
 	json "github.com/goccy/go-json"
 	"github.com/google/uuid"
 
-	"github.com/bomhort-labs/bomhort/backend/pkg/models"
+	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
 
 // goTempModuleRe matches Go temporary module directory names like "tmp.ej9m9OiO2V".

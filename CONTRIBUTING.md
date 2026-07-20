@@ -67,7 +67,7 @@ See the [Development Guide](https://docs.bomhort.dev/docs/development/) for deta
 
 ## What to Contribute
 
-- **Bug fixes** — Check [open issues](https://github.com/bomhort-labs/bomhort/issues?q=is%3Aissue+is%3Aopen+label%3Abug)
+- **Bug fixes** — Check [open issues](https://github.com/seebom-labs/bomhort/issues?q=is%3Aissue+is%3Aopen+label%3Abug)
 - **Documentation** — Improvements to docs, README, or code comments
 - **Tests** — Increase test coverage
 - **Features** — Discuss in an issue first before implementing large changes
@@ -96,8 +96,8 @@ We have a transparent contributor ladder: Community → Contributor → Reviewer
 
 ## Reporting Issues
 
-- **Bugs:** Use the [Bug Report](https://github.com/bomhort-labs/bomhort/issues/new?template=bug_report.yml) template
-- **Features:** Use the [Feature Request](https://github.com/bomhort-labs/bomhort/issues/new?template=feature_request.yml) template
+- **Bugs:** Use the [Bug Report](https://github.com/seebom-labs/bomhort/issues/new?template=bug_report.yml) template
+- **Features:** Use the [Feature Request](https://github.com/seebom-labs/bomhort/issues/new?template=feature_request.yml) template
 - **Security:** See [SECURITY.md](SECURITY.md) — **do not** use public issues
 
 ## Code of Conduct

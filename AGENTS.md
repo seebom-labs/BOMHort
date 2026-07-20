@@ -37,8 +37,8 @@ Data layer (`pkg/`):
 - **Database:** ClickHouse (managed via the official ClickHouse Kubernetes Operator)
 - **Frontend:** Angular (TypeScript, standalone components, OnPush change detection)
 - **Infrastructure:** Kubernetes (Standard Helm Chart, 19 templates)
-- **Container Registry:** GitHub Container Registry (ghcr.io/bomhort-labs/bomhort/*)
-- **Go Module Path:** `github.com/bomhort-labs/bomhort/backend`
+- **Container Registry:** GitHub Container Registry (ghcr.io/seebom-labs/bomhort/*)
+- **Go Module Path:** `github.com/seebom-labs/bomhort/backend`
 
 # Architectural Directives
 **Monorepo Requirement:** This project strictly uses a monorepo architecture. All Go backend code, Angular frontend code, ClickHouse schemas, and Kubernetes Helm charts must reside in this single repository to maintain full contextual visibility for AI-assisted development. Do not suggest splitting this into a polyrepo.

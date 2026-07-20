@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	gh "github.com/bomhort-labs/bomhort/backend/internal/github"
+	gh "github.com/seebom-labs/bomhort/backend/internal/github"
 )
 
 // QueryGitHubLicenseCache loads all cached GitHub repo→license mappings.
