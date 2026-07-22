@@ -12,7 +12,7 @@
 
 Ingest 1000+ SPDX and CycloneDX SBOMs, scan for vulnerabilities via OSV, enforce license compliance, and apply VEX statements — all visualized in a fast Angular dashboard backed by ClickHouse analytics.
 
-**BOMHort** (formerly known as BOMHort) is the same project with a new name. Read more: [Why we renamed BOMHort to BOMHort](docs/content/docs/getting-started/rename.md).
+**BOMHort** (formerly known as SeeBOM) is the same project with a new name. Read more: [Why we renamed SeeBOM to BOMHort](docs/content/docs/getting-started/rename.md).
 
 <p align="center">
   <a href="https://docs.bomhort.dev/docs/getting-started/">Getting Started</a> ·
