@@ -1,0 +1,183 @@
+{{- if .Values.dataMigration.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-data-migration-{{ .Release.Revision }}
+  labels:
+    app.kubernetes.io/name: bomhort
+    app.kubernetes.io/component: data-migration
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  annotations:
+    helm.sh/hook: post-upgrade,post-install
+    helm.sh/hook-weight: "10"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  {{- if .Values.cleanBatchJobs }}
+  ttlSecondsAfterFinished: 300
+  {{- end }}
+  backoffLimit: 5
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: bomhort
+        app.kubernetes.io/component: data-migration
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: data-migration
+          image: {{ .Values.clickhouse.installation.podTemplate.containerImage }}
+          command: ["/bin/sh", "/scripts/migrate-data.sh"]
+          env:
+            # --- New (target) ClickHouse ---
+            - name: NEW_CH_HOST
+              value: {{ .Values.clickhouse.host | quote }}
+            - name: NEW_CH_PORT
+              value: {{ .Values.clickhouse.port | quote }}
+            - name: NEW_CH_DATABASE
+              value: {{ .Values.clickhouse.database | quote }}
+            - name: NEW_CH_USER
+              value: {{ .Values.clickhouse.user | quote }}
+            - name: NEW_CH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-secret
+                  key: CLICKHOUSE_PASSWORD
+            # --- Old (source) ClickHouse ---
+            - name: OLD_CH_HOST
+              value: {{ .Values.dataMigration.source.host | quote }}
+            - name: OLD_CH_PORT
+              value: {{ .Values.dataMigration.source.port | default .Values.clickhouse.port | quote }}
+            - name: OLD_CH_DATABASE
+              value: {{ .Values.dataMigration.source.database | quote }}
+            - name: OLD_CH_USER
+              value: {{ .Values.dataMigration.source.user | default .Values.clickhouse.user | quote }}
+            - name: OLD_CH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.dataMigration.source.passwordSecret.secretName }}
+                  key: {{ .Values.dataMigration.source.passwordSecret.key }}
+          resources:
+            {{- toYaml .Values.dataMigration.resources | nindent 12 }}
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: {{ .Release.Name }}-data-migration-scripts
+            defaultMode: 0755
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-data-migration-scripts
+  labels:
+    app.kubernetes.io/name: bomhort
+    app.kubernetes.io/component: data-migration
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  annotations:
+    helm.sh/hook: post-upgrade,post-install
+    helm.sh/hook-weight: "5"
+    helm.sh/hook-delete-policy: before-hook-creation
+data:
+  migrate-data.sh: |
+    #!/bin/sh
+    set -e
+
+    # ── Tables to migrate (order matters: parent tables first) ──
+    TABLES="sboms sbom_packages vulnerabilities license_compliance ingestion_queue vex_statements cve_refresh_log github_license_cache github_repo_metadata"
+
+    echo "╔══════════════════════════════════════════════════════════════╗"
+    echo "║  BOMHort Data Migration (seebom → bomhort)                 ║"
+    echo "╚══════════════════════════════════════════════════════════════╝"
+    echo ""
+    echo "  Source : $OLD_CH_HOST:$OLD_CH_PORT / $OLD_CH_DATABASE"
+    echo "  Target : $NEW_CH_HOST:$NEW_CH_PORT / $NEW_CH_DATABASE"
+    echo ""
+
+    # ── Wait for the NEW ClickHouse to be ready ──
+    echo "⏳ Waiting for target ClickHouse ($NEW_CH_HOST) ..."
+    until clickhouse-client --host="$NEW_CH_HOST" --port="$NEW_CH_PORT" \
+          --user="$NEW_CH_USER" --password="$NEW_CH_PASSWORD" \
+          --query="SELECT 1" >/dev/null 2>&1; do
+      echo "  target not ready, retrying in 5s..."
+      sleep 5
+    done
+    echo "✅ Target ClickHouse is ready."
+
+    # ── Wait for the OLD ClickHouse to be reachable ──
+    echo "⏳ Waiting for source ClickHouse ($OLD_CH_HOST) ..."
+    until clickhouse-client --host="$OLD_CH_HOST" --port="$OLD_CH_PORT" \
+          --user="$OLD_CH_USER" --password="$OLD_CH_PASSWORD" \
+          --query="SELECT 1" >/dev/null 2>&1; do
+      echo "  source not ready, retrying in 5s..."
+      sleep 5
+    done
+    echo "✅ Source ClickHouse is ready."
+
+    # ── Migrate each table using remote() ──
+    FAILED=0
+    for TABLE in $TABLES; do
+      echo ""
+      echo "── Migrating table: $TABLE ──"
+
+      # Check if the table exists in the source database.
+      SRC_EXISTS=$(clickhouse-client --host="$OLD_CH_HOST" --port="$OLD_CH_PORT" \
+        --user="$OLD_CH_USER" --password="$OLD_CH_PASSWORD" \
+        --query="SELECT count() FROM system.tables WHERE database='$OLD_CH_DATABASE' AND name='$TABLE'" 2>/dev/null || echo "0")
+
+      if [ "$SRC_EXISTS" = "0" ]; then
+        echo "  ⏭️  Table does not exist in source — skipping."
+        continue
+      fi
+
+      # Count rows in source.
+      SRC_ROWS=$(clickhouse-client --host="$OLD_CH_HOST" --port="$OLD_CH_PORT" \
+        --user="$OLD_CH_USER" --password="$OLD_CH_PASSWORD" \
+        --database="$OLD_CH_DATABASE" \
+        --query="SELECT count() FROM $TABLE" 2>/dev/null || echo "0")
+      echo "  Source rows: $SRC_ROWS"
+
+      if [ "$SRC_ROWS" = "0" ]; then
+        echo "  ⏭️  No data — skipping."
+        continue
+      fi
+
+      # Check if the target table already has data (avoid duplicating).
+      DST_ROWS=$(clickhouse-client --host="$NEW_CH_HOST" --port="$NEW_CH_PORT" \
+        --user="$NEW_CH_USER" --password="$NEW_CH_PASSWORD" \
+        --database="$NEW_CH_DATABASE" \
+        --query="SELECT count() FROM $TABLE" 2>/dev/null || echo "0")
+
+      if [ "$DST_ROWS" != "0" ]; then
+        echo "  ⚠️  Target already has $DST_ROWS rows — skipping to avoid duplicates."
+        continue
+      fi
+
+      # INSERT … SELECT FROM remote()
+      echo "  ⏳ Copying $SRC_ROWS rows via remote() ..."
+      if clickhouse-client --host="$NEW_CH_HOST" --port="$NEW_CH_PORT" \
+        --user="$NEW_CH_USER" --password="$NEW_CH_PASSWORD" \
+        --database="$NEW_CH_DATABASE" \
+        --query="INSERT INTO $TABLE SELECT * FROM remote('$OLD_CH_HOST:$OLD_CH_PORT', '$OLD_CH_DATABASE', '$TABLE', '$OLD_CH_USER', '$OLD_CH_PASSWORD')"; then
+
+        NEW_ROWS=$(clickhouse-client --host="$NEW_CH_HOST" --port="$NEW_CH_PORT" \
+          --user="$NEW_CH_USER" --password="$NEW_CH_PASSWORD" \
+          --database="$NEW_CH_DATABASE" \
+          --query="SELECT count() FROM $TABLE")
+        echo "  ✅ Done — $NEW_ROWS rows in target."
+      else
+        echo "  ❌ FAILED to migrate $TABLE"
+        FAILED=$((FAILED + 1))
+      fi
+    done
+
+    echo ""
+    if [ "$FAILED" -gt 0 ]; then
+      echo "❌ Migration completed with $FAILED error(s)."
+      exit 1
+    else
+      echo "✅ All tables migrated successfully."
+    fi
+{{- end }}
