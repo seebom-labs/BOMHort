@@ -22,7 +22,7 @@ description: "BOMHort is a Kubernetes-native SBOM visualization and governance p
 Ingest thousands of SPDX and CycloneDX SBOMs, scan for vulnerabilities via OSV, enforce license compliance,
 and apply VEX statements — all visualized in a fast Angular dashboard backed by ClickHouse analytics.
 
-BOMHort was previously known as BOMHort. See [Why we renamed BOMHort to BOMHort](/docs/getting-started/rename/).
+BOMHort was previously known as SeeBOM. See [Why we renamed SeeBOM to BOMHort](/docs/getting-started/rename/).
 
 {{% /blocks/lead %}}
 

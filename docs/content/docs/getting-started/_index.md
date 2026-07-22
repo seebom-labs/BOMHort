@@ -10,7 +10,7 @@ description: >
 <img src="/images/dashboard-screenshot.png" alt="BOMHort Dashboard" style="width: 100%; border-radius: 8px; border: 1px solid var(--sb-border); margin-bottom: 2rem;">
 
 {{% alert title="Project rename" color="info" %}}
-BOMHort is the new project name (formerly known as BOMHort). Details: [Why we renamed BOMHort to BOMHort](/docs/getting-started/rename/).
+BOMHort is the new project name (formerly known as SeeBOM). Details: [Why we renamed SeeBOM to BOMHort](/docs/getting-started/rename/).
 {{% /alert %}}
 
 ## Prerequisites
