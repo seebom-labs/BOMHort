@@ -40,8 +40,8 @@ spec:
             - name: NEW_CH_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-secret
-                  key: CLICKHOUSE_PASSWORD
+                  name: {{ ternary .Values.clickhouse.userPasswordSecret.secretName (printf "%s-secret" .Release.Name) .Values.clickhouse.userPasswordSecret.enabled }}
+                  key: {{ ternary .Values.clickhouse.userPasswordSecret.key "CLICKHOUSE_PASSWORD" .Values.clickhouse.userPasswordSecret.enabled }}
             # --- Old (source) ClickHouse ---
             - name: OLD_CH_HOST
               value: {{ .Values.dataMigration.source.host | quote }}
@@ -159,8 +159,8 @@ data:
       echo "  ⏳ Copying $SRC_ROWS rows via remote() ..."
       if clickhouse-client --host="$NEW_CH_HOST" --port="$NEW_CH_PORT" \
         --user="$NEW_CH_USER" --password="$NEW_CH_PASSWORD" \
-        --database="$NEW_CH_DATABASE" \
-        --query="INSERT INTO $TABLE SELECT * FROM remote('$OLD_CH_HOST:$OLD_CH_PORT', '$OLD_CH_DATABASE', '$TABLE', '$OLD_CH_USER', '$OLD_CH_PASSWORD')"; then
+        --database="$NEW_CH_DATABASE" --multiquery \
+        --query="SET log_queries=0; INSERT INTO $TABLE SELECT * FROM remote('$OLD_CH_HOST:$OLD_CH_PORT', '$OLD_CH_DATABASE', '$TABLE', '$OLD_CH_USER', '$OLD_CH_PASSWORD')"; then
 
         NEW_ROWS=$(clickhouse-client --host="$NEW_CH_HOST" --port="$NEW_CH_PORT" \
           --user="$NEW_CH_USER" --password="$NEW_CH_PASSWORD" \
