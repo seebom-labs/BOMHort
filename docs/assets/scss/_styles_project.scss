@@ -135,7 +135,7 @@ pre code {
 }
 
 /* ── Buttons matching seebom-website gradient ───────────────── */
-.btn-seebom {
+.btn-bomhort {
   color: #fff !important;
   background: linear-gradient(120deg, #1A8A8A 0%, #E8871E 100%);
   box-shadow: 0 0 0 1px rgba(232, 135, 30, 0.22);
@@ -144,12 +144,12 @@ pre code {
   border-radius: 8px;
 }
 
-.btn-seebom:hover {
+.btn-bomhort:hover {
   color: #fff !important;
   background: #147272;
 }
 
-.btn-seebom .fb-icon {
+.btn-bomhort .fb-icon {
   filter: brightness(0) invert(1);
 }
 
