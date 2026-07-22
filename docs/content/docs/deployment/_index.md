@@ -538,7 +538,7 @@ Starting with v0.6.0, the project was renamed from **SeeBOM** to **BOMHort**. Th
 
 ### Migration steps
 
-The chart includes a built-in **data migration hook** that copies all ClickHouse tables from the old `seebom` instance to the new `bomhort` instance using ClickHouse's `remote()` function. It runs as a Helm post-install/post-upgrade Job.
+The chart includes a built-in **data migration hook** that copies all ClickHouse tables from the old `seebom` instance to the new `bomhort` instance using ClickHouse's `remote()` function. It runs as a Helm post-upgrade Job.
 
 #### 1. Keep the old deployment running
 
