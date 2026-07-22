@@ -233,5 +233,29 @@ seedJob:
   # Set to download CNCF license exceptions into the SBOM PVC:
   # cncfExceptionsURL: "https://raw.githubusercontent.com/cncf/foundation/main/license-exceptions/exceptions.json"
 
+# Data Migration (one-time, from old seebom deployment to new bomhort deployment)
+# Runs as a Helm post-upgrade hook. Uses ClickHouse remote() to copy all tables
+# from the source instance (old namespace/host) to the target (this chart's ClickHouse).
+# Set enabled: true and configure the source connection for the first deploy,
+# then disable it once migration is confirmed.
+dataMigration:
+  enabled: false
+  source:
+    # FQDN of the old ClickHouse in the seebom namespace
+    host: chi-seebom-clickhouse-seebom-cluster-0-0.seebom.svc.cluster.local
+    port: 9000
+    database: seebom
+    user: default
+    passwordSecret:
+      secretName: clickhouse-password   # must exist in the bomhort namespace
+      key: password
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
 # Set to false to keep Job resources after completion (for debugging, or better visibility in ArgoCD). By default, Jobs are cleaned up after 5 minutes to prevent clutter.
 cleanBatchJobs: true

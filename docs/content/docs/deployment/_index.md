@@ -520,7 +520,144 @@ When exposing the API externally, ensure `apiGateway.auth.enabled: true` is set.
 
 ---
 
-## 11. Verifying the Deployment
+## 11. Upgrading from v0.5.0 or Earlier (SeeBOM → BOMHort)
+
+Starting with v0.6.0, the project was renamed from **SeeBOM** to **BOMHort**. This affects the Helm chart name, namespace, ClickHouse database name, and container image paths. Existing deployments running v0.5.0 or earlier need a one-time data migration.
+
+### What changed
+
+| Resource | v0.5.0 (old) | v0.6.0+ (new) |
+|----------|--------------|----------------|
+| Helm chart | `seebom` | `bomhort` |
+| Namespace | `seebom` | `bomhort` |
+| ClickHouse database | `seebom` | `bomhort` |
+| ClickHouse host | `chi-seebom-clickhouse-seebom-cluster-0-0` | `chi-bomhort-clickhouse-bomhort-cluster-0-0` |
+| Image repository | `ghcr.io/seebom-labs/seebom/*` | `ghcr.io/seebom-labs/bomhort/*` |
+| PVC name | `seebom-sbom-data` | `bomhort-sbom-data` |
+| OCI chart URL | `oci://ghcr.io/seebom-labs/seebom/charts/seebom` | `oci://ghcr.io/seebom-labs/bomhort/charts/bomhort` |
+
+### Migration steps
+
+The chart includes a built-in **data migration hook** that copies all ClickHouse tables from the old `seebom` instance to the new `bomhort` instance using ClickHouse's `remote()` function. It runs as a Helm post-install/post-upgrade Job.
+
+#### 1. Keep the old deployment running
+
+Do **not** delete the `seebom` namespace yet. The migration Job connects to the old ClickHouse cross-namespace.
+
+#### 2. Create the password Secret in the new namespace
+
+The migration Job needs access to the old ClickHouse password:
+
+```bash
+kubectl create namespace bomhort
+
+# Copy the old ClickHouse password into the new namespace
+OLD_PW=$(kubectl get secret clickhouse-password -n seebom -o jsonpath='{.data.password}' | base64 -d)
+kubectl create secret generic clickhouse-migration-source \
+  --from-literal=password="$OLD_PW" \
+  -n bomhort
+```
+
+#### 3. Deploy with migration enabled
+
+```bash
+helm install bomhort oci://ghcr.io/seebom-labs/bomhort/charts/bomhort \
+  --version 0.6.0 \
+  -n bomhort \
+  -f your-values.yaml \
+  --set dataMigration.enabled=true \
+  --set dataMigration.source.host=chi-seebom-clickhouse-seebom-cluster-0-0.seebom.svc.cluster.local \
+  --set dataMigration.source.port=9000 \
+  --set dataMigration.source.database=seebom \
+  --set dataMigration.source.user=default \
+  --set dataMigration.source.passwordSecret.secretName=clickhouse-migration-source \
+  --set dataMigration.source.passwordSecret.key=password
+```
+
+Or add this to your values file:
+
+```yaml
+dataMigration:
+  enabled: true
+  source:
+    host: chi-seebom-clickhouse-seebom-cluster-0-0.seebom.svc.cluster.local
+    port: 9000
+    database: seebom
+    user: default
+    passwordSecret:
+      secretName: clickhouse-migration-source
+      key: password
+```
+
+#### 4. Monitor the migration
+
+```bash
+kubectl logs -n bomhort job/bomhort-data-migration-1 -f
+```
+
+The Job migrates these tables (skipping any that are empty or already populated in the target):
+- `sboms`, `sbom_packages`, `vulnerabilities`, `license_compliance`
+- `ingestion_queue`, `vex_statements`, `cve_refresh_log`
+- `github_license_cache`, `github_repo_metadata`
+
+The `dashboard_stats_mv` materialized view repopulates automatically.
+
+#### 5. Verify and clean up
+
+```bash
+# Verify row counts match
+kubectl exec -n bomhort $(kubectl get pod -n bomhort -l app.kubernetes.io/component=api-gateway -o name | head -1) \
+  -- wget -qO- http://localhost:8080/api/v1/stats/dashboard
+
+# Once satisfied, disable migration for future upgrades
+helm upgrade bomhort oci://ghcr.io/seebom-labs/bomhort/charts/bomhort \
+  -n bomhort -f your-values.yaml \
+  --set dataMigration.enabled=false
+
+# Delete the old deployment when ready
+kubectl delete namespace seebom
+```
+
+{{% alert title="Important" color="warning" %}}
+The migration Job is **idempotent** — it skips tables that already contain data in the target database. It is safe to re-run, but it will not merge partial data. If you need to re-migrate a specific table, truncate it in the new database first.
+{{% /alert %}}
+
+### ArgoCD users
+
+If you manage deployments via ArgoCD, create a new Application resource pointing to the new chart:
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: bomhort
+  namespace: argocd
+spec:
+  source:
+    repoURL: ghcr.io/seebom-labs/bomhort/charts
+    chart: bomhort
+    targetRevision: "0.6.0"
+    helm:
+      values: |
+        dataMigration:
+          enabled: true
+          source:
+            host: chi-seebom-clickhouse-seebom-cluster-0-0.seebom.svc.cluster.local
+            port: 9000
+            database: seebom
+            user: default
+            passwordSecret:
+              secretName: clickhouse-migration-source
+              key: password
+  destination:
+    namespace: bomhort
+```
+
+After confirming data integrity, set `dataMigration.enabled: false` and remove the old `seebom` Application.
+
+---
+
+## 12. Verifying the Deployment
 
 ```bash
 kubectl get pods -l app.kubernetes.io/name=bomhort
