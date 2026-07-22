@@ -1,5 +1,5 @@
 ---
-title: "Why we renamed BOMHort to BOMHort"
+title: "Why we renamed SeeBOM to BOMHort"
 linkTitle: "Project Rename"
 type: docs
 weight: 2
