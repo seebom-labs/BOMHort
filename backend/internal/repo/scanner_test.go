@@ -194,7 +194,7 @@ func TestScanner_GenericJSON(t *testing.T) {
 
 	// Generic .json files should be classified as "sbom" (format detected at parse time).
 	testFiles := map[string]string{
-		"unknown-format.json":      `{"some": "json"}`,
+		"unknown-format.json":     `{"some": "json"}`,
 		"my-bom.json":             `{"bomFormat": "CycloneDX"}`,
 		"project.spdx.json":       `{"spdxVersion": "SPDX-2.3"}`,
 		"advisory.openvex.json":   `{"@context": "openvex"}`,
@@ -242,4 +242,28 @@ func TestScanner_GenericJSON(t *testing.T) {
 	}
 }
 
+func TestClassifyFileType_CaseInsensitive(t *testing.T) {
+	// ClassifyFileType lowercases internally so callers (e.g. the upload
+	// handler) can't misuse it by forgetting to pre-lowercase the filename.
+	tests := []struct {
+		name     string
+		wantType string
+		wantOK   bool
+	}{
+		{"PROJECT.SPDX.JSON", "sbom", true},
+		{"App.CDX.Json", "sbom", true},
+		{"Advisory.OpenVEX.JSON", "vex", true},
+		{"CVE.VEX.json", "vex", true},
+		{"Generic.JSON", "sbom", true},
+		{"README.TXT", "", false},
+	}
 
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotType, gotOK := ClassifyFileType(tc.name)
+			if gotOK != tc.wantOK || gotType != tc.wantType {
+				t.Errorf("ClassifyFileType(%q) = (%q, %v), want (%q, %v)", tc.name, gotType, gotOK, tc.wantType, tc.wantOK)
+			}
+		})
+	}
+}

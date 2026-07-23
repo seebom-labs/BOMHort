@@ -22,6 +22,14 @@ type BucketConfig struct {
 	Prefix       string `json:"prefix"`       // Key prefix filter (e.g. "k3s-io/")
 	UsePathStyle bool   `json:"usePathStyle"` // Use path-style URLs (required for MinIO)
 	UseSSL       *bool  `json:"useSSL"`       // Use HTTPS — nil defaults to true, set false for local MinIO
+	// SkipScan excludes this bucket from ListObjects's periodic scan (#135).
+	// Set on the dedicated push-upload target bucket so objects written by
+	// POST /api/v1/sboms/upload are never rediscovered by the ingestion
+	// watcher — which dedups on S3 ETag, not the SHA256 hash the upload
+	// endpoint already used to enqueue the job, so a rescan would create a
+	// duplicate job for the same content. The bucket is still registered
+	// normally (GetObject/PutObject work), it's just excluded from listing.
+	SkipScan bool `json:"skipScan,omitempty"`
 }
 
 // ObjectInfo holds metadata about a discovered S3 object.
@@ -160,6 +168,11 @@ func (c *Client) ListObjects(ctx context.Context) <-chan ObjectResult {
 		defer close(ch)
 
 		for _, cfg := range c.configs {
+			if cfg.SkipScan {
+				log.Printf("S3: skipping bucket %q (skipScan=true, reserved for push-model uploads)", cfg.Name)
+				continue
+			}
+
 			mc, ok := c.clients[cfg.Name]
 			if !ok {
 				ch <- ObjectResult{Err: fmt.Errorf("no client for bucket %q", cfg.Name)}
@@ -246,6 +259,38 @@ func (c *Client) GetObject(ctx context.Context, bucket, key string) (io.ReadClos
 	}
 
 	return obj, nil
+}
+
+// PutObject uploads content to an S3 object. Used by the push-model upload
+// endpoint (#135) to route pushed content to a dedicated skipScan bucket
+// instead of the local filesystem.
+func (c *Client) PutObject(ctx context.Context, bucket, key string, body io.Reader, size int64) error {
+	mc, ok := c.clients[bucket]
+	if !ok {
+		return fmt.Errorf("no S3 client configured for bucket %q", bucket)
+	}
+
+	if _, err := mc.PutObject(ctx, bucket, key, body, size, minio.PutObjectOptions{}); err != nil {
+		return fmt.Errorf("failed to put S3 object %s/%s: %w", bucket, key, err)
+	}
+
+	return nil
+}
+
+// RemoveObject deletes an S3 object. Used for best-effort cleanup when a
+// push-model upload (#135) is staged to S3 but the subsequent ingestion-job
+// enqueue fails, mirroring the local-filesystem cleanup path.
+func (c *Client) RemoveObject(ctx context.Context, bucket, key string) error {
+	mc, ok := c.clients[bucket]
+	if !ok {
+		return fmt.Errorf("no S3 client configured for bucket %q", bucket)
+	}
+
+	if err := mc.RemoveObject(ctx, bucket, key, minio.RemoveObjectOptions{}); err != nil {
+		return fmt.Errorf("failed to remove S3 object %s/%s: %w", bucket, key, err)
+	}
+
+	return nil
 }
 
 // sanitizeETag strips surrounding quotes from S3 ETags.

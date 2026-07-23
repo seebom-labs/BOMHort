@@ -7,8 +7,8 @@ description: >
   Complete REST API reference for the BOMHort API Gateway. Essential for headless deployments, CI/CD integrations, and custom tooling.
 ---
 
-{{% alert title="Read-Only API" color="info" %}}
-The BOMHort API is currently **read-only** (GET endpoints only). Write endpoints (SBOM upload) are planned for Phase 2 — see [Roadmap](/docs/roadmap/).
+{{% alert title="Mostly Read-Only API" color="info" %}}
+The BOMHort API is primarily **read-only** (GET endpoints). One write endpoint exists — [`POST /api/v1/sboms/upload`](#post-apiv1sbomsupload) for push-model CI/CD ingestion — and it is disabled unless `AUTH_ENABLED=true`, regardless of the global auth default.
 {{% /alert %}}
 
 ## Base URL
@@ -250,6 +250,75 @@ Packages with inconsistent versions across different projects (version skew dete
 ---
 
 ## SBOMs
+
+### `POST /api/v1/sboms/upload`
+
+Push an SBOM or VEX document directly instead of relying on a filesystem/S3 scan — designed for CI/CD pipelines. The upload is enqueued as a normal ingestion job; the parsing worker processes it exactly like any other job, so no ingestion logic is duplicated here.
+
+**Storage backend:** the upload is routed to whichever push-storage backend is configured, resolved once at API Gateway startup:
+- If one of the configured `S3_BUCKETS` entries has `"skipScan": true`, the upload is written there (`s3://<bucket>/<prefix>/pushed/<uuid>-<filename>`). That bucket is excluded from the ingestion watcher's periodic scan so the same object is never rediscovered and re-enqueued under a different dedup hash.
+- Otherwise, it falls back to the local filesystem under `SBOM_DIR/pushed/` — this requires the API Gateway's `SBOM_DIR` mount to be writable (see the [Deployment Guide](/docs/deployment/) for the Helm `sbomSource.writable` flag).
+- If neither is available, every request gets `503 Service Unavailable` rather than a confusing storage error.
+
+{{% alert title="Requires authentication" color="warning" %}}
+This endpoint refuses every request with `403 Forbidden` unless `AUTH_ENABLED=true` on the API Gateway — independent of whether the request would otherwise pass the global auth middleware. A write endpoint open by default is a materially different risk than a read-only API open by default, so this check is enforced by the handler itself.
+{{% /alert %}}
+
+**Headers:**
+
+| Header | Required | Description |
+|--------|----------|-------------|
+| `X-Filename` | ✅ | Original filename. Must end in `.spdx.json`, `.cdx.json`, `.openvex.json`, `.vex.json`, or a generic `.json` (format auto-detected downstream, same as local scans). Only the base name is used — any directory components are stripped before the file is stored. |
+| `Authorization` / `X-Service-Token` / `X-API-Key` | ✅ | Same credential options as the rest of the API — see [Authentication](#authentication). |
+
+**Body:** Raw SBOM or VEX JSON content (not multipart form data). Max size is `MAX_UPLOAD_SIZE_MB` (default 50 MB); larger bodies are rejected with `413`.
+
+**Query Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `cluster` | string | Overrides this instance's configured `CLUSTER_NAME` for the resulting ingestion job. |
+
+**Response (accepted):** `202 Accepted`
+```json
+{
+  "status": "pending",
+  "job_id": "d465b76c-5b91-48a1-b069-97069e9759a1",
+  "sha256_hash": "3a7bd3e2360a3d4b1f8e...",
+  "job_type": "sbom",
+  "cluster": "production"
+}
+```
+
+**Response (already ingested):** `200 OK`
+```json
+{
+  "status": "duplicate",
+  "sha256_hash": "3a7bd3e2360a3d4b1f8e...",
+  "message": "Content already ingested, skipping"
+}
+```
+
+**Errors:**
+- `400` — Missing `X-Filename` header, unsupported file extension, empty body, or content that fails validation (invalid JSON for SBOM uploads; not a valid OpenVEX document for VEX uploads — see below)
+- `403` — `AUTH_ENABLED` is not `true` on this instance
+- `413` — Body exceeds `MAX_UPLOAD_SIZE_MB`
+- `500` — Storage (S3 or local) or ingestion-queue failure
+- `503` — No push-storage backend is configured (no `skipScan` S3 bucket, and `SBOM_DIR` isn't writable)
+
+{{% alert title="Content validation" color="info" %}}
+VEX uploads are validated with the same OpenVEX parser the worker uses (a `@context` or at least one `statements` entry must be present) before anything is written to disk or enqueued. SBOM uploads get a lightweight JSON-validity and format-probe check, mirroring how the parsing worker auto-detects `bomFormat`/`spdxVersion`/in-toto `predicateType`; full parsing (package/component extraction) still happens in the parsing worker to avoid duplicating that pipeline here.
+{{% /alert %}}
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/api/v1/sboms/upload \
+  -H "X-API-Key: <api-key>" \
+  -H "X-Filename: my-service.spdx.json" \
+  --data-binary @my-service.spdx.json
+```
+
+---
 
 ### `GET /api/v1/sboms`
 
@@ -943,8 +1012,8 @@ Configured via `CORS_ALLOWED_ORIGINS` environment variable.
 
 - Default: `*` (development)
 - Production: Set to your frontend domain(s)
-- Allowed methods: `GET`, `OPTIONS`
-- Allowed headers: `Content-Type`, `Authorization`
+- Allowed methods: `GET`, `OPTIONS` on every endpoint; `POST` is additionally advertised only on [`/api/v1/sboms/upload`](#post-apiv1sbomsupload)
+- Allowed headers: `Content-Type`, `Authorization`, `X-Service-Token`, `X-API-Key`, `X-Filename`
 
 ---
 

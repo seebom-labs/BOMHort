@@ -2,12 +2,16 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -15,11 +19,20 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
 	"github.com/seebom-labs/bomhort/backend/internal/config"
 	"github.com/seebom-labs/bomhort/backend/internal/license"
+	"github.com/seebom-labs/bomhort/backend/internal/repo"
 	s3client "github.com/seebom-labs/bomhort/backend/internal/s3"
+	"github.com/seebom-labs/bomhort/backend/internal/vex"
+	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
+
+// uploadPath is the push-model SBOM/VEX upload route (#135). Defined once so
+// the mux registration and the CORS per-route method scoping can't drift.
+const uploadPath = "/api/v1/sboms/upload"
 
 // uuidPattern validates UUID path parameters to prevent injection.
 var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
@@ -55,6 +68,7 @@ func main() {
 				Prefix:       b.Prefix,
 				UsePathStyle: b.UsePathStyle,
 				UseSSL:       b.UseSSL,
+				SkipScan:     b.SkipScan,
 			}
 		}
 		s3c, err = s3client.NewClient(bucketConfigs)
@@ -63,6 +77,25 @@ func main() {
 		} else {
 			log.Printf("S3 client initialized for downloads (%d bucket(s))", len(cfg.S3Buckets))
 		}
+	}
+
+	// Push-model upload storage (#135): either a dedicated skipScan S3 bucket,
+	// or a writable local SBOM_DIR as a fallback. Resolved once at startup —
+	// uploadHandler uses this instead of re-probing on every request.
+	pushBucket, hasPushBucket := findS3PushBucket(cfg.S3Buckets)
+	var uploadS3Store uploadObjectStore
+	if hasPushBucket && s3c != nil {
+		uploadS3Store = s3c
+	} else {
+		hasPushBucket = false // S3 client failed to initialize — fall back to local only
+	}
+	localUploadWritable := isDirWritable(filepath.Join(cfg.SBOMDir, "pushed"))
+	if !hasPushBucket && !localUploadWritable {
+		log.Printf("WARNING: no upload storage available — POST %s will return 503 until either S3_BUCKETS has a skipScan bucket or SBOM_DIR (%s) is writable", uploadPath, cfg.SBOMDir)
+	} else if hasPushBucket {
+		log.Printf("Push-model upload storage: S3 bucket %q (skipScan)", pushBucket.Name)
+	} else {
+		log.Printf("Push-model upload storage: local filesystem (%s/pushed)", cfg.SBOMDir)
 	}
 
 	exceptionsPath := cfg.ExceptionsFile
@@ -489,6 +522,14 @@ func main() {
 		}
 	})
 
+	// Push-model SBOM upload (#135). Client pushes SBOM/VEX content directly
+	// (e.g. from CI/CD) instead of BOMHort pulling from a filesystem/S3 scan.
+	// Routed to the skipScan S3 bucket when one is configured, else written
+	// under SBOM_DIR/pushed/, and enqueued as a normal IngestionJob — the
+	// parsing-worker processes it exactly like any other job, so no ingestion
+	// logic is duplicated here.
+	mux.HandleFunc("POST "+uploadPath, uploadHandler(cfg, chClient, uploadS3Store, pushBucket, hasPushBucket, localUploadWritable))
+
 	// CORS + security middleware for Angular dev server.
 	// Order (outermost first): security headers → rate limit → CORS → auth → mux.
 	// Auth sits closest to the mux so 401s still get CORS + security headers.
@@ -645,8 +686,14 @@ func corsMiddleware(allowedOrigins string, next http.Handler) http.Handler {
 			}
 		}
 
-		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Service-Token, X-API-Key")
+		// POST is only ever valid on the upload route — advertising it on every
+		// endpoint would be misleading for what is otherwise a read-only API.
+		allowedMethods := "GET, OPTIONS"
+		if r.URL.Path == uploadPath {
+			allowedMethods = "GET, POST, OPTIONS"
+		}
+		w.Header().Set("Access-Control-Allow-Methods", allowedMethods)
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Service-Token, X-API-Key, X-Filename")
 		w.Header().Set("Access-Control-Max-Age", "86400")
 
 		if r.Method == http.MethodOptions {
@@ -833,5 +880,276 @@ func readyzHandler(p pinger) http.HandlerFunc {
 		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}
+}
+
+// uploadStore is the minimal surface uploadHandler needs, kept small for testing.
+type uploadStore interface {
+	HashExists(ctx context.Context, hash string) (bool, error)
+	EnqueueJobs(ctx context.Context, jobs []models.IngestionJob) error
+}
+
+// uploadObjectStore is the minimal S3 write surface uploadHandler needs to
+// route push-model uploads (#135) to a skipScan bucket, kept small for
+// testing (mirrors uploadStore/pinger).
+type uploadObjectStore interface {
+	PutObject(ctx context.Context, bucket, key string, body io.Reader, size int64) error
+	RemoveObject(ctx context.Context, bucket, key string) error
+}
+
+// findS3PushBucket returns the S3 bucket configured as the push-upload target
+// (skipScan: true), if any. Only one push bucket is supported; if multiple
+// are configured, the first one (in config order) wins and a warning is
+// logged so the misconfiguration is visible at startup.
+func findS3PushBucket(buckets []config.S3BucketConfig) (config.S3BucketConfig, bool) {
+	var found []config.S3BucketConfig
+	for _, b := range buckets {
+		if b.SkipScan {
+			found = append(found, b)
+		}
+	}
+	if len(found) == 0 {
+		return config.S3BucketConfig{}, false
+	}
+	if len(found) > 1 {
+		names := make([]string, len(found))
+		for i, b := range found {
+			names[i] = b.Name
+		}
+		log.Printf("WARNING: multiple skipScan S3 buckets configured (%s) — only one push-upload target is supported, using %q", strings.Join(names, ", "), found[0].Name)
+	}
+	return found[0], true
+}
+
+// isDirWritable checks whether dir is writable by creating it (if missing)
+// and writing + removing a throwaway temp file — the same technique the
+// local upload fallback itself uses to persist pushed content, so this
+// startup check exercises the exact path a real request would take.
+func isDirWritable(dir string) bool {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return false
+	}
+	f, err := os.CreateTemp(dir, ".write-test-*")
+	if err != nil {
+		return false
+	}
+	name := f.Name()
+	_ = f.Close()
+	_ = os.Remove(name)
+	return true
+}
+
+// uploadHandler implements push-model SBOM/VEX upload (#135). It authenticates
+// via the standard middleware chain, hashes and dedups the body against
+// ClickHouse, persists it to whichever push-storage backend is configured —
+// a dedicated skipScan S3 bucket, or SBOM_DIR/pushed/ as a local fallback —
+// and enqueues a normal IngestionJob. The existing parsing-worker picks it up
+// unmodified, whether the source is s3:// or a local path — no ingestion
+// logic is duplicated here.
+func uploadHandler(cfg *config.Config, store uploadStore, s3Store uploadObjectStore, pushBucket config.S3BucketConfig, useS3Push, localWritable bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// A write endpoint being open by default is a real risk, independent of
+		// authMiddleware's default-off posture (which is an accepted default for
+		// a read-only API). Refuse to serve uploads unless AUTH_ENABLED=true,
+		// regardless of whether the global middleware would otherwise let the
+		// request through.
+		if !cfg.AuthEnabled {
+			log.Printf("AUTH: rejected upload from %s — AUTH_ENABLED=false", clientIP(r))
+			writeError(w, http.StatusForbidden, "Upload requires AUTH_ENABLED=true")
+			return
+		}
+
+		if !useS3Push && !localWritable {
+			writeError(w, http.StatusServiceUnavailable, "No upload storage configured — set S3_BUCKETS with a skipScan bucket, or ensure SBOM_DIR is writable")
+			return
+		}
+
+		filename := filepath.Base(strings.TrimSpace(r.Header.Get("X-Filename")))
+		if filename == "" || filename == "." || filename == "/" {
+			writeError(w, http.StatusBadRequest, "X-Filename header is required")
+			return
+		}
+
+		fileType, ok := repo.ClassifyFileType(filename)
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Unsupported file type: filename must end in .spdx.json, .cdx.json, .openvex.json, .vex.json, or .json")
+			return
+		}
+
+		// Stage the body in a local temp file for hashing + content validation
+		// regardless of the final destination. When pushing to S3 there's no
+		// same-volume rename to worry about, so stage in the OS temp dir; when
+		// falling back to local storage, stage inside SBOM_DIR/pushed so the
+		// final move is an atomic same-volume os.Rename. The ".tmp" suffix
+		// keeps ClassifyFileType from ever matching this file if a concurrent
+		// local Scan() walks pushedDir mid-upload.
+		stagingDir := ""
+		if !useS3Push {
+			stagingDir = filepath.Join(cfg.SBOMDir, "pushed")
+			if err := os.MkdirAll(stagingDir, 0o755); err != nil {
+				log.Printf("ERROR: upload mkdir %s: %v", sanitizeLogParam(stagingDir), err)
+				writeError(w, http.StatusInternalServerError, "Failed to store upload")
+				return
+			}
+		}
+		tmp, err := os.CreateTemp(stagingDir, "upload-*.tmp")
+		if err != nil {
+			log.Printf("ERROR: upload tempfile create in %q: %v", sanitizeLogParam(stagingDir), err)
+			writeError(w, http.StatusInternalServerError, "Failed to store upload")
+			return
+		}
+		tmpPath := tmp.Name()
+		defer func() {
+			_ = tmp.Close()
+			_ = os.Remove(tmpPath) // no-op once the local fallback has renamed it into place below
+		}()
+
+		maxBytes := int64(cfg.MaxUploadSizeMB) * 1024 * 1024
+		r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+		hasher := sha256.New()
+		n, err := io.Copy(io.MultiWriter(tmp, hasher), r.Body)
+		if err != nil {
+			var maxBytesErr *http.MaxBytesError
+			if errors.As(err, &maxBytesErr) {
+				writeError(w, http.StatusRequestEntityTooLarge, "Upload exceeds max size of "+strconv.Itoa(cfg.MaxUploadSizeMB)+"MB")
+				return
+			}
+			log.Printf("ERROR: upload read for %s: %v", sanitizeLogParam(filename), err)
+			writeError(w, http.StatusInternalServerError, "Failed to read upload body")
+			return
+		}
+		if n == 0 {
+			writeError(w, http.StatusBadRequest, "Empty request body")
+			return
+		}
+
+		hash := hex.EncodeToString(hasher.Sum(nil))
+
+		// Dedup: skip re-ingesting content BOMHort has already processed. This
+		// is checked before content validation so repeat pushes of a file
+		// that's already been ingested don't pay the parse cost again.
+		exists, err := store.HashExists(r.Context(), hash)
+		if err != nil {
+			log.Printf("ERROR: upload hash check for %s: %v", sanitizeLogParam(filename), err)
+			writeError(w, http.StatusInternalServerError, "Failed to check for duplicate upload")
+			return
+		}
+		if exists {
+			writeJSON(w, http.StatusOK, map[string]string{
+				"status":      "duplicate",
+				"sha256_hash": hash,
+				"message":     "Content already ingested, skipping",
+			})
+			return
+		}
+
+		// Validate content before persisting/enqueueing so bad uploads fail
+		// fast with a 400 instead of a 202 that silently fails in the worker
+		// minutes later. This intentionally stays lightweight: a full parse
+		// (package/component extraction) belongs to the parsing-worker, not
+		// here — duplicating it would undercut the point of the push model,
+		// which is to reuse the existing ingestion pipeline unmodified.
+		if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+			log.Printf("ERROR: upload seek for %s: %v", sanitizeLogParam(filename), err)
+			writeError(w, http.StatusInternalServerError, "Failed to validate upload")
+			return
+		}
+		switch fileType {
+		case models.JobTypeVEX:
+			if _, err := vex.Parse(tmp, filename); err != nil {
+				writeError(w, http.StatusBadRequest, "Invalid VEX content: "+err.Error())
+				return
+			}
+		default: // sbom
+			// Same top-level-key probe internal/sbom.Parse uses to pick a parser
+			// backend (bomFormat/spdxVersion/predicateType). We don't require one
+			// of them to be present — sbom.Parse falls back to the SPDX parser
+			// for unrecognized shapes and "handles unknown gracefully" — we only
+			// need to catch content that isn't even valid JSON.
+			var probe struct {
+				BomFormat     string `json:"bomFormat"`
+				SPDXVersion   string `json:"spdxVersion"`
+				PredicateType string `json:"predicateType"`
+			}
+			if err := json.NewDecoder(tmp).Decode(&probe); err != nil {
+				writeError(w, http.StatusBadRequest, "Invalid SBOM content: not valid JSON")
+				return
+			}
+		}
+
+		// Cluster: query param overrides this instance's configured default.
+		cluster := cfg.ClusterName
+		if c := strings.TrimSpace(r.URL.Query().Get("cluster")); c != "" {
+			cluster = c
+		}
+
+		// Persist to whichever backend is active. Both paths only commit the
+		// content to its final, discoverable location after hashing and
+		// content validation succeed — the S3 PutObject / local os.Rename
+		// below are the first point at which anything else could observe this
+		// upload, so nothing ever sees a partial or invalid file/object.
+		var sourceFile string
+		if useS3Push {
+			if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+				log.Printf("ERROR: upload seek for %s: %v", sanitizeLogParam(filename), err)
+				writeError(w, http.StatusInternalServerError, "Failed to store upload")
+				return
+			}
+			key := path.Join(pushBucket.Prefix, "pushed", uuid.New().String()+"-"+filename)
+			if err := s3Store.PutObject(r.Context(), pushBucket.Name, key, tmp, n); err != nil {
+				log.Printf("ERROR: upload S3 put %s/%s: %v", sanitizeLogParam(pushBucket.Name), sanitizeLogParam(key), err)
+				writeError(w, http.StatusInternalServerError, "Failed to store upload")
+				return
+			}
+			sourceFile = "s3://" + pushBucket.Name + "/" + key
+		} else {
+			relPath := filepath.Join("pushed", uuid.New().String()+"-"+filename)
+			absPath := filepath.Join(cfg.SBOMDir, relPath)
+			if err := tmp.Close(); err != nil {
+				log.Printf("ERROR: upload close for %s: %v", sanitizeLogParam(relPath), err)
+				writeError(w, http.StatusInternalServerError, "Failed to store upload")
+				return
+			}
+			if err := os.Rename(tmpPath, absPath); err != nil {
+				log.Printf("ERROR: upload rename %s -> %s: %v", sanitizeLogParam(tmpPath), sanitizeLogParam(relPath), err)
+				writeError(w, http.StatusInternalServerError, "Failed to store upload")
+				return
+			}
+			sourceFile = relPath
+		}
+
+		job := models.IngestionJob{
+			CreatedAt:  time.Now(),
+			JobID:      uuid.New(),
+			SourceFile: sourceFile,
+			SHA256Hash: hash,
+			Status:     models.JobStatusPending,
+			JobType:    fileType,
+			Cluster:    cluster,
+		}
+		if err := store.EnqueueJobs(r.Context(), []models.IngestionJob{job}); err != nil {
+			log.Printf("ERROR: upload enqueue for %s: %v", sanitizeLogParam(sourceFile), err)
+			// Best-effort cleanup so a failed enqueue doesn't leave an orphaned
+			// file/object behind.
+			if useS3Push {
+				if _, key, parseErr := s3client.ParseURI(sourceFile); parseErr == nil {
+					_ = s3Store.RemoveObject(context.Background(), pushBucket.Name, key)
+				}
+			} else {
+				_ = os.Remove(filepath.Join(cfg.SBOMDir, sourceFile))
+			}
+			writeError(w, http.StatusInternalServerError, "Failed to enqueue ingestion job")
+			return
+		}
+
+		log.Printf("Upload accepted: %s (job=%s, type=%s, cluster=%s, source=%s)", sanitizeLogParam(filename), job.JobID, fileType, sanitizeLogParam(cluster), sanitizeLogParam(sourceFile))
+
+		writeJSON(w, http.StatusAccepted, map[string]string{
+			"status":      "pending",
+			"job_id":      job.JobID.String(),
+			"sha256_hash": hash,
+			"job_type":    fileType,
+			"cluster":     cluster,
+		})
 	}
 }

@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/instance: {{ .Release.Name }}
 spec:
   accessModes:
-    - ReadWriteOnce
+    - {{ .Values.sbomSource.accessMode | default "ReadWriteOnce" }}
   resources:
     requests:
       storage: {{ .Values.sbomSource.storageSize | default "1Gi" }}

@@ -1,6 +1,8 @@
 package s3
 
 import (
+	"context"
+	"strings"
 	"testing"
 )
 
@@ -111,6 +113,50 @@ func TestObjectInfo_URI(t *testing.T) {
 	want := "s3://my-bucket/path/to/file.spdx.json"
 	if got := obj.URI(); got != want {
 		t.Errorf("URI() = %q, want %q", got, want)
+	}
+}
+
+func TestClient_ListObjects_SkipsSkipScanBuckets(t *testing.T) {
+	// The skipScan check must run before any client lookup: a skipScan
+	// bucket with no corresponding entry in c.clients (which would otherwise
+	// surface as a "no client for bucket" error result) must be silently
+	// skipped instead, proving the exclusion happens first.
+	c := &Client{
+		configs: []BucketConfig{
+			{Name: "push-bucket", SkipScan: true},
+		},
+	}
+
+	var results []ObjectResult
+	for r := range c.ListObjects(context.Background()) {
+		results = append(results, r)
+	}
+
+	if len(results) != 0 {
+		t.Errorf("expected 0 results for a skipScan-only bucket, got %d: %+v", len(results), results)
+	}
+}
+
+// PutObject/GetObject's success paths talk to a real S3 wire protocol and
+// aren't unit-tested here, matching this file's existing convention (no test
+// in this package exercises an actual minio network call — GetObject has no
+// success-path test either). The uploadHandler tests in cmd/api-gateway
+// exercise PutObject/RemoveObject success and failure behavior against a
+// fake implementing the small uploadObjectStore interface instead.
+
+func TestClient_PutObject_UnknownBucket(t *testing.T) {
+	c := &Client{}
+	err := c.PutObject(context.Background(), "nonexistent", "key.spdx.json", strings.NewReader("data"), 4)
+	if err == nil {
+		t.Fatal("expected error for unconfigured bucket")
+	}
+}
+
+func TestClient_RemoveObject_UnknownBucket(t *testing.T) {
+	c := &Client{}
+	err := c.RemoveObject(context.Background(), "nonexistent", "key.spdx.json")
+	if err == nil {
+		t.Fatal("expected error for unconfigured bucket")
 	}
 }
 

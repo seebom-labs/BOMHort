@@ -177,6 +177,42 @@ sbomSource:
   pvcName: my-preloaded-sbom-pvc
 ```
 
+### Option E: Push-Model Uploads (CI/CD)
+
+In addition to the pull-based methods above, CI/CD pipelines can push SBOM/VEX content directly via `POST /api/v1/sboms/upload` (see the [API Reference](/docs/api-reference/#post-apiv1sbomsupload)). This endpoint always requires `apiGateway.auth.enabled: true` — it self-enforces this independent of the global auth default, since a write endpoint open by default is a materially different risk than the read-only default.
+
+**Recommended: dedicated S3 bucket.** Mark one bucket `"skipScan": true` — it becomes the upload target and is excluded from the ingestion watcher's periodic scan, so pushed objects are never rediscovered and double-enqueued:
+
+```yaml
+apiGateway:
+  auth:
+    enabled: true
+
+s3:
+  buckets: '[{"name":"cncf-subproject-sboms","region":"us-east-1"},{"name":"bomhort-pushed","region":"us-east-1","skipScan":true}]'
+```
+
+**Fallback: local filesystem.** If no `skipScan` bucket is configured, uploads fall back to `SBOM_DIR/pushed/` — this needs the API Gateway's `sbom-data` volume mounted read-write:
+
+```yaml
+apiGateway:
+  auth:
+    enabled: true
+
+gitSync:
+  enabled: false   # PVC mode required for a writable mount
+
+sbomSource:
+  writable: true
+  # Only if apiGateway.replicas > 1 — ReadWriteOnce lets just one pod mount
+  # read-write at a time, so every replica but one would fail to persist
+  # uploads. Requires a storage class that supports ReadWriteMany (EFS,
+  # Azure Files, most NFS-backed provisioners).
+  accessMode: ReadWriteMany
+```
+
+If neither a `skipScan` bucket nor a writable `SBOM_DIR` is configured, the API Gateway logs a startup warning and `POST /api/v1/sboms/upload` returns `503 Service Unavailable` for every request rather than failing with a confusing storage error.
+
 ---
 
 ## 2. License Exceptions
@@ -692,6 +728,7 @@ kubectl exec -it $(kubectl get pod -l app.kubernetes.io/component=api-gateway -o
 |---|---|---|
 | **SBOMs (S3)** | S3-compatible buckets | Configure `s3.buckets` in Helm values |
 | **SBOMs (volume)** | PVC via seed job or git-sync | Push to Git, seed job clones |
+| **SBOMs (push/CI-CD)** | `skipScan` S3 bucket, or PVC | `POST /api/v1/sboms/upload` — see [Option E](#option-e-push-model-uploads-cicd) |
 | **VEX files** | Same S3 bucket or directory | Place `*.openvex.json` alongside SBOMs |
 | **License Exceptions** | ConfigMap | `kubectl edit configmap` → restart API |
 | **License Policy** | ConfigMap | `kubectl edit configmap` → restart API + Workers |

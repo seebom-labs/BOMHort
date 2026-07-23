@@ -9,6 +9,10 @@ import (
 )
 
 // S3BucketConfig holds the configuration for a single S3 bucket source.
+// Note: this is a separate, hand-maintained struct — not a type alias for
+// s3.BucketConfig — so any new field added there (like SkipScan below) must
+// also be added here and threaded through the manual field-by-field
+// conversion in each cmd/*/main.go that builds an s3.BucketConfig from it.
 type S3BucketConfig struct {
 	Name         string `json:"name"`
 	Endpoint     string `json:"endpoint"`
@@ -19,6 +23,11 @@ type S3BucketConfig struct {
 	UsePathStyle bool   `json:"usePathStyle"`
 	UseSSL       *bool  `json:"useSSL"`
 	Cluster      string `json:"cluster"` // Optional: override ClusterName for this bucket
+	// SkipScan designates this bucket as the push-model upload target (#135):
+	// excluded from the ingestion-watcher's ListObjects scan, but still used
+	// for GetObject/PutObject. See s3.BucketConfig.SkipScan for why this
+	// matters (ETag-vs-SHA256 dedup mismatch).
+	SkipScan bool `json:"skipScan,omitempty"`
 }
 
 // Config holds all configuration values, read from environment variables.
@@ -60,6 +69,9 @@ type Config struct {
 	AuthEnabled  bool     // Enable auth middleware (default false)
 	ServiceToken string   // Shared secret for upstream proxy/gateway integrations
 	APIKeys      []string // Pre-shared API keys for direct API consumers (CI/CD, scripts)
+
+	// Push-model upload (#135)
+	MaxUploadSizeMB int // Max accepted body size for POST /api/v1/sboms/upload, in MB (default 50)
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -86,6 +98,7 @@ func Load() (*Config, error) {
 		AuthEnabled:        getEnvBool("AUTH_ENABLED", false),
 		ServiceToken:       getEnv("SERVICE_TOKEN", ""),
 		APIKeys:            parseAPIKeys(getEnv("API_KEYS", "")),
+		MaxUploadSizeMB:    getEnvInt("MAX_UPLOAD_SIZE_MB", 50),
 	}
 
 	if cfg.WorkerID == "" {
