@@ -165,7 +165,7 @@ sync-labels: ## Sync GitHub labels from .github/labels.yml (requires gh + yq)
 
 # ─── Kind (local Kubernetes) ─────────────────────────────────────────────────
 kind-up: ## Deploy BOMHort to a local Kind cluster (see local/secrets.env)
-	./setup.sh
+	./local/setup.sh
 
 kind-down: ## Destroy the local Kind cluster (deletes everything)
 	./local/teardown.sh
