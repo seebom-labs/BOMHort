@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"log"
@@ -15,10 +17,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/seebom-labs/seebom/backend/internal/clickhouse"
 	"github.com/seebom-labs/seebom/backend/internal/config"
 	"github.com/seebom-labs/seebom/backend/internal/license"
+	"github.com/seebom-labs/seebom/backend/internal/repo"
 	s3client "github.com/seebom-labs/seebom/backend/internal/s3"
+	"github.com/seebom-labs/seebom/backend/pkg/models"
 )
 
 // uuidPattern validates UUID path parameters to prevent injection.
@@ -489,6 +495,13 @@ func main() {
 		}
 	})
 
+	// Push-model SBOM upload (#135). Client pushes SBOM/VEX content directly
+	// (e.g. from CI/CD) instead of BOMHort pulling from a filesystem/S3 scan.
+	// The uploaded file is written under SBOM_DIR/pushed/ and enqueued as a
+	// normal IngestionJob — the parsing-worker processes it exactly like any
+	// other job, so no ingestion logic is duplicated here.
+	mux.HandleFunc("POST /api/v1/sboms/upload", uploadHandler(cfg, chClient))
+
 	// CORS + security middleware for Angular dev server.
 	// Order (outermost first): security headers → rate limit → CORS → auth → mux.
 	// Auth sits closest to the mux so 401s still get CORS + security headers.
@@ -645,8 +658,8 @@ func corsMiddleware(allowedOrigins string, next http.Handler) http.Handler {
 			}
 		}
 
-		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Service-Token, X-API-Key")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Service-Token, X-API-Key, X-Filename")
 		w.Header().Set("Access-Control-Max-Age", "86400")
 
 		if r.Method == http.MethodOptions {
@@ -833,5 +846,112 @@ func readyzHandler(p pinger) http.HandlerFunc {
 		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}
+}
+
+// uploadStore is the minimal surface uploadHandler needs, kept small for testing.
+type uploadStore interface {
+	HashExists(ctx context.Context, hash string) (bool, error)
+	EnqueueJobs(ctx context.Context, jobs []models.IngestionJob) error
+}
+
+// uploadHandler implements push-model SBOM/VEX upload (#135). It authenticates
+// via the standard middleware chain, hashes and dedups the body against
+// ClickHouse, writes the file under SBOM_DIR/pushed/, and enqueues a normal
+// IngestionJob. The existing parsing-worker picks it up unmodified — no
+// ingestion logic is duplicated here.
+func uploadHandler(cfg *config.Config, store uploadStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		filename := filepath.Base(strings.TrimSpace(r.Header.Get("X-Filename")))
+		if filename == "" || filename == "." || filename == "/" {
+			writeError(w, http.StatusBadRequest, "X-Filename header is required")
+			return
+		}
+
+		fileType, ok := repo.ClassifyFileType(strings.ToLower(filename))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Unsupported file type: filename must end in .spdx.json, .cdx.json, .openvex.json, .vex.json, or .json")
+			return
+		}
+
+		maxBytes := int64(cfg.MaxUploadSizeMB) * 1024 * 1024
+		r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			writeError(w, http.StatusRequestEntityTooLarge, "Upload exceeds max size of "+strconv.Itoa(cfg.MaxUploadSizeMB)+"MB")
+			return
+		}
+		if len(body) == 0 {
+			writeError(w, http.StatusBadRequest, "Empty request body")
+			return
+		}
+
+		sum := sha256.Sum256(body)
+		hash := hex.EncodeToString(sum[:])
+
+		// Dedup: skip re-ingesting content BOMHort has already processed.
+		exists, err := store.HashExists(r.Context(), hash)
+		if err != nil {
+			log.Printf("ERROR: upload hash check for %s: %v", sanitizeLogParam(filename), err)
+			writeError(w, http.StatusInternalServerError, "Failed to check for duplicate upload")
+			return
+		}
+		if exists {
+			writeJSON(w, http.StatusOK, map[string]string{
+				"status":      "duplicate",
+				"sha256_hash": hash,
+				"message":     "Content already ingested, skipping",
+			})
+			return
+		}
+
+		// Cluster: query param overrides this instance's configured default.
+		cluster := cfg.ClusterName
+		if c := strings.TrimSpace(r.URL.Query().Get("cluster")); c != "" {
+			cluster = c
+		}
+
+		// Persist under a dedicated "pushed" subdirectory so pushed files are
+		// clearly distinguishable from locally-mounted/scanned SBOMs, and
+		// collisions on filename can't overwrite unrelated uploads.
+		relPath := filepath.Join("pushed", uuid.New().String()+"-"+filename)
+		absPath := filepath.Join(cfg.SBOMDir, relPath)
+		if err := os.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
+			log.Printf("ERROR: upload mkdir for %s: %v", sanitizeLogParam(relPath), err)
+			writeError(w, http.StatusInternalServerError, "Failed to store upload")
+			return
+		}
+		if err := os.WriteFile(absPath, body, 0o644); err != nil {
+			log.Printf("ERROR: upload write for %s: %v", sanitizeLogParam(relPath), err)
+			writeError(w, http.StatusInternalServerError, "Failed to store upload")
+			return
+		}
+
+		job := models.IngestionJob{
+			CreatedAt:  time.Now(),
+			JobID:      uuid.New(),
+			SourceFile: relPath,
+			SHA256Hash: hash,
+			Status:     models.JobStatusPending,
+			JobType:    fileType,
+			Cluster:    cluster,
+		}
+		if err := store.EnqueueJobs(r.Context(), []models.IngestionJob{job}); err != nil {
+			log.Printf("ERROR: upload enqueue for %s: %v", sanitizeLogParam(relPath), err)
+			// Best-effort cleanup so a failed enqueue doesn't leave an orphaned file.
+			_ = os.Remove(absPath)
+			writeError(w, http.StatusInternalServerError, "Failed to enqueue ingestion job")
+			return
+		}
+
+		log.Printf("Upload accepted: %s (job=%s, type=%s, cluster=%s)", sanitizeLogParam(filename), job.JobID, fileType, sanitizeLogParam(cluster))
+
+		writeJSON(w, http.StatusAccepted, map[string]string{
+			"status":      "pending",
+			"job_id":      job.JobID.String(),
+			"sha256_hash": hash,
+			"job_type":    fileType,
+			"cluster":     cluster,
+		})
 	}
 }

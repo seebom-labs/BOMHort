@@ -60,6 +60,9 @@ type Config struct {
 	AuthEnabled  bool     // Enable auth middleware (default false)
 	ServiceToken string   // Shared secret for upstream proxy/gateway integrations
 	APIKeys      []string // Pre-shared API keys for direct API consumers (CI/CD, scripts)
+
+	// Push-model upload (#135)
+	MaxUploadSizeMB int // Max accepted body size for POST /api/v1/sboms/upload, in MB (default 50)
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -86,6 +89,7 @@ func Load() (*Config, error) {
 		AuthEnabled:        getEnvBool("AUTH_ENABLED", false),
 		ServiceToken:       getEnv("SERVICE_TOKEN", ""),
 		APIKeys:            parseAPIKeys(getEnv("API_KEYS", "")),
+		MaxUploadSizeMB:    getEnvInt("MAX_UPLOAD_SIZE_MB", 50),
 	}
 
 	if cfg.WorkerID == "" {

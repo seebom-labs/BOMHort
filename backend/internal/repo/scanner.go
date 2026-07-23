@@ -80,13 +80,8 @@ func (s *Scanner) Scan() ([]FileInfo, error) {
 			return nil
 		}
 
-		fileType := ""
-		switch {
-		case strings.HasSuffix(name, ".openvex.json"), strings.HasSuffix(name, ".vex.json"):
-			fileType = "vex"
-		case strings.HasSuffix(name, ".spdx.json"), strings.HasSuffix(name, ".cdx.json"), strings.HasSuffix(name, ".json"):
-			fileType = "sbom"
-		default:
+		fileType, ok := ClassifyFileType(name)
+		if !ok {
 			return nil
 		}
 
@@ -115,6 +110,22 @@ func (s *Scanner) Scan() ([]FileInfo, error) {
 	}
 
 	return files, nil
+}
+
+// ClassifyFileType classifies a file by name into "vex", "sbom", or not-ok.
+// Matching is case-insensitive on the extension; callers with a raw filename
+// should lowercase it first (e.g. strings.ToLower(name)) for consistent results.
+// Shared by the local-directory Scan() and the push-model upload endpoint so
+// the two ingestion paths never drift out of sync on what counts as a valid file.
+func ClassifyFileType(name string) (fileType string, ok bool) {
+	switch {
+	case strings.HasSuffix(name, ".openvex.json"), strings.HasSuffix(name, ".vex.json"):
+		return "vex", true
+	case strings.HasSuffix(name, ".spdx.json"), strings.HasSuffix(name, ".cdx.json"), strings.HasSuffix(name, ".json"):
+		return "sbom", true
+	default:
+		return "", false
+	}
 }
 
 func hashFile(path string) (string, error) {
