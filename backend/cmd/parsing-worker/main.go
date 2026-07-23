@@ -97,6 +97,7 @@ func main() {
 				Prefix:       b.Prefix,
 				UsePathStyle: b.UsePathStyle,
 				UseSSL:       b.UseSSL,
+				SkipScan:     b.SkipScan,
 			}
 		}
 		var err error

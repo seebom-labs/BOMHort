@@ -109,7 +109,7 @@ spec:
           volumeMounts:
             - name: sbom-data
               mountPath: {{ .Values.sbomSource.mountPath }}
-              readOnly: true
+              readOnly: {{ not .Values.sbomSource.writable }}
             {{- if .Values.licenseExceptions.enabled }}
             - name: license-exceptions
               mountPath: {{ .Values.licenseExceptions.mountPath }}

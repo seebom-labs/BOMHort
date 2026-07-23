@@ -163,6 +163,7 @@ func ingestS3Buckets(ctx context.Context, cfg *config.Config, chClient *clickhou
 			Prefix:       b.Prefix,
 			UsePathStyle: b.UsePathStyle,
 			UseSSL:       b.UseSSL,
+			SkipScan:     b.SkipScan,
 		}
 		if b.Cluster != "" {
 			bucketCluster[b.Name] = b.Cluster

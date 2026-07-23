@@ -19,6 +19,17 @@ github:
 s3:
   # JSON array of bucket configs. Injected as S3_BUCKETS env var.
   # Example: [{"name":"cncf-subproject-sboms","region":"us-east-1"},{"name":"cncf-project-sboms","region":"us-east-1"}]
+  #
+  # Push-model uploads (POST /api/v1/sboms/upload, #135): mark exactly one
+  # bucket "skipScan": true to designate it as the push target. skipScan
+  # buckets are excluded from the ingestion-watcher's periodic ListObjects
+  # scan — otherwise pushed objects would be rediscovered and re-enqueued
+  # under a different dedup hash (S3 ETag vs. the SHA256 the upload endpoint
+  # already used) — but remain reachable for GetObject/PutObject. If no
+  # skipScan bucket is configured, the upload endpoint falls back to writing
+  # under SBOM_DIR/pushed/ (see sbomSource.writable below).
+  # Example with a push bucket:
+  # [{"name":"cncf-subproject-sboms","region":"us-east-1"},{"name":"bomhort-pushed","region":"us-east-1","skipScan":true}]
   buckets: ""
   # Shared credentials (applied to all buckets without their own keys).
   # For public buckets, leave empty.
@@ -67,6 +78,20 @@ sbomSource:
   pvcName: bomhort-sbom-data
   mountPath: /data/sboms
   storageSize: 1Gi
+  # PVC access mode. Change to ReadWriteMany (needs a storage class that
+  # supports it — e.g. EFS, Azure Files, most NFS-backed provisioners) if you
+  # enable sbomSource.writable below AND run apiGateway.replicas > 1: the
+  # default ReadWriteOnce only lets one pod mount the volume read-write at a
+  # time, which would make push-model uploads fail on every replica but one.
+  accessMode: ReadWriteOnce
+  # Mount the API Gateway's sbom-data volume read-write instead of read-only.
+  # Only needed so POST /api/v1/sboms/upload (#135) can fall back to writing
+  # under SBOM_DIR/pushed/ when no S3 skipScan bucket is configured (see
+  # s3.buckets above). Leave false (default) if uploads should go to S3, or
+  # if the upload endpoint isn't used — a write-capable PVC mount is a
+  # meaningfully larger blast radius than the read-only default, so this is
+  # opt-in.
+  writable: false
 
 # git-sync: alternative to S3 — pulls SBOMs from a Git repository into a PVC.
 # Only suitable for small repos (< 1 GB). For large-scale ingestion, use S3 instead.
