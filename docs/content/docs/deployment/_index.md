@@ -538,7 +538,7 @@ Starting with v0.6.0, the project was renamed from **SeeBOM** to **BOMHort**. Th
 
 ### Migration steps
 
-The chart includes a built-in **data migration hook** that copies all ClickHouse tables from the old `seebom` instance to the new `bomhort` instance using ClickHouse's `remote()` function. It runs as a Helm post-upgrade Job.
+The chart includes a built-in **data migration hook** that copies all ClickHouse tables from the old `seebom` instance to the new `bomhort` instance using ClickHouse's `remote()` function. It runs as a Helm post-install/post-upgrade Job.
 
 #### 1. Keep the old deployment running
 
@@ -558,7 +558,25 @@ kubectl create secret generic clickhouse-migration-source \
   -n bomhort
 ```
 
-#### 3. Deploy with migration enabled
+#### 3. Add the `cluster` column to the old database
+
+v0.6.0 introduces a `cluster` column (migration 012). The data migration Job uses `SELECT * FROM remote(...)`, which requires matching schemas. Add the column to the source tables first:
+
+```bash
+kubectl exec -n seebom chi-seebom-clickhouse-seebom-cluster-0-0-0 -c clickhouse -- \
+  clickhouse-client --database=seebom --password="$OLD_PW" --multiquery <<'EOF'
+ALTER TABLE sboms ADD COLUMN IF NOT EXISTS cluster LowCardinality(String) DEFAULT '';
+ALTER TABLE sbom_packages ADD COLUMN IF NOT EXISTS cluster LowCardinality(String) DEFAULT '';
+ALTER TABLE vulnerabilities ADD COLUMN IF NOT EXISTS cluster LowCardinality(String) DEFAULT '';
+ALTER TABLE license_compliance ADD COLUMN IF NOT EXISTS cluster LowCardinality(String) DEFAULT '';
+ALTER TABLE ingestion_queue ADD COLUMN IF NOT EXISTS cluster LowCardinality(String) DEFAULT '';
+ALTER TABLE vex_statements ADD COLUMN IF NOT EXISTS cluster LowCardinality(String) DEFAULT '';
+EOF
+```
+
+This is safe and non-destructive — existing rows get an empty default value.
+
+#### 4. Deploy with migration enabled
 
 ```bash
 helm install bomhort oci://ghcr.io/seebom-labs/bomhort/charts/bomhort \
@@ -589,7 +607,7 @@ dataMigration:
       key: password
 ```
 
-#### 4. Monitor the migration
+#### 5. Monitor the migration
 
 ```bash
 kubectl logs -n bomhort job/bomhort-data-migration-1 -f
@@ -602,7 +620,7 @@ The Job migrates these tables (skipping any that are empty or already populated 
 
 The `dashboard_stats_mv` materialized view repopulates automatically.
 
-#### 5. Verify and clean up
+#### 6. Verify and clean up
 
 ```bash
 # Verify row counts match
