@@ -6,7 +6,7 @@
 # Usage:
 #   helm install bomhort ./deploy/helm/bomhort -f examples/kubernetes/values-headless.yaml
 #
-# All 19 REST API endpoints remain fully functional at the API Gateway service.
+# All 24 REST API endpoints remain fully functional at the API Gateway service.
 
 # Disable the Angular UI entirely (no Deployment, Service, or ConfigMaps).
 ui:
