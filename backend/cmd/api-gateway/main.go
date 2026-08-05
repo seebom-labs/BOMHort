@@ -533,7 +533,14 @@ func main() {
 	// under SBOM_DIR/pushed/, and enqueued as a normal IngestionJob — the
 	// parsing-worker processes it exactly like any other job, so no ingestion
 	// logic is duplicated here.
-	mux.HandleFunc("POST "+uploadPath, uploadHandler(cfg, chClient, uploadS3Store, pushBucket, hasPushBucket, localUploadWritable))
+	mux.HandleFunc("POST "+uploadPath, uploadHandler(uploadDeps{
+		cfg:           cfg,
+		store:         chClient,
+		s3Store:       uploadS3Store,
+		pushBucket:    pushBucket,
+		useS3Push:     hasPushBucket,
+		localWritable: localUploadWritable,
+	}))
 
 	// CORS + security middleware for Angular dev server.
 	// Order (outermost first): security headers → rate limit → CORS → auth → mux.
@@ -944,6 +951,28 @@ func isDirWritable(dir string) bool {
 	return true
 }
 
+// uploadDeps bundles uploadHandler's runtime dependencies and the storage-
+// routing decision resolved once at startup (see findS3PushBucket and
+// isDirWritable in main()), instead of six positional constructor
+// parameters — two of them bools, which read ambiguously and are easy to
+// transpose by accident at the call site.
+type uploadDeps struct {
+	cfg *config.Config
+
+	store   uploadStore
+	s3Store uploadObjectStore
+
+	// pushBucket is the resolved skipScan S3 bucket to push uploads to.
+	// Only meaningful when useS3Push is true; zero value otherwise.
+	pushBucket config.S3BucketConfig
+	// useS3Push is true when pushBucket is a valid push target and s3Store
+	// is usable — uploads route to S3 instead of the local fallback.
+	useS3Push bool
+	// localWritable is true when cfg.SBOMDir/pushed is writable — the
+	// local-filesystem fallback used when useS3Push is false.
+	localWritable bool
+}
+
 // uploadHandler implements push-model SBOM/VEX upload (#135). It authenticates
 // via the standard middleware chain, hashes and dedups the body against
 // ClickHouse, persists it to whichever push-storage backend is configured —
@@ -951,7 +980,14 @@ func isDirWritable(dir string) bool {
 // and enqueues a normal IngestionJob. The existing parsing-worker picks it up
 // unmodified, whether the source is s3:// or a local path — no ingestion
 // logic is duplicated here.
-func uploadHandler(cfg *config.Config, store uploadStore, s3Store uploadObjectStore, pushBucket config.S3BucketConfig, useS3Push, localWritable bool) http.HandlerFunc {
+func uploadHandler(deps uploadDeps) http.HandlerFunc {
+	cfg := deps.cfg
+	store := deps.store
+	s3Store := deps.s3Store
+	pushBucket := deps.pushBucket
+	useS3Push := deps.useS3Push
+	localWritable := deps.localWritable
+
 	return func(w http.ResponseWriter, r *http.Request) {
 		// A write endpoint being open by default is a real risk, independent of
 		// authMiddleware's default-off posture (which is an accepted default for
