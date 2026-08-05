@@ -358,7 +358,7 @@ sboms/*.spdx.json + *.openvex.json
              │
              ▼
 ┌─────────────────────────┐
-│   API Gateway           │  24 REST endpoints, stateless
+│   API Gateway           │  25 REST endpoints, stateless
 │   (Go binary)           │
 └────────────┬────────────┘
              │

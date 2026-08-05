@@ -213,6 +213,13 @@ sbomSource:
 
 If neither a `skipScan` bucket nor a writable `SBOM_DIR` is configured, the API Gateway logs a startup warning and `POST /api/v1/sboms/upload` returns `503 Service Unavailable` for every request rather than failing with a confusing storage error.
 
+**Sizing the write budget.** The gateway's rate limit is request-based (100 requests / 10s per IP), not byte-based, so the effective per-IP write budget is `100 × MAX_UPLOAD_SIZE_MB` per 10 seconds — 5 GB at the 50 MB default. Set `apiGateway.maxUploadSizeMB` to the smallest value that fits your largest SBOM, especially if the endpoint is reachable from untrusted networks:
+
+```yaml
+apiGateway:
+  maxUploadSizeMB: 25
+```
+
 ---
 
 ## 2. License Exceptions

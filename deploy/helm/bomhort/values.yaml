@@ -147,6 +147,13 @@ parsingWorker:
 apiGateway:
   replicas: 2
   port: 8080
+  # Max accepted body size for POST /api/v1/sboms/upload (#135), in MB.
+  # Injected as MAX_UPLOAD_SIZE_MB; leave empty to use the binary's own
+  # default (50). Note that the gateway's rate limit is request-based
+  # (100 requests / 10s per IP), not byte-based — so this value also sets the
+  # per-IP write budget. Lower it if the upload endpoint is exposed to
+  # untrusted networks.
+  maxUploadSizeMB: 50
   service:
     type: ClusterIP
     port: 80

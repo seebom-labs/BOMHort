@@ -30,7 +30,7 @@ bomhort/
 │   ├── cmd/
 │   │   ├── ingestion-watcher/main.go   # K8s CronJob
 │   │   ├── parsing-worker/main.go      # SBOM + VEX processor
-│   │   ├── api-gateway/main.go         # REST API (24 endpoints)
+│   │   ├── api-gateway/main.go         # REST API (25 endpoints)
 │   │   └── cve-refresher/main.go       # Background CVE Refresh CronJob
 │   ├── internal/
 │   │   ├── spdx/              # SPDX JSON streaming parser
@@ -174,13 +174,14 @@ Angular UI (13 lazy-loaded routes, virtual scrolling, OnPush, dark mode)
        │ Custom CSS theme mountable without Angular rebuild
 ```
 
-## 3. API Endpoints (24)
+## 3. API Endpoints (25)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/healthz` | Health check |
 | GET | `/livez` | Liveness probe (always 200 if process alive) |
 | GET | `/readyz` | Readiness probe (checks ClickHouse connectivity) |
+| POST | `/api/v1/sboms/upload` | Push-model SBOM/VEX ingestion for CI/CD. Requires `AUTH_ENABLED=true` (self-enforced). Stages to a `skipScan` S3 bucket or `SBOM_DIR/pushed/`, then enqueues a normal ingestion job |
 | GET | `/api/v1/stats/dashboard` | Dashboard statistics (incl. VEX effective/suppressed, license breakdown) |
 | GET | `/api/v1/stats/dependencies?limit=N` | Top-N dependencies cross-project with vuln count |
 | GET | `/api/v1/stats/version-skew?page=&page_size=&search=` | Packages with inconsistent versions across projects (paginated, searchable) |

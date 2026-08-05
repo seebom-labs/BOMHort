@@ -354,20 +354,99 @@ func TestUploadHandler_InvalidVEXContent_Returns400(t *testing.T) {
 }
 
 func TestUploadHandler_InvalidSBOMContent_Returns400(t *testing.T) {
+	// Payloads that must never reach the queue. The trailing-data and bare-null
+	// cases are regressions: json.Decoder.Decode reads exactly one JSON value
+	// and ignores whatever follows it, and `null` decodes cleanly into any
+	// struct — so a probe-struct-based check accepted all three with a 202 and
+	// pushed the failure down into the worker.
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"not json at all", `this is not json at all`},
+		{"trailing data after object", `{"spdxVersion":"SPDX-2.3"} this is not json`},
+		{"two concatenated objects", `{"a":1}{"b":2}`},
+		{"bare null", `null`},
+		{"bare string", `"just-a-string"`},
+		{"bare number", `42`},
+		{"top-level array", `[1,2,3]`},
+		{"truncated object", `{"spdxVersion":`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := testUploadConfig(t)
+			store := &fakeUploadStore{}
+			h := localUploadHandler(cfg, store)
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/sboms/upload", bytes.NewReader([]byte(tc.body)))
+			req.Header.Set("X-Filename", "broken.spdx.json")
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400 for %q, got %d: %s", tc.body, rec.Code, rec.Body.String())
+			}
+			if len(store.enqueuedJobs) != 0 {
+				t.Errorf("invalid SBOM content must not enqueue a job")
+			}
+			assertNoFilesInPushedDir(t, cfg)
+		})
+	}
+}
+
+func TestUploadHandler_ValidSBOMShapes_Accepted(t *testing.T) {
+	// The stricter validation must not start rejecting legitimate SBOMs. Any
+	// JSON object is accepted — format detection stays in the parsing worker,
+	// so an unrecognized-but-well-formed object still has to get through.
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"spdx", `{"spdxVersion":"SPDX-2.3","name":"demo"}`},
+		{"cyclonedx", `{"bomFormat":"CycloneDX","specVersion":"1.5"}`},
+		{"in-toto envelope", `{"predicateType":"https://spdx.dev/Document","predicate":{}}`},
+		{"unrecognized but well-formed", `{"some":"json"}`},
+		{"empty object", `{}`},
+		{"object with leading whitespace", "\n\t  {\"spdxVersion\":\"SPDX-2.3\"}\n"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := testUploadConfig(t)
+			store := &fakeUploadStore{}
+			h := localUploadHandler(cfg, store)
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/sboms/upload", bytes.NewReader([]byte(tc.body)))
+			req.Header.Set("X-Filename", "project.spdx.json")
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusAccepted {
+				t.Fatalf("expected 202 for %q, got %d: %s", tc.body, rec.Code, rec.Body.String())
+			}
+			if len(store.enqueuedJobs) != 1 {
+				t.Errorf("expected 1 enqueued job, got %d", len(store.enqueuedJobs))
+			}
+		})
+	}
+}
+
+func TestUploadHandler_EmptyBody_Returns400(t *testing.T) {
 	cfg := testUploadConfig(t)
 	store := &fakeUploadStore{}
 	h := localUploadHandler(cfg, store)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/sboms/upload", bytes.NewReader([]byte(`this is not json at all`)))
-	req.Header.Set("X-Filename", "broken.spdx.json")
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/sboms/upload", bytes.NewReader(nil))
+	req.Header.Set("X-Filename", "empty.spdx.json")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for invalid SBOM content, got %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("expected 400 for empty body, got %d: %s", rec.Code, rec.Body.String())
 	}
 	if len(store.enqueuedJobs) != 0 {
-		t.Errorf("invalid SBOM content must not enqueue a job")
+		t.Errorf("empty body must not enqueue a job")
 	}
 	assertNoFilesInPushedDir(t, cfg)
 }
