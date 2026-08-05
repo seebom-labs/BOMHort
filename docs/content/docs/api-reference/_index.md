@@ -271,7 +271,7 @@ This endpoint refuses every request with `403 Forbidden` unless `AUTH_ENABLED=tr
 | `X-Filename` | ✅ | Original filename. Must end in `.spdx.json`, `.cdx.json`, `.openvex.json`, `.vex.json`, or a generic `.json` (format auto-detected downstream, same as local scans). Only the base name is used — any directory components are stripped before the file is stored. |
 | `Authorization` / `X-Service-Token` / `X-API-Key` | ✅ | Same credential options as the rest of the API — see [Authentication](#authentication). |
 
-**Body:** Raw SBOM or VEX JSON content (not multipart form data). Max size is `MAX_UPLOAD_SIZE_MB` (default 50 MB); larger bodies are rejected with `413`.
+**Body:** Raw SBOM or VEX JSON content (not multipart form data). Max size is `MAX_UPLOAD_SIZE_MB` (Helm: `apiGateway.maxUploadSizeMB`, default 50 MB); larger bodies are rejected with `413`.
 
 **Query Parameters:**
 
@@ -300,14 +300,14 @@ This endpoint refuses every request with `403 Forbidden` unless `AUTH_ENABLED=tr
 ```
 
 **Errors:**
-- `400` — Missing `X-Filename` header, unsupported file extension, empty body, or content that fails validation (invalid JSON for SBOM uploads; not a valid OpenVEX document for VEX uploads — see below)
+- `400` — Missing `X-Filename` header, unsupported file extension, empty body, or content that fails validation (SBOM uploads must be a single well-formed JSON object; VEX uploads must be a valid OpenVEX document — see below)
 - `403` — `AUTH_ENABLED` is not `true` on this instance
 - `413` — Body exceeds `MAX_UPLOAD_SIZE_MB`
 - `500` — Storage (S3 or local) or ingestion-queue failure
 - `503` — No push-storage backend is configured (no `skipScan` S3 bucket, and `SBOM_DIR` isn't writable)
 
 {{% alert title="Content validation" color="info" %}}
-VEX uploads are validated with the same OpenVEX parser the worker uses (a `@context` or at least one `statements` entry must be present) before anything is written to disk or enqueued. SBOM uploads get a lightweight JSON-validity and format-probe check, mirroring how the parsing worker auto-detects `bomFormat`/`spdxVersion`/in-toto `predicateType`; full parsing (package/component extraction) still happens in the parsing worker to avoid duplicating that pipeline here.
+VEX uploads are validated with the same OpenVEX parser the worker uses (a `@context` or at least one `statements` entry must be present) before anything is written to disk or enqueued. SBOM uploads must be a **single, well-formed JSON object** — bare scalars, `null`, top-level arrays, concatenated documents, and trailing data after the document are all rejected with `400`. Beyond that the shape is not constrained: format detection (`bomFormat`/`spdxVersion`/in-toto `predicateType`) and full parsing (package/component extraction) still happen in the parsing worker, so an unrecognized-but-well-formed object is accepted here and resolved downstream.
 {{% /alert %}}
 
 **Example:**

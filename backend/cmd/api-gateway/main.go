@@ -34,6 +34,11 @@ import (
 // the mux registration and the CORS per-route method scoping can't drift.
 const uploadPath = "/api/v1/sboms/upload"
 
+// uploadCleanupTimeout bounds the best-effort S3 RemoveObject issued when an
+// upload was already staged but its ingestion-job enqueue failed. Runs on a
+// fresh context (the request's may be cancelled), so it needs its own deadline.
+const uploadCleanupTimeout = 10 * time.Second
+
 // uuidPattern validates UUID path parameters to prevent injection.
 var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
@@ -1028,6 +1033,13 @@ func uploadHandler(cfg *config.Config, store uploadStore, s3Store uploadObjectSt
 		// Dedup: skip re-ingesting content BOMHort has already processed. This
 		// is checked before content validation so repeat pushes of a file
 		// that's already been ingested don't pay the parse cost again.
+		//
+		// Note: this check and the EnqueueJobs below are not atomic. Two
+		// concurrent uploads of identical content (across replicas, or on one
+		// replica) can both observe "not present" and both enqueue. That's
+		// accepted here rather than serialized: the parsing worker is already
+		// idempotent on re-ingested content (SBOMExists / VEXDocumentExists),
+		// so the worst case is one redundant parse, not duplicated data.
 		exists, err := store.HashExists(r.Context(), hash)
 		if err != nil {
 			log.Printf("ERROR: upload hash check for %s: %v", sanitizeLogParam(filename), err)
@@ -1061,18 +1073,33 @@ func uploadHandler(cfg *config.Config, store uploadStore, s3Store uploadObjectSt
 				return
 			}
 		default: // sbom
-			// Same top-level-key probe internal/sbom.Parse uses to pick a parser
-			// backend (bomFormat/spdxVersion/predicateType). We don't require one
-			// of them to be present — sbom.Parse falls back to the SPDX parser
-			// for unrecognized shapes and "handles unknown gracefully" — we only
-			// need to catch content that isn't even valid JSON.
-			var probe struct {
-				BomFormat     string `json:"bomFormat"`
-				SPDXVersion   string `json:"spdxVersion"`
-				PredicateType string `json:"predicateType"`
-			}
-			if err := json.NewDecoder(tmp).Decode(&probe); err != nil {
+			// We don't require a recognized format marker
+			// (bomFormat/spdxVersion/predicateType) to be present — sbom.Parse
+			// falls back to the SPDX parser for unrecognized shapes and handles
+			// unknown input gracefully. We only need to catch content that isn't
+			// a well-formed JSON document.
+			//
+			// Decode into json.RawMessage rather than a typed probe struct:
+			// Decode reads exactly one JSON value and silently ignores anything
+			// after it, and a bare `null` decodes successfully into any struct.
+			// Both would let malformed payloads through with a 202 and defer the
+			// failure to the worker — the exact outcome this check exists to
+			// prevent. dec.More() + the object-shape check below close that gap.
+			dec := json.NewDecoder(tmp)
+			var raw json.RawMessage
+			if err := dec.Decode(&raw); err != nil {
 				writeError(w, http.StatusBadRequest, "Invalid SBOM content: not valid JSON")
+				return
+			}
+			if dec.More() {
+				writeError(w, http.StatusBadRequest, "Invalid SBOM content: unexpected trailing data after the JSON document")
+				return
+			}
+			// Every supported SBOM format (SPDX, CycloneDX, in-toto envelope) is
+			// a JSON object at the top level. null / arrays / bare scalars are
+			// syntactically valid JSON but can never be a parseable SBOM.
+			if len(raw) == 0 || raw[0] != '{' {
+				writeError(w, http.StatusBadRequest, "Invalid SBOM content: expected a JSON object at the top level")
 				return
 			}
 		}
@@ -1127,13 +1154,26 @@ func uploadHandler(cfg *config.Config, store uploadStore, s3Store uploadObjectSt
 			JobType:    fileType,
 			Cluster:    cluster,
 		}
+		// Single-row insert, deliberately: the API contract returns job_id
+		// synchronously, so the row has to be durable before we respond — there
+		// is nothing to batch it with. This is the one place that departs from
+		// the project-wide "always batch inserts" rule; ingestion_queue is a
+		// low-volume control table, not a hot analytics path. If push traffic
+		// ever grows enough for the small-parts pressure to matter, enable
+		// ClickHouse async_insert=1 with wait_for_async_insert=1 rather than
+		// buffering job rows in the gateway.
 		if err := store.EnqueueJobs(r.Context(), []models.IngestionJob{job}); err != nil {
 			log.Printf("ERROR: upload enqueue for %s: %v", sanitizeLogParam(sourceFile), err)
 			// Best-effort cleanup so a failed enqueue doesn't leave an orphaned
-			// file/object behind.
+			// file/object behind. Deliberately not r.Context(): the request
+			// context may already be cancelled (that can be *why* the enqueue
+			// failed), which would cancel the cleanup too. Bounded by its own
+			// timeout so a hung S3 endpoint can't pin this goroutine forever.
 			if useS3Push {
 				if _, key, parseErr := s3client.ParseURI(sourceFile); parseErr == nil {
-					_ = s3Store.RemoveObject(context.Background(), pushBucket.Name, key)
+					cleanupCtx, cancel := context.WithTimeout(context.Background(), uploadCleanupTimeout)
+					_ = s3Store.RemoveObject(cleanupCtx, pushBucket.Name, key)
+					cancel()
 				}
 			} else {
 				_ = os.Remove(filepath.Join(cfg.SBOMDir, sourceFile))

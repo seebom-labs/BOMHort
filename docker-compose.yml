@@ -45,6 +45,8 @@ services:
       AUTH_ENABLED: ${AUTH_ENABLED:-false}
       SERVICE_TOKEN: ${SERVICE_TOKEN:-}
       API_KEYS: ${API_KEYS:-}
+      # Max body size for POST /api/v1/sboms/upload (requires AUTH_ENABLED=true)
+      MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-50}
       # S3 bucket access (needed for SBOM download from S3 sources)
       S3_BUCKETS: ${S3_BUCKETS:-}
       S3_BUCKET: ${S3_BUCKET:-}

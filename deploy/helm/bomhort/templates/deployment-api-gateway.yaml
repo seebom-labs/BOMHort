@@ -44,7 +44,7 @@ spec:
                 name: {{ .Release.Name }}-config
             - secretRef:
                 name: {{ .Release.Name }}-secret
-          {{- if or .Values.clickhouse.userPasswordSecret.enabled .Values.s3.credentialsSecret.enabled .Values.apiGateway.auth.enabled }}
+          {{- if or .Values.clickhouse.userPasswordSecret.enabled .Values.s3.credentialsSecret.enabled .Values.apiGateway.auth.enabled .Values.apiGateway.maxUploadSizeMB }}
           env:
             {{- if .Values.clickhouse.userPasswordSecret.enabled }}
             - name: CLICKHOUSE_PASSWORD
@@ -90,6 +90,10 @@ spec:
                   key: API_KEYS
                   {{- end }}
                   optional: true
+            {{- end }}
+            {{- if .Values.apiGateway.maxUploadSizeMB }}
+            - name: MAX_UPLOAD_SIZE_MB
+              value: {{ .Values.apiGateway.maxUploadSizeMB | quote }}
             {{- end }}
           {{- end }}
           livenessProbe:
