@@ -370,6 +370,12 @@ func TestUploadHandler_InvalidSBOMContent_Returns400(t *testing.T) {
 		{"not json at all", `this is not json at all`},
 		{"trailing data after object", `{"spdxVersion":"SPDX-2.3"} this is not json`},
 		{"two concatenated objects", `{"a":1}{"b":2}`},
+		// dec.More() is `peek() != ']' && peek() != '}'`, so a trailing bracket
+		// or brace reported "no more data" and these slipped through as valid.
+		// Only a second Decode returning io.EOF rules them out.
+		{"trailing close bracket", `{"spdxVersion":"SPDX-2.3"}]`},
+		{"trailing close brace", `{"spdxVersion":"SPDX-2.3"}}`},
+		{"trailing bracket then junk", `{"spdxVersion":"SPDX-2.3"}] garbage`},
 		{"bare null", `null`},
 		{"bare string", `"just-a-string"`},
 		{"bare number", `42`},
@@ -413,6 +419,7 @@ func TestUploadHandler_ValidSBOMShapes_Accepted(t *testing.T) {
 		{"unrecognized but well-formed", `{"some":"json"}`},
 		{"empty object", `{}`},
 		{"object with leading whitespace", "\n\t  {\"spdxVersion\":\"SPDX-2.3\"}\n"},
+		{"object with trailing whitespace", "{\"spdxVersion\":\"SPDX-2.3\"}  \n\t "},
 	}
 
 	for _, tc := range tests {
