@@ -1120,14 +1120,19 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			// after it, and a bare `null` decodes successfully into any struct.
 			// Both would let malformed payloads through with a 202 and defer the
 			// failure to the worker — the exact outcome this check exists to
-			// prevent. dec.More() + the object-shape check below close that gap.
+			// prevent. The trailing-data and object-shape checks below close that gap.
 			dec := json.NewDecoder(tmp)
 			var raw json.RawMessage
 			if err := dec.Decode(&raw); err != nil {
 				writeError(w, http.StatusBadRequest, "Invalid SBOM content: not valid JSON")
 				return
 			}
-			if dec.More() {
+			// A second Decode must hit io.EOF, i.e. nothing but whitespace follows
+			// the first document. Deliberately not dec.More(), which is
+			// `peek() != ']' && peek() != '}'` — that catches `{...}{...}` and
+			// `{...} junk`, but reports false for a trailing `]` or `}`, so
+			// `{"spdxVersion":"x"}]` would slip through as a valid document.
+			if err := dec.Decode(new(json.RawMessage)); err != io.EOF {
 				writeError(w, http.StatusBadRequest, "Invalid SBOM content: unexpected trailing data after the JSON document")
 				return
 			}
