@@ -62,6 +62,7 @@ func TestLoad_CustomEnv(t *testing.T) {
 	t.Setenv("SKIP_OSV", "true")
 	t.Setenv("SBOM_LIMIT", "500")
 	t.Setenv("WORKER_ID", "test-worker-1")
+	t.Setenv("MAX_UPLOAD_SIZE_MB", "250")
 
 	cfg, err := Load()
 	if err != nil {
@@ -94,6 +95,47 @@ func TestLoad_CustomEnv(t *testing.T) {
 	}
 	if cfg.WorkerID != "test-worker-1" {
 		t.Errorf("expected test-worker-1, got %s", cfg.WorkerID)
+	}
+	if cfg.MaxUploadSizeMB != 250 {
+		t.Errorf("expected 250, got %d", cfg.MaxUploadSizeMB)
+	}
+}
+
+func TestLoad_MaxUploadSizeMB_Default(t *testing.T) {
+	os.Unsetenv("MAX_UPLOAD_SIZE_MB")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	// The upload endpoint relies on this default being non-zero — a zero here
+	// would make http.MaxBytesReader reject every request body.
+	if cfg.MaxUploadSizeMB != 50 {
+		t.Errorf("expected default MaxUploadSizeMB=50, got %d", cfg.MaxUploadSizeMB)
+	}
+}
+
+func TestLoad_S3Buckets_SkipScan(t *testing.T) {
+	// skipScan marks the dedicated push-upload target (#135): excluded from the
+	// ingestion watcher's ListObjects scan, still usable for Get/PutObject.
+	// Absent means false, so existing configs keep being scanned.
+	t.Setenv("S3_BUCKETS", `[{"name":"scanned-bucket"},{"name":"push-bucket","skipScan":true}]`)
+	os.Unsetenv("S3_BUCKET")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if len(cfg.S3Buckets) != 2 {
+		t.Fatalf("expected 2 S3 buckets, got %d", len(cfg.S3Buckets))
+	}
+	if cfg.S3Buckets[0].SkipScan {
+		t.Error("bucket[0].SkipScan = true, want false when the field is absent")
+	}
+	if !cfg.S3Buckets[1].SkipScan {
+		t.Error("bucket[1].SkipScan = false, want true")
 	}
 }
 
@@ -417,4 +459,3 @@ func TestLoad_S3SharedSettingsInheritance(t *testing.T) {
 		t.Error("bucket-b.UseSSL should be false (own setting)")
 	}
 }
-

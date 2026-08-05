@@ -50,7 +50,7 @@ BOMHort is transitioning from a single-instance SBOM visualization tool into an 
 |:------:|-------|-------------|
 | ✅ | [~~#132 — Cluster listing endpoint~~](https://github.com/seebom-labs/BOMHort/issues/132) | First consumer-visible multi-cluster feature. |
 | ✅ | [~~#133 — Cluster-detail endpoints~~](https://github.com/seebom-labs/BOMHort/issues/133) | Per-cluster deep-links for frontend routing. |
-| 🔲 | [#135 — SBOM Upload (Push Model)](https://github.com/seebom-labs/BOMHort/issues/135) | Accept SBOMs from CI/CD pipelines via POST API. |
+| ✅ | [~~#135 — SBOM Upload (Push Model)~~](https://github.com/seebom-labs/BOMHort/issues/135) | Accept SBOMs from CI/CD pipelines via POST API. |
 | 🔲 | [#138 — Namespace filtering](https://github.com/seebom-labs/BOMHort/issues/138) | Sub-cluster granularity for enterprise teams. |
 | 🔲 | [#140 — Workload vulnerability summary](https://github.com/seebom-labs/BOMHort/issues/140) | Image → posture cross-reference for compliance dashboards. |
 | 🔲 | [#62 — Exportable Auditor Reports](https://github.com/seebom-labs/BOMHort/issues/62) | PDF/CSV compliance exports for CRA audits. |
@@ -77,7 +77,7 @@ After Phase 2 completes, BOMHort reaches **v1.0.0** — the first stable release
 | Cluster-aware data model (schema stable) | ✅ | [#131](https://github.com/seebom-labs/BOMHort/issues/131) |
 | Cluster listing + detail endpoints | ✅ | [#132](https://github.com/seebom-labs/BOMHort/issues/132), [#133](https://github.com/seebom-labs/BOMHort/issues/133) |
 | Namespace filtering | 🔲 | [#138](https://github.com/seebom-labs/BOMHort/issues/138) |
-| SBOM Upload endpoint | 🔲 | [#135](https://github.com/seebom-labs/BOMHort/issues/135) |
+| SBOM Upload endpoint | ✅ | [#135](https://github.com/seebom-labs/BOMHort/issues/135) |
 | CycloneDX parsing | ✅ | [#55](https://github.com/seebom-labs/BOMHort/issues/55) |
 | Enhanced health probes | ✅ | [#137](https://github.com/seebom-labs/BOMHort/issues/137) |
 | Versioned documentation | 🔲 | [#145](https://github.com/seebom-labs/BOMHort/issues/145) |
