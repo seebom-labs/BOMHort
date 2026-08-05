@@ -42,7 +42,7 @@ The sequencing is driven by dependency chains: multi-cluster support must land b
 |---|-------|-----------|
 | ~~#132~~ | ~~Cluster listing endpoint~~ | ✅ **Done** — `GET /api/v1/clusters`. |
 | ~~#133~~ | ~~Cluster-detail endpoints~~ | ✅ **Done** — `GET /api/v1/clusters/{name}/stats` and `/sboms`. |
-| #135 | SBOM Upload (Push Model) | Critical for CI/CD integration. Depends on auth (#134) and cluster model (#131). |
+| ~~#135~~ | ~~SBOM Upload (Push Model)~~ | ✅ **Done** — `POST /api/v1/sboms/upload`. Requires `AUTH_ENABLED=true` (self-enforced by the handler). Routes to a `skipScan` S3 bucket or `SBOM_DIR/pushed/`, then enqueues a normal ingestion job. |
 | #138 | Namespace filtering | Sub-cluster granularity. Enterprise teams operate in namespaces, not just clusters. |
 | #140 | Workload vulnerability summary | The key cross-reference: image → posture. Powers compliance dashboards. |
 | #62 | Exportable Auditor Reports (PDF/CSV) | CRA compliance requires offline documentation. Auditors don't use UIs. |
@@ -69,7 +69,7 @@ After Phase 2 completes, BOMHort reaches **v1.0.0** — the first stable release
 - [x] ~~Cluster-aware schema~~ (#131)
 - [x] ~~Cluster listing + detail endpoints~~ (#132, #133)
 - [ ] All namespace endpoints finalized (#138)
-- [ ] Upload endpoint stable (#135)
+- [x] ~~Upload endpoint stable~~ (#135)
 - [x] ~~CycloneDX parsing~~ (#55)
 - [x] ~~Health probes~~ (#137)
 - [ ] Versioned docs (#145)

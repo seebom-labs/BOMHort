@@ -21,7 +21,7 @@ Kubernetes-native SBOM platform as a monorepo. Go backend with four binaries (Cr
 |--------|------|---------|
 | `ingestion-watcher` | K8s CronJob | Scans SBOM/VEX directory, hash-dedup, enqueues jobs |
 | `parsing-worker` | Deployment (N replicas) | Processes SBOMs (SPDX→ClickHouse), VEX files, OSV lookups, license resolution, compliance checks |
-| `api-gateway` | Deployment | Stateless REST API (24 endpoints) |
+| `api-gateway` | Deployment | Stateless REST API (25 endpoints) |
 | `cve-refresher` | K8s CronJob (daily) | Checks all known PURLs for newly disclosed CVEs |
 
 ## Data Flow
