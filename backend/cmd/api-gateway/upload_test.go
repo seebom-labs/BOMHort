@@ -91,7 +91,11 @@ func testUploadConfig(t *testing.T) *config.Config {
 // filesystem fallback path (no S3 skipScan bucket configured) — the mode
 // most tests in this file exercise.
 func localUploadHandler(cfg *config.Config, store uploadStore) http.HandlerFunc {
-	return uploadHandler(cfg, store, nil, config.S3BucketConfig{}, false, true)
+	return uploadHandler(uploadDeps{
+		cfg:           cfg,
+		store:         store,
+		localWritable: true,
+	})
 }
 
 // assertNoFilesInPushedDir fails the test if SBOM_DIR/pushed contains any
@@ -197,7 +201,7 @@ func TestUploadHandler_NoStorageConfigured_Returns503(t *testing.T) {
 	cfg := testUploadConfig(t)
 	store := &fakeUploadStore{}
 	// useS3Push=false, localWritable=false: neither storage backend usable.
-	h := uploadHandler(cfg, store, nil, config.S3BucketConfig{}, false, false)
+	h := uploadHandler(uploadDeps{cfg: cfg, store: store})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/sboms/upload", bytes.NewReader([]byte(`{"spdxVersion":"SPDX-2.3"}`)))
 	req.Header.Set("X-Filename", "project.spdx.json")
@@ -525,7 +529,13 @@ func TestUploadHandler_S3Push_HappyPath(t *testing.T) {
 	store := &fakeUploadStore{}
 	s3Store := &fakeS3Store{}
 	pushBucket := config.S3BucketConfig{Name: "push-bucket", Prefix: "myprefix"}
-	h := uploadHandler(cfg, store, s3Store, pushBucket, true, false)
+	h := uploadHandler(uploadDeps{
+		cfg:        cfg,
+		store:      store,
+		s3Store:    s3Store,
+		pushBucket: pushBucket,
+		useS3Push:  true,
+	})
 
 	body := []byte(`{"spdxVersion": "SPDX-2.3"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/sboms/upload", bytes.NewReader(body))
@@ -575,7 +585,13 @@ func TestUploadHandler_S3Push_PutObjectFailure(t *testing.T) {
 	store := &fakeUploadStore{}
 	s3Store := &fakeS3Store{putErr: errors.New("s3 unavailable")}
 	pushBucket := config.S3BucketConfig{Name: "push-bucket"}
-	h := uploadHandler(cfg, store, s3Store, pushBucket, true, false)
+	h := uploadHandler(uploadDeps{
+		cfg:        cfg,
+		store:      store,
+		s3Store:    s3Store,
+		pushBucket: pushBucket,
+		useS3Push:  true,
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/sboms/upload", bytes.NewReader([]byte(`{"spdxVersion":"SPDX-2.3"}`)))
 	req.Header.Set("X-Filename", "project.spdx.json")
@@ -595,7 +611,13 @@ func TestUploadHandler_S3Push_EnqueueFailure_RemovesObject(t *testing.T) {
 	store := &fakeUploadStore{enqueueErr: errors.New("clickhouse insert failed")}
 	s3Store := &fakeS3Store{}
 	pushBucket := config.S3BucketConfig{Name: "push-bucket"}
-	h := uploadHandler(cfg, store, s3Store, pushBucket, true, false)
+	h := uploadHandler(uploadDeps{
+		cfg:        cfg,
+		store:      store,
+		s3Store:    s3Store,
+		pushBucket: pushBucket,
+		useS3Push:  true,
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/sboms/upload", bytes.NewReader([]byte(`{"spdxVersion":"SPDX-2.3"}`)))
 	req.Header.Set("X-Filename", "project.spdx.json")
