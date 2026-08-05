@@ -85,6 +85,7 @@ cp .env.example .env
 | `AUTH_ENABLED` | `false` | Enable API authentication middleware. When `false` (default), all API endpoints are unauthenticated. |
 | `SERVICE_TOKEN` | *(empty)* | Shared secret for upstream proxy/gateway integrations. Accepted via `Authorization: Bearer <token>` or `X-Service-Token: <token>`. |
 | `API_KEYS` | *(empty)* | Comma-separated list of API keys for direct API consumers (CI/CD, scripts). Accepted via `X-API-Key: <key>`. |
+| `MAX_UPLOAD_SIZE_MB` | `50` | Max request body size for `POST /api/v1/sboms/upload`. The endpoint requires `AUTH_ENABLED=true`. |
 | `CUSTOM_THEME` | (example file) | Path to a custom CSS theme file for the UI. See "Custom Theme" section. |
 | `UI_CONFIG` | `./ui/public/ui-config.json` | Path to a JSON file with UI text overrides (brand name, dashboard texts, disclaimer). See "Site Configuration" section. |
 | `S3_BUCKETS` | *(empty)* | JSON array of S3 bucket configs (supports per-bucket `cluster` override and a `skipScan` flag for the push-upload target). See "S3 Ingestion" section. |
