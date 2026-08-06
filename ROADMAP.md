@@ -1,6 +1,6 @@
 # BOMHort Product Roadmap
 
-> Last updated: 2026-07-15
+> Last updated: 2026-07-25
 > Project Board: https://github.com/orgs/seebom-labs/projects/1
 
 ## Executive Summary
@@ -43,6 +43,7 @@ The sequencing is driven by dependency chains: multi-cluster support must land b
 | ~~#132~~ | ~~Cluster listing endpoint~~ | ✅ **Done** — `GET /api/v1/clusters`. |
 | ~~#133~~ | ~~Cluster-detail endpoints~~ | ✅ **Done** — `GET /api/v1/clusters/{name}/stats` and `/sboms`. |
 | ~~#135~~ | ~~SBOM Upload (Push Model)~~ | ✅ **Done** — `POST /api/v1/sboms/upload`. Requires `AUTH_ENABLED=true` (self-enforced by the handler). Routes to a `skipScan` S3 bucket or `SBOM_DIR/pushed/`, then enqueues a normal ingestion job. |
+| #256 | Tier-2 fidelity capture (persist original SBOM bytes at ingest) | **v1.0 blocker.** Forward-only: originals can only be captured at ingest, so this must land before 1.0 or historical SBOMs permanently lose round-trip/export fidelity under infinite retention. Bytes go to a configurable blob store (source S3 bucket under an ignored prefix, dedicated bucket, or volume) — **not** ClickHouse. Bundles with #135/#144; batch its additive migration with the #57 `ADD COLUMN` wave. Enables #255. |
 | #138 | Namespace filtering | Sub-cluster granularity. Enterprise teams operate in namespaces, not just clusters. |
 | #140 | Workload vulnerability summary | The key cross-reference: image → posture. Powers compliance dashboards. |
 | #62 | Exportable Auditor Reports (PDF/CSV) | CRA compliance requires offline documentation. Auditors don't use UIs. |
@@ -73,6 +74,7 @@ After Phase 2 completes, BOMHort reaches **v1.0.0** — the first stable release
 - [x] ~~CycloneDX parsing~~ (#55)
 - [x] ~~Health probes~~ (#137)
 - [ ] Versioned docs (#145)
+- [ ] Tier-2 fidelity capture: persist original SBOM at ingest (#256)
 
 ---
 
@@ -90,6 +92,7 @@ After Phase 2 completes, BOMHort reaches **v1.0.0** — the first stable release
 | #61 | OpenSSF Scorecard Integration | Upstream project health scoring. "Is this dependency well-maintained?" |
 | #82 | Lottery Factor | Single-maintainer risk detection. Supply chain resilience metric. |
 | #7 | CVE Fix Time (MTTR) | Mean-time-to-remediate is a key security KPI for audits (SOC2, ISO 27001). |
+| #255 | Editable/enriched SBOMs + enriched download (+ companion VEX + in-toto re-sign) | Enrich SBOMs with BOMHort data (resolved licenses, VEX, vuln context), then download an updated, standards-valid SBOM. Additive (new tables + endpoints), so post-1.0-safe without a major bump. Builds on #256 (fidelity capture). Overlay is `ReplacingMergeTree`-versioned (latest-wins); enriched export can be wrapped in a fresh in-toto attestation and cosign-signed with BOMHort as the transforming instance. |
 
 **Exit criteria:** BOMHort provides CRA readiness scoring, exploit-probability-based prioritization, dependency health metrics, and SBOM diff capabilities.
 
@@ -111,6 +114,8 @@ After Phase 2 completes, BOMHort reaches **v1.0.0** — the first stable release
                           └── Per-project policies (license, severity, exceptions)
 
 #143 (Witness) ── standalone (feeds into #141 CRA Dashboard)
+#256 (Fidelity capture) ──┬── bundles with #135 (Upload), #144 (Download)
+                          └── enables #255 (Enriched SBOM download + in-toto re-sign)
 #55 (CycloneDX) ── standalone
 #144 (SBOM Download) ── standalone
 #137 (Health Checks) ── standalone
