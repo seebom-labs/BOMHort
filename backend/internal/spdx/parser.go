@@ -11,6 +11,7 @@ import (
 	json "github.com/goccy/go-json"
 	"github.com/google/uuid"
 
+	"github.com/seebom-labs/bomhort/backend/internal/sbomname"
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
 
@@ -174,12 +175,17 @@ func Parse(r io.Reader, sourceFile, sha256Hash string) (result *ParseResult, err
 		tools = append(tools, c)
 	}
 
+	docName, err := sbomname.Resolve(data, doc.Name, sourceFile)
+	if err != nil {
+		return nil, err
+	}
+
 	sbom := models.SBOM{
 		IngestedAt:        now,
 		SBOMID:            sbomID,
 		SourceFile:        sourceFile,
 		SPDXVersion:       doc.SPDXVersion,
-		DocumentName:      doc.Name,
+		DocumentName:      docName,
 		DocumentNamespace: doc.DocumentNamespace,
 		SHA256Hash:        sha256Hash,
 		CreationDate:      creationDate,

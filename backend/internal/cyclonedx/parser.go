@@ -11,6 +11,7 @@ import (
 	json "github.com/goccy/go-json"
 	"github.com/google/uuid"
 
+	"github.com/seebom-labs/bomhort/backend/internal/sbomname"
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
 
@@ -33,8 +34,8 @@ type CDXDocument struct {
 
 // CDXMetadata holds BOM metadata.
 type CDXMetadata struct {
-	Timestamp string    `json:"timestamp"`
-	Tools     []CDXTool `json:"tools"`
+	Timestamp string        `json:"timestamp"`
+	Tools     []CDXTool     `json:"tools"`
 	Component *CDXComponent `json:"component"`
 }
 
@@ -47,11 +48,11 @@ type CDXTool struct {
 
 // CDXComponent represents a single component in the BOM.
 type CDXComponent struct {
-	Type    string       `json:"type"`
-	BomRef  string       `json:"bom-ref"`
-	Name    string       `json:"name"`
-	Version string       `json:"version"`
-	PURL    string       `json:"purl"`
+	Type     string       `json:"type"`
+	BomRef   string       `json:"bom-ref"`
+	Name     string       `json:"name"`
+	Version  string       `json:"version"`
+	PURL     string       `json:"purl"`
 	Licenses []CDXLicense `json:"licenses"`
 }
 
@@ -106,16 +107,18 @@ func Parse(data []byte, sourceFile, sha256Hash string) (*ParseResult, error) {
 		tools = append(tools, "Tool: "+toolStr)
 	}
 
-	// Document name: use metadata component name or serial number.
+	// Keep meaningful component names; resolve unusable ones before a version
+	// suffix can disguise a temporary/empty name as a meaningful document name.
 	docName := ""
 	if doc.Metadata.Component != nil {
 		docName = doc.Metadata.Component.Name
-		if doc.Metadata.Component.Version != "" {
+		if !sbomname.NeedsFallback(docName) && doc.Metadata.Component.Version != "" {
 			docName += " " + doc.Metadata.Component.Version
 		}
 	}
-	if docName == "" {
-		docName = doc.SerialNumber
+	docName, err = sbomname.Resolve(data, docName, sourceFile)
+	if err != nil {
+		return nil, err
 	}
 
 	sbom := models.SBOM{
@@ -224,4 +227,3 @@ func extractLicense(lics []CDXLicense) string {
 	}
 	return strings.Join(parts, " AND ")
 }
-

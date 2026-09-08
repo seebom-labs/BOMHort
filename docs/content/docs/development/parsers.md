@@ -69,6 +69,50 @@ The [protobom](https://github.com/protobom/protobom) backend provides maximum fo
 - ❌ Does not handle in-toto envelopes out-of-the-box
 - ❌ Slight parsing overhead vs. the tuned built-in parsers
 
+## Document name fallback
+
+Both parser backends share `internal/sbomname` for empty or temporary SBOM names.
+For example, a source document named `tmp.ABC123xyz` describing
+`example-org/widget` version `v1.2.3` is stored and displayed as
+**`example-org/widget v1.2.3`**.
+
+The conservative rules are:
+
+1. Preserve a meaningful existing document name exactly, including existing formatting.
+   Fallback detection recognizes whitespace-only names, `tmp`, and
+   `tmp.` followed by at least six ASCII alphanumeric characters, including
+   absolute filesystem paths ending in that pattern. It does not rewrite names
+   merely containing `tmp`, such as `tmp-utils` or `org/tmp.tool`.
+2. For SPDX JSON, use exactly one explicitly described package from
+   `documentDescribes`, a `DESCRIBES` relationship originating at the document,
+   or a `DESCRIBED_BY` relationship targeting the document. Append its version
+   unless empty or `NOASSERTION`, `NONE`, or `UNKNOWN`.
+3. Do not guess from package array order or dependency-graph roots. Multiple or
+   dangling root references, duplicate package IDs, and temporary/empty root names
+   use the source fallback instead. Redundant references to the same root are fine.
+4. For CycloneDX JSON, use `metadata.component` name/version, then a usable
+   `serialNumber`. Ordinary dependencies are not treated as metadata components.
+5. Otherwise use the full S3 object key (preserving project/version context), or
+   the basename of a local/HTTP source, removing `.spdx.json`, `_spdx.json`,
+   `.cdx.json`, or `.json`. URL credentials, query strings, and fragments are not
+   part of the label. If no usable source remains, use `Unnamed SBOM`.
+
+The built-in in-toto parser applies the same rule to its SPDX predicate. This does
+not add in-toto support to protobom. For already parsed XML without a name, the
+shared helper uses the source fallback rather than attempting JSON root extraction.
+
+Original SBOM bytes, source URI, hash/ID, namespace, and package identities are
+unchanged. A bounded, quoted log entry records the original name, resolved name,
+and fallback reason. The original name remains available in the source SBOM;
+there is no new database column or raw-name API field.
+
+**Upgrade note:** the resolved name is persisted in `document_name`. Deploying
+new worker images does not rewrite existing rows: plan re-processing of existing
+SBOMs, with backups before any destructive development reset helper. Re-running
+the watcher alone skips unchanged files. Project-scoped license exceptions must
+use the exact resolved document name (including the version), not the old `tmp.*`
+name or the separately grouped S3 project label. No automatic scope aliases are added.
+
 ## Configuration
 
 ### Environment Variable
@@ -132,7 +176,7 @@ When `USE_PROTOBOM=true`, **all** SBOM parsing is routed through protobom — in
 |-----------------|-------------------|-------|
 | `specVersion` | `SBOM.SPDXVersion` | Stored as `"CycloneDX-1.5"` |
 | `serialNumber` | `SBOM.DocumentNamespace` | URN format |
-| `metadata.component.name` | `SBOM.DocumentName` | With version appended |
+| `metadata.component.name` | `SBOM.DocumentName` | With version appended; unusable names use the shared fallback above |
 | `metadata.timestamp` | `SBOM.CreationDate` | RFC3339 |
 | `metadata.tools[].name` | `SBOM.CreatorTools` | Prefixed with "Tool: " |
 | `components[].bom-ref` | `PackageSPDXIDs` | Used as node identifier |

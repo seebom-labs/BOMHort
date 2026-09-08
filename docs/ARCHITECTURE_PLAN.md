@@ -174,6 +174,31 @@ Angular UI (13 lazy-loaded routes, virtual scrolling, OnPush, dark mode)
        │ Custom CSS theme mountable without Angular rebuild
 ```
 
+### Document name fallback
+
+All three parser adapters use `internal/sbomname` to resolve empty or temporary
+document names before returning metadata to the worker. Meaningful existing names
+are preserved verbatim. For SPDX JSON (including the built-in in-toto path), the
+fallback uses exactly one explicitly described package from `documentDescribes`,
+document-originating `DESCRIBES`, or inverse `DESCRIBED_BY`, and appends its known
+version. Duplicate references are deduplicated; multiple, dangling, or duplicate
+package IDs do not cause an arbitrary dependency to be selected. Both parser
+backends inspect the same source metadata rather than relying on inferred graph roots.
+
+CycloneDX uses its metadata component, retaining the serial-number fallback.
+If there is no usable unambiguous root, use the S3 object key or local/HTTP basename
+without the SBOM JSON suffix, finally `Unnamed SBOM`. The extra JSON metadata pass
+is limited to unusable names; already parsed XML can fall back to its source label.
+Quoted, bounded logs record the original and resolved names. Raw source documents,
+source URIs, checksums, SBOM IDs, package arrays, and schemas are not changed.
+
+The resolved value is stored in the existing `document_name` column, not computed
+only by the UI. Existing rows therefore require re-processing; a watcher run alone
+does not bypass deduplication. Project-scoped license rules use this exact resolved
+name, including its version, without implicit aliases for the old `tmp.*` value.
+S3 project grouping continues to use the source path. See the
+[producer-facing fix report](reports/2026-09-08-temporary-sbom-document-names.md).
+
 ## 3. API Endpoints (25)
 
 | Method | Endpoint | Description |

@@ -15,6 +15,7 @@ import (
 	"github.com/protobom/protobom/pkg/reader"
 	"github.com/protobom/protobom/pkg/sbom"
 
+	"github.com/seebom-labs/bomhort/backend/internal/sbomname"
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
 
@@ -37,7 +38,16 @@ func Parse(data []byte, sourceFile, sha256Hash string) (*ParseResult, error) {
 		return nil, fmt.Errorf("protobom: failed to parse %s: %w", sourceFile, err)
 	}
 
-	return convertDocument(doc, sourceFile, sha256Hash)
+	result, err := convertDocument(doc, sourceFile, sha256Hash)
+	if err != nil {
+		return nil, err
+	}
+	name, err := sbomname.Resolve(data, result.SBOM.DocumentName, sourceFile)
+	if err != nil {
+		return nil, err
+	}
+	result.SBOM.DocumentName = name
+	return result, nil
 }
 
 // ParseReader reads from an io.Reader and parses via protobom.
@@ -231,4 +241,3 @@ func detectFormat(doc *sbom.Document) string {
 
 	return "Unknown"
 }
-

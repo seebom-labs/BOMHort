@@ -119,6 +119,24 @@ Changes to **VEX files** do **not** require a full re-ingestion. VEX matching is
 
 ---
 
+## Why are my SBOMs named `tmp.*`?
+
+Some producer pipelines put a temporary checkout-directory name into the SPDX
+document's top-level `name`, even when the S3 object key and described root package
+are correct. Renaming only the object does not correct these source metadata.
+
+BOMHort's built-in and protobom parsers now replace empty/temporary document names
+with an unambiguous described package name and version, or a source label when
+that is unavailable. Good names and original downloaded documents are not changed.
+See [Document name fallback](/docs/development/parsers/#document-name-fallback).
+
+If old entries still display `tmp.*`, deploy worker images containing the fix and
+plan re-processing of those SBOMs. An ordinary watcher run or Argo sync does not
+rewrite stored rows because unchanged files are deduplicated. Review project-scoped
+license exceptions against the new exact `document_name`, including its version.
+The producer should still fix its generated document name rather than relying only
+on downstream display fallbacks.
+
 ## How do I check ingestion progress?
 
 ```bash

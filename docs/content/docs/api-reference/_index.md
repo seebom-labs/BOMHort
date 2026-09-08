@@ -324,6 +324,16 @@ curl -X POST http://localhost:8080/api/v1/sboms/upload \
 
 Paginated list of all ingested SBOMs.
 
+**Document names:** `document_name` is the name stored at ingestion, also used by
+the detail and other SBOM-related endpoints. Meaningful source names are preserved.
+Empty or temporary names such as `tmp.ABC123xyz` fall back to a uniquely described
+root package plus version (for example `example-org/widget v1.2.3`), then a source
+label, finally `Unnamed SBOM`. See [the complete parser rules](/docs/development/parsers/#document-name-fallback).
+Source bytes, hashes, SBOM IDs, and the original download are unchanged; the API
+does not introduce a separate original-name field. Older rows retain their stored
+names until re-processed. Project-scoped license exceptions match the exact resolved
+`document_name`, including the version; old temporary names are not aliases.
+
 **Parameters:**
 
 | Parameter | Type | Default | Description |

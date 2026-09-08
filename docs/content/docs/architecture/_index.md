@@ -211,7 +211,15 @@ Two parser backends are available:
 - **Built-in (default)** — Lightweight, high-performance parsers using `goccy/go-json`. Zero additional dependencies. Best for production with known formats.
 - **Protobom (opt-in)** — Uses [github.com/protobom/protobom](https://github.com/protobom/protobom) for maximum format coverage. Enable with `USE_PROTOBOM=true`.
 
-See the [Parsers documentation](/docs/development/parsers/) for configuration details and trade-offs.
+Both backends use `internal/sbomname` to replace empty or temporary (`tmp.*`)
+document names with an unambiguous described root package and version, or a source
+label when no usable root exists. Meaningful names, raw SBOM bytes, source identity,
+and package data are preserved. This is applied during ingestion and stored in
+`document_name`; existing records need re-processing. Exact project-scoped license
+exceptions use the resolved name, while S3 project grouping remains source-based.
+
+See the [Parsers documentation](/docs/development/parsers/) for configuration details,
+fallback rules, upgrade implications, and trade-offs.
 
 ## GitHub License Resolution
 
