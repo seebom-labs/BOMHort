@@ -52,6 +52,9 @@ jobs:
 
       - name: Build and push
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        env:
+          # Build traces can contain signed storage URLs.
+          DOCKER_BUILD_RECORD_UPLOAD: "false"
         with:
           context: ${{ matrix.component.context }}
           target: ${{ matrix.component.target || '' }}
