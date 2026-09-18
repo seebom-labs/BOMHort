@@ -637,7 +637,6 @@ Paginated list of all discovered vulnerabilities across all SBOMs.
 |-----------|------|---------|-------------|
 | `page` | uint64 | 1 | Page number |
 | `page_size` | uint64 | 50 | Items per page (max 500) |
-| `vex_filter` | string | — | Filter mode: `effective` = exclude VEX-suppressed vulns |
 
 **Response:** `200 OK` — `PaginatedResponse<VulnerabilityListItem>`
 
@@ -1189,8 +1188,8 @@ curl -s http://localhost:8080/api/v1/stats/dashboard | jq .
 # Search SBOMs
 curl -s "http://localhost:8080/api/v1/sboms?search=containerd&page_size=10" | jq .
 
-# Get vulnerabilities (effective only, VEX-filtered)
-curl -s "http://localhost:8080/api/v1/vulnerabilities?vex_filter=effective&page_size=100" | jq .
+# Get vulnerabilities (all findings, each with its VEX status attached)
+curl -s "http://localhost:8080/api/v1/vulnerabilities?page_size=100" | jq .
 
 # Check which projects are affected by a CVE
 curl -s http://localhost:8080/api/v1/vulnerabilities/CVE-2024-45338/affected-projects | jq .

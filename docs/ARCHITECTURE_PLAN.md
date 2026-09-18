@@ -215,7 +215,7 @@ S3 project grouping continues to use the source path. See the
 | GET | `/api/v1/sboms/{id}/vulnerabilities` | All vulns for an SBOM with VEX status |
 | GET | `/api/v1/sboms/{id}/licenses` | License breakdown per SBOM (with package list per license) |
 | GET | `/api/v1/sboms/{id}/dependencies` | Dependency tree as array reconstruction |
-| GET | `/api/v1/vulnerabilities?page=&vex_filter=` | Paginated vuln list (optional: vex_filter=effective) |
+| GET | `/api/v1/vulnerabilities?page=&page_size=` | Paginated vuln list (every finding, VEX status attached) |
 | GET | `/api/v1/vulnerabilities/{id}/affected-projects` | All projects affected by a CVE (direct + transitive) |
 | GET | `/api/v1/licenses/compliance` | Aggregated license overview |
 | GET | `/api/v1/projects?page=&page_size=&search=` | Grouped project listing (derived from S3 path or document_name) |
@@ -348,7 +348,7 @@ one bucket is nested and another flat.
 - `suppressed_by_vex` = COUNT(DISTINCT vulns with VEX status=not_affected)
 
 **API Filtering:**
-- `GET /api/v1/vulnerabilities?vex_filter=effective` — excludes not_affected vulns
+- `GET /api/v1/vulnerabilities` — returns every finding; the VEX status is attached per row for display, findings are never hidden
 - Vulnerability rows carry a `vex_status` field via LEFT JOIN
 - VEX statements API returns `affected_sboms` array with matched SBOMs
 

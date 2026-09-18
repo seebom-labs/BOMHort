@@ -66,13 +66,14 @@ export class ApiService {
     return this.http.get<SBOMLicenseBreakdownItem[]>(`${this.baseUrl}/sboms/${sbomId}/licenses`);
   }
 
-  getVulnerabilities(page = 1, pageSize = 50, vexFilter?: string): Observable<PaginatedResponse<VulnerabilityListItem>> {
-    let params = new HttpParams()
+  /**
+   * Paginated vulnerabilities. Every finding is returned with its VEX status
+   * attached for display - there is no "effective only" mode.
+   */
+  getVulnerabilities(page = 1, pageSize = 50): Observable<PaginatedResponse<VulnerabilityListItem>> {
+    const params = new HttpParams()
       .set('page', page.toString())
       .set('page_size', pageSize.toString());
-    if (vexFilter) {
-      params = params.set('vex_filter', vexFilter);
-    }
     return this.http.get<PaginatedResponse<VulnerabilityListItem>>(
       `${this.baseUrl}/vulnerabilities`,
       { params }

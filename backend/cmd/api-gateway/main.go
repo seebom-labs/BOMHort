@@ -162,17 +162,15 @@ func main() {
 		writeJSON(w, http.StatusOK, resp)
 	})
 
-	// List vulnerabilities with pagination and optional VEX filtering.
+	// List vulnerabilities with pagination. Every finding is returned with its
+	// VEX status attached; there is no "effective only" filter (a suppressed
+	// finding is still worth seeing, and hiding it desynced this list from the
+	// dashboard KPI). A legacy vex_filter query parameter is ignored.
 	mux.HandleFunc("GET /api/v1/vulnerabilities", func(w http.ResponseWriter, r *http.Request) {
 		page := parseUint64(r.URL.Query().Get("page"), 1)
 		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
-		vexFilter := r.URL.Query().Get("vex_filter")
-		// Only allow known filter values to prevent unexpected query modification.
-		if vexFilter != "" && vexFilter != "effective" {
-			vexFilter = ""
-		}
 
-		resp, err := chClient.QueryVulnerabilities(r.Context(), page, pageSize, vexFilter)
+		resp, err := chClient.QueryVulnerabilities(r.Context(), page, pageSize)
 		if err != nil {
 			log.Printf("ERROR: list vulnerabilities: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch vulnerabilities")

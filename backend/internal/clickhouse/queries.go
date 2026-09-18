@@ -238,57 +238,47 @@ func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search s
 	}, nil
 }
 
-// QueryVulnerabilities fetches a paginated list of vulnerabilities with optional VEX filtering.
-// If vexFilter is "effective", vulnerabilities with VEX status 'not_affected' are excluded.
-func (c *Client) QueryVulnerabilities(ctx context.Context, page, pageSize uint64, vexFilter string) (*dto.PaginatedResponse[dto.VulnerabilityListItem], error) {
+// QueryVulnerabilities fetches a paginated list of vulnerabilities.
+//
+// Every finding is returned; the VEX status is joined in for display only. There
+// is deliberately no server-side "effective only" filter: hiding rows made the
+// list disagree with the dashboard KPI and with the per-SBOM view, and a VEX
+// status is context a reader needs to see, not a reason to drop the row.
+//
+// The VEX join is pre-aggregated with argMax(status, vex_timestamp) so the
+// latest-wins rule (#335) applies and a finding covered by several statements
+// still yields exactly one row. Scope is per SBOM (#350).
+func (c *Client) QueryVulnerabilities(ctx context.Context, page, pageSize uint64) (*dto.PaginatedResponse[dto.VulnerabilityListItem], error) {
 	if page == 0 {
 		page = 1
 	}
 	offset := (page - 1) * pageSize
 
-	// Build WHERE clause for VEX filtering.
-	// When vex_filter=effective, exclude vulns that have a VEX "not_affected" status.
-	vexHaving := ""
-	if vexFilter == "effective" {
-		vexHaving = `WHERE (vx.status IS NULL OR vx.status != 'not_affected')`
-	}
-
 	var total uint64
-	countQuery := fmt.Sprintf(`
-		SELECT count() FROM (
-			SELECT
-				v.vuln_id,
-				v.purl
-			FROM (SELECT * FROM vulnerabilities FINAL) AS v
-			LEFT JOIN (
-				SELECT vuln_id, product_purl, sbom_id, status
-				FROM vex_statements FINAL
-			) AS vx ON vx.vuln_id = v.vuln_id AND vx.product_purl = v.purl
-				AND vx.sbom_id = toString(v.sbom_id)
-			%s
-		)
-	`, vexHaving)
-	if err := c.Conn.QueryRow(ctx, countQuery).Scan(&total); err != nil {
+	if err := c.Conn.QueryRow(ctx, `
+		SELECT count() FROM (SELECT * FROM vulnerabilities FINAL)
+	`).Scan(&total); err != nil {
 		return nil, fmt.Errorf("failed to count vulnerabilities: %w", err)
 	}
 
-	query := fmt.Sprintf(`
+	rows, err := c.Conn.Query(ctx, `
 		SELECT
 			v.vuln_id, v.severity, v.purl, v.summary,
 			v.fixed_version, v.source_file, v.discovered_at,
-			ifNull(vx.status, '') AS vex_status
+			ifNull(vx.vex_status, '') AS vex_status
 		FROM (SELECT * FROM vulnerabilities FINAL) AS v
 		LEFT JOIN (
-			SELECT vuln_id, product_purl, sbom_id, status
+			SELECT
+				vuln_id, product_purl, sbom_id,
+				argMax(status, vex_timestamp) AS vex_status
 			FROM vex_statements FINAL
+			WHERE sbom_id != ''
+			GROUP BY vuln_id, product_purl, sbom_id
 		) AS vx ON vx.vuln_id = v.vuln_id AND vx.product_purl = v.purl
 			AND vx.sbom_id = toString(v.sbom_id)
-		%s
 		ORDER BY v.severity ASC, v.discovered_at DESC
 		LIMIT ? OFFSET ?
-	`, vexHaving)
-
-	rows, err := c.Conn.Query(ctx, query, pageSize, offset)
+	`, pageSize, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query vulnerabilities: %w", err)
 	}

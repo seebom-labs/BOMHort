@@ -461,7 +461,7 @@ See the [API Reference](https://docs.bomhort.dev/docs/api-reference/) for comple
 | GET | `/api/v1/sboms/{id}/vulnerabilities` | Vulnerabilities for a specific SBOM |
 | GET | `/api/v1/sboms/{id}/licenses` | License breakdown for a specific SBOM |
 | GET | `/api/v1/sboms/{id}/dependencies` | Dependency tree |
-| GET | `/api/v1/vulnerabilities?page=&vex_filter=` | Paginated vulnerabilities (optional: `vex_filter=effective`) |
+| GET | `/api/v1/vulnerabilities?page=&page_size=` | Paginated vulnerabilities (every finding, VEX status attached) |
 | GET | `/api/v1/vulnerabilities/{id}/affected-projects` | All projects affected by a CVE |
 | GET | `/api/v1/licenses/compliance` | Global license compliance overview |
 | GET | `/api/v1/projects/license-compliance` | Projects with license violations (filtered by exceptions) |

@@ -185,7 +185,7 @@ Segments map positionally onto the leading path segments, relative to the ingest
 | GET | `/api/v1/sboms/{id}/licenses` | License breakdown for an SBOM |
 | GET | `/api/v1/sboms/{id}/dependencies` | Dependency tree |
 | GET | `/api/v1/sboms/{id}/vex` | VEX statements affecting this SBOM (#350; scoped + global) |
-| GET | `/api/v1/vulnerabilities?page=&vex_filter=` | Paginated vulnerabilities |
+| GET | `/api/v1/vulnerabilities?page=&page_size=` | Paginated vulnerabilities |
 | GET | `/api/v1/vulnerabilities/{id}/affected-projects` | CVE impact across projects |
 | GET | `/api/v1/licenses/compliance` | Global license compliance |
 | GET | `/api/v1/projects?page=&page_size=&search=` | Grouped project listing |
