@@ -216,6 +216,13 @@ func main() {
 		}
 		detail, err := chClient.QuerySBOMDetail(r.Context(), sbomID)
 		if err != nil {
+			// A well-formed id that simply does not exist is a 404, not a
+			// server fault. Logging it as ERROR buried real failures in noise
+			// that any crawler or stale bookmark could generate at will.
+			if errors.Is(err, clickhouse.ErrSBOMNotFound) {
+				writeError(w, http.StatusNotFound, "SBOM not found")
+				return
+			}
 			log.Printf("ERROR: sbom detail for %s: %v", sanitizeLogParam(sbomID), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch SBOM detail")
 			return

@@ -179,10 +179,12 @@ Everything that touches `db/migrations/` or a frozen response shape, in one plac
 | `016_add_source_columns` ✅ | #332 | `ADD COLUMN source_repo, source_ref` on `sboms` + `ingestion_queue` | **pre** |
 | `017_add_vex_provenance` ✅ | #334 | `ADD COLUMN author, role, tooling, status_notes` on `vex_statements` | **pre** |
 | `018_add_vex_sbom_scope` ✅ | #350 | `ADD COLUMN sbom_id` on `vex_statements`, `ADD COLUMN target_sbom_id` on `ingestion_queue` — VEX statements scoped to the SBOM/product they describe | **pre** |
+| `019_add_vulnerability_aliases` ✅ | — | `ADD COLUMN aliases Array(String)` on `vulnerabilities` — OSV alias IDs (GHSA ↔ CVE); VEX suppression matches a statement by `vuln_id` **or** any alias | **pre** |
+| `020_add_vex_product_ref` ✅ | — | `ADD COLUMN product_ref` on `vex_statements` — persisted OpenVEX product `@id`; enables the post-ingest **VEX rescue** pass that scopes previously unresolvable statements | **pre** |
 | — (query only) ✅ | #335 | Row semantics of `/sboms/{id}/vulnerabilities` | **pre** (API contract) |
 | — (DTO only) | #177 | `cluster` in `SBOMListItem` | **pre** (API contract) |
-| `018_create_upload_jobs` | #336 | New table | post |
-| `019_create_attestations` | #143 | New table | post |
+| `02x_create_upload_jobs` | #336 | New table | post |
+| `02x_create_attestations` | #143 | New table | post |
 | `02x_*` | #64, #61, #82, #7, #255, #60 | New enrichment / overlay / mirror tables | post |
 | — | #268 | Operator swap (`values.yaml` breaking) | **v2.0** |
 

@@ -147,7 +147,10 @@ Parsing Workers (N replicas)
        ├── Local files: os.Open(filepath.Join(sbomDir, sourceFile))
        ├── S3 files:    s3.GetObject(bucket, key) → io.ReadCloser
        ├── job_type=sbom: go-json → OSV Batch (rate-limited) → License Check → Batch INSERT
-       └── job_type=vex:  OpenVEX Parse (URL normalization) → INSERT vex_statements
+       │                 → VEX rescue: re-resolve unscoped statements against the new SBOM
+       └── job_type=vex:  OpenVEX Parse (URL normalization) → resolve product @id to SBOM
+                          (scoped; unresolvable → unscoped, product_ref persisted for rescue)
+                          → INSERT vex_statements
        ▼
 ClickHouse: sboms, sbom_packages, vulnerabilities, license_compliance, vex_statements
        │

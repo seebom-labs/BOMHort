@@ -102,21 +102,35 @@ func (c *Client) QueryDashboardStats(ctx context.Context) (*dto.DashboardStats, 
 	// SBOM must subtract exactly that SBOM's finding, or effective_vulnerabilities
 	// drifts. Latest-wins (#335) is applied before the not_affected test: a newer
 	// "affected" statement un-suppresses the finding.
+	//
+	// The purl match accepts '*' (models.VEXProductWide) alongside an exact
+	// match: a statement naming a product with no subcomponents covers every
+	// component of it. The match therefore has to be a WHERE predicate rather
+	// than a JOIN key — and the argMax runs *after* it, so a product-wide and a
+	// component-scoped statement for the same finding compete on timestamp like
+	// any other pair.
 	var suppressedByVEX uint64
 	if err := c.Conn.QueryRow(ctx, `
-		SELECT count(DISTINCT (v.sbom_id, v.vuln_id, v.purl))
-		FROM (SELECT * FROM vulnerabilities FINAL) AS v
-		INNER JOIN (
+		SELECT count()
+		FROM (
 			SELECT
-				sbom_id, vuln_id, product_purl,
-				argMax(status, vex_timestamp) AS winning_status
-			FROM vex_statements FINAL
-			WHERE sbom_id != ''
-			GROUP BY sbom_id, vuln_id, product_purl
-		) AS vx ON vx.vuln_id = v.vuln_id
-			AND vx.product_purl = v.purl
-			AND vx.sbom_id = toString(v.sbom_id)
-		WHERE vx.winning_status = 'not_affected'
+				v.sbom_id AS sbom_id, v.vuln_id AS vuln_id, v.purl AS purl,
+				argMax(vx.status, vx.vex_timestamp) AS winning_status
+			FROM (
+				SELECT sbom_id, vuln_id, purl,
+					arrayJoin(arrayConcat([vuln_id], aliases)) AS match_id
+				FROM vulnerabilities FINAL
+			) AS v
+			INNER JOIN (
+				SELECT sbom_id, vuln_id, product_purl, status, vex_timestamp
+				FROM vex_statements FINAL
+				WHERE sbom_id != ''
+			) AS vx ON vx.vuln_id = v.match_id
+				AND vx.sbom_id = toString(v.sbom_id)
+			WHERE vx.product_purl = v.purl OR vx.product_purl = '*'
+			GROUP BY v.sbom_id, v.vuln_id, v.purl
+		)
+		WHERE winning_status = 'not_affected'
 	`).Scan(&suppressedByVEX); err != nil {
 		return nil, fmt.Errorf("failed to count vex-suppressed vulnerabilities: %w", err)
 	}
@@ -247,7 +261,8 @@ func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search s
 //
 // The VEX join is pre-aggregated with argMax(status, vex_timestamp) so the
 // latest-wins rule (#335) applies and a finding covered by several statements
-// still yields exactly one row. Scope is per SBOM (#350).
+// still yields exactly one row. Scope is per SBOM (#350), and a statement
+// naming a product with no subcomponents ('*') covers every component of it.
 func (c *Client) QueryVulnerabilities(ctx context.Context, page, pageSize uint64) (*dto.PaginatedResponse[dto.VulnerabilityListItem], error) {
 	if page == 0 {
 		page = 1
@@ -269,12 +284,22 @@ func (c *Client) QueryVulnerabilities(ctx context.Context, page, pageSize uint64
 		FROM (SELECT * FROM vulnerabilities FINAL) AS v
 		LEFT JOIN (
 			SELECT
-				vuln_id, product_purl, sbom_id,
-				argMax(status, vex_timestamp) AS vex_status
-			FROM vex_statements FINAL
-			WHERE sbom_id != ''
-			GROUP BY vuln_id, product_purl, sbom_id
-		) AS vx ON vx.vuln_id = v.vuln_id AND vx.product_purl = v.purl
+				toString(f.sbom_id) AS sbom_id, f.vuln_id AS vuln_id, f.purl AS purl,
+				argMax(s.status, s.vex_timestamp) AS vex_status
+			FROM (
+				SELECT DISTINCT sbom_id, vuln_id, purl,
+					arrayJoin(arrayConcat([vuln_id], aliases)) AS match_id
+				FROM vulnerabilities FINAL
+			) AS f
+			INNER JOIN (
+				SELECT sbom_id, vuln_id, product_purl, status, vex_timestamp
+				FROM vex_statements FINAL
+				WHERE sbom_id != ''
+			) AS s ON s.vuln_id = f.match_id AND s.sbom_id = toString(f.sbom_id)
+			WHERE s.product_purl = f.purl OR s.product_purl = '*'
+			GROUP BY f.sbom_id, f.vuln_id, f.purl
+		) AS vx ON vx.vuln_id = v.vuln_id
+			AND vx.purl = v.purl
 			AND vx.sbom_id = toString(v.sbom_id)
 		ORDER BY v.severity ASC, v.discovered_at DESC
 		LIMIT ? OFFSET ?

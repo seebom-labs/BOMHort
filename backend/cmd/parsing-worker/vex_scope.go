@@ -25,16 +25,27 @@ type sbomResolver interface {
 //     table (sbom_id, source_repo, document_namespace, document_name).
 //     Repo-URL product IRIs are normalised first so
 //     "git+https://…/repo.git@v1" matches the stored source_repo form.
-//  3. Fallback: no match — the statement stays global (sbom_id ''), which
+//  3. Fallback: no match — the statement stays global (sbom_id ”), which
 //     preserves pre-#350 behaviour for component-style VEX documents, and a
 //     warning is logged because global statements suppress fleet-wide.
 //
 // Resolution results are memoised per product ref: documents typically repeat
 // the same product across statements.
+//
+// Resolving the ref is also what tells a product-wide statement (products[]
+// with no subcomponents[]) apart from the component shape where the product @id
+// *is* the vulnerable purl: only the sboms table knows whether a ref names a
+// product. A ref that resolves is a product, so the statement covers every
+// component of it and ProductPURL becomes models.VEXProductWide.
 func scopeVEXStatements(ctx context.Context, resolver sbomResolver, job models.IngestionJob, stmts []models.VEXStatement) {
 	if job.TargetSBOMID != "" {
 		for i := range stmts {
 			stmts[i].SBOMID = job.TargetSBOMID
+			// An explicit ?sbom_id= names the product outright, so a statement
+			// without subcomponents covers that product as a whole.
+			if stmts[i].ProductWide {
+				stmts[i].ProductPURL = models.VEXProductWide
+			}
 		}
 		return
 	}
@@ -74,10 +85,16 @@ func scopeVEXStatements(ctx context.Context, resolver sbomResolver, job models.I
 			continue
 		}
 		stmts[i].SBOMID = sbomID
+		// The ref names a product, so a statement carrying no subcomponents
+		// applies to every component of that product. Left as the raw ref when
+		// unresolved: it is inert either way, and keeping the original value
+		// makes the warning above actionable.
+		if stmts[i].ProductWide {
+			stmts[i].ProductPURL = models.VEXProductWide
+		}
 	}
 
 	for ref := range unresolved {
 		log.Printf("  WARNING: VEX %s: product %q matches no SBOM — statements stored globally (suppress fleet-wide). Map explicitly with ?sbom_id= on upload.", job.SourceFile, ref)
 	}
 }
-

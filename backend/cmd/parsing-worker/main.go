@@ -233,10 +233,24 @@ func processVEXJob(ctx context.Context, chClient *clickhouse.Client, openFile fu
 	log.Printf("  Parsed VEX %s: %d statements (doc: %s)",
 		job.SourceFile, len(result.Statements), result.DocumentID)
 
-	// Skip if this VEX document was already ingested (idempotency guard).
+	// Idempotency guard with a rescue path: a fully scoped document is
+	// skipped, but one that still has unscoped statements is re-processed -
+	// the SBOM its product names may have been ingested since. Without
+	// this, a VEX file that arrived before its SBOM was skipped as
+	// "already ingested" on every later encounter and stayed inert forever.
+	replacing := false
 	if exists, _ := chClient.VEXDocumentExists(ctx, result.DocumentID); exists {
-		log.Printf("  Skipping VEX %s (already ingested, doc: %s)", job.SourceFile, result.DocumentID)
-		return nil
+		unscoped, err := chClient.VEXDocumentUnscopedCount(ctx, result.DocumentID)
+		if err != nil {
+			return err
+		}
+		if unscoped == 0 {
+			log.Printf("  Skipping VEX %s (already ingested and fully scoped, doc: %s)", job.SourceFile, result.DocumentID)
+			return nil
+		}
+		log.Printf("  Re-processing VEX %s: %d unscoped statement(s) may resolve now (doc: %s)",
+			job.SourceFile, unscoped, result.DocumentID)
+		replacing = true
 	}
 
 	// The VEX parser only sees the document, not the job, so the ownership
@@ -249,6 +263,15 @@ func processVEXJob(ctx context.Context, chClient *clickhouse.Client, openFile fu
 	// fallback with a warning. A statement scoped to the wrong product would
 	// suppress real findings in unrelated projects.
 	scopeVEXStatements(ctx, chClient, job, result.Statements)
+
+	// Replace before insert: vex_ids are deterministic, but product_purl is
+	// part of the ORDER BY key and changes when a product-wide statement
+	// resolves ('*'), so the old unscoped rows would linger otherwise.
+	if replacing {
+		if err := chClient.DeleteVEXDocument(ctx, result.DocumentID); err != nil {
+			return err
+		}
+	}
 
 	if len(result.Statements) > 0 {
 		if err := chClient.InsertVEXStatements(ctx, result.Statements); err != nil {
@@ -474,6 +497,7 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 						VulnID:           entry.ID,
 						Severity:         severity,
 						Summary:          entry.Summary,
+						Aliases:          entry.Aliases,
 						AffectedVersions: affectedVersions,
 						FixedVersion:     fixedVersion,
 						OSVJSON:          string(rawJSON),
@@ -525,6 +549,13 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 			return err
 		}
 	}
+
+	// 7. Rescue VEX statements that arrived before this SBOM (#350): their
+	// product @id failed to resolve at their own ingest and they have been
+	// suppressing nothing since. Now that a new resolution target exists,
+	// retry them. Best effort by design - the SBOM is fully ingested at
+	// this point and VEX bookkeeping must not fail the job.
+	rescueUnscopedVEX(ctx, chClient, job.SourceFile)
 
 	return nil
 }

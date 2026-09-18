@@ -56,7 +56,7 @@ func (c *Client) QuerySBOMSource(ctx context.Context, sbomID string) (repo, ref 
 		"SELECT source_repo, source_ref FROM sboms FINAL WHERE sbom_id = ? LIMIT 1", sbomID,
 	).Scan(&repo, &ref)
 	if err != nil {
-		if err.Error() == "sql: no rows in result set" {
+		if isNoRows(err) {
 			return "", "", ErrSBOMNotFound
 		}
 		return "", "", fmt.Errorf("failed to read source for sbom %s: %w", sbomID, err)

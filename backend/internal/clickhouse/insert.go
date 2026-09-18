@@ -88,7 +88,7 @@ func (c *Client) InsertVulnerabilities(ctx context.Context, vulns []models.Vulne
 	batch, err := c.Conn.PrepareBatch(ctx,
 		`INSERT INTO vulnerabilities (
 			discovered_at, sbom_id, source_file, purl, vuln_id,
-			severity, summary, affected_versions, fixed_version, osv_json,
+			severity, summary, affected_versions, fixed_version, osv_json, aliases,
 			cluster, namespace, project
 		)`)
 	if err != nil {
@@ -107,6 +107,7 @@ func (c *Client) InsertVulnerabilities(ctx context.Context, vulns []models.Vulne
 			v.AffectedVersions,
 			v.FixedVersion,
 			v.OSVJSON,
+			v.Aliases,
 			v.Cluster,
 			v.Namespace,
 			v.Project,
@@ -171,7 +172,7 @@ func (c *Client) InsertVEXStatements(ctx context.Context, stmts []models.VEXStat
 	batch, err := c.Conn.PrepareBatch(ctx,
 		`INSERT INTO vex_statements (
 			ingested_at, vex_id, document_id, source_file, sbom_id,
-			product_purl, vuln_id, status, justification,
+			product_ref, product_purl, vuln_id, status, justification,
 			impact_statement, action_statement, vex_timestamp,
 			author, role, tooling, status_notes,
 			cluster, namespace, project
@@ -187,6 +188,7 @@ func (c *Client) InsertVEXStatements(ctx context.Context, stmts []models.VEXStat
 			s.DocumentID,
 			s.SourceFile,
 			s.SBOMID,
+			s.ProductRef,
 			s.ProductPURL,
 			s.VulnID,
 			s.Status,

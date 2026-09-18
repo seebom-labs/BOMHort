@@ -137,19 +137,32 @@ func Parse(r io.Reader, sourceFile string) (out *ParseResult, err error) {
 			}
 		}
 
-		// Create VEX statements per product. Two shapes exist in the wild
+		// Create VEX statements per product. Three shapes exist in the wild
 		// (#350):
 		//
-		//  1. Spec shape: product = the deliverable (what an SBOM
-		//     describes), subcomponents = the vulnerable libraries. The
+		//  1. Spec shape with components: product = the deliverable (what an
+		//     SBOM describes), subcomponents = the vulnerable libraries. The
 		//     subcomponent purl is what matches vulnerabilities.purl; the
 		//     product @id identifies the SBOM.
-		//  2. Component shape (Trivy et al.): product = the vulnerable
+		//  2. Spec shape without components: product only, no subcomponents.
+		//     The status covers the product as a whole — "this application is
+		//     not affected", whichever library carries the flaw. There is no
+		//     component purl to match, so the statement is flagged product-wide
+		//     and the worker rewrites ProductPURL to models.VEXProductWide once
+		//     the product resolves to an SBOM. Without this the statement was
+		//     stored with product_purl = the product IRI, which no
+		//     vulnerabilities.purl can ever equal, and it suppressed nothing.
+		//  3. Component shape (Trivy et al.): product = the vulnerable
 		//     component purl directly, no subcomponents.
+		//
+		// Shapes 2 and 3 are told apart by the worker, not here: only the
+		// sboms lookup can say whether a ref names a product or a component.
 		for _, product := range stmt.Products {
 			productRef := extractPURL(product)
 			matchPURLs := []string{productRef}
+			productWide := true
 			if len(product.Subcomponents) > 0 {
+				productWide = false
 				matchPURLs = matchPURLs[:0]
 				for _, sub := range product.Subcomponents {
 					if p := extractSubcomponentPURL(sub); p != "" {
@@ -171,6 +184,7 @@ func Parse(r io.Reader, sourceFile string) (out *ParseResult, err error) {
 					DocumentID:      doc.ID,
 					SourceFile:      sourceFile,
 					ProductRef:      productRef,
+					ProductWide:     productWide,
 					ProductPURL:     purl,
 					VulnID:          vulnID,
 					Status:          stmt.Status,

@@ -39,7 +39,7 @@ func (c *Client) ResolveSBOMByProductRef(ctx context.Context, ref string) (strin
 	`, ref, ref, ref, ref).Scan(&sbomID)
 	if err != nil {
 		// No rows is not an error for the caller: it means "global".
-		if err.Error() == "sql: no rows in result set" {
+		if isNoRows(err) {
 			return "", nil
 		}
 		// clickhouse-go returns io.EOF-ish errors for empty result sets

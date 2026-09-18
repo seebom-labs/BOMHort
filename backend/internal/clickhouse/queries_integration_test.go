@@ -2,6 +2,7 @@ package clickhouse
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -123,9 +124,13 @@ func TestQueriesExecute(t *testing.T) {
 
 // isEmptyResult reports whether err only means "this row does not exist".
 // Single-row queries surface that as an error, but the query itself planned
-// and executed — which is all this test asserts.
+// and executed — which is all this test asserts. QuerySBOMDetail maps the
+// condition to ErrSBOMNotFound so the gateway can answer 404 instead of 500.
 func isEmptyResult(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "no rows in result set")
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, ErrSBOMNotFound) || strings.Contains(err.Error(), "no rows in result set")
 }
 
 // TestSBOMDetailProjectionMatchesScan is the regression guard for #332/#347:
