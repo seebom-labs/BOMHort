@@ -83,7 +83,7 @@ API Gateway (REST) → 24 Endpoints → Angular UI
 | `vex_statements` | ReplacingMergeTree | OpenVEX statements incl. provenance (`author`, `role`, `tooling`, `status_notes`; #334, migration `017`) and the persisted product `@id` (`product_ref`, migration `020`) that powers the post-ingest VEX rescue pass |
 | `cve_refresh_log` | MergeTree | CVE refresh run history |
 | `github_license_cache` | ReplacingMergeTree | Resolved GitHub licenses cache |
-| `github_repo_metadata` | ReplacingMergeTree | GitHub repo metadata (archived, fork, stars) |
+| `github_repo_metadata` | ReplacingMergeTree | GitHub repo metadata (archived, fork, stars), keyed by `owner/repo`. A **resolver cache, not a view of the corpus**: entries outlive the SBOMs that produced them, so "archived repos" must be reported by joining it to `sbom_packages`, never by counting it. |
 | `registry_license_cache` | ReplacingMergeTree | Resolved package-registry licenses cache (npm, NuGet), keyed by `(registry, package@version)` |
 | `document_store` | ReplacingMergeTree | Reference + `sha256` of the **original SBOM bytes** captured at ingest (#256). The bytes live in a blob store (S3 prefix or PVC), not in ClickHouse. |
 
@@ -304,6 +304,17 @@ The GitHub resolver maps a PURL to a repository and asks the GitHub API for its 
 5. **Static overrides** — For repos where even that fails, manually verified overrides are applied (e.g., `opencontainers/go-digest` → Apache-2.0, `shopspring/decimal` → MIT)
 
 Results are cached in-memory per worker and persisted to the `github_license_cache` and `github_repo_metadata` ClickHouse tables for cross-worker reuse.
+
+{{% alert title="The mapping only works in one direction" color="warning" %}}
+Strategy 2 exists because an import path and its repository routinely share no
+text at all — `gopkg.in/yaml.v3` lives in `go-yaml/yaml`. Any read path that
+needs to go from a repository *back* to its packages (the archived-repos view,
+`GET /api/v1/packages/archived`) must therefore apply the same table, not match
+`purl LIKE '%repo%'`: that finds only packages whose import path happens to
+spell out their repository, and silently skips exactly the ones the table was
+written for. `github.WellKnownModuleMappings` exports it for the query layer,
+and a round-trip test asserts the two stay in agreement.
+{{% /alert %}}
 
 ### Package registries (npm, NuGet)
 
