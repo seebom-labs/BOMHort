@@ -75,7 +75,7 @@ Migration `013` is taken by `013_create_registry_license_cache` (shipped in v0.6
 
 ### 🎯 v1.0.0 Milestone
 
-**Target: end of October 2026** (GitHub milestone currently says 2026-09-30 — to be moved; the 014–017 wave is ~4 weeks of work).
+**Target: end of October 2026** (the GitHub milestone still says 2026-09-30 and needs moving — the schema wave is done, but #145 and a release of soak time are not).
 
 - API contract frozen (no breaking changes without major version bump)
 - ClickHouse schema stable (no `ORDER BY`/type changes; `ADD COLUMN` and new tables remain allowed)
@@ -93,12 +93,17 @@ Migration `013` is taken by `013_create_registry_license_cache` (shipped in v0.6
 - [x] ~~Health probes~~ (#137)
 - [x] ~~Tier-2 fidelity capture — `document_store` + blob store (#256)~~
 - [x] ~~Namespace column + ingestion convention (#138)~~ — migration `015`, `INGEST_PATH_LAYOUT`, `?namespace=` on upload
-- [ ] `source_repo`/`source_ref` columns (#332)
-- [ ] VEX provenance columns (#334, columns only)
+- [x] ~~`source_repo`/`source_ref` columns (#332)~~ — migration `016`, `X-Source-Repo`/`X-Source-Ref` headers, `PATCH /sboms/{id}`
+- [x] ~~VEX provenance columns (#334, columns only)~~ — migration `017`
 - [x] ~~`project` column (#57, column only)~~ — migration `015`, `?project=` on upload
-- [ ] One row per `(vuln_id, purl)` — latest VEX wins (#335)
-- [ ] `cluster` in `SBOMListItem` (#177)
-- [ ] Versioned docs (#145)
+- [x] ~~One row per `(vuln_id, purl)` — latest VEX wins (#335)~~
+- [x] ~~`cluster` in `SBOMListItem` (#177)~~ — badges in the explorer
+- [ ] Versioned docs (#145) — **the only open 1.0 blocker**; must ship *with* the tag
+
+**Landed after the last re-plan, all still pre-1.0** (migrations `019`–`022`): OSV alias
+matching, the VEX rescue pass, `document_version`, and free-form `tags` (#357) with the
+`/tags` endpoint and the namespace drill-down. These close the schema wave — every column
+a post-1.0 feature is known to need now exists.
 
 **Exit criteria:** Every SBOM ingested from 1.0 onward can be reproduced byte-for-byte; every column a later feature needs already exists; the vulnerability endpoint returns deterministic rows.
 
