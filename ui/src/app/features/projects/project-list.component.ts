@@ -2,11 +2,11 @@ import { Component, OnInit, OnDestroy, ChangeDetectionStrategy, ChangeDetectorRe
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ScrollingModule } from '@angular/cdk/scrolling';
-import { RouterModule } from '@angular/router';
+import { RouterModule, ActivatedRoute, Router } from '@angular/router';
 import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../core/api.service';
-import { ProjectListItem } from '../../core/api.models';
+import { ProjectListItem, TagListItem } from '../../core/api.models';
 
 @Component({
   selector: 'app-project-list',
@@ -20,7 +20,33 @@ import { ProjectListItem } from '../../core/api.models';
         <span class="result-count" *ngIf="total > 0">
           {{ projects.length | number }} of {{ total | number }} projects
           <span *ngIf="searchTerm" class="search-hint">matching "{{ searchTerm }}"</span>
+          <span *ngIf="activeTag" class="search-hint">in {{ activeTag }}</span>
         </span>
+      </div>
+
+      <!--
+        Grouping filter. Rendered only when the instance actually tags its
+        SBOMs: a deployment that groups nothing gets no control at all rather
+        than an empty dropdown implying a feature that does not apply to it.
+        The tags themselves come from the data, so this works for any grouping
+        scheme without a UI change.
+      -->
+      <div class="tag-bar" *ngIf="tags.length > 0">
+        <button
+          class="tag-chip"
+          [class.selected]="!activeTag"
+          (click)="selectTag('')"
+        >All</button>
+        <button
+          *ngFor="let t of tags; trackBy: trackByTag"
+          class="tag-chip"
+          [class.selected]="activeTag === t.tag"
+          [title]="t.project_count + ' projects, ' + t.sbom_count + ' SBOMs'"
+          (click)="selectTag(t.tag)"
+        >
+          {{ t.tag }}
+          <span class="tag-count">{{ t.project_count | number }}</span>
+        </button>
       </div>
 
       <div class="search-bar">
@@ -42,6 +68,16 @@ import { ProjectListItem } from '../../core/api.models';
               <span class="name">{{ project.project_name }}</span>
               <span class="meta">
                 {{ project.sbom_count }} {{ project.sbom_count === 1 ? 'version' : 'versions' }}
+                <!--
+                  A project's groupings, shown inline. Only tags other than the
+                  active filter are listed: repeating the tag every row was
+                  filtered by adds noise without information.
+                -->
+                <span
+                  class="tag-badge"
+                  *ngFor="let t of otherTags(project)"
+                  [title]="'Grouping: ' + t"
+                >{{ t }}</span>
               </span>
             </div>
             <div class="project-stats">
@@ -62,10 +98,19 @@ import { ProjectListItem } from '../../core/api.models';
       </div>
 
       <div *ngIf="!loading && total === 0 && searchTerm" class="empty-search">
-        No projects matching "{{ searchTerm }}"
+        No projects matching "{{ searchTerm }}"<span *ngIf="activeTag"> in {{ activeTag }}</span>
       </div>
 
-      <div *ngIf="!loading && total === 0 && !searchTerm" class="empty-state">
+      <!--
+        A tag filter that matches nothing is named explicitly: without it the
+        generic "ingest SBOMs" message would suggest the instance is empty
+        when it is merely filtered.
+      -->
+      <div *ngIf="!loading && total === 0 && !searchTerm && activeTag" class="empty-search">
+        No projects in {{ activeTag }}
+      </div>
+
+      <div *ngIf="!loading && total === 0 && !searchTerm && !activeTag" class="empty-state">
         No projects found. Ingest SBOMs to see projects here.
       </div>
     </div>
@@ -78,6 +123,26 @@ import { ProjectListItem } from '../../core/api.models';
     .search-hint { font-style: italic; }
 
     .search-bar { position: relative; margin-bottom: 12px; }
+    .tag-bar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+    .tag-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 10px; font-size: 0.72rem; font-family: inherit;
+      background: var(--surface); color: var(--text-secondary);
+      border: 1px solid var(--border); border-radius: 12px;
+      cursor: pointer; transition: all 0.15s;
+    }
+    .tag-chip:hover { border-color: var(--accent); color: var(--accent); }
+    .tag-chip.selected {
+      background: var(--status-info-bg); color: var(--accent-hover);
+      border-color: var(--accent); font-weight: 600;
+    }
+    .tag-count { font-size: 0.65rem; opacity: 0.7; }
+    .tag-badge {
+      display: inline-block; margin-left: 6px; padding: 1px 6px;
+      background: var(--surface-alt); color: var(--text-secondary);
+      border: 1px solid var(--border); border-radius: 2px;
+      font-size: 0.65rem; font-weight: 500;
+    }
     .search-input {
       width: 100%; padding: 8px 36px 8px 12px; font-size: 0.82rem;
       border: 1px solid var(--border); border-radius: 4px;
@@ -138,6 +203,26 @@ export class ProjectListComponent implements OnInit, OnDestroy {
   searchTerm = '';
   loading = false;
 
+  /**
+   * Groupings this instance uses, from the API. Empty means "this deployment
+   * does not group projects" and the filter bar is not rendered at all.
+   */
+  tags: TagListItem[] = [];
+  /** Currently filtered grouping; '' = no grouping filter. */
+  activeTag = '';
+
+  /**
+   * The filter state the current rows were loaded with. Distinct from
+   * activeTag/searchTerm, which track the *controls* — searchTerm in
+   * particular moves ahead of the data via ngModel while typing.
+   *
+   * `null` means "nothing loaded yet", which is what makes the initial
+   * navigation pass the guard below: on first load the URL's empty filter
+   * would otherwise compare equal to the empty state and skip the fetch.
+   */
+  private loadedTag: string | null = null;
+  private loadedSearch: string | null = null;
+
   private page = 1;
   private readonly pageSize = 100;
   private readonly searchSubject = new Subject<string>();
@@ -146,6 +231,8 @@ export class ProjectListComponent implements OnInit, OnDestroy {
   constructor(
     private readonly api: ApiService,
     private readonly cdr: ChangeDetectorRef,
+    private readonly route: ActivatedRoute,
+    private readonly router: Router,
   ) {}
 
   ngOnInit(): void {
@@ -154,12 +241,47 @@ export class ProjectListComponent implements OnInit, OnDestroy {
       distinctUntilChanged(),
       takeUntil(this.destroy$),
     ).subscribe((term) => {
-      this.page = 1;
-      this.projects = [];
-      this.loadProjects(term);
+      // Only the URL is written here; the reload happens in the queryParams
+      // subscription below, so there is exactly one path into loadProjects()
+      // and typing cannot race a back-navigation.
+      this.syncUrl(term, this.activeTag, true);
     });
 
-    this.loadProjects('');
+    // Tags load independently of the listing: a failure here must not hide
+    // the projects themselves, so an error just leaves the filter bar off.
+    this.api.getTags().pipe(takeUntil(this.destroy$)).subscribe({
+      next: (tags) => {
+        this.tags = tags;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.tags = [];
+        this.cdr.markForCheck();
+      },
+    });
+
+    // The URL is the single source of truth for the filter state. That makes
+    // a grouping shareable and bookmarkable ("send me all sandbox
+    // applications" is a link, not a click path), makes browser back/forward
+    // step through filters, and survives a reload. It also means deep links
+    // like /projects?tag=sandbox-applications work as an entry point.
+    this.route.queryParams.pipe(takeUntil(this.destroy$)).subscribe((params) => {
+      const tag = params['tag'] ?? '';
+      const search = params['search'] ?? '';
+
+      // Compared against what was last *loaded*, not against searchTerm:
+      // searchTerm is bound to the input via ngModel and already holds the
+      // new value while the user types, so comparing it would make this
+      // guard swallow the very reload the typing asked for.
+      if (tag === this.loadedTag && search === this.loadedSearch) {
+        return;
+      }
+
+      this.activeTag = tag;
+      this.searchTerm = search;
+      this.resetPaging();
+      this.loadProjects(search);
+    });
   }
 
   ngOnDestroy(): void {
@@ -176,6 +298,47 @@ export class ProjectListComponent implements OnInit, OnDestroy {
     this.searchSubject.next('');
   }
 
+  /**
+   * Switches the grouping filter. Clicking the active tag clears it, so the
+   * chip doubles as its own off switch and there is no dead click.
+   *
+   * Writes the URL rather than the state directly — the queryParams
+   * subscription applies it, so a chip click and a pasted link take the
+   * identical code path.
+   */
+  selectTag(tag: string): void {
+    this.syncUrl(this.searchTerm, this.activeTag === tag ? '' : tag, false);
+  }
+
+  /**
+   * Reflects the filter state in the URL.
+   *
+   * Empty values are written as `null` so Angular drops the parameter
+   * entirely: an unfiltered list should be a clean /projects, not
+   * /projects?tag=&search=.
+   *
+   * `replace` is passed in rather than derived: search typing replaces the
+   * history entry, because otherwise a single back press would walk back one
+   * character at a time. Choosing a grouping is a deliberate act and gets its
+   * own entry, so back returns to the previous grouping.
+   */
+  private syncUrl(search: string, tag: string, replace: boolean): void {
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { tag: tag || null, search: search || null },
+      queryParamsHandling: 'merge',
+      replaceUrl: replace,
+    });
+  }
+
+  /**
+   * A project's groupings minus the one being filtered on, which every
+   * visible row would otherwise repeat identically.
+   */
+  otherTags(project: ProjectListItem): string[] {
+    return (project.tags ?? []).filter((t) => t !== this.activeTag);
+  }
+
   loadMore(): void {
     this.page++;
     this.loadProjects(this.searchTerm, true);
@@ -183,11 +346,18 @@ export class ProjectListComponent implements OnInit, OnDestroy {
 
   onScroll(): void {}
 
+  private resetPaging(): void {
+    this.page = 1;
+    this.projects = [];
+  }
+
   private loadProjects(search: string, append = false): void {
     this.loading = true;
+    this.loadedTag = this.activeTag;
+    this.loadedSearch = search;
     this.cdr.markForCheck();
 
-    this.api.getProjects(this.page, this.pageSize, search).subscribe((response) => {
+    this.api.getProjects(this.page, this.pageSize, search, this.activeTag).subscribe((response) => {
       if (append) {
         this.projects = [...this.projects, ...response.data];
       } else {
@@ -201,6 +371,10 @@ export class ProjectListComponent implements OnInit, OnDestroy {
 
   trackByProject(_index: number, item: ProjectListItem): string {
     return item.project_name;
+  }
+
+  trackByTag(_index: number, item: TagListItem): string {
+    return item.tag;
   }
 }
 

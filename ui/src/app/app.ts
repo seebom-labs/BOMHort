@@ -1,20 +1,23 @@
 import { Component, OnInit } from '@angular/core';
 import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
+import { CommonModule } from '@angular/common';
 import { SiteConfigService } from './core/site-config.service';
+import { ApiService } from './core/api.service';
 import { GlobalSearchComponent } from './shared/global-search/global-search.component';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, GlobalSearchComponent],
+  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive, GlobalSearchComponent],
   template: `
     <nav class="navbar">
       <a class="brand" routerLink="/">
-        <img src="assets/logo.webp" alt="BOMHort" class="brand-logo">
+        <img src="assets/bomhort-mascot.png" alt="BOMHort dragon mascot" class="brand-logo">
         {{ siteConfig.brandName }}
       </a>
       <div class="nav-links">
         <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}">Dashboard</a>
+        <a routerLink="/fleet" routerLinkActive="active" *ngIf="hasFleet">Fleet</a>
         <a routerLink="/projects" routerLinkActive="active">Projects</a>
         <a routerLink="/sboms" routerLinkActive="active">SBOMs</a>
         <a routerLink="/vulnerabilities" routerLinkActive="active">Vulnerabilities</a>
@@ -59,7 +62,9 @@ import { GlobalSearchComponent } from './shared/global-search/global-search.comp
     .brand-logo {
       width: 28px;
       height: 28px;
-      border-radius: 4px;
+      /* The mascot is portrait (381x427); contain keeps it from being
+         squashed into the square box. */
+      object-fit: contain;
     }
     .nav-links { display: flex; gap: 2px; flex: 1; }
     .nav-links a {
@@ -98,7 +103,26 @@ import { GlobalSearchComponent } from './shared/global-search/global-search.comp
 export class App implements OnInit {
   dark = false;
 
-  constructor(readonly siteConfig: SiteConfigService) {}
+  /**
+   * Whether this instance has any deployment (cluster) semantics at all.
+   *
+   * The Fleet view answers "where does this workload run?" — a question a
+   * catalogue instance (a foundation publishing SBOMs for its projects) can
+   * never answer, because nothing runs anywhere. Such an instance reports a
+   * single cluster with an empty name, and the Fleet tab would be a dead link
+   * onto an unnamed root node.
+   *
+   * Derived from the data rather than configured, so the same image serves
+   * both modes and the tab appears by itself as soon as the first cluster
+   * label is ingested. Defaults to hidden: showing it only once the data
+   * justifies it is better than flashing a tab that then disappears.
+   */
+  hasFleet = false;
+
+  constructor(
+    readonly siteConfig: SiteConfigService,
+    private readonly api: ApiService,
+  ) {}
 
   ngOnInit(): void {
     const saved = localStorage.getItem('bomhort-theme');
@@ -106,6 +130,19 @@ export class App implements OnInit {
       this.dark = true;
       document.documentElement.setAttribute('data-theme', 'dark');
     }
+
+    // A named cluster is what makes the fleet hierarchy meaningful; the
+    // unnamed '' bucket is where unassigned SBOMs land and does not count.
+    // An API error leaves the tab hidden rather than showing a link that
+    // cannot work.
+    this.api.getClusters().subscribe({
+      next: (clusters) => {
+        this.hasFleet = clusters.some((c) => c.name !== '');
+      },
+      error: () => {
+        this.hasFleet = false;
+      },
+    });
   }
 
   toggleTheme(): void {

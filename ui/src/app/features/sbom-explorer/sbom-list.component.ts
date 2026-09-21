@@ -39,6 +39,7 @@ import { SBOMListItem } from '../../core/api.models';
         <div *cdkVirtualFor="let sbom of sboms; trackBy: trackBySbom" class="sbom-row">
           <a [routerLink]="['/sboms', sbom.sbom_id]" class="sbom-link">
             <span class="name">{{ sbom.document_name || sbom.source_file }}</span>
+            <span class="product-version" *ngIf="sbom.document_version" [title]="'Product version: ' + sbom.document_version">{{ sbom.document_version }}</span>
             <span class="version badge">{{ sbom.spdx_version }}</span>
             <span class="owner-badge cluster-badge" *ngIf="sbom.cluster" [title]="'Cluster: ' + sbom.cluster">
               {{ sbom.cluster }}
@@ -113,6 +114,7 @@ import { SBOMListItem } from '../../core/api.models';
     .download-btn:hover { border-color: var(--accent); color: var(--accent); }
     .name { flex: 1; font-weight: 500; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .badge { background: var(--bg); color: var(--text-secondary); padding: 2px 6px; border-radius: 2px; font-size: 0.7rem; font-weight: 500; }
+    .product-version { color: var(--text-secondary); font-size: 0.8rem; font-weight: 600; }
     .owner-badge {
       background: var(--surface-alt); color: var(--text-secondary);
       border: 1px solid var(--border); padding: 1px 6px; border-radius: 2px;

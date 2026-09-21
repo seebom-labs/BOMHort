@@ -20,7 +20,13 @@ import {
   LicenseExceptionsFile,
   ArchivedPackageInfo,
   ProjectListItem,
+  TagListItem,
   GlobalSearchResponse,
+  FleetCluster,
+  ClusterListItem,
+  ClusterStats,
+  NamespaceListItem,
+  NamespaceStats,
 } from './api.models';
 
 @Injectable({
@@ -146,14 +152,29 @@ export class ApiService {
     return `${this.baseUrl}/sboms/${sbomId}/download`;
   }
 
-  getProjects(page = 1, pageSize = 50, search = ''): Observable<PaginatedResponse<ProjectListItem>> {
+  getProjects(page = 1, pageSize = 50, search = '', tag = ''): Observable<PaginatedResponse<ProjectListItem>> {
     let params = new HttpParams()
       .set('page', page.toString())
       .set('page_size', pageSize.toString());
     if (search) {
       params = params.set('search', search);
     }
+    // A tag narrows which projects are listed; it never merges them, so the
+    // response shape is unchanged and paging still counts projects.
+    if (tag) {
+      params = params.set('tag', tag);
+    }
     return this.http.get<PaginatedResponse<ProjectListItem>>(`${this.baseUrl}/projects`, { params });
+  }
+  /**
+   * Grouping labels in use on this instance.
+   *
+   * Returns [] when nothing is tagged, which callers should treat as "this
+   * deployment does not group projects" and hide the filter entirely rather
+   * than showing an empty control.
+   */
+  getTags(): Observable<TagListItem[]> {
+    return this.http.get<TagListItem[]>(`${this.baseUrl}/tags`);
   }
 
   globalSearch(q: string, limit?: number): Observable<GlobalSearchResponse> {
@@ -162,6 +183,64 @@ export class ApiService {
       params = params.set('limit', limit.toString());
     }
     return this.http.get<GlobalSearchResponse>(`${this.baseUrl}/search`, { params });
+  }
+
+  // ── Ownership dimensions (#131 cluster, #138 namespace, #57 project) ──
+
+  /** Full cluster → namespace → project tree in one request. */
+  getFleet(): Observable<FleetCluster[]> {
+    return this.http.get<FleetCluster[]>(`${this.baseUrl}/fleet`);
+  }
+
+  getClusters(): Observable<ClusterListItem[]> {
+    return this.http.get<ClusterListItem[]>(`${this.baseUrl}/clusters`);
+  }
+
+  getClusterStats(cluster: string): Observable<ClusterStats> {
+    return this.http.get<ClusterStats>(`${this.baseUrl}/clusters/${encodeURIComponent(cluster)}/stats`);
+  }
+
+  getClusterSboms(cluster: string, page = 1, pageSize = 50): Observable<PaginatedResponse<SBOMListItem>> {
+    const params = new HttpParams()
+      .set('page', page.toString())
+      .set('page_size', pageSize.toString());
+    return this.http.get<PaginatedResponse<SBOMListItem>>(
+      `${this.baseUrl}/clusters/${encodeURIComponent(cluster)}/sboms`, { params });
+  }
+
+  /**
+   * Namespace endpoints take an optional cluster scope, because a namespace
+   * name is only unique inside a cluster — `payments` in prod-eu and
+   * `payments` in staging are different things and must not be merged.
+   */
+  getNamespaces(cluster = ''): Observable<NamespaceListItem[]> {
+    let params = new HttpParams();
+    if (cluster) {
+      params = params.set('cluster', cluster);
+    }
+    return this.http.get<NamespaceListItem[]>(`${this.baseUrl}/namespaces`, { params });
+  }
+
+  getNamespaceStats(namespace: string, cluster = ''): Observable<NamespaceStats> {
+    let params = new HttpParams();
+    if (cluster) {
+      params = params.set('cluster', cluster);
+    }
+    return this.http.get<NamespaceStats>(
+      `${this.baseUrl}/namespaces/${encodeURIComponent(namespace)}/stats`, { params });
+  }
+
+  getNamespaceSboms(
+    namespace: string, cluster = '', page = 1, pageSize = 50,
+  ): Observable<PaginatedResponse<SBOMListItem>> {
+    let params = new HttpParams()
+      .set('page', page.toString())
+      .set('page_size', pageSize.toString());
+    if (cluster) {
+      params = params.set('cluster', cluster);
+    }
+    return this.http.get<PaginatedResponse<SBOMListItem>>(
+      `${this.baseUrl}/namespaces/${encodeURIComponent(namespace)}/sboms`, { params });
   }
 }
 

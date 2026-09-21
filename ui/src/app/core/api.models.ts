@@ -40,6 +40,8 @@ export interface SBOMListItem {
   source_file: string;
   spdx_version: string;
   document_name: string;
+  /** Version of the described product; omitted when the document states none. */
+  document_version?: string;
   package_count: number;
   vuln_count: number;
   ingested_at: string;
@@ -134,6 +136,8 @@ export interface SBOMDetail {
   source_file: string;
   spdx_version: string;
   document_name: string;
+  /** Version of the described product; omitted when the document states none. */
+  document_version?: string;
   package_count: number;
   vuln_count: number;
   ingested_at: string;
@@ -278,6 +282,27 @@ export interface ProjectListItem {
   vuln_count: number;
   latest_ingested: string;
   latest_sbom_id: string;
+  /**
+   * Grouping labels across this project's SBOMs (#357).
+   *
+   * A tag labels a project, it does not stand in for one: a project with
+   * three SBOMs is still listed once under its own name and merely carries
+   * the groupings those SBOMs arrived with.
+   */
+  tags: string[];
+}
+/**
+ * One grouping label and its reach, from GET /api/v1/tags.
+ *
+ * Fetched rather than hard-coded so the UI renders whichever groupings an
+ * instance actually uses — a fixed list would be wrong everywhere but the one
+ * deployment it was written for.
+ */
+export interface TagListItem {
+  tag: string;
+  sbom_count: number;
+  /** Distinct projects carrying the tag; the number a grouping is really about. */
+  project_count: number;
 }
 
 export interface GlobalSearchPackage {
@@ -317,3 +342,76 @@ export interface GlobalSearchResponse {
   total_licenses: number;
 }
 
+/**
+ * Ownership views (#131 cluster, #138 namespace, #57 project).
+ *
+ * An empty `name` is not missing data — it is the column DEFAULT '' for an SBOM
+ * that was ingested without that dimension configured. The UI renders it as
+ * "(unassigned)".
+ */
+export interface FleetProject {
+  name: string;
+  sbom_count: number;
+  vuln_count: number;
+  last_ingested?: string;
+}
+
+export interface FleetNamespace {
+  name: string;
+  sbom_count: number;
+  vuln_count: number;
+  projects: FleetProject[];
+}
+
+export interface FleetCluster {
+  name: string;
+  sbom_count: number;
+  vuln_count: number;
+  namespaces: FleetNamespace[];
+}
+
+export interface ClusterListItem {
+  name: string;
+  sbom_count: number;
+  package_count: number;
+  vuln_count: number;
+  last_ingested?: string;
+}
+
+export interface ClusterStats {
+  cluster: string;
+  total_sboms: number;
+  total_packages: number;
+  total_vulnerabilities: number;
+  critical_vulns: number;
+  high_vulns: number;
+  medium_vulns: number;
+  low_vulns: number;
+  license_breakdown: Record<string, number>;
+  last_ingested?: string;
+}
+
+export interface NamespaceListItem {
+  name: string;
+  cluster?: string;
+  cluster_count: number;
+  sbom_count: number;
+  package_count: number;
+  vuln_count: number;
+  last_ingested?: string;
+}
+
+export interface NamespaceStats {
+  namespace: string;
+  cluster?: string;
+  clusters: string[];
+  total_sboms: number;
+  total_packages: number;
+  total_vulnerabilities: number;
+  critical_vulns: number;
+  high_vulns: number;
+  medium_vulns: number;
+  low_vulns: number;
+  license_breakdown: Record<string, number>;
+  last_ingested?: string;
+}
