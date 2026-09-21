@@ -45,3 +45,10 @@ docs/public/
 docs/resources/
 docs/node_modules/
 __pycache__/
+
+# Local scratch space: release-note drafts, one-off patch scripts, SBOMs
+# pulled in for manual debugging. Named consistently so a stray file can
+# never be swept into a commit by `git add -A`.
+tmp-*
+patch_api.py
+
