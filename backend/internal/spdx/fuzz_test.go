@@ -43,4 +43,3 @@ func FuzzParse(f *testing.F) {
 		_, _ = Parse(bytes.NewReader(data), "fuzz.spdx.json", "fakehash")
 	})
 }
-

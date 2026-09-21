@@ -110,4 +110,3 @@ func TestParse_SPDX(t *testing.T) {
 		t.Errorf("expected to find 'foo' in packages, got: %v", result.Packages.PackageNames)
 	}
 }
-

@@ -154,6 +154,11 @@ func Parse(data []byte, sourceFile, sha256Hash string) (*ParseResult, error) {
 		CreatorTools:      tools,
 	}
 	sbom.SourceRepo, sbom.SourceRef = extractSourceRepo(&doc)
+	// The version of the product the BOM describes; document_name may carry it
+	// as a display suffix (above), document_version is the raw attribute.
+	if doc.Metadata.Component != nil {
+		sbom.DocumentVersion = doc.Metadata.Component.Version
+	}
 
 	// Build parallel arrays from components.
 	bomRefToIndex := make(map[string]uint32, len(doc.Components))

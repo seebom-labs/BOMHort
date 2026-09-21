@@ -31,6 +31,17 @@ type SBOM struct {
 	// upload headers and PATCH /api/v1/sboms/{id}. '' = unknown.
 	SourceRepo string `json:"source_repo,omitempty"`
 	SourceRef  string `json:"source_ref,omitempty"`
+	// DocumentVersion is the version of the product the document DESCRIBES
+	// (SPDX root package versionInfo, CycloneDX metadata.component.version),
+	// extracted at parse time. '' = the document does not state one.
+	DocumentVersion string `json:"document_version,omitempty"`
+	// Tags (#357) group projects along a deployment-neutral axis:
+	// "sandbox-applications", "graduated", "team-platform". Unlike the
+	// ownership triple above they say nothing about where the workload runs,
+	// which is what makes them usable on catalogue-style instances that have
+	// no cluster at all. Tags group projects, they do not replace them — a
+	// tagged SBOM keeps its own Project.
+	Tags []string `json:"tags,omitempty"`
 }
 
 // SBOMPackages stores the full dependency tree of an SBOM as parallel arrays.
@@ -119,6 +130,9 @@ type IngestionJob struct {
 	// from the gateway to the parsing worker. Empty for SBOM jobs and for
 	// watcher-enqueued VEX jobs (the worker then auto-resolves per product).
 	TargetSBOMID string `json:"target_sbom_id,omitempty"`
+	// Tags (#357) carry the grouping labels from the watcher's bucket config
+	// or the gateway's ?tags= parameter through to the parsing worker.
+	Tags []string `json:"tags,omitempty"`
 }
 
 // StoredDocument is a row in document_store (#256): the reference to the

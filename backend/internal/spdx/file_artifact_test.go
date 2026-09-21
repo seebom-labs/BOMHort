@@ -201,4 +201,3 @@ func TestIsFileArtifact(t *testing.T) {
 		})
 	}
 }
-

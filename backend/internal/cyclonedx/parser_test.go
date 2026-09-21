@@ -53,6 +53,9 @@ func TestParse_MinimalCycloneDX(t *testing.T) {
 	if result.SBOM.DocumentName != "my-app 1.0.0" {
 		t.Errorf("expected DocumentName='my-app 1.0.0', got %q", result.SBOM.DocumentName)
 	}
+	if result.SBOM.DocumentVersion != "1.0.0" {
+		t.Errorf("expected DocumentVersion='1.0.0', got %q", result.SBOM.DocumentVersion)
+	}
 	if result.SBOM.DocumentNamespace != "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79" {
 		t.Errorf("expected serial number as namespace, got %q", result.SBOM.DocumentNamespace)
 	}

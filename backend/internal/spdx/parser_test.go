@@ -359,3 +359,62 @@ func TestParse_InTotoAttestation(t *testing.T) {
 		t.Fatalf("expected 1 relationship, got %d", len(result.Packages.RelSourceIndices))
 	}
 }
+
+func TestParse_DocumentVersion(t *testing.T) {
+	t.Run("root package versionInfo wins", func(t *testing.T) {
+		doc := `{
+			"spdxVersion": "SPDX-2.3",
+			"SPDXID": "SPDXRef-DOCUMENT",
+			"name": "payment-api",
+			"documentNamespace": "https://example.com/payment-api",
+			"creationInfo": {"created": "2025-01-15T10:00:00Z", "creators": ["Tool: t"]},
+			"packages": [
+				{"SPDXID": "SPDXRef-Root", "name": "payment-api", "versionInfo": "1.4.2"},
+				{"SPDXID": "SPDXRef-Dep", "name": "lodash", "versionInfo": "4.17.15"}
+			],
+			"relationships": [
+				{"spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-Root"},
+				{"spdxElementId": "SPDXRef-Root", "relationshipType": "DEPENDS_ON", "relatedSpdxElement": "SPDXRef-Dep"}
+			]
+		}`
+		result, err := Parse(strings.NewReader(doc), "payment-api.spdx.json", "h1")
+		if err != nil {
+			t.Fatalf("Parse() returned error: %v", err)
+		}
+		if result.SBOM.DocumentVersion != "1.4.2" {
+			t.Errorf("expected document version 1.4.2, got %q", result.SBOM.DocumentVersion)
+		}
+	})
+
+	t.Run("no DESCRIBES root means no version, never a dependency's", func(t *testing.T) {
+		// testSPDXJSON has no DESCRIBES relationship at all.
+		result, err := Parse(strings.NewReader(testSPDXJSON), "test.spdx.json", "h2")
+		if err != nil {
+			t.Fatalf("Parse() returned error: %v", err)
+		}
+		if result.SBOM.DocumentVersion != "" {
+			t.Errorf("expected empty document version, got %q", result.SBOM.DocumentVersion)
+		}
+	})
+
+	t.Run("NOASSERTION is treated as unset", func(t *testing.T) {
+		doc := `{
+			"spdxVersion": "SPDX-2.3",
+			"SPDXID": "SPDXRef-DOCUMENT",
+			"name": "tool",
+			"documentNamespace": "https://example.com/tool",
+			"creationInfo": {"created": "2025-01-15T10:00:00Z", "creators": ["Tool: t"]},
+			"packages": [{"SPDXID": "SPDXRef-Root", "name": "tool", "versionInfo": "NOASSERTION"}],
+			"relationships": [
+				{"spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-Root"}
+			]
+		}`
+		result, err := Parse(strings.NewReader(doc), "tool.spdx.json", "h3")
+		if err != nil {
+			t.Fatalf("Parse() returned error: %v", err)
+		}
+		if result.SBOM.DocumentVersion != "" {
+			t.Errorf("expected empty document version, got %q", result.SBOM.DocumentVersion)
+		}
+	})
+}

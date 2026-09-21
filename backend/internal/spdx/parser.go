@@ -206,6 +206,27 @@ func describedRoots(doc *SPDXDocument) map[string]bool {
 	return roots
 }
 
+// extractDocumentVersion returns the version of the product the document
+// DESCRIBES: the first described root package (document order) with a usable
+// versionInfo. Dependencies are never consulted — their versions belong to
+// them, not to the product. "" when no root states a version.
+func extractDocumentVersion(doc *SPDXDocument) string {
+	roots := describedRoots(doc)
+	if len(roots) == 0 {
+		return ""
+	}
+	for i := range doc.Packages {
+		pkg := &doc.Packages[i]
+		if !roots[pkg.SPDXID] {
+			continue
+		}
+		if v := pkg.VersionInfo; v != "" && v != "NOASSERTION" {
+			return v
+		}
+	}
+	return ""
+}
+
 // inTotoStatement represents an in-toto attestation envelope.
 // Some SBOM generators (e.g. buildkit, Anchore/Syft) wrap SPDX documents inside
 // this format. The actual SPDX content lives under the "predicate" key.
@@ -287,6 +308,7 @@ func Parse(r io.Reader, sourceFile, sha256Hash string) (result *ParseResult, err
 		CreatorTools:      tools,
 	}
 	sbom.SourceRepo, sbom.SourceRef = extractSourceRepo(&doc)
+	sbom.DocumentVersion = extractDocumentVersion(&doc)
 
 	// SPDX IDs that participate in at least one relationship. Used by the
 	// file-artifact heuristic: real components are usually wired into the
