@@ -7,6 +7,11 @@
 {{/* SEO: Canonical URL */}}
 <link rel="canonical" href="{{ .Permalink }}">
 
+{{/* Brand icons — official BOMHort mascot, kept in sync with
+     seebom-labs/bomhort-website (static/images/). */}}
+<link rel="icon" type="image/png" href="{{ "images/bomhort-mascot-favicon.png" | relURL }}">
+<link rel="apple-touch-icon" href="{{ "images/bomhort-mascot-favicon.png" | relURL }}">
+
 {{/* Open Graph */}}
 <meta property="og:site_name" content="BOMHort Documentation">
 <meta property="og:type" content="{{ if .IsPage }}article{{ else }}website{{ end }}">
@@ -36,7 +41,7 @@
     "url": "https://bomhort.dev",
     "logo": {
       "@type": "ImageObject",
-      "url": "{{ "images/BOMHORT.png" | absURL }}"
+      "url": "{{ "images/bomhort-favicon.png" | absURL }}"
     }
   }
 }

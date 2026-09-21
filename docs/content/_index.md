@@ -5,7 +5,8 @@ description: "BOMHort is a Kubernetes-native SBOM visualization and governance p
 ---
 
 {{< blocks/cover title="" image_anchor="top" height="med" color="dark" >}}
-<img src="/images/BOMHORT.png" alt="BOMHort" style="max-width: 300px; width: 100%; margin-bottom: 1rem;">
+<img src="/images/bomhort-mascot.png" alt="BOMHort dragon mascot" style="max-width: 150px; width: 100%; margin-bottom: 1rem;">
+<img src="/images/logo-with-text.svg" alt="BOMHort" style="max-width: 300px; width: 100%; margin-bottom: 1rem;">
 <p class="lead mt-4">Kubernetes-native Software Bill of Materials (SBOM) Visualization &amp; Governance Platform</p>
 <a class="btn btn-lg btn-bomhort me-3 mb-4" href="/docs/">
   <img class="fb-icon" src="/images/flowbite/book-open.svg" alt="" loading="lazy">
