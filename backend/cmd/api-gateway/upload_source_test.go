@@ -123,4 +123,3 @@ func TestUploadSourceHeaderRejected(t *testing.T) {
 		})
 	}
 }
-

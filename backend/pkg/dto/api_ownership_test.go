@@ -61,4 +61,3 @@ func TestSBOMListItem_OwnershipFieldsOmittedWhenUnset(t *testing.T) {
 		}
 	}
 }
-

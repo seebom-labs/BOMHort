@@ -89,4 +89,3 @@ func TestParse_ProvenanceAbsent(t *testing.T) {
 			s.Author, s.Role, s.Tooling, s.StatusNotes)
 	}
 }
-

@@ -89,4 +89,3 @@ func TestVersionSkewEmptyResponse(t *testing.T) {
 		t.Error("Items should be empty slice, not nil")
 	}
 }
-

@@ -92,4 +92,3 @@ func TestParse_ComponentShape(t *testing.T) {
 		t.Errorf("sbom_id = %q, want empty before scoping", s.SBOMID)
 	}
 }
-

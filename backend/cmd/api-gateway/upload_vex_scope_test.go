@@ -95,4 +95,3 @@ func TestUploadSBOMIDRejected(t *testing.T) {
 		})
 	}
 }
-

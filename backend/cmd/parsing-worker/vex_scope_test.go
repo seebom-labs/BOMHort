@@ -76,4 +76,3 @@ func TestScopeVEXStatements_NormalisedRepoRetry(t *testing.T) {
 		t.Errorf("normalised retry failed, sbom_id = %q", stmts[0].SBOMID)
 	}
 }
-

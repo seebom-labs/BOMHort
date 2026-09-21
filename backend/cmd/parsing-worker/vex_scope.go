@@ -25,9 +25,12 @@ type sbomResolver interface {
 //     table (sbom_id, source_repo, document_namespace, document_name).
 //     Repo-URL product IRIs are normalised first so
 //     "git+https://…/repo.git@v1" matches the stored source_repo form.
-//  3. Fallback: no match — the statement stays global (sbom_id ”), which
-//     preserves pre-#350 behaviour for component-style VEX documents, and a
-//     warning is logged because global statements suppress fleet-wide.
+//  3. Fallback: no match — the statement is stored unscoped (sbom_id ”). Per
+//     the OpenVEX spec "a valid statement MUST identify a product", so an
+//     unresolved product means the statement applies to no SBOM here: it is
+//     kept for audit/listing but never suppresses findings (the resolution
+//     queries only consider statements scoped to the SBOM being viewed). A
+//     warning is logged so the operator can re-upload with ?sbom_id=.
 //
 // Resolution results are memoised per product ref: documents typically repeat
 // the same product across statements.
@@ -95,6 +98,6 @@ func scopeVEXStatements(ctx context.Context, resolver sbomResolver, job models.I
 	}
 
 	for ref := range unresolved {
-		log.Printf("  WARNING: VEX %s: product %q matches no SBOM — statements stored globally (suppress fleet-wide). Map explicitly with ?sbom_id= on upload.", job.SourceFile, ref)
+		log.Printf("  WARNING: VEX %s: product %q matches no SBOM — statements stored unscoped and will not suppress any findings. Map explicitly with ?sbom_id= on upload.", job.SourceFile, ref)
 	}
 }
