@@ -1,5 +1,9 @@
 <p align="center">
-  <img src="docs/assets/icons/BOMHORT.png" alt="BOMHort" width="340">
+  <img src="docs/static/images/bomhort-mascot.png" alt="BOMHort dragon mascot" width="180">
+</p>
+
+<p align="center">
+  <img src="docs/static/images/logo-with-text.svg" alt="BOMHort" width="340">
 </p>
 
 <h3 align="center">Kubernetes-native Software Bill of Materials (SBOM) Visualization & Governance Platform</h3>
@@ -87,6 +91,7 @@ cp .env.example .env
 | `NAMESPACE` | *(empty)* | Default deployment-namespace label (#138) stamped onto all ingested data. Overridable per bucket and per upload (`?namespace=`). |
 | `PROJECT` | *(empty)* | Default project label (#57) stamped onto all ingested data. Overridable per bucket and per upload (`?project=`). |
 | `INGEST_PATH_LAYOUT` | *(empty)* | Opt-in: derive `cluster`/`namespace`/`project` from an SBOM's position in the source, e.g. `cluster/namespace/project` for keys like `prod-eu/payments/payment-service/app.spdx.json`. `_` skips a level. A malformed layout fails at startup. Explicit config always outranks derivation. |
+| `TAGS` | *(empty)* | Comma-separated free-form grouping labels (#357) stamped onto all ingested data, e.g. `sandbox-applications,cncf`. Tags group projects — they do not replace them: a project keeps its identity and can carry several tags. Unlike `CLUSTER_NAME`/`NAMESPACE`/`PROJECT`, per-bucket and per-upload (`?tags=`) values are **merged**, not overridden. Normalised to lowercase, trimmed, deduplicated and sorted. Read back via `GET /api/v1/tags`; filter with `GET /api/v1/projects?tag=<tag>`. |
 | `AUTH_ENABLED` | `false` | Enable API authentication middleware. When `false` (default), all API endpoints are unauthenticated. |
 | `SERVICE_TOKEN` | *(empty)* | Shared secret for upstream proxy/gateway integrations. Accepted via `Authorization: Bearer <token>` or `X-Service-Token: <token>`. |
 | `API_KEYS` | *(empty)* | Comma-separated list of API keys for direct API consumers (CI/CD, scripts). Accepted via `X-API-Key: <key>`. |

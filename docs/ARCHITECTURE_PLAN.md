@@ -30,7 +30,7 @@ bomhort/
 │   ├── cmd/
 │   │   ├── ingestion-watcher/main.go   # K8s CronJob
 │   │   ├── parsing-worker/main.go      # SBOM + VEX processor
-│   │   ├── api-gateway/main.go         # REST API (25 endpoints)
+│   │   ├── api-gateway/main.go         # REST API (29 endpoints)
 │   │   └── cve-refresher/main.go       # Background CVE Refresh CronJob
 │   ├── internal/
 │   │   ├── spdx/              # SPDX JSON streaming parser
@@ -67,7 +67,7 @@ bomhort/
 │       │   └── custom-theme.example.css   # Template for custom branding
 │       └── app/
 │           ├── app.ts                 # Navbar + dark-mode toggle
-│           ├── app.routes.ts          # 13 lazy-loaded routes
+│           ├── app.routes.ts          # 14 lazy-loaded routes
 │           ├── core/                  # ApiService, models, HTTP interceptor
 │           ├── shared/charts/         # DonutChart, HorizontalBarChart (themeable)
 │           └── features/
@@ -170,10 +170,10 @@ ClickHouse: sboms, sbom_packages, vulnerabilities, license_compliance, vex_state
        ├── Violations:     sumIf(copyleft|unknown) − exceptions (from config file)
        └── Dep Stats:      ARRAY JOIN + count(DISTINCT sbom_id) cross-project
        ▼
-API Gateway (REST) → 24 Endpoints
+API Gateway (REST) → 29 Endpoints
        │ HTTP/JSON + CORS + security headers + rate limit + optional auth (Bearer/X-Service-Token, X-API-Key)
        ▼
-Angular UI (13 lazy-loaded routes, virtual scrolling, OnPush, dark mode)
+Angular UI (14 lazy-loaded routes, virtual scrolling, OnPush, dark mode)
        │ Custom CSS theme mountable without Angular rebuild
 ```
 
@@ -202,7 +202,7 @@ name, including its version, without implicit aliases for the old `tmp.*` value.
 S3 project grouping continues to use the source path. See the
 [producer-facing fix report](reports/2026-09-08-temporary-sbom-document-names.md).
 
-## 3. API Endpoints (25)
+## 3. API Endpoints (29)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -233,6 +233,10 @@ S3 project grouping continues to use the source path. See the
 | GET | `/api/v1/clusters` | List all clusters with summary stats (SBOM count, packages, vulns) |
 | GET | `/api/v1/clusters/{name}/stats` | Per-cluster dashboard statistics |
 | GET | `/api/v1/clusters/{name}/sboms?page=&page_size=` | Paginated SBOM list for a specific cluster |
+| GET | `/api/v1/namespaces?cluster=` | List all namespaces with summary stats (optionally scoped to one cluster) |
+| GET | `/api/v1/namespaces/{name}/stats?cluster=` | Per-namespace dashboard statistics (+ clusters the namespace spans) |
+| GET | `/api/v1/namespaces/{name}/sboms?cluster=&page=&page_size=` | Paginated SBOM list for a specific namespace |
+| GET | `/api/v1/fleet` | Full `cluster → namespace → project` tree in one response (drives the UI Fleet view) |
 
 ## 4. ClickHouse Schema (15 Migrations)
 
@@ -372,6 +376,7 @@ Moved to Section 10 for comprehensive coverage including exemptions and visual r
 | Route | Component | Key Features |
 |-------|-----------|-------------|
 | `/` | DashboardComponent | KPI cards (incl. VEX, exempted), 3 donut charts, 2 bar charts, CVE refresh banner, quick links |
+| `/fleet` | FleetViewComponent | **Ownership tree** cluster → namespace → project (one `GET /api/v1/fleet` call), per-scope detail panel with severity + license breakdown, `(unassigned)` rendered explicitly as a misconfiguration signal |
 | `/sboms` | SbomListComponent | **Full-text search** (project name, file path, version), virtual scroll, package/vuln count |
 | `/sboms/:id` | SbomDetailComponent | **3 tabs:** Vulnerabilities (VEX badges), Licenses (exemption status + package list), Dependencies (tree, exempted=orange, **archived=badge**) |
 | `/vulnerabilities` | VulnerabilityListComponent | Virtual scroll, VEX status badges, all/effective toggle |

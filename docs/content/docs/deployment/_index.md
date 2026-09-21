@@ -144,9 +144,10 @@ In this example:
 
 **Priority:** per-bucket `cluster` > global `ownership.cluster` > empty (untagged)
 
-Cluster is only one of three ownership dimensions — see
-[Ownership](#2-ownership--labelling-sboms-by-cluster-namespace-and-project)
-for `namespace`, `project` and deriving all three from the ingestion path.
+Cluster is only one of the ownership dimensions — see
+[Ownership](#2-ownership--labelling-sboms-by-cluster-namespace-project-and-tags)
+for `namespace`, `project`, `tags` and deriving the triple from the ingestion
+path.
 
 ### Option B: Seed Job
 
@@ -278,22 +279,33 @@ The download endpoint advertises a served original with `X-BOMHort-Original: tru
 
 ---
 
-## 2. Ownership – Labelling SBOMs by Cluster, Namespace and Project
+## 2. Ownership – Labelling SBOMs by Cluster, Namespace, Project and Tags
 
-Every ingested row carries three orthogonal ownership labels. All default to
-`""` (unassigned), so an existing deployment that sets none of them keeps
-behaving exactly as before.
+{{% alert title="See it before you configure it" color="info" %}}
+[Fleet Views]({{< relref "/docs/ownership" >}}) shows what the cluster and
+namespace views look like, and ships a runnable demo fleet: `make demo-fleet`
+wipes the database and ingests `examples/fleet/` (three clusters, five
+namespaces, six projects) with `INGEST_PATH_LAYOUT=cluster/namespace/project`.
+For the tag dimension there is `make demo-catalogue`, which ingests
+`examples/catalogue/` (six projects across three tiers) with `TAGS` instead.
+{{% /alert %}}
+
+Every ingested row carries three orthogonal ownership labels, plus a list of
+free-form [tags](#tags). All default to `""` / `[]` (unassigned), so an
+existing deployment that sets none of them keeps behaving exactly as before.
 
 | Label | Question it answers | Example | Typical cardinality | Owned by |
 |-------|---------------------|---------|---------------------|----------|
 | `cluster` | Where is it deployed? | `prod-eu` | 1–50 | Platform |
 | `namespace` | Which tenant/team boundary inside the cluster? | `payments` | 10–500 | Platform / team |
 | `project` | What is it / who owns it? | `payment-service` | 50–5000 | Dev teams |
+| `tags` | Which grouping does it belong to? | `sandbox-applications` | 5–100 | Curator |
 
 Stored as `LowCardinality(String)` columns on every core table (`sboms`,
 `sbom_packages`, `vulnerabilities`, `license_compliance`, `ingestion_queue`,
 `vex_statements`, `document_store`) by migrations `012` (cluster) and `015`
-(namespace, project).
+(namespace, project). `tags` is an `Array(String)` on `sboms` and
+`ingestion_queue` (migration `022`).
 
 ### Static values
 
@@ -396,6 +408,71 @@ curl -X POST "https://bomhort.example.com/api/v1/sboms/upload?cluster=prod-eu&na
 Any parameter you omit falls back to the instance default. A blank parameter
 (`?namespace=`) is treated as omitted, so a client cannot accidentally blank
 out a configured value.
+
+### Tags – grouping projects {#tags}
+
+The three dimensions above describe where a workload *runs*. On a
+catalogue-style instance — a foundation collecting SBOMs of its member
+projects, a vendor publishing SBOMs for its product portfolio — nothing runs
+in a cluster at all, so `cluster` and `namespace` stay structurally empty. That
+instance still needs to say *"these 40 projects are sandbox applications"*.
+Tags (#357) are that fourth, orthogonal dimension.
+
+**Tags group projects, they do not replace them.** A project with three SBOMs
+stays one project named after itself and merely carries the label — so a
+catalogue keeps its per-project view *and* gains the grouping.
+
+```yaml
+# values.yaml
+ownership:
+  project: ""                                  # left to pathLayout / per-bucket
+  tags: ["sandbox-applications", "cncf"]
+```
+
+A list rather than a single value, because the groupings are genuinely
+many-to-many: one project can be a sandbox application *and* an observability
+tool. Per bucket and per upload:
+
+```yaml
+s3:
+  buckets:
+    - name: sandbox-sboms
+      tags: ["sandbox-applications"]
+    - name: graduated-sboms
+      tags: ["graduated"]
+```
+
+```bash
+curl -X POST "https://bomhort.example.com/api/v1/sboms/upload?tags=sandbox-applications,observability" \
+  -H "X-API-Key: $BOMHORT_API_KEY" \
+  -H "X-Filename: k2s.spdx.json" \
+  --data-binary @k2s.spdx.json
+```
+
+{{% alert title="Tags merge, they do not override" color="info" %}}
+This is the one place where tags deliberately break the ownership precedence
+rules. `cluster`/`namespace`/`project` are *answers* — a more specific level
+overrides a less specific one, because a document has exactly one owner. Tags
+are *memberships*: a bucket adding `sandbox-applications` does not contradict
+an instance-wide `cncf`, so the document ends up with both. Values are
+normalised on ingestion (trimmed, lowercased, deduplicated, sorted), so casing
+in your values file is not load-bearing.
+{{% /alert %}}
+
+Read the groupings back data-driven — never hard-code a tag vocabulary, the
+API reports exactly the tags that exist in the data:
+
+```bash
+curl -s https://bomhort.example.com/api/v1/tags
+# [{"tag":"graduated","sbom_count":89,"project_count":12},
+#  {"tag":"sandbox-applications","sbom_count":312,"project_count":41}]
+
+curl -s "https://bomhort.example.com/api/v1/projects?tag=sandbox-applications"
+```
+
+Tags need migration `022`. See
+[Fleet Views]({{< relref "/docs/ownership" >}}) for the full model and
+`make demo-catalogue` for a runnable three-tier catalogue.
 
 ### Applying the change
 

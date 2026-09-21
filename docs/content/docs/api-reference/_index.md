@@ -282,9 +282,13 @@ This endpoint refuses every request with `403 Forbidden` unless `AUTH_ENABLED=tr
 | `cluster` | string | Overrides this instance's configured `CLUSTER_NAME` for the resulting ingestion job. |
 | `namespace` | string | Overrides the configured `NAMESPACE` (#138). The deployment namespace the artifact belongs to, e.g. `payments`. |
 | `project` | string | Overrides the configured `PROJECT` (#57), e.g. `payment-service`. |
+| `tags` | string | Comma-separated grouping labels (#357), e.g. `sandbox-applications,cncf`. **Merged** with the instance-wide `TAGS` rather than overriding them — a CI job adding a grouping does not contradict a configured one. Normalised (trimmed, lowercased, deduplicated, max 32 × 64 chars). |
 | `sbom_id` | — | **VEX uploads only** (#350): scopes every statement in the document to this SBOM. Must be a valid SBOM UUID; rejected with `400` on SBOM uploads or malformed values. Without it, the worker resolves the statement's OpenVEX product `@id` against `sboms` (`source_repo`, `document_namespace`, `document_name`); if nothing matches the statement is stored **unscoped** and suppresses nothing — until a later ingest of the product's SBOM lets the **VEX rescue** pass (migration `020`) re-resolve and scope it. |
 
-All three are optional and independent. A parameter that is absent **or blank** inherits the instance default — `?namespace=` and omitting it entirely mean the same thing, so a client cannot accidentally blank out a configured value. Values are trimmed.
+The ownership parameters are optional and independent. A parameter that is absent **or blank** inherits the instance default — `?namespace=` and omitting it entirely mean the same thing, so a client cannot accidentally blank out a configured value. Values are trimmed.
+
+`tags` is the one exception to that override model: because groupings are many-to-many, upload tags are added to the configured ones instead of replacing them. `project` and `tags` also answer different questions — `project` names *what the artifact is*, `tags` say *what kind of thing it is* — so tagging an upload never collapses it into the tag. See [Fleet Views]({{< relref "/docs/ownership" >}}).
+
 
 Unlike the bucket/directory ingestion path, the server cannot infer these from an uploaded body, so a pushing CI job states them explicitly. They are stamped onto the ingestion job and copied onto every row the parsing worker writes (`sboms`, `sbom_packages`, `vulnerabilities`, `license_compliance`, `vex_statements`, `document_store`).
 
@@ -380,6 +384,7 @@ names until re-processed. Project-scoped license exceptions match the exact reso
       "source_file": "containerd-v1.7.2.spdx.json",
       "spdx_version": "SPDX-2.3",
       "document_name": "containerd-v1.7.2",
+      "document_version": "1.7.2",
       "package_count": 245,
       "vuln_count": 12,
       "ingested_at": "2026-05-20T14:30:00Z",
@@ -397,6 +402,8 @@ names until re-processed. Project-scoped license exceptions match the exact reso
 ```
 
 `source_repo` / `source_ref` (#332) identify where the product's source lives — extracted from the document at ingest (SPDX root `downloadLocation` / vcs `ExternalRef`; CycloneDX `metadata.component.externalReferences[type=vcs]` and `pedigree.commits[0].uid`), overridable via the upload headers or `PATCH /api/v1/sboms/{id}`. Both are omitted from the JSON when unknown.
+
+`document_version` is the version of the product the document describes — SPDX root package `versionInfo`, CycloneDX `metadata.component.version` — extracted at ingest and omitted when the document states none. Also returned by the detail endpoint.
 
 `cluster` / `namespace` / `project` (#177) are the three ownership dimensions the SBOM was tagged with at ingest (see [Ownership Data Model]({{< relref "/docs/architecture" >}}#ownership-data-model)). Each is omitted when unset, so single-instance deployments see the same payload as before. The same fields are returned by `GET /api/v1/clusters/{name}/sboms`.
 
@@ -721,7 +728,7 @@ Aggregated license compliance overview across all projects, with exemption detai
 
 ### `GET /api/v1/projects`
 
-Paginated list of projects grouped by source path or document name. Each project aggregates its SBOMs (versions), total packages, and vulnerability counts.
+Paginated list of projects. A project is its configured `project` label when set, otherwise derived from the source path or document name. Each project aggregates its SBOMs (versions), total packages, and vulnerability counts.
 
 **Query parameters:**
 
@@ -730,18 +737,25 @@ Paginated list of projects grouped by source path or document name. Each project
 | `page` | integer | 1 | Page number |
 | `page_size` | integer | 50 | Items per page (max 500) |
 | `search` | string | — | Filter projects by name (ILIKE) |
+| `tag` | string | — | Only projects carrying this grouping label |
+
+`tag` narrows *which* projects are listed; it never merges them. Filtering by
+`sandbox-applications` returns each sandbox project as its own entry, with its
+own version count. Values are normalised (trimmed, lowercased), so `tag=CNCF`
+matches data stored as `cncf`.
 
 **Response:** `200 OK`
 ```json
 {
   "data": [
     {
-      "project_name": "cncf-project-sboms/containerd",
-      "sbom_count": 12,
+      "project_name": "k2s",
+      "sbom_count": 3,
       "package_count": 1847,
       "vuln_count": 23,
       "latest_ingested": "2026-05-28T14:30:00Z",
-      "latest_sbom_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+      "latest_sbom_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "tags": ["sandbox-applications"]
     }
   ],
   "total": 142,
@@ -749,6 +763,24 @@ Paginated list of projects grouped by source path or document name. Each project
   "page_size": 50
 }
 ```
+
+---
+
+### `GET /api/v1/tags`
+
+Every grouping label in use, with how many SBOMs and how many distinct projects carry it. Returns `[]` on an instance that tags nothing — clients should read that as "this deployment does not group projects" and hide the affordance rather than showing an empty control.
+
+`project_count` is usually the more meaningful figure: tags group projects, so 312 SBOMs across 41 sandbox applications reads as 41, not 312.
+
+**Response:** `200 OK`
+```json
+[
+  { "tag": "graduated", "sbom_count": 89, "project_count": 12 },
+  { "tag": "sandbox-applications", "sbom_count": 312, "project_count": 41 }
+]
+```
+
+See [Fleet Views]({{< relref "/docs/ownership" >}}) for how tags are configured and how they differ from the `cluster`/`namespace`/`project` dimensions.
 
 ---
 
@@ -1128,6 +1160,149 @@ Paginated list of SBOMs for a specific cluster.
   "page_size": 50
 }
 ```
+
+---
+
+## Namespaces
+
+Namespaces are the second ownership dimension (#138). Unlike a cluster name, a
+**namespace name is only unique within a cluster** — `payments` commonly exists
+in `prod-eu`, `prod-us` and `staging` at the same time. Every namespace endpoint
+therefore accepts an optional `cluster` query parameter:
+
+| `cluster` | Meaning |
+|-----------|---------|
+| omitted / blank | Aggregate this namespace across the whole fleet |
+| `prod-eu` | Only the `prod-eu` slice of this namespace |
+
+See [Fleet Views]({{< relref "/docs/ownership" >}}) for the configuration side
+and a runnable example.
+
+### `GET /api/v1/namespaces`
+
+List all known namespaces with summary statistics, sorted by SBOM count
+(descending).
+
+**Query Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `cluster` | string | Optional cluster scope (max 200 chars) |
+
+**Response:** `200 OK`
+```json
+[
+  {
+    "name": "payments",
+    "cluster_count": 3,
+    "sbom_count": 4,
+    "package_count": 14,
+    "vuln_count": 89,
+    "last_ingested": "2026-09-18T07:06:19Z"
+  },
+  {
+    "name": "search",
+    "cluster_count": 1,
+    "sbom_count": 1,
+    "package_count": 4,
+    "vuln_count": 34,
+    "last_ingested": "2026-09-18T07:06:16Z"
+  }
+]
+```
+
+`cluster_count` is the number of distinct clusters this namespace appears in —
+the fastest way to spot a name that is reused by several teams. When the listing
+is filtered, each item additionally echoes the `cluster` it was scoped to.
+
+**Error Responses:**
+- `400 Bad Request` — `cluster` exceeds 200 characters
+
+### `GET /api/v1/namespaces/{name}/stats`
+
+Per-namespace statistics including severity breakdown and license distribution.
+Mirrors the shape of `GET /api/v1/clusters/{name}/stats`, plus the list of
+clusters the namespace spans.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | Namespace name (max 200 chars) |
+
+**Query Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `cluster` | string | Optional cluster scope (max 200 chars) |
+
+**Response:** `200 OK`
+```json
+{
+  "namespace": "payments",
+  "cluster": "staging",
+  "clusters": ["staging"],
+  "total_sboms": 1,
+  "total_packages": 4,
+  "total_vulnerabilities": 18,
+  "critical_vulns": 0,
+  "high_vulns": 1,
+  "medium_vulns": 5,
+  "low_vulns": 12,
+  "license_breakdown": { "permissive": 3 },
+  "last_ingested": "2026-09-18T07:06:15Z"
+}
+```
+
+**Error Responses:**
+- `400 Bad Request` — namespace name empty or either value exceeds 200 characters
+- `404 Not Found` — no SBOMs exist for this namespace (in this scope)
+
+### `GET /api/v1/namespaces/{name}/sboms`
+
+Paginated list of SBOMs in a namespace.
+
+**Query Parameters:** `cluster` plus standard pagination (`page`, `page_size`)
+
+**Response:** `200 OK` — Standard `PaginatedResponse[SBOMListItem]`. Each item
+carries its `cluster`, `namespace` and `project`.
+
+---
+
+## Fleet
+
+### `GET /api/v1/fleet`
+
+The complete `cluster → namespace → project` hierarchy in a single response.
+This is what the UI's Fleet tree renders; fetching it per cluster would turn a
+50-cluster fleet into 50 round trips on page load.
+
+**Response:** `200 OK`
+```json
+[
+  {
+    "name": "prod-eu",
+    "sbom_count": 4,
+    "vuln_count": 116,
+    "namespaces": [
+      {
+        "name": "payments",
+        "sbom_count": 2,
+        "vuln_count": 41,
+        "projects": [
+          { "name": "ledger", "sbom_count": 1, "vuln_count": 15, "last_ingested": "2026-09-18T07:06:18Z" },
+          { "name": "payment-api", "sbom_count": 1, "vuln_count": 26, "last_ingested": "2026-09-18T07:06:13Z" }
+        ]
+      }
+    ]
+  }
+]
+```
+
+Cluster and namespace counts are the sums of their children. An empty `name` at
+any level means that dimension is **unassigned** for those SBOMs — it is
+returned rather than hidden, because a large unassigned bucket is the clearest
+signal that ingestion labelling is not configured.
 
 ---
 

@@ -74,7 +74,7 @@ API Gateway (REST) → 24 Endpoints → Angular UI
 
 | Table | Engine | Purpose |
 |-------|--------|---------|
-| `sboms` | ReplacingMergeTree | SBOM metadata |
+| `sboms` | ReplacingMergeTree | SBOM metadata incl. `document_version` (migration `021`): the version of the described product (SPDX root `versionInfo`, CycloneDX `metadata.component.version`), extracted at parse time |
 | `sbom_packages` | MergeTree | Parallel arrays (names, PURLs, licenses, relationships) |
 | `vulnerabilities` | MergeTree | OSV results incl. `aliases` (migration `019`): every other identifier OSV lists for the entry (GHSA ↔ CVE); VEX matching accepts a statement whose `vuln_id` equals the finding's id **or** any alias |
 | `license_compliance` | SummingMergeTree | License compliance per SBOM |
@@ -97,6 +97,8 @@ All core tables (`sboms`, `sbom_packages`, `vulnerabilities`, `license_complianc
 
 None of them is part of `ORDER BY`: MergeTree cannot alter a sort key in place, and a full table rebuild is not worth it for filter dimensions at these cardinalities. Filtering is by `WHERE`.
 `sboms` and `ingestion_queue` additionally carry `source_repo` / `source_ref` (`String DEFAULT ''`, migration `016`, #332): the repository URL and ref (tag, branch or commit) of the product the SBOM describes. They are extracted at parse time (SPDX root `downloadLocation` / vcs `ExternalRef`; CycloneDX `metadata.component.externalReferences[type=vcs]` / `pedigree.commits`), overridable via the `X-Source-Repo` / `X-Source-Ref` upload headers or `PATCH /api/v1/sboms/{id}`.
+
+`sboms` and `ingestion_queue` also carry `tags` (`Array(String) DEFAULT []`, migration `022`, #357): free-form grouping labels that sit *orthogonal* to the ownership triple. Where `cluster`/`namespace`/`project` answer "where does this run and who owns it", tags answer "which grouping does this project belong to" — the dimension a catalogue instance (foundation, vendor, internal platform team) needs when nothing runs in a cluster at all. Tags group projects, they do not replace them: a project keeps its identity and may carry several tags. Values are normalised at ingest (lowercase, trimmed, deduplicated, sorted) and — unlike the ownership triple — instance-wide, per-bucket and per-upload tags are **merged** rather than overridden. The distinct set is read back data-driven via `GET /api/v1/tags`; `GET /api/v1/projects?tag=<tag>` narrows the project list. `Array(String)` over `LowCardinality`: a document carries n tags, and ClickHouse's `has()` on a small string array is cheap at these cardinalities.
 
 ## Ownership Data Model
 
@@ -199,6 +201,10 @@ Segments map positionally onto the leading path segments, relative to the ingest
 | GET | `/api/v1/clusters` | List all clusters with summary stats |
 | GET | `/api/v1/clusters/{name}/stats` | Per-cluster dashboard statistics |
 | GET | `/api/v1/clusters/{name}/sboms?page=&page_size=` | SBOMs for a specific cluster |
+| GET | `/api/v1/namespaces?cluster=` | List all namespaces, optionally scoped to one cluster |
+| GET | `/api/v1/namespaces/{name}/stats?cluster=` | Per-namespace dashboard statistics |
+| GET | `/api/v1/namespaces/{name}/sboms?cluster=&page=&page_size=` | SBOMs for a specific namespace |
+| GET | `/api/v1/fleet` | Full `cluster → namespace → project` tree in one response |
 | GET | `/api/v1/search?q=` | Global search (SBOMs, packages, CVEs) |
 | GET | `/api/v1/sboms/{id}/download` | Download the original SBOM document |
 | POST | `/api/v1/sboms/upload` | Push-model SBOM upload (requires `AUTH_ENABLED=true`) |
@@ -224,28 +230,6 @@ A VEX statement asserts the status of a vulnerability **for a product** — the 
 **Alias matching (migration `019`):** the same flaw carries several identifiers (OSV reports `GHSA-…` with alias `CVE-…`). Findings store the OSV alias list (`vulnerabilities.aliases`), and every suppression join matches a statement when its `vuln_id` equals the finding's `vuln_id` **or** appears in its aliases — a statement written about the CVE suppresses the finding stored under its GHSA id.
 
 Every suppression join is scope-aware: a statement applies iff its `sbom_id` matches the finding's SBOM; among the matching statements the latest-wins rule applies (#335). The UI surfaces statements as a **VEX tab** in the SBOM detail view; there is no fleet-wide VEX page (the `/api/v1/vex/statements` endpoint remains for automation).
-
-#### Which component a statement covers
-
-OpenVEX documents come in three shapes, and the one a statement uses decides what `vex_statements.product_purl` holds:
-
-| Document shape | `product_purl` | Matches |
-|----------------|----------------|---------|
-| `products[]` + `subcomponents[]` | the subcomponent purl | that one component in the scoped SBOM |
-| `products[]`, no `subcomponents[]` | `*` | **every** component of the scoped SBOM |
-| product `@id` *is* a package purl (Trivy et al.) | that purl | that one component |
-
-The middle row is the plain reading of the spec: a statement naming only a product asserts the status for the product as a whole — "this application is not affected by CVE-X", whichever library carries the vulnerable code. Such a statement has no component purl to match against `vulnerabilities.purl`, so the parsing worker stores the sentinel `*` once the product `@id` resolves to an SBOM. Resolution is what tells this shape apart from the third one: only the `sboms` lookup can say whether a ref names a product or a component.
-
-Latest-wins is applied *after* the component match, so a product-wide `not_affected` and a later component-scoped `affected` for the same finding resolve by timestamp like any other pair.
-
-#### Identifier aliases (migration 019)
-The same flaw carries several identifiers — OSV reports `GHSA-p6mc-m468-83gw` with `aliases: ["CVE-2020-8203"]`, and a human writing a VEX document reaches for the CVE. Matching `vuln_id` as an exact string made those statements miss silently. The OSV alias list is stored on every finding (`vulnerabilities.aliases`), and every suppression query matches a statement when its `vuln_id` equals the finding's id **or** appears in its aliases. Findings ingested before migration `019` have an empty list and keep exact-match behaviour until the next re-scan.
-#### Arrival order (migration 020)
-VEX and SBOM files land in arbitrary order. A statement whose product SBOM has not been ingested yet fails resolution and is stored unscoped — and used to stay that way forever, because the product `@id` was discarded and the idempotency guard skipped the document on every later encounter. Two mechanisms fix this:
-- the product `@id` is persisted (`vex_statements.product_ref`), and after each successful SBOM ingest the worker re-resolves all unscoped statements, scoping those whose product now exists ("rescue pass");
-- the idempotency guard only skips a document whose statements are all scoped; one with unscoped statements is re-processed.
-Rescue is best-effort by design: the SBOM ingest that triggers it has already succeeded, so a VEX bookkeeping failure logs a warning instead of failing the job.
 
 ## CVE Refresher
 

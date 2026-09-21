@@ -181,6 +181,8 @@ Everything that touches `db/migrations/` or a frozen response shape, in one plac
 | `018_add_vex_sbom_scope` ✅ | #350 | `ADD COLUMN sbom_id` on `vex_statements`, `ADD COLUMN target_sbom_id` on `ingestion_queue` — VEX statements scoped to the SBOM/product they describe | **pre** |
 | `019_add_vulnerability_aliases` ✅ | — | `ADD COLUMN aliases Array(String)` on `vulnerabilities` — OSV alias IDs (GHSA ↔ CVE); VEX suppression matches a statement by `vuln_id` **or** any alias | **pre** |
 | `020_add_vex_product_ref` ✅ | — | `ADD COLUMN product_ref` on `vex_statements` — persisted OpenVEX product `@id`; enables the post-ingest **VEX rescue** pass that scopes previously unresolvable statements | **pre** |
+| `021_add_document_version` ✅ | — | `ADD COLUMN document_version` on `sboms` — version of the described product (SPDX root `versionInfo`, CycloneDX `metadata.component.version`) | **pre** |
+| `022_add_sbom_tags` ✅ | #357 | `ADD COLUMN tags Array(String)` on `sboms` + `ingestion_queue` — grouping labels orthogonal to cluster/namespace/project, for catalogue instances that group projects without deploying them. Tags label projects, they do not replace them | **pre** |
 | — (query only) ✅ | #335 | Row semantics of `/sboms/{id}/vulnerabilities` | **pre** (API contract) |
 | — (DTO only) | #177 | `cluster` in `SBOMListItem` | **pre** (API contract) |
 | `02x_create_upload_jobs` | #336 | New table | post |
