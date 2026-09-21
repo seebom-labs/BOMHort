@@ -1,0 +1,95 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "k2s",
+  "documentNamespace": "https://bomhort.example.com/sbom/catalogue/sandbox/k2s-0.4.0",
+  "creationInfo": {
+    "created": "2025-09-01T08:00:00Z",
+    "creators": [
+      "Tool: syft-1.18.1",
+      "Organization: BOMHort Catalogue Demo"
+    ],
+    "licenseListVersion": "3.24"
+  },
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-RootPackage",
+      "name": "k2s",
+      "versionInfo": "0.4.0",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "Apache-2.0",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/example.com/k2s/k2s@0.4.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-golang-org-x-net",
+      "name": "golang.org/x/net",
+      "versionInfo": "v0.23.0",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "BSD-3-Clause",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/golang.org/x/net@v0.23.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-gopkg-in-yaml-v3",
+      "name": "gopkg.in/yaml.v3",
+      "versionInfo": "v3.0.1",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/gopkg.in/yaml.v3@v3.0.1"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-github-com-spf13-cobra",
+      "name": "github.com/spf13/cobra",
+      "versionInfo": "v1.8.0",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "Apache-2.0",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/github.com/spf13/cobra@v1.8.0"
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-RootPackage"
+    },
+    {
+      "spdxElementId": "SPDXRef-RootPackage",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-golang-org-x-net"
+    },
+    {
+      "spdxElementId": "SPDXRef-RootPackage",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-gopkg-in-yaml-v3"
+    },
+    {
+      "spdxElementId": "SPDXRef-RootPackage",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-github-com-spf13-cobra"
+    }
+  ]
+}

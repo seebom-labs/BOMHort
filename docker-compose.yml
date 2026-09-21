@@ -57,6 +57,11 @@ services:
       NAMESPACE: ${NAMESPACE:-}
       PROJECT: ${PROJECT:-}
       INGEST_PATH_LAYOUT: ${INGEST_PATH_LAYOUT:-}
+      # TAGS (#357) are deployment-neutral grouping labels applied to every
+      # ingested document, e.g. TAGS=sandbox-applications. They group projects
+      # without replacing them, which is what makes them work on catalogue
+      # instances that have no cluster at all.
+      TAGS: ${TAGS:-}
       EXCEPTIONS_FILE: /data/config/license-exceptions.json
       LICENSE_POLICY_FILE: /data/config/license-policy.json
       # API Authentication (off by default; set AUTH_ENABLED=true in .env to enable)
@@ -110,6 +115,11 @@ services:
       NAMESPACE: ${NAMESPACE:-}
       PROJECT: ${PROJECT:-}
       INGEST_PATH_LAYOUT: ${INGEST_PATH_LAYOUT:-}
+      # TAGS (#357) are deployment-neutral grouping labels applied to every
+      # ingested document, e.g. TAGS=sandbox-applications. They group projects
+      # without replacing them, which is what makes them work on catalogue
+      # instances that have no cluster at all.
+      TAGS: ${TAGS:-}
       SBOM_LIMIT: ${SBOM_LIMIT:-0}
       # S3 bucket ingestion (optional – leave empty to use local files only)
       S3_BUCKETS: ${S3_BUCKETS:-}
@@ -150,6 +160,11 @@ services:
       NAMESPACE: ${NAMESPACE:-}
       PROJECT: ${PROJECT:-}
       INGEST_PATH_LAYOUT: ${INGEST_PATH_LAYOUT:-}
+      # TAGS (#357) are deployment-neutral grouping labels applied to every
+      # ingested document, e.g. TAGS=sandbox-applications. They group projects
+      # without replacing them, which is what makes them work on catalogue
+      # instances that have no cluster at all.
+      TAGS: ${TAGS:-}
       WORKER_BATCH_SIZE: ${WORKER_BATCH_SIZE:-50}
       SKIP_OSV: ${SKIP_OSV:-false}
       SKIP_GITHUB_RESOLVE: ${SKIP_GITHUB_RESOLVE:-false}

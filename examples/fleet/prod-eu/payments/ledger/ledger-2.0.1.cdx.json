@@ -1,0 +1,53 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:6f1c2a70-1f4e-4b21-9d3a-0a1b2c3d4e5f",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2025-09-01T08:05:00Z",
+    "tools": [{ "vendor": "anchore", "name": "syft", "version": "1.18.1" }],
+    "component": {
+      "type": "application",
+      "bom-ref": "pkg:golang/example.com/payments/ledger@v2.0.1",
+      "name": "ledger",
+      "version": "v2.0.1",
+      "purl": "pkg:golang/example.com/payments/ledger@v2.0.1"
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/github.com/gin-gonic/gin@v1.6.0",
+      "name": "github.com/gin-gonic/gin",
+      "version": "v1.6.0",
+      "purl": "pkg:golang/github.com/gin-gonic/gin@v1.6.0",
+      "licenses": [{ "license": { "id": "MIT" } }]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/google.golang.org/protobuf@v1.33.0",
+      "name": "google.golang.org/protobuf",
+      "version": "v1.33.0",
+      "purl": "pkg:golang/google.golang.org/protobuf@v1.33.0",
+      "licenses": [{ "license": { "id": "BSD-3-Clause" } }]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/github.com/jackc/pgx/v5@v5.5.0",
+      "name": "github.com/jackc/pgx/v5",
+      "version": "v5.5.0",
+      "purl": "pkg:golang/github.com/jackc/pgx/v5@v5.5.0",
+      "licenses": [{ "license": { "id": "MIT" } }]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "pkg:golang/example.com/payments/ledger@v2.0.1",
+      "dependsOn": [
+        "pkg:golang/github.com/gin-gonic/gin@v1.6.0",
+        "pkg:golang/google.golang.org/protobuf@v1.33.0",
+        "pkg:golang/github.com/jackc/pgx/v5@v5.5.0"
+      ]
+    }
+  ]
+}

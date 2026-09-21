@@ -1,0 +1,20 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://bomhort.example.com/vex/prod-eu/payments/payment-api-2025-001",
+  "author": "Payments Platform Team",
+  "role": "vendor",
+  "timestamp": "2025-09-01T09:00:00Z",
+  "version": 1,
+  "tooling": "bomhort-fleet-demo/1.0.0",
+  "statements": [
+    {
+      "vulnerability": { "name": "CVE-2020-8203" },
+      "products": [
+        { "@id": "https://bomhort.example.com/sbom/prod-eu/payments/payment-api-1.4.2" }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "lodash.zipObjectDeep is never called; the prototype pollution path is unreachable."
+    }
+  ]
+}

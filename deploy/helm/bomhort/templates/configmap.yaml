@@ -17,6 +17,13 @@ data:
   PROJECT: {{ .project | default "" | quote }}
   INGEST_PATH_LAYOUT: {{ .pathLayout | default "" | quote }}
   {{- end }}
+  {{- /*
+    Tags (#357) are a list in values but a comma-separated string in the
+    environment, because a ConfigMap value is always a scalar. join here
+    rather than indexed TAGS_0/TAGS_1 keys: the backend parses one string,
+    and numbered keys would make "unset" and "empty list" indistinguishable.
+  */}}
+  TAGS: {{ join "," .Values.ownership.tags | quote }}
   API_PORT: {{ .Values.apiGateway.port | quote }}
   WORKER_BATCH_SIZE: {{ .Values.parsingWorker.batchSize | quote }}
   SKIP_OSV: {{ .Values.parsingWorker.skipOSV | quote }}

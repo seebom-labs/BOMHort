@@ -1,0 +1,38 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "toolbox-cli",
+  "documentNamespace": "https://bomhort.example.com/sbom/prod-eu/toolbox-cli-1.1.0",
+  "creationInfo": {
+    "created": "2025-09-11T16:45:00Z",
+    "creators": ["Tool: syft-1.18.1", "Organization: BOMHort Fleet Demo"],
+    "licenseListVersion": "3.24"
+  },
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-RootPackage",
+      "name": "toolbox-cli",
+      "versionInfo": "1.1.0",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "Apache-2.0",
+      "externalRefs": [
+        { "referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:golang/example.com/toolbox-cli@v1.1.0" }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-yamlv2",
+      "name": "gopkg.in/yaml.v2",
+      "versionInfo": "v2.2.7",
+      "downloadLocation": "https://proxy.golang.org/gopkg.in/yaml.v2/@v/v2.2.7.zip",
+      "licenseConcluded": "Apache-2.0",
+      "externalRefs": [
+        { "referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:golang/gopkg.in/yaml.v2@v2.2.7" }
+      ]
+    }
+  ],
+  "relationships": [
+    { "spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-RootPackage" },
+    { "spdxElementId": "SPDXRef-RootPackage", "relationshipType": "DEPENDS_ON", "relatedSpdxElement": "SPDXRef-Package-yamlv2" }
+  ]
+}

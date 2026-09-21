@@ -1,0 +1,49 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "ingress-gateway",
+  "documentNamespace": "https://bomhort.example.com/sbom/prod-us/platform/ingress-gateway-3.0.4",
+  "creationInfo": {
+    "created": "2025-08-20T07:10:00Z",
+    "creators": ["Tool: syft-1.18.1", "Organization: BOMHort Fleet Demo"],
+    "licenseListVersion": "3.24"
+  },
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-RootPackage",
+      "name": "ingress-gateway",
+      "versionInfo": "3.0.4",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "Apache-2.0",
+      "externalRefs": [
+        { "referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:golang/example.com/platform/ingress-gateway@3.0.4" }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-xcrypto",
+      "name": "golang.org/x/crypto",
+      "versionInfo": "v0.14.0",
+      "downloadLocation": "https://proxy.golang.org/golang.org/x/crypto/@v/v0.14.0.zip",
+      "licenseConcluded": "BSD-3-Clause",
+      "externalRefs": [
+        { "referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:golang/golang.org/x/crypto@v0.14.0" }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-clientgo",
+      "name": "k8s.io/client-go",
+      "versionInfo": "v0.28.4",
+      "downloadLocation": "https://proxy.golang.org/k8s.io/client-go/@v/v0.28.4.zip",
+      "licenseConcluded": "Apache-2.0",
+      "externalRefs": [
+        { "referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:golang/k8s.io/client-go@v0.28.4" }
+      ]
+    }
+  ],
+  "relationships": [
+    { "spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-RootPackage" },
+    { "spdxElementId": "SPDXRef-RootPackage", "relationshipType": "DEPENDS_ON", "relatedSpdxElement": "SPDXRef-Package-xcrypto" },
+    { "spdxElementId": "SPDXRef-RootPackage", "relationshipType": "DEPENDS_ON", "relatedSpdxElement": "SPDXRef-Package-clientgo" }
+  ]
+}

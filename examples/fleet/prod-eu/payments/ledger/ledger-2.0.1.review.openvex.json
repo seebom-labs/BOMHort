@@ -1,0 +1,25 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://bomhort.example.com/vex/prod-eu/payments/ledger-2025-007",
+  "author": "Alice Keller",
+  "role": "security engineer",
+  "timestamp": "2026-09-05T14:30:00Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": { "name": "GHSA-h395-qcrw-5vmq" },
+      "products": [
+        {
+          "@id": "urn:uuid:6f1c2a70-1f4e-4b21-9d3a-0a1b2c3d4e5f",
+          "subcomponents": [
+            { "@id": "pkg:golang/github.com/gin-gonic/gin@v1.6.0" }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "ledger serves the API behind the ingress gateway which strips the malformed headers gin mishandles; manual review of the routing layer confirmed the vulnerable code path is never reached.",
+      "status_notes": "Human review supersedes the automated VEXViper draft of 2026-09-01."
+    }
+  ]
+}

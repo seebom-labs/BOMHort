@@ -6,6 +6,20 @@ This directory contains ready-to-use example configurations for deploying BOMHor
 |-----------|-------------|
 | [`kind/`](kind/) | Local development with [Kind](https://kind.sigs.k8s.io/) (Kubernetes in Docker) |
 | [`kubernetes/`](kubernetes/) | Production / staging deployment on a real Kubernetes cluster |
+| [`fleet/`](fleet/) | Runnable demo data for the cluster / namespace / project views (`make demo-fleet`) |
+| [`catalogue/`](catalogue/) | Runnable demo data for the project / tag views, for instances with no cluster (`make demo-catalogue`) |
+| [`license-exceptions/`](license-exceptions/) | Example license exception file to adapt and review |
+
+## Which demo data fits your instance?
+
+BOMHort is run in two shapes, and the demo directories mirror them:
+
+| | [`fleet/`](fleet/) | [`catalogue/`](catalogue/) |
+|---|---|---|
+| For | Companies running workloads on Kubernetes | Foundations, vendors, product lines |
+| Answers | *Where does this workload run?* | *What kind of project is this?* |
+| Dimensions | `cluster` → `namespace` → `project` | `project` + `tags` |
+| `cluster`/`namespace` | The core of the model | Structurally empty, and that is fine |
 
 ## SBOM Ingestion Methods
 

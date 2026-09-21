@@ -1,0 +1,76 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "prometheus",
+  "documentNamespace": "https://bomhort.example.com/sbom/catalogue/graduated/prometheus-2.51.0",
+  "creationInfo": {
+    "created": "2025-09-01T08:00:00Z",
+    "creators": [
+      "Tool: syft-1.18.1",
+      "Organization: BOMHort Catalogue Demo"
+    ],
+    "licenseListVersion": "3.24"
+  },
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-RootPackage",
+      "name": "prometheus",
+      "versionInfo": "2.51.0",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "Apache-2.0",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/example.com/prometheus/prometheus@2.51.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-gopkg-in-yaml-v3",
+      "name": "gopkg.in/yaml.v3",
+      "versionInfo": "v3.0.1",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/gopkg.in/yaml.v3@v3.0.1"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-github-com-prometheus-client_golang",
+      "name": "github.com/prometheus/client_golang",
+      "versionInfo": "v1.19.0",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "Apache-2.0",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/github.com/prometheus/client_golang@v1.19.0"
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-RootPackage"
+    },
+    {
+      "spdxElementId": "SPDXRef-RootPackage",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-gopkg-in-yaml-v3"
+    },
+    {
+      "spdxElementId": "SPDXRef-RootPackage",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-github-com-prometheus-client_golang"
+    }
+  ]
+}

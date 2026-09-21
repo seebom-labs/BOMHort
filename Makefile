@@ -1,4 +1,6 @@
 .PHONY: help dev dev-up dev-down dev-logs dev-reset
+.PHONY: demo-fleet demo-fleet-verify demo-fleet-down
+.PHONY: demo-catalogue demo-catalogue-verify demo-catalogue-down
 .PHONY: ch-shell ch-migrate
 .PHONY: backend-build backend-test backend-vet
 .PHONY: ui-build ui-dev
@@ -97,6 +99,112 @@ re-scan: ## Reset all data + queue, then re-ingest (e.g. after enabling OSV)
 
 dev-logs: ## docker compose logs -f
 	docker compose logs -f
+
+# --- Ownership demo (cluster / namespace / project) --------------------------
+# examples/fleet/ is laid out as {cluster}/{namespace}/{project}/file.json, so
+# INGEST_PATH_LAYOUT derives all three dimensions from the path. The S3 vars are
+# blanked on purpose: the shell environment wins over .env in Compose, so this
+# runs against the bundled files even when .env points at real buckets.
+DEMO_FLEET_ENV = SBOM_SOURCE_DIR=./examples/fleet \
+	INGEST_PATH_LAYOUT=cluster/namespace/project \
+	S3_BUCKETS= S3_BUCKET= S3_ENDPOINT= S3_ACCESS_KEY= S3_SECRET_KEY= \
+	SBOM_LIMIT=0
+
+demo-fleet: ## Wipe all data and ingest the bundled multi-cluster demo fleet (examples/fleet)
+	@echo "Running pending migrations..."
+	@for f in db/migrations/*.sql; do \
+		docker compose exec -T clickhouse clickhouse-client --database=bomhort --multiquery < "$$f" 2>/dev/null || true; \
+	done
+	@echo "Clearing all data tables and queue..."
+	@docker compose exec -T clickhouse clickhouse-client --database=bomhort --multiquery --query \
+		"TRUNCATE TABLE ingestion_queue; TRUNCATE TABLE vulnerabilities; TRUNCATE TABLE license_compliance; TRUNCATE TABLE sbom_packages; TRUNCATE TABLE sboms; TRUNCATE TABLE vex_statements; TRUNCATE TABLE document_store;"
+	@echo "Starting stack against examples/fleet with INGEST_PATH_LAYOUT=cluster/namespace/project..."
+	@$(DEMO_FLEET_ENV) docker compose up --build -d --force-recreate api-gateway parsing-worker ui
+	@$(DEMO_FLEET_ENV) docker compose up --build --force-recreate ingestion-watcher
+	@echo "Demo fleet queued. Progress: make dev-status   Views: make demo-fleet-verify"
+
+demo-fleet-verify: ## Print the cluster / namespace / fleet-tree views of the demo data
+	@echo "=== GET /api/v1/clusters ==="
+	@curl -sf http://localhost:8080/api/v1/clusters | jq -c '.[]' || echo "(API not reachable)"
+	@echo ""
+	@echo "=== GET /api/v1/namespaces ==="
+	@curl -sf http://localhost:8080/api/v1/namespaces | jq -c '.[]' || true
+	@echo ""
+	@echo "=== GET /api/v1/namespaces?cluster=prod-eu ==="
+	@curl -sf "http://localhost:8080/api/v1/namespaces?cluster=prod-eu" | jq -c '.[]' || true
+	@echo ""
+	@echo "=== GET /api/v1/fleet (cluster -> namespace -> project) ==="
+	@curl -sf http://localhost:8080/api/v1/fleet | \
+		jq -r '.[] | "\(.name) [\(.sbom_count) SBOMs, \(.vuln_count) vulns]", (.namespaces[] | "  \(.name) [\(.sbom_count) SBOMs]", (.projects[] | "    \(.name) [\(.sbom_count) SBOMs, \(.vuln_count) vulns]"))' || true
+
+demo-fleet-down: ## Return the stack to the configuration in .env (keeps ingested data)
+	docker compose up -d --force-recreate api-gateway parsing-worker ui
+
+# --- Catalogue demo (project / tags) ----------------------------------------
+# The counterpart to demo-fleet: a catalogue of projects that run nowhere in
+# particular, so cluster/namespace stay empty and TAGS carries the grouping.
+# Layout is {project}/file.json per tier, hence INGEST_PATH_LAYOUT=project.
+#
+# One watcher run per tier because TAGS is instance-wide. The parsing worker is
+# recreated with the same SBOM_SOURCE_DIR for each run and the queue is drained
+# before moving on: source_file is stored relative to the watcher's root, so a
+# worker mounted at a different root cannot resolve it.
+#
+# In production none of this is needed — each tier is its own S3 bucket with
+# its own "tags", and one worker serves them all (see examples/catalogue/README.md).
+DEMO_CATALOGUE_ENV = INGEST_PATH_LAYOUT=project \
+	S3_BUCKETS= S3_BUCKET= S3_ENDPOINT= S3_ACCESS_KEY= S3_SECRET_KEY= \
+	SBOM_LIMIT=0
+
+demo-catalogue: ## Wipe all data and ingest the bundled project catalogue (examples/catalogue)
+	@echo "Running pending migrations..."
+	@for f in db/migrations/*.sql; do \
+		docker compose exec -T clickhouse clickhouse-client --database=bomhort --multiquery < "$$f" 2>/dev/null || true; \
+	done
+	@echo "Clearing all data tables and queue..."
+	@docker compose exec -T clickhouse clickhouse-client --database=bomhort --multiquery --query \
+		"TRUNCATE TABLE ingestion_queue; TRUNCATE TABLE vulnerabilities; TRUNCATE TABLE license_compliance; TRUNCATE TABLE sbom_packages; TRUNCATE TABLE sboms; TRUNCATE TABLE vex_statements; TRUNCATE TABLE document_store;"
+	@$(DEMO_CATALOGUE_ENV) docker compose up --build -d --force-recreate api-gateway ui
+	@for tier in sandbox:sandbox-applications incubating:incubating graduated:graduated; do \
+		dir=$${tier%%:*}; tag=$${tier##*:}; \
+		echo ""; \
+		echo "── Ingesting $$dir with TAGS=$$tag ──────────────────────────"; \
+		$(DEMO_CATALOGUE_ENV) SBOM_SOURCE_DIR=./examples/catalogue/$$dir TAGS=$$tag \
+			docker compose up --build -d --force-recreate parsing-worker; \
+		$(DEMO_CATALOGUE_ENV) SBOM_SOURCE_DIR=./examples/catalogue/$$dir TAGS=$$tag \
+			docker compose up --build --force-recreate ingestion-watcher; \
+		printf "   draining queue"; \
+		for i in $$(seq 1 60); do \
+			left=$$(docker compose exec -T clickhouse clickhouse-client --database=bomhort -q \
+				"SELECT count() FROM (SELECT job_id, argMax(status, created_at) s FROM ingestion_queue GROUP BY job_id) WHERE s IN ('pending','processing')" 2>/dev/null || echo 1); \
+			[ "$$left" = "0" ] && break; \
+			printf "."; sleep 2; \
+		done; \
+		echo " done"; \
+	done
+	@echo ""
+	@echo "Demo catalogue ingested. Views: make demo-catalogue-verify"
+
+demo-catalogue-verify: ## Print the tag / project views of the catalogue demo data
+	@echo "=== GET /api/v1/tags (the groupings that exist — data-driven) ==="
+	@curl -sf http://localhost:8080/api/v1/tags | jq -c '.[]' || echo "(API not reachable)"
+	@echo ""
+	@echo "=== GET /api/v1/projects?tag=sandbox-applications ==="
+	@echo "    (k2s must appear ONCE with 2 SBOMs — tags group projects, not replace them)"
+	@curl -sf "http://localhost:8080/api/v1/projects?tag=sandbox-applications" | \
+		jq -r '.data[] | "  \(.project_name) [\(.sbom_count) SBOMs, \(.vuln_count) vulns] tags=\(.tags)"' || true
+	@echo ""
+	@echo "=== GET /api/v1/projects (unfiltered: every tier) ==="
+	@curl -sf "http://localhost:8080/api/v1/projects?page_size=50" | \
+		jq -r '.data[] | "  \(.project_name) [\(.sbom_count) SBOMs] tags=\(.tags)"' || true
+	@echo ""
+	@echo "=== GET /api/v1/clusters (one unnamed bucket — nothing runs in a cluster) ==="
+	@echo "    (a catalogue has no cluster dimension; the UI renders this as \"(unassigned)\")"
+	@curl -sf http://localhost:8080/api/v1/clusters | jq -c '.' || true
+
+demo-catalogue-down: ## Return the stack to the configuration in .env (keeps ingested data)
+	docker compose up -d --force-recreate api-gateway parsing-worker ui
+
 
 dev-reset: dev-down ## Destroy volumes and restart fresh
 	docker compose down -v

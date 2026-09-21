@@ -1,0 +1,76 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "keda",
+  "documentNamespace": "https://bomhort.example.com/sbom/catalogue/incubating/keda-2.14.0",
+  "creationInfo": {
+    "created": "2025-09-01T08:00:00Z",
+    "creators": [
+      "Tool: syft-1.18.1",
+      "Organization: BOMHort Catalogue Demo"
+    ],
+    "licenseListVersion": "3.24"
+  },
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-RootPackage",
+      "name": "keda",
+      "versionInfo": "2.14.0",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "Apache-2.0",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/example.com/keda/keda@2.14.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-google-golang-org-grpc",
+      "name": "google.golang.org/grpc",
+      "versionInfo": "v1.58.3",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "Apache-2.0",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/google.golang.org/grpc@v1.58.3"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-github-com-prometheus-client_golang",
+      "name": "github.com/prometheus/client_golang",
+      "versionInfo": "v1.19.0",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "Apache-2.0",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/github.com/prometheus/client_golang@v1.19.0"
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-RootPackage"
+    },
+    {
+      "spdxElementId": "SPDXRef-RootPackage",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-google-golang-org-grpc"
+    },
+    {
+      "spdxElementId": "SPDXRef-RootPackage",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-github-com-prometheus-client_golang"
+    }
+  ]
+}

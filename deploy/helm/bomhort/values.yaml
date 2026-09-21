@@ -31,6 +31,34 @@ ownership:
   namespace: ""
   project: ""
 
+  # Grouping labels (#357), stamped onto every ingested SBOM.
+  #
+  # Tags answer "what kind of thing is this?", which the three dimensions
+  # above cannot: they describe where a workload *runs*, so they are
+  # structurally empty on a catalogue-style instance (a foundation collecting
+  # SBOMs of its member projects has no cluster at all) — yet that instance
+  # still needs to say "these 40 projects are sandbox applications".
+  #
+  # Tags group projects, they do not replace them. A project with three SBOMs
+  # stays one project named after itself and merely carries the label:
+  #
+  #   ownership:
+  #     project: ""            # left to per-bucket config or pathLayout
+  #     tags: ["sandbox-applications"]
+  #
+  #   -> the listing shows k2s, cert-manager, ... each as its own project,
+  #      all filterable by the "sandbox-applications" grouping.
+  #
+  # A list rather than a single value because the groupings are genuinely
+  # many-to-many: one project can be a sandbox application *and* an
+  # observability tool. Unlike cluster/namespace/project, tags from the
+  # different levels are merged rather than overridden — a bucket adding
+  # "sandbox-applications" does not contradict an instance-wide "cncf".
+  #
+  # Normalised on ingestion (trimmed, lowercased, deduplicated), so casing
+  # here is not load-bearing.
+  tags: []
+
   # Derive the dimensions from where an SBOM sits in its source, instead of
   # (or on top of) the static values above. Empty = disabled, nothing is
   # derived. The layout maps positionally onto the leading path segments,
@@ -69,6 +97,18 @@ s3:
   # under SBOM_DIR/pushed/ (see sbomSource.writable below).
   # Example with a push bucket:
   # [{"name":"cncf-subproject-sboms","region":"us-east-1"},{"name":"bomhort-pushed","region":"us-east-1","skipScan":true}]
+  #
+  # Per-bucket ownership and grouping: a bucket entry may carry "cluster",
+  # "namespace", "project", "pathLayout" and "tags". This is the usual way to
+  # label a catalogue instance, where each bucket holds one category of
+  # projects:
+  # [{"name":"cncf-sandbox","region":"us-east-1","tags":["sandbox-applications"],"pathLayout":"_/_/project"},
+  #  {"name":"cncf-graduated","region":"us-east-1","tags":["graduated"],"pathLayout":"_/project"}]
+  #
+  # Note how "tags" and "project" do different jobs: pathLayout picks the real
+  # project out of the key, while tags label what kind of project it is. The
+  # listing then shows each project by name, filterable by grouping — rather
+  # than collapsing a whole category into one entry named after its prefix.
   buckets: ""
   # Shared credentials (applied to all buckets without their own keys).
   # For public buckets, leave empty.

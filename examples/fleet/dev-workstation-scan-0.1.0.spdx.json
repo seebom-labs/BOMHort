@@ -1,0 +1,49 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "dev-workstation-scan",
+  "documentNamespace": "https://bomhort.example.com/sbom/adhoc/dev-workstation-scan-0.1.0",
+  "creationInfo": {
+    "created": "2025-09-12T08:15:00Z",
+    "creators": ["Tool: syft-1.18.1", "Person: Alice Keller"],
+    "licenseListVersion": "3.24"
+  },
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-RootPackage",
+      "name": "dev-workstation-scan",
+      "versionInfo": "0.1.0",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "externalRefs": [
+        { "referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:generic/dev-workstation-scan@0.1.0" }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-minimist",
+      "name": "minimist",
+      "versionInfo": "1.2.0",
+      "downloadLocation": "https://registry.npmjs.org/minimist/-/minimist-1.2.0.tgz",
+      "licenseConcluded": "MIT",
+      "externalRefs": [
+        { "referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:npm/minimist@1.2.0" }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pyyaml",
+      "name": "PyYAML",
+      "versionInfo": "5.3.1",
+      "downloadLocation": "https://pypi.org/project/PyYAML/5.3.1/",
+      "licenseConcluded": "MIT",
+      "externalRefs": [
+        { "referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:pypi/pyyaml@5.3.1" }
+      ]
+    }
+  ],
+  "relationships": [
+    { "spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-RootPackage" },
+    { "spdxElementId": "SPDXRef-RootPackage", "relationshipType": "DEPENDS_ON", "relatedSpdxElement": "SPDXRef-Package-minimist" },
+    { "spdxElementId": "SPDXRef-RootPackage", "relationshipType": "DEPENDS_ON", "relatedSpdxElement": "SPDXRef-Package-pyyaml" }
+  ]
+}

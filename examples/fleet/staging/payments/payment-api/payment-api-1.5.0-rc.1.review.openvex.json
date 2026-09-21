@@ -1,0 +1,24 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://bomhort.example.com/vex/staging/payments/payment-api-2025-011",
+  "author": "Payments Platform Team",
+  "role": "vendor",
+  "timestamp": "2026-09-04T10:00:00Z",
+  "version": 1,
+  "tooling": "bomhort-fleet-demo/1.0.0",
+  "statements": [
+    {
+      "vulnerability": { "name": "GO-2025-3595" },
+      "products": [
+        {
+          "@id": "https://bomhort.example.com/sbom/staging/payments/payment-api-1.5.0-rc.1",
+          "subcomponents": [
+            { "@id": "pkg:golang/golang.org/x/net@v0.33.0" }
+          ]
+        }
+      ],
+      "status": "fixed",
+      "status_notes": "The RC ships a vendored golang.org/x/net with the html.Parse fix backported; upstream bump to v0.38.0 lands in 1.5.0 final."
+    }
+  ]
+}

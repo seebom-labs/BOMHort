@@ -1,0 +1,76 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "kuadrant",
+  "documentNamespace": "https://bomhort.example.com/sbom/catalogue/sandbox/kuadrant-1.0.2",
+  "creationInfo": {
+    "created": "2025-09-01T08:00:00Z",
+    "creators": [
+      "Tool: syft-1.18.1",
+      "Organization: BOMHort Catalogue Demo"
+    ],
+    "licenseListVersion": "3.24"
+  },
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-RootPackage",
+      "name": "kuadrant",
+      "versionInfo": "1.0.2",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "Apache-2.0",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/example.com/kuadrant/kuadrant@1.0.2"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-google-golang-org-grpc",
+      "name": "google.golang.org/grpc",
+      "versionInfo": "v1.58.3",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "Apache-2.0",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/google.golang.org/grpc@v1.58.3"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-gopkg-in-yaml-v3",
+      "name": "gopkg.in/yaml.v3",
+      "versionInfo": "v3.0.1",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/gopkg.in/yaml.v3@v3.0.1"
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-RootPackage"
+    },
+    {
+      "spdxElementId": "SPDXRef-RootPackage",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-google-golang-org-grpc"
+    },
+    {
+      "spdxElementId": "SPDXRef-RootPackage",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-gopkg-in-yaml-v3"
+    }
+  ]
+}

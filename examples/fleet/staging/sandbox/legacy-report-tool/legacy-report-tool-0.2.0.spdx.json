@@ -1,0 +1,60 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "legacy-report-tool",
+  "documentNamespace": "https://bomhort.example.com/sbom/staging/sandbox/legacy-report-tool-0.2.0",
+  "creationInfo": {
+    "created": "2025-09-10T12:30:00Z",
+    "creators": ["Tool: syft-1.18.1", "Organization: BOMHort Fleet Demo"],
+    "licenseListVersion": "3.24"
+  },
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-RootPackage",
+      "name": "legacy-report-tool",
+      "versionInfo": "0.2.0",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "Apache-2.0",
+      "externalRefs": [
+        { "referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:generic/legacy-report-tool@0.2.0" }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-readline",
+      "name": "readline",
+      "versionInfo": "8.2",
+      "downloadLocation": "https://ftp.gnu.org/gnu/readline/readline-8.2.tar.gz",
+      "licenseConcluded": "GPL-3.0-only",
+      "externalRefs": [
+        { "referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:generic/readline@8.2" }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-libgmp",
+      "name": "libgmp",
+      "versionInfo": "6.3.0",
+      "downloadLocation": "https://gmplib.org/download/gmp/gmp-6.3.0.tar.xz",
+      "licenseConcluded": "LGPL-3.0-or-later",
+      "externalRefs": [
+        { "referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:generic/libgmp@6.3.0" }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-mysql-connector",
+      "name": "mysql-connector-java",
+      "versionInfo": "8.0.33",
+      "downloadLocation": "https://repo1.maven.org/maven2/com/mysql/mysql-connector-j/8.0.33/",
+      "licenseConcluded": "GPL-2.0-only",
+      "externalRefs": [
+        { "referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:maven/com.mysql/mysql-connector-j@8.0.33" }
+      ]
+    }
+  ],
+  "relationships": [
+    { "spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-RootPackage" },
+    { "spdxElementId": "SPDXRef-RootPackage", "relationshipType": "DEPENDS_ON", "relatedSpdxElement": "SPDXRef-Package-readline" },
+    { "spdxElementId": "SPDXRef-RootPackage", "relationshipType": "DEPENDS_ON", "relatedSpdxElement": "SPDXRef-Package-libgmp" },
+    { "spdxElementId": "SPDXRef-RootPackage", "relationshipType": "DEPENDS_ON", "relatedSpdxElement": "SPDXRef-Package-mysql-connector" }
+  ]
+}

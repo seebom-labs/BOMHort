@@ -1,0 +1,60 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "query-service",
+  "documentNamespace": "https://bomhort.example.com/sbom/prod-eu/search/query-service-0.9.0",
+  "creationInfo": {
+    "created": "2025-09-01T08:10:00Z",
+    "creators": ["Tool: syft-1.18.1", "Organization: BOMHort Fleet Demo"],
+    "licenseListVersion": "3.24"
+  },
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-RootPackage",
+      "name": "query-service",
+      "versionInfo": "0.9.0",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "Apache-2.0",
+      "externalRefs": [
+        { "referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:pypi/query-service@0.9.0" }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-urllib3",
+      "name": "urllib3",
+      "versionInfo": "1.26.4",
+      "downloadLocation": "https://pypi.org/project/urllib3/1.26.4/",
+      "licenseConcluded": "MIT",
+      "externalRefs": [
+        { "referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:pypi/urllib3@1.26.4" }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-requests",
+      "name": "requests",
+      "versionInfo": "2.31.0",
+      "downloadLocation": "https://pypi.org/project/requests/2.31.0/",
+      "licenseConcluded": "Apache-2.0",
+      "externalRefs": [
+        { "referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:pypi/requests@2.31.0" }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-jinja2",
+      "name": "jinja2",
+      "versionInfo": "3.1.2",
+      "downloadLocation": "https://pypi.org/project/Jinja2/3.1.2/",
+      "licenseConcluded": "BSD-3-Clause",
+      "externalRefs": [
+        { "referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:pypi/jinja2@3.1.2" }
+      ]
+    }
+  ],
+  "relationships": [
+    { "spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-RootPackage" },
+    { "spdxElementId": "SPDXRef-RootPackage", "relationshipType": "DEPENDS_ON", "relatedSpdxElement": "SPDXRef-Package-requests" },
+    { "spdxElementId": "SPDXRef-Package-requests", "relationshipType": "DEPENDS_ON", "relatedSpdxElement": "SPDXRef-Package-urllib3" },
+    { "spdxElementId": "SPDXRef-RootPackage", "relationshipType": "DEPENDS_ON", "relatedSpdxElement": "SPDXRef-Package-jinja2" }
+  ]
+}

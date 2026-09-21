@@ -1,0 +1,38 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://bomhort.example.com/vex/platform/ingress-gateway-ssh-advisory-2025-003",
+  "author": "Platform Security Guild",
+  "role": "security team",
+  "timestamp": "2026-09-03T08:00:00Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": { "name": "GHSA-v778-237x-gjrc" },
+      "products": [
+        {
+          "@id": "https://bomhort.example.com/sbom/prod-eu/platform/ingress-gateway-3.1.0",
+          "subcomponents": [
+            { "@id": "pkg:golang/golang.org/x/crypto@v0.16.0" }
+          ]
+        }
+      ],
+      "status": "affected",
+      "action_statement": "Terrapin (SSH prefix truncation) is exploitable on every ingress-gateway that terminates SSH; upgrade golang.org/x/crypto to >= 0.31.0 in the next maintenance window.",
+      "action_statement_timestamp": "2026-09-03T08:00:00Z"
+    },
+    {
+      "vulnerability": { "name": "GHSA-v778-237x-gjrc" },
+      "products": [
+        {
+          "@id": "https://bomhort.example.com/sbom/prod-us/platform/ingress-gateway-3.0.4",
+          "subcomponents": [
+            { "@id": "pkg:golang/golang.org/x/crypto@v0.14.0" }
+          ]
+        }
+      ],
+      "status": "affected",
+      "action_statement": "Terrapin (SSH prefix truncation) is exploitable on every ingress-gateway that terminates SSH; upgrade golang.org/x/crypto to >= 0.31.0 in the next maintenance window.",
+      "action_statement_timestamp": "2026-09-03T08:00:00Z"
+    }
+  ]
+}

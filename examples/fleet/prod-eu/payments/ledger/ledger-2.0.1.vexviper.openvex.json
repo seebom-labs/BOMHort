@@ -1,0 +1,350 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://vexviper.dev/docs/public/vex-39180d178323861017fc57a6da07cf6999ae9c26cc657f66c9bb200a51669810-d3fcb56b-7195-59c8-ac9c-da5e6940cb55",
+  "author": "VEXViper",
+  "role": "automated triage (LLM-assisted)",
+  "version": 1,
+  "tooling": "vexviper/dev provider=heuristic",
+  "statements": [
+    {
+      "@id": "https://vexviper.dev/docs/statements/GHSA-2c4m-59x9-fr2g/pkg_golang_github.com_gin-gonic_gin_v1.6.0",
+      "vulnerability": {
+        "name": "GHSA-2c4m-59x9-fr2g",
+        "description": "Gin Web Framework does not properly sanitize filename parameter of Context.FileAttachment function",
+        "aliases": [
+          "CVE-2023-29401"
+        ]
+      },
+      "products": [
+        {
+          "@id": "urn:uuid:6f1c2a70-1f4e-4b21-9d3a-0a1b2c3d4e5f",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/github.com/gin-gonic/gin@v1.6.0"
+            }
+          ]
+        }
+      ],
+      "status": "under_investigation",
+      "status_notes": "provider=heuristic confidence=0.3 | Insufficient deterministic evidence to decide exploitability.",
+      "timestamp": "2026-09-01T06:00:00Z"
+    },
+    {
+      "@id": "https://vexviper.dev/docs/statements/GHSA-3vp4-m3rf-835h/pkg_golang_github.com_gin-gonic_gin_v1.6.0",
+      "vulnerability": {
+        "name": "GHSA-3vp4-m3rf-835h",
+        "description": "Improper input validation in github.com/gin-gonic/gin",
+        "aliases": [
+          "CVE-2023-26125"
+        ]
+      },
+      "products": [
+        {
+          "@id": "urn:uuid:6f1c2a70-1f4e-4b21-9d3a-0a1b2c3d4e5f",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/github.com/gin-gonic/gin@v1.6.0"
+            }
+          ]
+        }
+      ],
+      "status": "under_investigation",
+      "status_notes": "provider=heuristic confidence=0.3 | Insufficient deterministic evidence to decide exploitability.",
+      "timestamp": "2026-09-01T06:00:00Z"
+    },
+    {
+      "@id": "https://vexviper.dev/docs/statements/GHSA-9jj7-4m8r-rfcm/pkg_golang_github.com_jackc_pgx_v5_v5.5.0",
+      "vulnerability": {
+        "name": "GHSA-9jj7-4m8r-rfcm",
+        "description": "Memory-safety vulnerability in github.com/jackc/pgx/v5.",
+        "aliases": [
+          "CVE-2026-33816"
+        ]
+      },
+      "products": [
+        {
+          "@id": "urn:uuid:6f1c2a70-1f4e-4b21-9d3a-0a1b2c3d4e5f",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/github.com/jackc/pgx/v5@v5.5.0"
+            }
+          ]
+        }
+      ],
+      "status": "under_investigation",
+      "status_notes": "provider=heuristic confidence=0.3 | Insufficient deterministic evidence to decide exploitability.",
+      "timestamp": "2026-09-01T06:00:00Z"
+    },
+    {
+      "@id": "https://vexviper.dev/docs/statements/GHSA-fqpg-rq76-99pq/pkg_golang_github.com_jackc_pgx_v5_v5.5.0",
+      "vulnerability": {
+        "name": "GHSA-fqpg-rq76-99pq",
+        "description": "Panic in Pipeline when PgConn is busy or closed in github.com/jackc/pgx"
+      },
+      "products": [
+        {
+          "@id": "urn:uuid:6f1c2a70-1f4e-4b21-9d3a-0a1b2c3d4e5f",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/github.com/jackc/pgx/v5@v5.5.0"
+            }
+          ]
+        }
+      ],
+      "status": "under_investigation",
+      "status_notes": "provider=heuristic confidence=0.3 | Insufficient deterministic evidence to decide exploitability.",
+      "timestamp": "2026-09-01T06:00:00Z"
+    },
+    {
+      "@id": "https://vexviper.dev/docs/statements/GHSA-h395-qcrw-5vmq/pkg_golang_github.com_gin-gonic_gin_v1.6.0",
+      "vulnerability": {
+        "name": "GHSA-h395-qcrw-5vmq",
+        "description": "Inconsistent Interpretation of HTTP Requests in github.com/gin-gonic/gin",
+        "aliases": [
+          "CVE-2020-28483"
+        ]
+      },
+      "products": [
+        {
+          "@id": "urn:uuid:6f1c2a70-1f4e-4b21-9d3a-0a1b2c3d4e5f",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/github.com/gin-gonic/gin@v1.6.0"
+            }
+          ]
+        }
+      ],
+      "status": "under_investigation",
+      "status_notes": "provider=heuristic confidence=0.3 | Insufficient deterministic evidence to decide exploitability.",
+      "timestamp": "2026-09-01T06:00:00Z"
+    },
+    {
+      "@id": "https://vexviper.dev/docs/statements/GHSA-j88v-2chj-qfwx/pkg_golang_github.com_jackc_pgx_v5_v5.5.0",
+      "vulnerability": {
+        "name": "GHSA-j88v-2chj-qfwx",
+        "description": "pgx: SQL Injection via placeholder confusion with dollar quoted string literals",
+        "aliases": [
+          "CVE-2026-41889"
+        ]
+      },
+      "products": [
+        {
+          "@id": "urn:uuid:6f1c2a70-1f4e-4b21-9d3a-0a1b2c3d4e5f",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/github.com/jackc/pgx/v5@v5.5.0"
+            }
+          ]
+        }
+      ],
+      "status": "under_investigation",
+      "status_notes": "provider=heuristic confidence=0.3 | Insufficient deterministic evidence to decide exploitability.",
+      "timestamp": "2026-09-01T06:00:00Z"
+    },
+    {
+      "@id": "https://vexviper.dev/docs/statements/GHSA-mrww-27vc-gghv/pkg_golang_github.com_jackc_pgx_v5_v5.5.0",
+      "vulnerability": {
+        "name": "GHSA-mrww-27vc-gghv",
+        "description": "pgx SQL Injection via Protocol Message Size Overflow",
+        "aliases": [
+          "CVE-2024-27304"
+        ]
+      },
+      "products": [
+        {
+          "@id": "urn:uuid:6f1c2a70-1f4e-4b21-9d3a-0a1b2c3d4e5f",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/github.com/jackc/pgx/v5@v5.5.0"
+            }
+          ]
+        }
+      ],
+      "status": "fixed",
+      "status_notes": "provider=heuristic confidence=0.95 evidence=version_fixed | The installed version is at or above the version that fixes the vulnerability.",
+      "timestamp": "2026-09-01T06:00:00Z"
+    },
+    {
+      "@id": "https://vexviper.dev/docs/statements/GHSA-xgrm-4fwx-7qm8/pkg_golang_github.com_jackc_pgx_v5_v5.5.0",
+      "vulnerability": {
+        "name": "GHSA-xgrm-4fwx-7qm8",
+        "description": "pgx contains memory-safety vulnerability",
+        "aliases": [
+          "CVE-2026-33815"
+        ]
+      },
+      "products": [
+        {
+          "@id": "urn:uuid:6f1c2a70-1f4e-4b21-9d3a-0a1b2c3d4e5f",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/github.com/jackc/pgx/v5@v5.5.0"
+            }
+          ]
+        }
+      ],
+      "status": "under_investigation",
+      "status_notes": "provider=heuristic confidence=0.3 | Insufficient deterministic evidence to decide exploitability.",
+      "timestamp": "2026-09-01T06:00:00Z"
+    },
+    {
+      "@id": "https://vexviper.dev/docs/statements/GO-2021-0052/pkg_golang_github.com_gin-gonic_gin_v1.6.0",
+      "vulnerability": {
+        "name": "GO-2021-0052",
+        "description": "Inconsistent interpretation of HTTP Requests in github.com/gin-gonic/gin",
+        "aliases": [
+          "CVE-2020-28483"
+        ]
+      },
+      "products": [
+        {
+          "@id": "urn:uuid:6f1c2a70-1f4e-4b21-9d3a-0a1b2c3d4e5f",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/github.com/gin-gonic/gin@v1.6.0"
+            }
+          ]
+        }
+      ],
+      "status": "under_investigation",
+      "status_notes": "provider=heuristic confidence=0.3 | Insufficient deterministic evidence to decide exploitability.",
+      "timestamp": "2026-09-01T06:00:00Z"
+    },
+    {
+      "@id": "https://vexviper.dev/docs/statements/GO-2023-1737/pkg_golang_github.com_gin-gonic_gin_v1.6.0",
+      "vulnerability": {
+        "name": "GO-2023-1737",
+        "description": "Improper handling of filenames in Content-Disposition HTTP header in github.com/gin-gonic/gin",
+        "aliases": [
+          "CVE-2023-29401"
+        ]
+      },
+      "products": [
+        {
+          "@id": "urn:uuid:6f1c2a70-1f4e-4b21-9d3a-0a1b2c3d4e5f",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/github.com/gin-gonic/gin@v1.6.0"
+            }
+          ]
+        }
+      ],
+      "status": "under_investigation",
+      "status_notes": "provider=heuristic confidence=0.3 | Insufficient deterministic evidence to decide exploitability.",
+      "timestamp": "2026-09-01T06:00:00Z"
+    },
+    {
+      "@id": "https://vexviper.dev/docs/statements/GO-2024-2567/pkg_golang_github.com_jackc_pgx_v5_v5.5.0",
+      "vulnerability": {
+        "name": "GO-2024-2567",
+        "description": "Panic in Pipeline when PgConn is busy or closed in github.com/jackc/pgx"
+      },
+      "products": [
+        {
+          "@id": "urn:uuid:6f1c2a70-1f4e-4b21-9d3a-0a1b2c3d4e5f",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/github.com/jackc/pgx/v5@v5.5.0"
+            }
+          ]
+        }
+      ],
+      "status": "under_investigation",
+      "status_notes": "provider=heuristic confidence=0.3 | Insufficient deterministic evidence to decide exploitability.",
+      "timestamp": "2026-09-01T06:00:00Z"
+    },
+    {
+      "@id": "https://vexviper.dev/docs/statements/GO-2024-2606/pkg_golang_github.com_jackc_pgx_v5_v5.5.0",
+      "vulnerability": {
+        "name": "GO-2024-2606",
+        "description": "SQL injection in github.com/jackc/pgproto3 and github.com/jackc/pgx",
+        "aliases": [
+          "CVE-2024-27304"
+        ]
+      },
+      "products": [
+        {
+          "@id": "urn:uuid:6f1c2a70-1f4e-4b21-9d3a-0a1b2c3d4e5f",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/github.com/jackc/pgx/v5@v5.5.0"
+            }
+          ]
+        }
+      ],
+      "status": "fixed",
+      "status_notes": "provider=heuristic confidence=0.95 evidence=version_fixed | The installed version is at or above the version that fixes the vulnerability.",
+      "timestamp": "2026-09-01T06:00:00Z"
+    },
+    {
+      "@id": "https://vexviper.dev/docs/statements/GO-2026-4771/pkg_golang_github.com_jackc_pgx_v5_v5.5.0",
+      "vulnerability": {
+        "name": "GO-2026-4771",
+        "description": "CVE-2026-33815 in github.com/jackc/pgx",
+        "aliases": [
+          "CVE-2026-33815"
+        ]
+      },
+      "products": [
+        {
+          "@id": "urn:uuid:6f1c2a70-1f4e-4b21-9d3a-0a1b2c3d4e5f",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/github.com/jackc/pgx/v5@v5.5.0"
+            }
+          ]
+        }
+      ],
+      "status": "under_investigation",
+      "status_notes": "provider=heuristic confidence=0.3 | Insufficient deterministic evidence to decide exploitability.",
+      "timestamp": "2026-09-01T06:00:00Z"
+    },
+    {
+      "@id": "https://vexviper.dev/docs/statements/GO-2026-4772/pkg_golang_github.com_jackc_pgx_v5_v5.5.0",
+      "vulnerability": {
+        "name": "GO-2026-4772",
+        "description": "CVE-2026-33816 in github.com/jackc/pgx",
+        "aliases": [
+          "CVE-2026-33816"
+        ]
+      },
+      "products": [
+        {
+          "@id": "urn:uuid:6f1c2a70-1f4e-4b21-9d3a-0a1b2c3d4e5f",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/github.com/jackc/pgx/v5@v5.5.0"
+            }
+          ]
+        }
+      ],
+      "status": "under_investigation",
+      "status_notes": "provider=heuristic confidence=0.3 | Insufficient deterministic evidence to decide exploitability.",
+      "timestamp": "2026-09-01T06:00:00Z"
+    },
+    {
+      "@id": "https://vexviper.dev/docs/statements/GO-2026-5004/pkg_golang_github.com_jackc_pgx_v5_v5.5.0",
+      "vulnerability": {
+        "name": "GO-2026-5004",
+        "description": "SQL Injection via placeholder confusion with dollar quoted string literals in github.com/jackc/pgx",
+        "aliases": [
+          "CVE-2026-41889"
+        ]
+      },
+      "products": [
+        {
+          "@id": "urn:uuid:6f1c2a70-1f4e-4b21-9d3a-0a1b2c3d4e5f",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/github.com/jackc/pgx/v5@v5.5.0"
+            }
+          ]
+        }
+      ],
+      "status": "under_investigation",
+      "status_notes": "provider=heuristic confidence=0.3 | Insufficient deterministic evidence to decide exploitability.",
+      "timestamp": "2026-09-01T06:00:00Z"
+    }
+  ],
+  "timestamp": "2026-09-01T06:00:00Z"
+}
