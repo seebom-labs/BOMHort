@@ -2,6 +2,7 @@
 package github
 
 import (
+	"sort"
 	"strings"
 )
 
@@ -147,3 +148,38 @@ func splitOwnerRepo(s string) (string, string, bool) {
 func RepoKey(owner, repo string) string {
 	return strings.ToLower(owner + "/" + repo)
 }
+
+// WellKnownModuleMappings returns the wellKnownGoModules table as two parallel
+// slices — module path prefix and the "owner/repo" key it maps to — sorted
+// longest prefix first.
+//
+// It exists so the query layer can reproduce ExtractGitHubRepo's mapping in
+// SQL. Going the other way (matching a purl against a repo name with LIKE)
+// cannot work: gopkg.in/yaml.v3 belongs to go-yaml/yaml and shares not a
+// single character with it, so a substring match silently drops every package
+// whose import path differs from its repository — which is precisely what the
+// well-known table exists to translate.
+//
+// The longest-first order makes the lookup deterministic. Go map iteration is
+// randomised, so with overlapping prefixes ExtractGitHubRepo could otherwise
+// return a different repo from one call to the next.
+func WellKnownModuleMappings() (prefixes, repoKeys []string) {
+	prefixes = make([]string, 0, len(wellKnownGoModules))
+	for prefix := range wellKnownGoModules {
+		prefixes = append(prefixes, prefix)
+	}
+	sort.Slice(prefixes, func(i, j int) bool {
+		if len(prefixes[i]) != len(prefixes[j]) {
+			return len(prefixes[i]) > len(prefixes[j])
+		}
+		return prefixes[i] < prefixes[j]
+	})
+
+	repoKeys = make([]string, 0, len(prefixes))
+	for _, prefix := range prefixes {
+		ownerRepo := wellKnownGoModules[prefix]
+		repoKeys = append(repoKeys, RepoKey(ownerRepo[0], ownerRepo[1]))
+	}
+	return prefixes, repoKeys
+}
+

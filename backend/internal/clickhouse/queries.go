@@ -156,9 +156,12 @@ func (c *Client) QueryDashboardStats(ctx context.Context) (*dto.DashboardStats, 
 		`).Scan(&stats.NewVulnsSinceRefresh)
 	}
 
-	// Archived repos count.
-	_ = c.Conn.QueryRow(ctx,
-		"SELECT count() FROM github_repo_metadata FINAL WHERE archived = true").Scan(&stats.ArchivedReposCount)
+	// Archived repos that something in the corpus actually depends on. Counting
+	// github_repo_metadata directly would report cache entries whose packages
+	// are long gone, so the banner would offer a list that renders empty.
+	if archived, err := c.QueryArchivedReposInUse(ctx); err == nil {
+		stats.ArchivedReposCount = archived
+	}
 
 	return stats, nil
 }

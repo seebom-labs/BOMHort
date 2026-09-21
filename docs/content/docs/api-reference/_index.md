@@ -1048,20 +1048,41 @@ Facet arrays are always present (empty when no matches). Each facet returns at m
 
 ### `GET /api/v1/packages/archived`
 
-Packages from archived/unmaintained GitHub repositories (supply chain risk indicator).
+Packages whose upstream GitHub repository has been archived (supply-chain risk
+indicator). One row per (SBOM, package) pair, so a dependency shared by five
+projects appears five times — group by `repo` client-side.
+
+Only repositories that something in the corpus still depends on are reported.
+`archived_repos_count` in [dashboard stats](#get-apiv1statsdashboard) counts the
+distinct `repo` values of exactly this endpoint, so the banner and the list can
+never disagree.
 
 **Response:** `200 OK`
 ```json
 [
   {
-    "package_name": "github.com/abandoned/lib",
-    "purl": "pkg:golang/github.com/abandoned/lib",
-    "archived_since": "2023-06-15",
-    "project_count": 4,
-    "projects": ["etcd-v3.5.12", "containerd-v1.7.2"]
+    "sbom_id": "6f2b525a-fbde-5b43-aa92-ac06a3f7220d",
+    "source_file": "k2s/k2s-0.3.0.spdx.json",
+    "project_name": "k2s",
+    "project_version": "0.3.0",
+    "package_name": "gopkg.in/yaml.v3",
+    "package_purl": "pkg:golang/gopkg.in/yaml.v3@v3.0.1",
+    "repo": "go-yaml/yaml",
+    "last_pushed": "2025-04-01T17:00:11Z",
+    "stars": 7019
   }
 ]
 ```
+
+Returns `[]` when nothing is affected, never `null`.
+
+{{% alert title="Import path ≠ repository" color="info" %}}
+`repo` is the GitHub repository, which frequently has no textual relationship
+to the package: `gopkg.in/yaml.v3` lives in `go-yaml/yaml`, `k8s.io/client-go`
+in `kubernetes/client-go`, `google.golang.org/grpc` in `grpc/grpc-go`. The
+mapping is maintained in `internal/github` and applied on both the ingest and
+the query side — do not try to derive one from the other by string matching.
+{{% /alert %}}
 
 ---
 

@@ -107,6 +107,20 @@ func TestQueriesExecute(t *testing.T) {
 		{"QueryVEXStatements", func() error { _, err := c.QueryVEXStatements(ctx, 1, 10); return err }},
 		{"QueryClusters", func() error { _, err := c.QueryClusters(ctx); return err }},
 		{"QueryClusterSBOMs", func() error { _, err := c.QueryClusterSBOMs(ctx, "test", 1, 10); return err }},
+		{"QueryNamespaces", func() error { _, err := c.QueryNamespaces(ctx, ""); return err }},
+		{"QueryNamespaces/cluster", func() error { _, err := c.QueryNamespaces(ctx, "prod-eu"); return err }},
+		{"QueryNamespaceStats", func() error { _, err := c.QueryNamespaceStats(ctx, "payments", ""); return err }},
+		{"QueryNamespaceSBOMs", func() error { _, err := c.QueryNamespaceSBOMs(ctx, "payments", "", 1, 10); return err }},
+		{"QueryFleetTree", func() error { _, err := c.QueryFleetTree(ctx); return err }},
+		{"QueryProjects", func() error { _, err := c.QueryProjects(ctx, 1, 10, "", ""); return err }},
+		{"QueryProjects/tag", func() error { _, err := c.QueryProjects(ctx, 1, 10, "", "sandbox"); return err }},
+		{"QueryTags", func() error { _, err := c.QueryTags(ctx); return err }},
+		// The archived-repo pair carries the purl→repo mapping rebuilt in SQL.
+		// It shipped broken twice: once semantically (a LIKE that could never
+		// match gopkg.in/yaml.v3 against go-yaml/yaml) and once as a plain type
+		// error ClickHouse only raises at plan time.
+		{"QueryArchivedPackages", func() error { _, err := c.QueryArchivedPackages(ctx); return err }},
+		{"QueryArchivedReposInUse", func() error { _, err := c.QueryArchivedReposInUse(ctx); return err }},
 		{"ResolveSBOMByProductRef", func() error {
 			_, err := c.ResolveSBOMByProductRef(ctx, "https://github.com/example-org/example-app")
 			return err
