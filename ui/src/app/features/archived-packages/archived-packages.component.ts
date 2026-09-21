@@ -197,9 +197,13 @@ export class ArchivedPackagesComponent implements OnInit {
         repoMap.set(pkg.repo, repoGroup);
       }
 
-      // Extract base project name (without version)
+      // The API reports the described product's version in its own field
+      // (document_version, migration 021). Guessing it from the display name
+      // is the fallback for SBOMs ingested before that column existed —
+      // "k2s" carries no version to guess, so those rows rendered as
+      // "latest" even though the SBOM states 0.3.0.
       const baseProjectName = this.extractBaseProjectName(pkg.project_name);
-      const version = this.extractVersion(pkg.project_name);
+      const version = pkg.project_version || this.extractVersion(pkg.project_name);
 
       // Find or create project in this repo group
       let project = repoGroup.projects.find(p => p.projectName === baseProjectName);
@@ -228,14 +232,15 @@ export class ArchivedPackagesComponent implements OnInit {
   }
 
   private extractBaseProjectName(fullName: string): string {
-    // Remove version patterns like "v1.2.3", "1.2.3", etc. from the end
-    // Example: "Cilium - cilium v1.17.13" -> "Cilium - cilium"
-    // Example: "Argo - argo-cd v3.2.6" -> "Argo - argo-cd"
+    // Strip a trailing version from the display name so two versions of the
+    // same product group into one project.
+    // "Cilium - cilium v1.17.13" -> "Cilium - cilium"
     return fullName.replace(/\s+v?\d+\.\d+(\.\d+)?(-\w+)?$/i, '').trim();
   }
 
   private extractVersion(fullName: string): string {
-    // Extract version from project name
+    // Fallback only — see groupByRepo. Used when project_version is empty,
+    // i.e. SBOMs ingested before migration 021.
     const match = fullName.match(/v?(\d+\.\d+(?:\.\d+)?(?:-\w+)?)\s*$/i);
     return match ? match[1] : '';
   }
