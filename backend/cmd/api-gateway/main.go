@@ -28,6 +28,7 @@ import (
 	"github.com/seebom-labs/bomhort/backend/internal/repo"
 	s3client "github.com/seebom-labs/bomhort/backend/internal/s3"
 	"github.com/seebom-labs/bomhort/backend/internal/sourcerepo"
+	tagpkg "github.com/seebom-labs/bomhort/backend/internal/tags"
 	"github.com/seebom-labs/bomhort/backend/internal/vex"
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
@@ -298,14 +299,31 @@ func main() {
 		page := parseUint64(r.URL.Query().Get("page"), 1)
 		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
 		search := sanitizeSearchTerm(r.URL.Query().Get("search"))
+		// ?tag= narrows the listing to one grouping. Normalised through the
+		// same path as ingestion so a filter typed "Sandbox-Applications"
+		// still matches data stored as "sandbox-applications"; without that
+		// the filter would silently return nothing.
+		tag := firstTag(tagpkg.Parse(r.URL.Query().Get("tag")))
 
-		resp, err := chClient.QueryProjects(r.Context(), page, pageSize, search)
+		resp, err := chClient.QueryProjects(r.Context(), page, pageSize, search, tag)
 		if err != nil {
 			log.Printf("ERROR: list projects: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch projects")
 			return
 		}
 		writeJSON(w, http.StatusOK, resp)
+	})
+
+	// Grouping labels in use, with their reach. Lets the UI render the
+	// groupings an instance actually has instead of assuming any exist.
+	mux.HandleFunc("GET /api/v1/tags", func(w http.ResponseWriter, r *http.Request) {
+		items, err := chClient.QueryTags(r.Context())
+		if err != nil {
+			log.Printf("ERROR: list tags: %v", err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch tags")
+			return
+		}
+		writeJSON(w, http.StatusOK, items)
 	})
 
 	// Projects affected by a specific CVE (including transitive dependencies).
@@ -489,6 +507,80 @@ func main() {
 		writeJSON(w, http.StatusOK, resp)
 	})
 
+	// ── Namespace Endpoints (#138) ────────────────────────────────────
+	// A namespace name is only unique inside a cluster, so every endpoint
+	// accepts an optional `?cluster=` filter. Without it the namespace is
+	// aggregated across the whole fleet.
+
+	// List all namespaces with summary statistics.
+	mux.HandleFunc("GET /api/v1/namespaces", func(w http.ResponseWriter, r *http.Request) {
+		cluster := r.URL.Query().Get("cluster")
+		if len(cluster) > maxOwnerNameLen {
+			writeError(w, http.StatusBadRequest, "Invalid cluster filter")
+			return
+		}
+		namespaces, err := chClient.QueryNamespaces(r.Context(), cluster)
+		if err != nil {
+			log.Printf("ERROR: list namespaces cluster=%s: %v", sanitizeLogParam(cluster), err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch namespaces")
+			return
+		}
+		writeJSON(w, http.StatusOK, namespaces)
+	})
+
+	// Namespace detail stats.
+	mux.HandleFunc("GET /api/v1/namespaces/{name}/stats", func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		cluster := r.URL.Query().Get("cluster")
+		if name == "" || len(name) > maxOwnerNameLen || len(cluster) > maxOwnerNameLen {
+			writeError(w, http.StatusBadRequest, "Invalid namespace name")
+			return
+		}
+		stats, err := chClient.QueryNamespaceStats(r.Context(), name, cluster)
+		if err != nil {
+			log.Printf("ERROR: namespace stats for %s: %v", sanitizeLogParam(name), err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch namespace stats")
+			return
+		}
+		if stats.TotalSBOMs == 0 {
+			writeError(w, http.StatusNotFound, "Namespace not found")
+			return
+		}
+		writeJSON(w, http.StatusOK, stats)
+	})
+
+	// Namespace SBOMs (paginated).
+	mux.HandleFunc("GET /api/v1/namespaces/{name}/sboms", func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		cluster := r.URL.Query().Get("cluster")
+		if name == "" || len(name) > maxOwnerNameLen || len(cluster) > maxOwnerNameLen {
+			writeError(w, http.StatusBadRequest, "Invalid namespace name")
+			return
+		}
+		page := parseUint64(r.URL.Query().Get("page"), 1)
+		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
+		resp, err := chClient.QueryNamespaceSBOMs(r.Context(), name, cluster, page, pageSize)
+		if err != nil {
+			log.Printf("ERROR: namespace sboms for %s: %v", sanitizeLogParam(name), err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch namespace SBOMs")
+			return
+		}
+		writeJSON(w, http.StatusOK, resp)
+	})
+
+	// ── Fleet Tree (#138) ─────────────────────────────────────────────
+	// The whole cluster → namespace → project hierarchy in one response, so
+	// the UI can render the ownership tree without an N+1 of per-cluster calls.
+	mux.HandleFunc("GET /api/v1/fleet", func(w http.ResponseWriter, r *http.Request) {
+		tree, err := chClient.QueryFleetTree(r.Context())
+		if err != nil {
+			log.Printf("ERROR: fleet tree: %v", err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch fleet tree")
+			return
+		}
+		writeJSON(w, http.StatusOK, tree)
+	})
+
 	// ── SBOM Download (#144) ──────────────────────────────────────────
 	// Streams the original SBOM file from S3 or local filesystem.
 	mux.HandleFunc("GET /api/v1/sboms/{id}/download", func(w http.ResponseWriter, r *http.Request) {
@@ -652,6 +744,11 @@ func clampPageSize(v uint64) uint64 {
 
 // minSearchQueryLen is the minimum length for a global search query.
 const minSearchQueryLen = 2
+
+// maxOwnerNameLen bounds cluster/namespace names taken from the URL. They are
+// LowCardinality(String) columns fed from operator configuration, so anything
+// longer is a malformed request, not a legitimate lookup.
+const maxOwnerNameLen = 200
 
 // clampSearchLimit bounds the per-facet result limit for global search.
 func clampSearchLimit(v uint64) uint64 {
@@ -1202,6 +1299,12 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 		cluster := queryOverride(r, "cluster", cfg.ClusterName)
 		namespace := queryOverride(r, "namespace", cfg.Namespace)
 		project := queryOverride(r, "project", cfg.Project)
+		// Tags are merged with the instance defaults rather than overriding
+		// them, unlike the three above. A CI job labelling its artifact
+		// "sandbox-applications" is adding a grouping, not contradicting an
+		// instance-wide one — and because tags are many-to-many there is no
+		// reason to make the two levels mutually exclusive.
+		uploadTags := tagpkg.Merge(cfg.Tags, tagpkg.Parse(r.URL.Query().Get("tags")))
 
 		// VEX→SBOM mapping (#350): ?sbom_id= scopes every statement in the
 		// uploaded VEX document to one SBOM. Only meaningful for VEX uploads;
@@ -1294,6 +1397,7 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			SourceRepo:   sourceRepoHdr,
 			SourceRef:    sourceRefHdr,
 			TargetSBOMID: targetSBOMID,
+			Tags:         uploadTags,
 		}
 		// Single-row insert, deliberately: the API contract returns job_id
 		// synchronously, so the row has to be durable before we respond — there
@@ -1431,4 +1535,18 @@ func acceptsGzip(r *http.Request) bool {
 		return true
 	}
 	return false
+}
+
+// firstTag reduces a normalised tag list to a single value for the ?tag=
+// filter, which selects one grouping at a time.
+//
+// Parse is reused rather than trimming inline so a filter goes through exactly
+// the same normalisation as ingestion -- otherwise "Sandbox-Applications"
+// would fail to match rows stored as "sandbox-applications" and the UI would
+// show an empty, unexplained result.
+func firstTag(tags []string) string {
+	if len(tags) == 0 {
+		return ""
+	}
+	return tags[0]
 }

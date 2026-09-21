@@ -25,11 +25,13 @@ type SBOMListItem struct {
 	SourceFile   string `json:"source_file"`
 	SPDXVersion  string `json:"spdx_version"`
 	DocumentName string `json:"document_name"`
-	PackageCount uint64 `json:"package_count"`
-	VulnCount    uint64 `json:"vuln_count"`
-	IngestedAt   string `json:"ingested_at"`
-	SourceRepo   string `json:"source_repo,omitempty"`
-	SourceRef    string `json:"source_ref,omitempty"`
+	// DocumentVersion is the described product's version ('' = unknown).
+	DocumentVersion string `json:"document_version,omitempty"`
+	PackageCount    uint64 `json:"package_count"`
+	VulnCount       uint64 `json:"vuln_count"`
+	IngestedAt      string `json:"ingested_at"`
+	SourceRepo      string `json:"source_repo,omitempty"`
+	SourceRef       string `json:"source_ref,omitempty"`
 	// Ownership dimensions (#177). Completes the list contract before the
 	// v1.0 freeze: the detail view and the cluster endpoints already expose
 	// these, so a client could not tell which cluster/namespace/project a
@@ -132,19 +134,21 @@ type VEXAffectedSBOM struct {
 
 // SBOMDetail is the response DTO for detailed SBOM view with vulns and licenses.
 type SBOMDetail struct {
-	SBOMID        string `json:"sbom_id"`
-	SourceFile    string `json:"source_file"`
-	SPDXVersion   string `json:"spdx_version"`
-	DocumentName  string `json:"document_name"`
-	PackageCount  uint64 `json:"package_count"`
-	VulnCount     uint64 `json:"vuln_count"`
-	IngestedAt    string `json:"ingested_at"`
-	SourceRepo    string `json:"source_repo,omitempty"`
-	SourceRef     string `json:"source_ref,omitempty"`
-	CriticalVulns uint64 `json:"critical_vulns"`
-	HighVulns     uint64 `json:"high_vulns"`
-	MediumVulns   uint64 `json:"medium_vulns"`
-	LowVulns      uint64 `json:"low_vulns"`
+	SBOMID       string `json:"sbom_id"`
+	SourceFile   string `json:"source_file"`
+	SPDXVersion  string `json:"spdx_version"`
+	DocumentName string `json:"document_name"`
+	// DocumentVersion is the described product's version ('' = unknown).
+	DocumentVersion string `json:"document_version,omitempty"`
+	PackageCount    uint64 `json:"package_count"`
+	VulnCount       uint64 `json:"vuln_count"`
+	IngestedAt      string `json:"ingested_at"`
+	SourceRepo      string `json:"source_repo,omitempty"`
+	SourceRef       string `json:"source_ref,omitempty"`
+	CriticalVulns   uint64 `json:"critical_vulns"`
+	HighVulns       uint64 `json:"high_vulns"`
+	MediumVulns     uint64 `json:"medium_vulns"`
+	LowVulns        uint64 `json:"low_vulns"`
 }
 
 // SBOMLicenseBreakdownItem is a per-SBOM license summary.
@@ -321,6 +325,62 @@ type ClusterStats struct {
 	LastIngested         string            `json:"last_ingested,omitempty"`
 }
 
+// NamespaceListItem represents a namespace in the namespace listing (#138).
+// A namespace name is only unique within a cluster, so ClusterCount tells the
+// caller whether `payments` here means one team or the same name reused in
+// several clusters. Cluster is set only when the listing was filtered.
+type NamespaceListItem struct {
+	Name         string `json:"name"`
+	Cluster      string `json:"cluster,omitempty"`
+	ClusterCount uint64 `json:"cluster_count"`
+	SBOMCount    uint64 `json:"sbom_count"`
+	PackageCount uint64 `json:"package_count"`
+	VulnCount    uint64 `json:"vuln_count"`
+	LastIngested string `json:"last_ingested,omitempty"`
+}
+
+// NamespaceStats is the response DTO for per-namespace statistics. It mirrors
+// ClusterStats so both drill-downs render with the same UI components.
+type NamespaceStats struct {
+	Namespace            string            `json:"namespace"`
+	Cluster              string            `json:"cluster,omitempty"`
+	Clusters             []string          `json:"clusters"`
+	TotalSBOMs           uint64            `json:"total_sboms"`
+	TotalPackages        uint64            `json:"total_packages"`
+	TotalVulnerabilities uint64            `json:"total_vulnerabilities"`
+	CriticalVulns        uint64            `json:"critical_vulns"`
+	HighVulns            uint64            `json:"high_vulns"`
+	MediumVulns          uint64            `json:"medium_vulns"`
+	LowVulns             uint64            `json:"low_vulns"`
+	LicenseBreakdown     map[string]uint64 `json:"license_breakdown"`
+	LastIngested         string            `json:"last_ingested,omitempty"`
+}
+
+// FleetProject is a leaf of the ownership tree.
+type FleetProject struct {
+	Name         string `json:"name"`
+	SBOMCount    uint64 `json:"sbom_count"`
+	VulnCount    uint64 `json:"vuln_count"`
+	LastIngested string `json:"last_ingested,omitempty"`
+}
+
+// FleetNamespace groups projects inside one cluster.
+type FleetNamespace struct {
+	Name      string         `json:"name"`
+	SBOMCount uint64         `json:"sbom_count"`
+	VulnCount uint64         `json:"vuln_count"`
+	Projects  []FleetProject `json:"projects"`
+}
+
+// FleetCluster is the root of the ownership tree returned by
+// GET /api/v1/fleet. Unassigned dimensions appear as an empty name.
+type FleetCluster struct {
+	Name       string           `json:"name"`
+	SBOMCount  uint64           `json:"sbom_count"`
+	VulnCount  uint64           `json:"vuln_count"`
+	Namespaces []FleetNamespace `json:"namespaces"`
+}
+
 // ProjectListItem is the response DTO for the project list view.
 type ProjectListItem struct {
 	ProjectName    string `json:"project_name"`
@@ -329,4 +389,21 @@ type ProjectListItem struct {
 	VulnCount      uint64 `json:"vuln_count"`
 	LatestIngested string `json:"latest_ingested"`
 	LatestSBOMID   string `json:"latest_sbom_id"`
+	// Tags (#357) are the union of the grouping labels across this project's
+	// SBOMs. A project keeps its identity here — the tag is a label on it, not
+	// a replacement for it — so a project with three SBOMs stays one row and
+	// merely carries the groupings those SBOMs were ingested with.
+	Tags []string `json:"tags"`
+}
+
+// TagListItem describes one grouping label and its reach, powering a
+// data-driven grouping UI: the frontend renders whatever tags an instance
+// actually uses rather than a hard-coded list.
+type TagListItem struct {
+	Tag string `json:"tag"`
+	// SBOMCount counts documents; ProjectCount counts the distinct projects
+	// behind them. The latter is what a grouping is really about — 300 SBOMs
+	// across 40 sandbox applications should read as "40 projects", not "300".
+	SBOMCount    uint64 `json:"sbom_count"`
+	ProjectCount uint64 `json:"project_count"`
 }

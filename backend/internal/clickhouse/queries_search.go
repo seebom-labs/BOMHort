@@ -202,7 +202,7 @@ func (c *Client) QuerySBOMDetail(ctx context.Context, sbomID string) (*dto.SBOMD
 
 	err := c.Conn.QueryRow(ctx, `
 		SELECT
-			s.sbom_id, s.source_file, s.spdx_version, s.document_name, s.ingested_at,
+			s.sbom_id, s.source_file, s.spdx_version, s.document_name, s.document_version, s.ingested_at,
 			s.source_repo, s.source_ref,
 			ifNull(p.pkg_count, 0) AS package_count
 		FROM (SELECT * FROM sboms FINAL) AS s
@@ -214,7 +214,7 @@ func (c *Client) QuerySBOMDetail(ctx context.Context, sbomID string) (*dto.SBOMD
 		LIMIT 1
 	`, sbomID).Scan(
 		&detail.SBOMID, &detail.SourceFile, &detail.SPDXVersion,
-		&detail.DocumentName, &ingestedAt,
+		&detail.DocumentName, &detail.DocumentVersion, &ingestedAt,
 		&detail.SourceRepo, &detail.SourceRef, &detail.PackageCount,
 	)
 	if err != nil {

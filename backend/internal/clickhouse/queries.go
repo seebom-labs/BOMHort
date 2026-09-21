@@ -193,6 +193,7 @@ func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search s
 			s.source_file,
 			s.spdx_version,
 			s.document_name,
+			s.document_version,
 			s.ingested_at,
 			s.source_repo,
 			s.source_ref,
@@ -229,7 +230,7 @@ func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search s
 		var ingestedAt time.Time
 		if err := rows.Scan(
 			&item.SBOMID, &item.SourceFile, &item.SPDXVersion,
-			&item.DocumentName, &ingestedAt,
+			&item.DocumentName, &item.DocumentVersion, &ingestedAt,
 			&item.SourceRepo, &item.SourceRef,
 			&item.Cluster, &item.Namespace, &item.Project,
 			&item.PackageCount, &item.VulnCount,
