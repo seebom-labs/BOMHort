@@ -10,7 +10,7 @@ import (
 // developer's shell cannot make a test pass or fail spuriously.
 func setEnvs(t *testing.T, kv map[string]string) {
 	t.Helper()
-	for _, k := range []string{"CLUSTER_NAME", "NAMESPACE", "PROJECT", "INGEST_PATH_LAYOUT", "S3_BUCKETS", "S3_BUCKET"} {
+	for _, k := range []string{"CLUSTER_NAME", "NAMESPACE", "PROJECT", "INGEST_PATH_LAYOUT", "TAGS", "S3_BUCKETS", "S3_BUCKET"} {
 		t.Setenv(k, "")
 		_ = os.Unsetenv(k)
 	}
@@ -165,5 +165,62 @@ func TestBucketIngestLayout_DisabledGlobally(t *testing.T) {
 	}
 	if cfg.BucketIngestLayout(cfg.S3Buckets[0]).Enabled() {
 		t.Error("a bucket must not derive anything when no layout is configured at all")
+	}
+}
+
+// TAGS is a comma-separated string in the environment because a ConfigMap
+// value is a scalar; it must arrive as a normalised list.
+func TestLoad_TagsFromEnv(t *testing.T) {
+	setEnvs(t, map[string]string{"TAGS": " CNCF ,sandbox-applications, "})
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	want := []string{"cncf", "sandbox-applications"}
+	if len(cfg.Tags) != len(want) {
+		t.Fatalf("Tags = %v, want %v", cfg.Tags, want)
+	}
+	for i := range want {
+		if cfg.Tags[i] != want[i] {
+			t.Errorf("Tags = %v, want %v", cfg.Tags, want)
+			break
+		}
+	}
+}
+
+// Tags merge across levels instead of overriding, which is what separates
+// them from namespace/project. An operator who sets an instance-wide "cncf"
+// and a per-bucket "sandbox-applications" means both -- if the bucket value
+// replaced the global one, every bucket would have to repeat it.
+func TestBucketTags_MergesGlobalAndBucket(t *testing.T) {
+	setEnvs(t, map[string]string{
+		"TAGS":       "cncf",
+		"S3_BUCKETS": `[{"name":"sandbox","tags":["sandbox-applications"]},{"name":"plain"}]`,
+	})
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	got := cfg.BucketTags(cfg.S3Buckets[0])
+	want := []string{"cncf", "sandbox-applications"}
+	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("BucketTags(sandbox) = %v, want %v", got, want)
+	}
+	// A bucket that names no tags still inherits the instance-wide ones.
+	if got := cfg.BucketTags(cfg.S3Buckets[1]); len(got) != 1 || got[0] != "cncf" {
+		t.Errorf("BucketTags(plain) = %v, want [cncf]", got)
+	}
+}
+
+// An untagged instance must produce no tags at all, so untagged SBOMs store a
+// clean empty array rather than a list holding one empty string.
+func TestBucketTags_NoneConfigured(t *testing.T) {
+	setEnvs(t, map[string]string{"S3_BUCKETS": `[{"name":"plain"}]`})
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	if got := cfg.BucketTags(cfg.S3Buckets[0]); len(got) != 0 {
+		t.Errorf("BucketTags() = %v, want empty", got)
 	}
 }

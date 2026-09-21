@@ -16,6 +16,12 @@ type ownership struct {
 	cluster   string
 	namespace string
 	project   string
+	// tags (#357) ride along on the same carrier because they arrive from the
+	// same place -- the job -- but they are stamped onto the sboms row only.
+	// The derived tables reach tags by joining on sbom_id, so denormalising an
+	// Array column onto every row of every table would multiply storage for a
+	// value that never varies within one document.
+	tags []string
 }
 
 // ownershipOf reads the dimensions assigned to a job by the ingestion watcher
@@ -25,11 +31,13 @@ func ownershipOf(job models.IngestionJob) ownership {
 		cluster:   job.Cluster,
 		namespace: job.Namespace,
 		project:   job.Project,
+		tags:      job.Tags,
 	}
 }
 
 func (o ownership) applySBOM(m *models.SBOM) {
 	m.Cluster, m.Namespace, m.Project = o.cluster, o.namespace, o.project
+	m.Tags = o.tags
 }
 
 func (o ownership) applyPackages(m *models.SBOMPackages) {

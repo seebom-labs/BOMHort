@@ -42,7 +42,7 @@ func TestStripPrefix(t *testing.T) {
 func TestOwnership_ResolveWithLayout(t *testing.T) {
 	own := ownership{layout: mustLayout(t, "cluster/namespace/project")}
 
-	cluster, namespace, project := own.resolve("prod-eu/payments/payment-service/sbom.spdx.json")
+	cluster, namespace, project, _ := own.resolve("prod-eu/payments/payment-service/sbom.spdx.json")
 	if cluster != "prod-eu" || namespace != "payments" || project != "payment-service" {
 		t.Errorf("resolve() = (%q, %q, %q), want (prod-eu, payments, payment-service)", cluster, namespace, project)
 	}
@@ -57,7 +57,7 @@ func TestOwnership_ResolveStripsBucketPrefix(t *testing.T) {
 		layout: mustLayout(t, "cluster/namespace"),
 	}
 
-	cluster, namespace, _ := own.resolve("k3s-io/prod-eu/payments/sbom.spdx.json")
+	cluster, namespace, _, _ := own.resolve("k3s-io/prod-eu/payments/sbom.spdx.json")
 	if cluster != "prod-eu" {
 		t.Errorf("cluster = %q, want prod-eu (the prefix must not be read as a segment)", cluster)
 	}
@@ -74,7 +74,7 @@ func TestOwnership_ExplicitConfigOutranksPath(t *testing.T) {
 		layout:  mustLayout(t, "cluster/namespace/project"),
 	}
 
-	cluster, namespace, project := own.resolve("prod-eu/payments/payment-service/sbom.spdx.json")
+	cluster, namespace, project, _ := own.resolve("prod-eu/payments/payment-service/sbom.spdx.json")
 	if cluster != "configured-cluster" {
 		t.Errorf("cluster = %q, want the configured value to win", cluster)
 	}
@@ -90,7 +90,7 @@ func TestOwnership_ResolveWithoutLayout(t *testing.T) {
 		project:   "p",
 	}
 
-	cluster, namespace, project := own.resolve("prod-eu/payments/payment-service/sbom.spdx.json")
+	cluster, namespace, project, _ := own.resolve("prod-eu/payments/payment-service/sbom.spdx.json")
 	if cluster != "c" || namespace != "n" || project != "p" {
 		t.Errorf("resolve() = (%q, %q, %q), want the configured values unchanged", cluster, namespace, project)
 	}
@@ -99,7 +99,7 @@ func TestOwnership_ResolveWithoutLayout(t *testing.T) {
 func TestOwnership_ShallowPathLeavesRestEmpty(t *testing.T) {
 	own := ownership{layout: mustLayout(t, "cluster/namespace/project")}
 
-	cluster, namespace, project := own.resolve("prod-eu/sbom.spdx.json")
+	cluster, namespace, project, _ := own.resolve("prod-eu/sbom.spdx.json")
 	if cluster != "prod-eu" {
 		t.Errorf("cluster = %q, want prod-eu", cluster)
 	}
@@ -125,5 +125,34 @@ func TestFirstNonEmpty(t *testing.T) {
 				t.Errorf("firstNonEmpty(%v) = %q, want %q", tt.vals, got, tt.want)
 			}
 		})
+	}
+}
+
+// Tags are bucket configuration, not path-derived: every object in a bucket
+// carries the same labels regardless of how deep its key is. A layout that
+// consumes segments must not disturb them.
+func TestOwnership_ResolveCarriesConfiguredTags(t *testing.T) {
+	own := ownership{
+		layout: mustLayout(t, "cluster/namespace/project"),
+		tags:   []string{"sandbox-applications"},
+	}
+	_, _, project, tags := own.resolve("prod-eu/payments/payment-service/sbom.spdx.json")
+	// The project must survive alongside the tag. Tags group projects, they do
+	// not replace them -- if the tag ever started standing in for the project,
+	// every project under one grouping would collapse into a single row.
+	if project != "payment-service" {
+		t.Errorf("project = %q, want payment-service to survive tagging", project)
+	}
+	if len(tags) != 1 || tags[0] != "sandbox-applications" {
+		t.Errorf("tags = %v, want [sandbox-applications]", tags)
+	}
+}
+
+// An untagged bucket must yield no tags rather than a one-element list holding
+// the empty string, which would show up as a nameless grouping in the UI.
+func TestOwnership_ResolveWithoutTags(t *testing.T) {
+	own := ownership{cluster: "c"}
+	if _, _, _, tags := own.resolve("a/b/sbom.spdx.json"); len(tags) != 0 {
+		t.Errorf("tags = %v, want empty for an untagged bucket", tags)
 	}
 }

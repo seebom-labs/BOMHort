@@ -35,12 +35,17 @@ type ownership struct {
 	// prefix "k3s-io/" would read that as the cluster segment.
 	prefix string
 	layout ingestpath.Layout
+	// tags are the bucket's grouping labels (global TAGS merged with the
+	// bucket's own). Unlike cluster/namespace/project they are not derived
+	// from the key -- they are pure configuration, so every object in the
+	// bucket carries the same set.
+	tags []string
 }
 
 // resolve returns the ownership for one object key, applying path
 // derivation on top of the configured values.
-func (o ownership) resolve(key string) (cluster, namespace, project string) {
-	cluster, namespace, project = o.cluster, o.namespace, o.project
+func (o ownership) resolve(key string) (cluster, namespace, project string, tags []string) {
+	cluster, namespace, project, tags = o.cluster, o.namespace, o.project, o.tags
 	if !o.layout.Enabled() {
 		return
 	}
@@ -181,6 +186,7 @@ func ingestLocalFiles(ctx context.Context, cfg *config.Config, chClient *clickho
 			Cluster:    cluster,
 			Namespace:  namespace,
 			Project:    project,
+			Tags:       cfg.Tags,
 		})
 
 		// Flush batch when it reaches the threshold.
@@ -238,6 +244,7 @@ func ingestS3Buckets(ctx context.Context, cfg *config.Config, chClient *clickhou
 			project:   firstNonEmpty(b.Project, cfg.Project),
 			prefix:    b.Prefix,
 			layout:    cfg.BucketIngestLayout(b),
+			tags:      cfg.BucketTags(b),
 		}
 		if own.layout.Enabled() {
 			log.Printf("S3: bucket %q derives ownership from path layout %q", b.Name, own.layout.String())
@@ -292,7 +299,7 @@ func ingestS3Buckets(ctx context.Context, cfg *config.Config, chClient *clickhou
 			jobType = models.JobTypeVEX
 		}
 
-		cluster, namespace, project := bucketOwner[obj.Bucket].resolve(obj.Key)
+		cluster, namespace, project, objTags := bucketOwner[obj.Bucket].resolve(obj.Key)
 
 		// SourceFile stores the s3:// URI so the worker knows where to fetch.
 		batch = append(batch, models.IngestionJob{
@@ -305,6 +312,7 @@ func ingestS3Buckets(ctx context.Context, cfg *config.Config, chClient *clickhou
 			Cluster:    cluster,
 			Namespace:  namespace,
 			Project:    project,
+			Tags:       objTags,
 		})
 
 		// Flush batch.

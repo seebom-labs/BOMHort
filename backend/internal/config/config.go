@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/seebom-labs/bomhort/backend/internal/ingestpath"
+	"github.com/seebom-labs/bomhort/backend/internal/tags"
 )
 
 // S3BucketConfig holds the configuration for a single S3 bucket source.
@@ -35,6 +36,13 @@ type S3BucketConfig struct {
 	// where buckets are organised differently (e.g. one laid out
 	// "cluster/namespace/project", another flat).
 	PathLayout string `json:"pathLayout,omitempty"`
+	// Tags (#357) label every object in this bucket with deployment-neutral
+	// grouping labels, e.g. ["sandbox-applications"] for a bucket holding a
+	// foundation's sandbox project SBOMs. Unlike Namespace/Project these are
+	// additive rather than an override: bucket tags are merged with the
+	// global TAGS default, because a bucket saying "these are sandbox apps"
+	// does not contradict an instance-wide "these are all CNCF" label.
+	Tags []string `json:"tags,omitempty"`
 	// SkipScan designates this bucket as the push-model upload target (#135):
 	// excluded from the ingestion-watcher's ListObjects scan, but still used
 	// for GetObject/PutObject. See s3.BucketConfig.SkipScan for why this
@@ -84,6 +92,14 @@ type Config struct {
 	// config, path derivation, upload query param) supplies a value.
 	Namespace string // Default namespace (default "" = unassigned)
 	Project   string // Default project   (default "" = unassigned)
+
+	// Tags (#357) are instance-wide grouping labels applied to every ingested
+	// SBOM, from a comma-separated TAGS env var. They group projects along an
+	// axis that has nothing to do with where a workload runs, which is what
+	// makes them work on catalogue-style instances that have no cluster.
+	// Additive, not an override: per-bucket and per-upload tags are merged on
+	// top rather than replacing these.
+	Tags []string
 
 	// IngestPathLayout opts into deriving cluster/namespace/project from an
 	// object's position in the source, e.g. "cluster/namespace/project" for
@@ -150,6 +166,7 @@ func Load() (*Config, error) {
 		ClusterName:        getEnv("CLUSTER_NAME", ""),
 		Namespace:          getEnv("NAMESPACE", ""),
 		Project:            getEnv("PROJECT", ""),
+		Tags:               tags.Parse(getEnv("TAGS", "")),
 		IngestPathLayout:   getEnv("INGEST_PATH_LAYOUT", ""),
 		AuthEnabled:        getEnvBool("AUTH_ENABLED", false),
 		ServiceToken:       getEnv("SERVICE_TOKEN", ""),
@@ -258,6 +275,19 @@ func (c *Config) IngestLayout() ingestpath.Layout {
 		return ingestpath.Layout{}
 	}
 	return l
+}
+
+// BucketTags returns the grouping labels for a bucket: the instance-wide
+// TAGS merged with the bucket's own.
+//
+// Merged rather than overridden, unlike namespace/project: tags are a
+// many-to-many grouping, so a bucket labelling its contents
+// "sandbox-applications" adds to — it does not contradict — an instance-wide
+// "cncf" label. Dropping the global one here would make the two levels
+// mutually exclusive and force operators to repeat the global tag in every
+// bucket.
+func (c *Config) BucketTags(b S3BucketConfig) []string {
+	return tags.Merge(c.Tags, b.Tags)
 }
 
 // BucketIngestLayout returns the layout for a bucket: its own pathLayout
