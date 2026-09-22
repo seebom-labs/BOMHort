@@ -198,12 +198,20 @@ jobs:
             docker pull ${{ env.REGISTRY }}/${{ env.REPO }}/ui:${{ steps.version.outputs.version }}
             ```
 
-            Verify signatures:
+            Verify signatures (**cosign v3 or newer**):
             ```bash
-            cosign verify --certificate-identity-regexp="https://github.com/seebom-labs/bomhort" \
+            cosign verify \
+              --certificate-identity-regexp="^https://github.com/${{ github.repository }}/\.github/workflows/release\.yml@refs/tags/${{ github.ref_name }}$" \
               --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
               ${{ env.REGISTRY }}/${{ env.REPO }}/api-gateway:${{ steps.version.outputs.version }}
             ```
+
+            > - **cosign v2 reports `no signatures found`.** These images are signed
+            >   by cosign v3, which stores the signature as an OCI referrer
+            >   (`application/vnd.dev.sigstore.bundle.v0.3+json`) rather than a
+            >   `.sig` tag; v2 looks only for the tag.
+            > - The identity regex is **case-sensitive**: the repository is
+            >   `${{ github.repository }}`, even though the image names are lowercase.
 
             ## Helm Chart
 

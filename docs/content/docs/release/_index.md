@@ -197,12 +197,27 @@ All images are:
 
 ### Verifying signatures
 
+Requires **cosign v3 or newer**:
+
 ```bash
 cosign verify \
-  --certificate-identity-regexp="https://github.com/seebom-labs/BOMHort" \
+  --certificate-identity-regexp="^https://github.com/seebom-labs/BOMHort/\.github/workflows/release\.yml@refs/tags/v1\.2\.3$" \
   --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
   ghcr.io/seebom-labs/bomhort/api-gateway:1.2.3
 ```
+
+{{% alert title="cosign v2 cannot see these signatures" color="warning" %}}
+cosign v2 reports `no signatures found`. The release workflow uses cosign v3,
+which stores the signature as an OCI referrer
+(`application/vnd.dev.sigstore.bundle.v0.3+json`) instead of the older
+`sha256-<digest>.sig` tag that v2 looks for. The signatures are valid — v2 just
+looks in the wrong place. Upgrade cosign rather than treating this as a failed
+verification.
+
+Note also that the identity regex is **case-sensitive**: the repository is
+`seebom-labs/BOMHort`, while the image names are lowercase. A lowercase pattern
+fails with `no matching CertificateIdentity found`.
+{{% /alert %}}
 
 ## Installing from a Release
 
