@@ -35,7 +35,7 @@ Ingest 1000+ SPDX and CycloneDX SBOMs, scan for vulnerabilities via OSV, enforce
 | Tool | Minimum Version |
 |------|----------------|
 | Docker + Docker Compose | v2.20+ |
-| Go | 1.24+ (only for local dev) |
+| Go | 1.26+ (only for local dev) — `backend/go.mod` pins `go 1.26.8` |
 | Node.js | 22+ (only for local dev) |
 
 ### Option A: Full Stack via Docker Compose (Recommended)
