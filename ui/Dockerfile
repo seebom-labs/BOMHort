@@ -11,7 +11,7 @@ COPY . .
 RUN npx ng build --configuration=production
 
 # ---- Serve stage ----
-FROM nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
+FROM nginx:1.31-alpine@sha256:62ff2089abf5a9ed33bd232895bef5e22f7bb4b200675cec49a5ebc48e3d4ac8
 
 # Remove default nginx config.
 RUN rm /etc/nginx/conf.d/default.conf
