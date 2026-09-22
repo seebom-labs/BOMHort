@@ -1,6 +1,6 @@
 module github.com/seebom-labs/bomhort/backend
 
-go 1.25.12
+go 1.25.14
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.48.0
