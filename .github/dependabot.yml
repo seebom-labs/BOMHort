@@ -38,6 +38,15 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    ignore:
+      # Both are pinned by Angular's peer ranges, not by us. A major bump
+      # ahead of Angular breaks `npm ci` with ERESOLVE (see #364: vitest 5
+      # vs. @angular/build's peerOptional vitest@^4.0.8). They come along
+      # with the Angular major instead.
+      - dependency-name: "vitest"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   # GitHub Actions
   - package-ecosystem: "github-actions"
@@ -69,6 +78,20 @@ updates:
 
   # Hugo docs site dependencies
   - package-ecosystem: "gomod"
+    directory: "/docs"
+    schedule:
+      interval: "monthly"
+    labels:
+      - "dependencies"
+      - "docs"
+    commit-message:
+      prefix: "deps(docs):"
+    open-pull-requests-limit: 5
+
+  # Hugo docs site PostCSS toolchain (docs/package-lock.json). Only covered
+  # by gomod before, so advisories in postcss/browserslist/nanoid sat
+  # unreported until someone ran `npm audit` by hand.
+  - package-ecosystem: "npm"
     directory: "/docs"
     schedule:
       interval: "monthly"
