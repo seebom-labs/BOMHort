@@ -17,8 +17,8 @@ How to set up a local development environment, run the stack, and contribute to 
 
 | Tool | Version | Notes |
 |------|---------|-------|
-| Go | 1.24+ | Backend binaries |
-| Node.js | 22+ | Angular UI |
+| Go | 1.26+ | Backend binaries — `backend/go.mod` pins `go 1.26.8` |
+| Node.js | 22+ | Angular UI, and the PostCSS chain Hugo runs for the docs |
 | Docker + Docker Compose | v2.20+ | ClickHouse and full-stack mode |
 
 ### Option A: Full Stack via Docker Compose
