@@ -180,7 +180,7 @@ docker build -t my-registry/bomhort/ui:test ui/
 The backend uses a **single multi-stage Dockerfile** (`backend/Dockerfile`) with three named targets:
 
 ```
-golang:1.25-alpine (builder)
+golang:1.26-alpine (builder)
   ├── go build → /bin/ingestion-watcher
   ├── go build → /bin/parsing-worker
   ├── go build → /bin/api-gateway

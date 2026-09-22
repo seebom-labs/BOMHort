@@ -313,7 +313,7 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
     .license-row:hover { box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
     .license-row.expanded { border-color: var(--accent); }
     .cat-permissive { background: var(--surface); border: 1px solid var(--border); }
-    .cat-copyleft { background: var(--severity-critical-bg); border: 1px solid #fecaca; }
+    .cat-copyleft { background: var(--severity-critical-bg); border: 1px solid var(--severity-critical); }
     .cat-copyleft-exempted { background: var(--status-success-bg); border: 1px solid var(--status-success); }
     .cat-unknown { background: var(--surface); border: 1px solid var(--border); }
     .lic-header {

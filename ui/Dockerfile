@@ -1,7 +1,7 @@
 # ---- Build stage ----
 # Pin to host platform to avoid QEMU emulation for npm ci (ARM64 crashes under QEMU).
 # The output is static HTML/JS/CSS — platform-independent.
-FROM --platform=$BUILDPLATFORM node:22-alpine@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2 AS builder
+FROM --platform=$BUILDPLATFORM node:26-alpine@sha256:dbaa92e5758cbbcf85d65d5403fdb530fe3442cbe8c6dbfb7ef23365450d5070 AS builder
 
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -11,7 +11,7 @@ COPY . .
 RUN npx ng build --configuration=production
 
 # ---- Serve stage ----
-FROM nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
+FROM nginx:1.31-alpine@sha256:62ff2089abf5a9ed33bd232895bef5e22f7bb4b200675cec49a5ebc48e3d4ac8
 
 # Remove default nginx config.
 RUN rm /etc/nginx/conf.d/default.conf
