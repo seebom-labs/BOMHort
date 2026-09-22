@@ -56,7 +56,7 @@ vi my-values.yaml
 
 # 2. Install via Helm
 helm install bomhort oci://ghcr.io/seebom-labs/bomhort/charts/bomhort \
-  --version 0.1.3 \
+  --version 0.7.0 \
   -f my-values.yaml
 ```
 

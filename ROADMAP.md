@@ -62,7 +62,7 @@ Migration `013` is taken by `013_create_registry_license_cache` (shipped in v0.6
 | # | Issue | Why pre-1.0 |
 |---|-------|-------------|
 | **#335** ✅ | One row per `(vuln_id, purl)` in `/sboms/{id}/vulnerabilities` — latest VEX statement wins, expose `vex_timestamp` | **Changes row semantics** of a frozen endpoint. `argMax()`/`LIMIT 1 BY` in the ClickHouse query + DTO fields (`vex_timestamp`, `vex_author`, `vex_tooling`). Small, but must be in the 1.0 contract. |
-| **#177** | `cluster` in `SBOMListItem` DTO + badge | Additive DTO field; trivial. Good first issue — do it before the freeze so the list contract is complete. |
+| **#177** ✅ | `cluster` in `SBOMListItem` DTO + badge | Additive DTO field; trivial. Shipped in v0.7.0 together with `namespace`/`project`, so the list contract is complete. |
 
 ### 2c. Release engineering
 

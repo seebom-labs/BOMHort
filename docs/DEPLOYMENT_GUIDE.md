@@ -552,7 +552,6 @@ UI_CONFIG=./my-ui-config.json docker compose up -d --force-recreate ui
 # 1. Install with S3 ingestion
 helm install bomhort ./deploy/helm/bomhort \
   -f values-production.yaml \
-  --set image.tag=0.1.3 \
   --set 's3.buckets=[{"name":"cncf-subproject-sboms","region":"us-east-1"},{"name":"cncf-project-sboms","region":"us-east-1"}]' \
   --set s3.accessKey="AKIA..." \
   --set s3.secretKey="..." \
@@ -586,7 +585,6 @@ kubectl create job --from=cronjob/bomhort-ingestion-watcher bomhort-initial-inge
 ```bash
 helm install bomhort ./deploy/helm/bomhort \
   -f values-production.yaml \
-  --set image.tag=0.1.3 \
   --set gitSync.repo=https://github.com/your-org/sbom-repo.git \
   --set parsingWorker.replicas=10
 ```

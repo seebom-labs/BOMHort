@@ -830,7 +830,6 @@ See [Architecture: License Resolution](/docs/architecture/#license-resolution) f
 ```bash
 helm install bomhort ./deploy/helm/bomhort \
   -f values-production.yaml \
-  --set image.tag=0.1.3 \
   --set 's3.buckets=[{"name":"cncf-subproject-sboms","region":"us-east-1"}]' \
   --set s3.accessKey="AKIA..." \
   --set s3.secretKey="..." \
@@ -1030,7 +1029,7 @@ This is safe and non-destructive — existing rows get an empty default value.
 
 ```bash
 helm install bomhort oci://ghcr.io/seebom-labs/bomhort/charts/bomhort \
-  --version 0.6.0 \
+  --version 0.7.0 \
   -n bomhort \
   -f your-values.yaml \
   --set dataMigration.enabled=true \
@@ -1106,7 +1105,7 @@ spec:
   source:
     repoURL: ghcr.io/seebom-labs/bomhort/charts
     chart: bomhort
-    targetRevision: "0.6.0"
+    targetRevision: "0.7.0"
     helm:
       values: |
         dataMigration:

@@ -43,8 +43,8 @@ Fix any reported vulnerabilities before proceeding. Check all three ecosystems (
 ### 2. Tag the release
 
 ```bash
-git tag v0.6.0
-git push origin v0.6.0
+git tag v0.7.0
+git push origin v0.7.0
 ```
 
 ### 3. What happens automatically
@@ -53,7 +53,7 @@ The GitHub Actions workflow (`.github/workflows/release.yml`) triggers on any `v
 
 1. **Builds all 5 container images** (multi-arch: amd64 + arm64)
 2. **Pushes them to ghcr.io** with two tags each:
-   - `ghcr.io/seebom-labs/bomhort/<component>:0.6.0` (version)
+   - `ghcr.io/seebom-labs/bomhort/<component>:0.7.0` (version)
    - `ghcr.io/seebom-labs/bomhort/<component>:latest`
 3. **Packages the Helm chart** with the matching version
 4. **Pushes the Helm chart** as an OCI artifact to `oci://ghcr.io/seebom-labs/bomhort/charts`
@@ -75,10 +75,10 @@ Release notes are grouped by PR labels (see `.github/release.yml`):
 
 ```bash
 # Check images exist
-docker pull ghcr.io/seebom-labs/bomhort/api-gateway:0.6.0
+docker pull ghcr.io/seebom-labs/bomhort/api-gateway:0.7.0
 
 # Check Helm chart
-helm show chart oci://ghcr.io/seebom-labs/bomhort/charts/bomhort --version 0.6.0
+helm show chart oci://ghcr.io/seebom-labs/bomhort/charts/bomhort --version 0.7.0
 ```
 
 ---
@@ -89,7 +89,7 @@ helm show chart oci://ghcr.io/seebom-labs/bomhort/charts/bomhort --version 0.6.0
 
 ```bash
 helm install bomhort oci://ghcr.io/seebom-labs/bomhort/charts/bomhort \
-  --version 0.6.0 \
+  --version 0.7.0 \
   -f values-production.yaml
 ```
 
@@ -97,8 +97,8 @@ helm install bomhort oci://ghcr.io/seebom-labs/bomhort/charts/bomhort \
 
 ```bash
 helm install bomhort oci://ghcr.io/seebom-labs/bomhort/charts/bomhort \
-  --version 0.6.0 \
-  --set image.tag=0.6.0
+  --version 0.7.0 \
+  --set image.tag=0.7.0
 ```
 
 ---
@@ -123,8 +123,8 @@ If you contribute via a fork:
 2. **Merge the PR** into `main` of the main repo
 3. **Tag in the main repo** (not in the fork):
    ```bash
-   git tag v0.6.0
-   git push origin v0.6.0
+   git tag v0.7.0
+   git push origin v0.7.0
    ```
 
 > **Do not tag releases in your fork.** The `GITHUB_TOKEN` in a fork cannot push images to the main repo's GHCR, and the GitHub Release would be created in the fork instead of the main repo.
@@ -208,7 +208,7 @@ All runtime images run as `nobody:nobody` (backend) or `nginx` (UI) for security
 
 ## Versioning
 
-- **Git tags**: `v0.6.0`, `v0.7.0`, etc. (SemVer)
+- **Git tags**: `v0.7.0`, `v0.7.0`, etc. (SemVer)
 - **Image tags**: `0.6.0` (without `v` prefix) + `latest`
 - **Helm chart version**: Matches the Git tag (auto-updated by CI)
 - `values.yaml` defaults to the latest released tag
@@ -223,7 +223,7 @@ To use a different registry, override in Helm:
 helm install bomhort oci://ghcr.io/seebom-labs/bomhort/charts/bomhort \
   --set image.registry=my-registry.example.com \
   --set image.repository=my-org/bomhort \
-  --set image.tag=0.6.0
+  --set image.tag=0.7.0
 ```
 
 Or build + push locally:
