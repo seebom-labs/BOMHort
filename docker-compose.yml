@@ -28,7 +28,7 @@ services:
   # backend images run as). Named volumes are created root-owned, which would
   # make every ingestion fail with "permission denied" (#256).
   originals-init:
-    image: alpine:3.21@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d
+    image: alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
     user: "0:0"
     command: ["sh", "-c", "chown 65534:65534 /data/originals && chmod 0755 /data/originals"]
     volumes:
