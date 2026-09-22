@@ -551,7 +551,7 @@ kubectl edit configmap bomhort-license-policy -n bomhort
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | Go 1.25, net/http (stdlib) |
+| Backend | Go 1.26, net/http (stdlib) |
 | Database | ClickHouse (MergeTree family) |
 | Frontend | Angular 19, CDK Virtual Scrolling |
 | Vuln Scanning | OSV.dev API |
