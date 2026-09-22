@@ -52,3 +52,21 @@ __pycache__/
 tmp-*
 patch_api.py
 
+# Demo SBOMs, kept out of vulnerability scanners — not out of git.
+#
+# examples/ carries sample SBOMs with deliberately outdated packages so a fresh
+# install has findings to show and VEX statements to apply. They are sample
+# *data*: nothing in examples/ is built, imported or shipped. osv-scanner cannot
+# tell that apart from a manifest and reported all of it as if BOMHort depended
+# on it — 79 of the 82 vulnerabilities in the OpenSSF Scorecard report came from
+# here, which is what pinned that check at 0.
+#
+# osv-scanner honours .gitignore (that is what `--no-ignore` turns off), and
+# these files are already tracked, so ignoring them changes nothing about what
+# is in the repository — only what scanners walk into.
+#
+# Consequence: a NEW demo SBOM needs `git add -f`. That is the trade for not
+# having to rename the files away from the .spdx.json / .cdx.json convention
+# this project itself documents.
+examples/**/*.spdx.json
+examples/**/*.cdx.json
