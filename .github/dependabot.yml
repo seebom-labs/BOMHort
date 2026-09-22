@@ -12,9 +12,6 @@ updates:
     labels:
       - "dependencies"
       - "go"
-    reviewers:
-      - "mfahlandt"
-      - "koksay"
     commit-message:
       prefix: "deps(go):"
     open-pull-requests-limit: 10
@@ -28,12 +25,19 @@ updates:
     labels:
       - "dependencies"
       - "frontend"
-    reviewers:
-      - "mfahlandt"
-      - "koksay"
     commit-message:
       prefix: "deps(npm):"
     open-pull-requests-limit: 10
+    groups:
+      angular:
+        patterns:
+          - "@angular/*"
+          - "@angular-devkit/*"
+          - "@angular-eslint/*"
+          - "zone.js"
+        update-types:
+          - "minor"
+          - "patch"
 
   # GitHub Actions
   - package-ecosystem: "github-actions"
@@ -44,11 +48,23 @@ updates:
     labels:
       - "dependencies"
       - "ci"
-    reviewers:
-      - "mfahlandt"
-      - "koksay"
     commit-message:
       prefix: "deps(actions):"
+    open-pull-requests-limit: 5
+
+  # Docker base images (backend and ui)
+  - package-ecosystem: "docker"
+    directories:
+      - "/backend"
+      - "/ui"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+      - "docker"
+    commit-message:
+      prefix: "deps(docker):"
     open-pull-requests-limit: 5
 
   # Hugo docs site dependencies
