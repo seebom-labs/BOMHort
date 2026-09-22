@@ -76,3 +76,33 @@
 }
 */
 
+/*
+ * DARK MODE
+ * ────────────────────────────────────────────────────────────
+ * BOMHort ships its own [data-theme="dark"] palette. If your theme
+ * overrides any of the *-bg tokens above (severity-*-bg, status-*-bg,
+ * --surface-alt, …) you MUST re-declare them for dark mode as well —
+ * otherwise the light tint wins and renders as a near-white box with
+ * unreadable text on the dark background. Use the same selector
+ * specificity you used for the light block (e.g. :root:root[...] if you
+ * used :root:root above).
+ */
+/*
+[data-theme="dark"] {
+  --bg: #121218;
+  --surface: #1c1c24;
+  --surface-alt: #24242e;
+  --border: #2e2e38;
+  --text: #e0e0e6;
+  --text-secondary: #9a9aac;
+  --text-muted: #6b6b7e;
+  --severity-critical-bg: #2a1616;
+  --severity-high-bg: #2a2010;
+  --severity-medium-bg: #2a2510;
+  --severity-low-bg: #1e1e26;
+  --status-success-bg: #0e2a22;
+  --status-error-bg: #2a1616;
+  --status-warning-bg: #2a2010;
+  --status-info-bg: #102a2a;
+}
+*/

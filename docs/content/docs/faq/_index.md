@@ -115,7 +115,7 @@ A full re-ingestion (truncate + re-ingest) is required when:
 For these changes, a simple incremental re-trigger will **not** reprocess existing files because the SHA-256 hashes haven't changed.
 
 {{% alert title="Tip" color="success" %}}
-Changes to **VEX files** do **not** require a full re-ingestion. VEX matching is applied at query time. Simply add or update your `.openvex.json` files and trigger an incremental re-ingestion to pick them up. Note that statements are scoped to the SBOM whose product they describe (#350): the worker maps the OpenVEX product `@id` to an SBOM (or use `?sbom_id=` on upload); statements whose product matches no SBOM are stored **global** and apply everywhere — check the worker logs for the warning.
+Changes to **VEX files** do **not** require a full re-ingestion. VEX matching is applied at query time. Simply add or update your `.openvex.json` files and trigger an incremental re-ingestion to pick them up. Note that statements are scoped to the SBOM whose product they describe (#350): the worker maps the OpenVEX product `@id` to an SBOM (or use `?sbom_id=` on upload); statements whose product matches no SBOM are stored **unscoped** and suppress **nothing** — there is no global or fleet-wide VEX scope. Check the worker logs for the warning. If the product's SBOM merely had not been ingested yet, the VEX rescue pass (migration `020`) scopes the statement automatically once it arrives.
 {{% /alert %}}
 
 ---
