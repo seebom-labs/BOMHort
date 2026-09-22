@@ -1,7 +1,7 @@
 # ---- Build stage ----
 # Pin to host platform to avoid QEMU emulation for npm ci (ARM64 crashes under QEMU).
 # The output is static HTML/JS/CSS — platform-independent.
-FROM --platform=$BUILDPLATFORM node:22-alpine@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2 AS builder
+FROM --platform=$BUILDPLATFORM node:26-alpine@sha256:dbaa92e5758cbbcf85d65d5403fdb530fe3442cbe8c6dbfb7ef23365450d5070 AS builder
 
 WORKDIR /app
 COPY package.json package-lock.json ./
