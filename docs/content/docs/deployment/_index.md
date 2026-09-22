@@ -530,11 +530,16 @@ licenseExceptions:
 ```
 
 Use camelCase `blanketExceptions` and `package` (not `blanket_exceptions` or
-`purl_prefix`). Both arrays are required. Only `status: "approved"` activates a
-rule. Package names match exactly or as complete slash-delimited suffixes;
-`project` is an exact SBOM document name (omit it or use `"*"` for all projects).
-There is no CNCF-specific blanket promotion. Audit fields such as `scope` and
-dates are informational, not automatically enforced conditions.
+`purl_prefix`). Both arrays are required. Only `status: "approved"` or
+`"allowlisted"` activates a rule — every other value, including `denied`,
+`not-eligible` and typos, leaves the entry inactive. Package names match exactly
+or as complete slash-delimited suffixes; `project` is an exact SBOM document
+name (omit it, use `"*"`, or phrase it as `all <qualifier> projects` for all
+projects). A project scope never removes a rule's package restriction. Files
+exported from a published exception registry load as-is: the provenance fields
+`results`, `issueUrl` and `packageUrl` are accepted and kept as audit metadata.
+Audit fields such as `scope` and dates are informational, not automatically
+enforced conditions.
 
 Empty lists are authoritative and never load old approvals from the SBOM directory.
 Fallback is allowed only when the primary file is absent. Invalid configuration

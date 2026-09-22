@@ -806,7 +806,8 @@ Projects with copyleft or unknown license packages (filtered by active exception
 ### `GET /api/v1/license-exceptions`
 
 Configured license exception document (read-only, loaded from config file).
-Includes pending/revoked rules for inspection; only `approved` rules affect checks.
+Includes pending/revoked rules for inspection; only `approved` and `allowlisted`
+rules affect checks.
 By default both arrays are empty. No CNCF approvals are automatically loaded.
 
 **Response:** `200 OK`

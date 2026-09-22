@@ -91,17 +91,119 @@ func TestExceptionProjectAndPackageBoundaries(t *testing.T) {
 }
 
 func TestExceptionGlobalProjectDoesNotMeanBlanket(t *testing.T) {
-	for _, scope := range []string{"", "*", "All Projects", "All CNCF Projects"} {
+	// "all … projects" phrasings are wildcards over the project dimension —
+	// but they must never widen the package or license dimension with it.
+	for _, scope := range []string{"", "*", "All Projects", "All CNCF Projects", "all internal projects"} {
 		idx := BuildIndex(&ExceptionsFile{Exceptions: []Exception{
 			{ID: "package-only", Package: "library", License: "MPL-2.0", Project: scope, Status: "approved"},
 		}})
 		if exempt, _ := idx.IsExempt("unrelated", "MPL-2.0", scope); exempt {
 			t.Errorf("scope %q promoted a package exception to blanket", scope)
 		}
-		got, _ := idx.IsExempt("library", "MPL-2.0", "my-project")
-		if got != (scope != "All CNCF Projects") {
-			t.Errorf("scope %q: exempt=%v", scope, got)
+		if exempt, _ := idx.IsExempt("library", "GPL-3.0-only", "my-project"); exempt {
+			t.Errorf("scope %q exempted a license the rule does not name", scope)
 		}
+		if exempt, _ := idx.IsExempt("library", "MPL-2.0", "my-project"); !exempt {
+			t.Errorf("scope %q: expected the named package+license to be exempt in any project", scope)
+		}
+	}
+}
+
+func TestExceptionProjectScopeIsNotGuessed(t *testing.T) {
+	// A real project whose name merely starts with "All" is not a wildcard.
+	for _, scope := range []string{"All Things Open Projects WG", "all-projects", "projects", "all"} {
+		idx := BuildIndex(&ExceptionsFile{Exceptions: []Exception{
+			{ID: "scoped", Package: "library", License: "MPL-2.0", Project: scope, Status: "approved"},
+		}})
+		if exempt, _ := idx.IsExempt("library", "MPL-2.0", "some-other-project"); exempt {
+			t.Errorf("scope %q was treated as a wildcard", scope)
+		}
+		if exempt, _ := idx.IsExempt("library", "MPL-2.0", scope); !exempt {
+			t.Errorf("scope %q did not match its own project", scope)
+		}
+	}
+}
+
+func TestExceptionStatusVocabulary(t *testing.T) {
+	// Published registries spell approval in more than one way; anything that
+	// is not an enumerated approval must stay unindexed.
+	for status, wantExempt := range map[string]bool{
+		"approved":      true,
+		"Approved":      true,
+		"allowlisted":   true,
+		" ALLOWLISTED ": true,
+		"apache-2.0":    false,
+		"denied":        false,
+		"not-eligible":  false,
+		"revoked":       false,
+		"":              false,
+		"aproved":       false,
+	} {
+		idx := BuildIndex(&ExceptionsFile{
+			BlanketExceptions: []BlanketException{{ID: "b", License: "EPL-2.0", Status: status}},
+			Exceptions:        []Exception{{ID: "e", Package: "library", License: "MPL-2.0", Status: status}},
+		})
+		if exempt, _ := idx.IsExempt("library", "MPL-2.0"); exempt != wantExempt {
+			t.Errorf("status %q: package exemption = %v, want %v", status, exempt, wantExempt)
+		}
+		if exempt, _ := idx.IsExempt("anything", "EPL-2.0"); exempt != wantExempt {
+			t.Errorf("status %q: blanket exemption = %v, want %v", status, exempt, wantExempt)
+		}
+	}
+}
+
+func TestLoadExceptionsAcceptsRegistryProvenanceFields(t *testing.T) {
+	// packageUrl / issueUrl are published by upstream exception registries.
+	// Decoding is strict, so unless they are modelled a single entry carrying
+	// them rejects the entire file and every approval in it is lost.
+	dir := t.TempDir()
+	path := dir + "/exceptions.json"
+	content := `{
+      "version": "1.1.0",
+      "blanketExceptions": [],
+      "exceptions": [
+        {
+          "id": "exc-1",
+          "package": "go.example.org/k6/v2",
+          "packageUrl": "https://github.com/example/k6",
+          "license": "AGPL-3.0-only",
+          "project": "All Example Projects",
+          "status": "approved",
+          "approvedDate": "2026-08-19",
+          "issueUrl": "https://github.com/example/foundation/issues/1482",
+          "results": "https://github.com/example/foundation/issues/1482",
+          "scope": "Load generator only"
+        }
+      ]
+    }`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	idx, err := LoadExceptions(path)
+	if err != nil {
+		t.Fatalf("LoadExceptions: %v", err)
+	}
+	if exempt, _ := idx.IsExempt("go.example.org/k6/v2", "AGPL-3.0-only", "some-project"); !exempt {
+		t.Error("entry with provenance fields was not indexed")
+	}
+	if got := idx.Raw.Exceptions[0].PackageURL; got != "https://github.com/example/k6" {
+		t.Errorf("packageUrl not retained: %q", got)
+	}
+	if got := idx.Raw.Exceptions[0].IssueURL; got == "" {
+		t.Error("issueUrl not retained")
+	}
+}
+
+func TestLoadExceptionsStillRejectsUnknownFields(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/exceptions.json"
+	content := `{"blanketExceptions": [], "exceptions": [{"id":"x","package":"p","license":"MIT","status":"approved","typo":"value"}]}`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadExceptions(path); err == nil {
+		t.Fatal("expected an error for an unknown field")
 	}
 }
 

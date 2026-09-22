@@ -59,9 +59,16 @@ the migration and re-scan requirements below still apply.
 
 - Both `blanketExceptions` and `exceptions` must be JSON arrays, including when
   empty. Unknown fields are rejected; use `blanketExceptions`, not
-  `blanket_exceptions`, and `package`, not `purl_prefix`.
-- Only `approved` rules are active (case-insensitive status comparison).
-  `pending` and `revoked` are inactive.
+  `blanket_exceptions`, and `package`, not `purl_prefix`. The provenance fields
+  `results`, `issueUrl` and `packageUrl` are accepted and carried through as
+  audit metadata, so files exported from a published exception registry load
+  without editing.
+- Only `approved` and `allowlisted` rules are active (case-insensitive status
+  comparison). `allowlisted` means approved in bulk under a standing allowlist
+  policy rather than case by case, which is identical in effect. Everything
+  else — `pending`, `revoked`, `denied`, `not-eligible`, a permissive-license
+  marker such as `apache-2.0`, or a typo — is inactive. An unrecognised status
+  never becomes an approval.
 - `blanketExceptions` intentionally exempts an entire license for **all packages
   and projects**. Existing SPDX modifier-prefix matching is retained, e.g.
   `MPL-2.0` also covers `MPL-2.0-no-copyleft-exception`.
@@ -71,10 +78,14 @@ the migration and re-scan requirements below still apply.
   or `team/library/submodule`. Prefer fully qualified names to avoid ambiguity.
   Package PURL/glob patterns are **not** supported.
 - `project` matches the **exact SBOM `document_name`**, not the UI's grouped project
-  label. Omit it or use `"*"` for all projects (`"All Projects"` is retained as a
-  legacy alias). `"All CNCF Projects"` has no special semantics: it is a literal
-  document name and must be migrated deliberately. No project value removes a
-  rule's package restriction.
+  label. Omit it or use `"*"` for all projects. A scope phrased as
+  `all <qualifier> projects` — `"All Projects"`, `"All CNCF Projects"`,
+  `"all internal projects"` — is also a wildcard, because that is how published
+  registries spell a global scope; compared literally it would match no document
+  name at all and the rule would silently exempt nothing. The qualifier must be a
+  single word, so a real project named `"All Things Open Projects WG"` stays a
+  literal name. No project value removes a rule's package restriction.
+
 - `license` matches exact SPDX IDs. Comma-, ` OR `-, and ` AND `-separated rule
   values expand into individual license IDs; this is not a full SPDX expression
   evaluator. Omitting `license` grants **any license** for the named package, so

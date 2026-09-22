@@ -25,9 +25,12 @@ type ExceptionsFile struct {
 type BlanketException struct {
 	ID           string `json:"id"`
 	License      string `json:"license"`
-	Status       string `json:"status"` // approved, revoked
+	Status       string `json:"status"` // see statusIsApproved
 	ApprovedDate string `json:"approvedDate"`
 	Scope        string `json:"scope,omitempty"`
+	Results      string `json:"results,omitempty"`    // link to approval discussion
+	IssueURL     string `json:"issueUrl,omitempty"`   // same, as published by some registries
+	PackageURL   string `json:"packageUrl,omitempty"` // upstream project page
 	Comment      string `json:"comment,omitempty"`
 }
 
@@ -36,12 +39,38 @@ type Exception struct {
 	ID           string `json:"id"`
 	Package      string `json:"package"`           // package name, exact or path-segment suffix
 	License      string `json:"license"`           // SPDX license ID
-	Project      string `json:"project,omitempty"` // exact SBOM document name; empty or * means all
-	Status       string `json:"status"`            // approved, revoked
+	Project      string `json:"project,omitempty"` // exact SBOM document name; empty, * or "all … projects" means all
+	Status       string `json:"status"`            // see statusIsApproved
 	ApprovedDate string `json:"approvedDate"`
 	Scope        string `json:"scope,omitempty"`
-	Results      string `json:"results,omitempty"` // link to approval discussion
+	Results      string `json:"results,omitempty"`    // link to approval discussion
+	IssueURL     string `json:"issueUrl,omitempty"`   // same, as published by some registries
+	PackageURL   string `json:"packageUrl,omitempty"` // upstream project page
 	Comment      string `json:"comment,omitempty"`
+}
+
+// statusIsApproved reports whether a status grants an exemption.
+//
+// Decoding is strict (DisallowUnknownFields), but statuses are not: published
+// exception registries use their own vocabulary for "this was approved", and
+// an unrecognised value must never silently turn into an approval. So the
+// approving values are enumerated and everything else — "denied",
+// "not-eligible", "revoked", a typo — leaves the entry unindexed.
+//
+//	approved    the canonical value
+//	allowlisted approved in bulk under a standing allowlist policy, rather
+//	            than case by case; identical in effect
+//
+// A permissive-license marker such as "apache-2.0" is deliberately absent: a
+// permissive license never raises a violation, so indexing those entries would
+// add rules that can only ever be no-ops.
+func statusIsApproved(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "approved", "allowlisted":
+		return true
+	default:
+		return false
+	}
 }
 
 // ExceptionIndex is a pre-computed lookup for fast exception matching.
@@ -117,7 +146,7 @@ func BuildIndex(ef *ExceptionsFile) *ExceptionIndex {
 
 	for i := range ef.BlanketExceptions {
 		be := &ef.BlanketExceptions[i]
-		if strings.EqualFold(be.Status, "approved") {
+		if statusIsApproved(be.Status) {
 			for _, lic := range splitLicenses(be.License) {
 				idx.blanketLicenses[lic] = be
 			}
@@ -126,7 +155,7 @@ func BuildIndex(ef *ExceptionsFile) *ExceptionIndex {
 
 	for i := range ef.Exceptions {
 		exc := &ef.Exceptions[i]
-		if !strings.EqualFold(exc.Status, "approved") {
+		if !statusIsApproved(exc.Status) {
 			continue
 		}
 
@@ -251,9 +280,37 @@ func (idx *ExceptionIndex) IsExempt(packageName, licenseID string, project ...st
 	return false, ""
 }
 
+// matchesProject reports whether an exception's project scope covers the SBOM
+// currently being checked. projects[0] is the SBOM document name.
+//
+// Besides "" and "*", a scope phrased as "all <something> projects" is treated
+// as a wildcard. Registries maintained by a foundation or a platform team
+// routinely spell their global scope that way ("All Projects", "All CNCF
+// Projects", "All Internal Projects"), and comparing that phrase literally
+// against a document name silently matches nothing — the exception is present,
+// looks approved in the UI, and exempts not a single finding.
+//
+// The wildcard only ever widens the *project* scope. Package and license
+// still have to match, so a rule cannot become a blanket exemption this way.
+//
+// A named scope is still compared exactly: document names are identifiers, and
+// "Alpha" must not exempt findings in "alpha".
 func matchesProject(scope string, projects []string) bool {
-	if scope == "" || scope == "*" || scope == "All Projects" {
+	scope = strings.TrimSpace(scope)
+	if scope == "" || scope == "*" || isAllProjectsPhrase(scope) {
 		return true
 	}
 	return len(projects) > 0 && scope == projects[0]
+}
+
+// isAllProjectsPhrase matches "all projects" with an optional qualifier in
+// between, case-insensitively. The qualifier must be a single word, so an
+// actual project named "All Things Open Projects Working Group" is not
+// mistaken for a wildcard.
+func isAllProjectsPhrase(scope string) bool {
+	fields := strings.Fields(strings.ToLower(scope))
+	if len(fields) < 2 || len(fields) > 3 {
+		return false
+	}
+	return fields[0] == "all" && fields[len(fields)-1] == "projects"
 }
