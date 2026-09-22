@@ -32,14 +32,14 @@ Ingest SBOMs directly from S3-compatible buckets (AWS S3, MinIO, GCS). The Inges
 
 ```yaml
 s3:
-  buckets: '[{"name":"cncf-subproject-sboms","region":"us-east-1"}]'
+  buckets: '[{"name":"my-org-sboms","region":"us-east-1"}]'
 ```
 
 **Multiple buckets:**
 
 ```yaml
 s3:
-  buckets: '[{"name":"cncf-subproject-sboms","region":"us-east-1"},{"name":"cncf-project-sboms","region":"us-east-1"}]'
+  buckets: '[{"name":"my-org-sboms","region":"us-east-1"},{"name":"platform-sboms","region":"us-east-1"}]'
 ```
 
 **Private buckets with credentials:**
@@ -159,7 +159,7 @@ gitSync:
   enabled: false
 
 seedJob:
-  sbomRepo: "https://github.com/cncf/sbom.git"
+  sbomRepo: "https://github.com/my-org/sboms.git"
   sbomBranch: main
 ```
 
@@ -201,7 +201,7 @@ apiGateway:
     enabled: true
 
 s3:
-  buckets: '[{"name":"cncf-subproject-sboms","region":"us-east-1"},{"name":"bomhort-pushed","region":"us-east-1","skipScan":true}]'
+  buckets: '[{"name":"my-org-sboms","region":"us-east-1"},{"name":"bomhort-pushed","region":"us-east-1","skipScan":true}]'
 ```
 
 **Fallback: local filesystem.** If no `skipScan` bucket is configured, uploads fall back to `SBOM_DIR/pushed/` — this needs the API Gateway's `sbom-data` volume mounted read-write:
@@ -247,7 +247,7 @@ From v0.7 the parsing worker keeps the **original bytes** of every ingested SBOM
 
 ```yaml
 s3:
-  buckets: '[{"name":"cncf-subproject-sboms","region":"us-east-1"},{"name":"bomhort-archive","region":"us-east-1","skipScan":true}]'
+  buckets: '[{"name":"my-org-sboms","region":"us-east-1"},{"name":"bomhort-archive","region":"us-east-1","skipScan":true}]'
 
 originalStore:
   s3:
@@ -426,7 +426,7 @@ catalogue keeps its per-project view *and* gains the grouping.
 # values.yaml
 ownership:
   project: ""                                  # left to pathLayout / per-bucket
-  tags: ["sandbox-applications", "cncf"]
+  tags: ["sandbox-applications", "platform"]
 ```
 
 A list rather than a single value, because the groupings are genuinely
@@ -454,7 +454,7 @@ This is the one place where tags deliberately break the ownership precedence
 rules. `cluster`/`namespace`/`project` are *answers* — a more specific level
 overrides a less specific one, because a document has exactly one owner. Tags
 are *memberships*: a bucket adding `sandbox-applications` does not contradict
-an instance-wide `cncf`, so the document ends up with both. Values are
+an instance-wide `platform`, so the document ends up with both. Values are
 normalised on ingestion (trimmed, lowercased, deduplicated, sorted), so casing
 in your values file is not load-bearing.
 {{% /alert %}}
@@ -830,7 +830,7 @@ See [Architecture: License Resolution](/docs/architecture/#license-resolution) f
 ```bash
 helm install bomhort ./deploy/helm/bomhort \
   -f values-production.yaml \
-  --set 's3.buckets=[{"name":"cncf-subproject-sboms","region":"us-east-1"}]' \
+  --set 's3.buckets=[{"name":"my-org-sboms","region":"us-east-1"}]' \
   --set s3.accessKey="AKIA..." \
   --set s3.secretKey="..." \
   --set parsingWorker.replicas=10

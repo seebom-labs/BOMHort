@@ -26,7 +26,7 @@ BOMHort is run in two shapes, and the demo directories mirror them:
 | Method | Config | Best For |
 |--------|--------|----------|
 | **S3 buckets** (default) | `s3.buckets` JSON array | Any scale, no PVC needed, AWS/MinIO/GCS |
-| **Seed job** (alternative) | `gitSync.enabled: false` + `seedJob` | Large Git repos (cncf/sbom ~14 GB), environments without S3 |
+| **Seed job** (alternative) | `gitSync.enabled: false` + `seedJob` | Large Git repos (multi-GB), environments without S3 |
 | **git-sync** (alternative) | `gitSync.enabled: true` | Small Git repos (< 1 GB), continuous auto-pull |
 | **Manual PVC** (alternative) | `gitSync.enabled: false`, no seedJob | Custom CI, pre-built SBOMs |
 

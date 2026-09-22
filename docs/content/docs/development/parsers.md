@@ -190,7 +190,7 @@ When `USE_PROTOBOM=true`, **all** SBOM parsing is routed through protobom — in
 
 | Scenario | Backend | Reason |
 |----------|---------|--------|
-| Production with CNCF S3 buckets | Built-in | All files are SPDX JSON, maximum performance |
+| Production S3 buckets | Built-in | All files are SPDX JSON, maximum performance |
 | Mixed-format ingestion | Built-in | SPDX + CycloneDX covered with zero overhead |
 | Unknown/exotic formats | Protobom | Broader format sniffing and parsing |
 | Future SPDX 3.0 support | Protobom | Will be added by the protobom community |

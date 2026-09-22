@@ -58,7 +58,7 @@ ownership:
   # many-to-many: one project can be a sandbox application *and* an
   # observability tool. Unlike cluster/namespace/project, tags from the
   # different levels are merged rather than overridden — a bucket adding
-  # "sandbox-applications" does not contradict an instance-wide "cncf".
+  # "sandbox-applications" does not contradict an instance-wide "platform".
   #
   # Normalised on ingestion (trimmed, lowercased, deduplicated), so casing
   # here is not load-bearing.
@@ -90,7 +90,7 @@ ownership:
 # Set s3.buckets to a JSON array of bucket configs. Leave empty to use volume-based alternatives.
 s3:
   # JSON array of bucket configs. Injected as S3_BUCKETS env var.
-  # Example: [{"name":"cncf-subproject-sboms","region":"us-east-1"},{"name":"cncf-project-sboms","region":"us-east-1"}]
+  # Example: [{"name":"my-org-sboms","region":"us-east-1"},{"name":"platform-sboms","region":"us-east-1"}]
   #
   # Push-model uploads (POST /api/v1/sboms/upload, #135): mark exactly one
   # bucket "skipScan": true to designate it as the push target. skipScan
@@ -101,14 +101,14 @@ s3:
   # skipScan bucket is configured, the upload endpoint falls back to writing
   # under SBOM_DIR/pushed/ (see sbomSource.writable below).
   # Example with a push bucket:
-  # [{"name":"cncf-subproject-sboms","region":"us-east-1"},{"name":"bomhort-pushed","region":"us-east-1","skipScan":true}]
+  # [{"name":"my-org-sboms","region":"us-east-1"},{"name":"bomhort-pushed","region":"us-east-1","skipScan":true}]
   #
   # Per-bucket ownership and grouping: a bucket entry may carry "cluster",
   # "namespace", "project", "pathLayout" and "tags". This is the usual way to
   # label a catalogue instance, where each bucket holds one category of
   # projects:
-  # [{"name":"cncf-sandbox","region":"us-east-1","tags":["sandbox-applications"],"pathLayout":"_/_/project"},
-  #  {"name":"cncf-graduated","region":"us-east-1","tags":["graduated"],"pathLayout":"_/project"}]
+  # [{"name":"sboms-sandbox","region":"us-east-1","tags":["sandbox-applications"],"pathLayout":"_/_/project"},
+  #  {"name":"sboms-graduated","region":"us-east-1","tags":["graduated"],"pathLayout":"_/project"}]
   #
   # Note how "tags" and "project" do different jobs: pathLayout picks the real
   # project out of the key, while tags label what kind of project it is. The
@@ -369,7 +369,7 @@ ui:
       dashboard:
         title: "Dashboard"
         subtitle: "Software Bill of Materials — Governance Overview"
-        description: '<strong>BOMHort</strong> autonomously ingests SPDX SBOMs from the CNCF ecosystem, cross-references known vulnerabilities via the <a href="https://osv.dev" target="_blank" rel="noopener">OSV database</a>, evaluates license compliance against a configurable policy, and applies <a href="https://openvex.dev" target="_blank" rel="noopener">OpenVEX</a> statements to suppress non-applicable findings — giving you a single pane of glass for software supply-chain governance.'
+        description: '<strong>BOMHort</strong> autonomously ingests SPDX and CycloneDX SBOMs at scale, cross-references known vulnerabilities via the <a href="https://osv.dev" target="_blank" rel="noopener">OSV database</a>, evaluates license compliance against a configurable policy, and applies <a href="https://openvex.dev" target="_blank" rel="noopener">OpenVEX</a> statements to suppress non-applicable findings — giving you a single pane of glass for software supply-chain governance.'
         disclaimer: '<strong>Disclaimer:</strong> The data shown on this dashboard is provided on an "as-is" basis for informational purposes only. Vulnerability and license information is sourced from third-party databases (OSV, GitHub) and may be incomplete or delayed. BOMHort does not guarantee the accuracy, completeness, or timeliness of any data and is not a substitute for professional security audits or legal advice. Use at your own risk.'
       footer:
         enabled: false
@@ -390,7 +390,7 @@ cveRefresher:
 # Seed Job (only used when gitSync.enabled=false)
 # Clones an SBOM git repo into the PVC on first install.
 seedJob:
-  sbomRepo: "https://github.com/cncf/sbom.git"
+  sbomRepo: "https://github.com/my-org/sboms.git"
   sbomBranch: main
   # License exceptions are configured via licenseExceptions.custom, not downloaded.
 

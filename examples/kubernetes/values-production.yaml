@@ -7,7 +7,7 @@
 # Usage:
 #   helm install bomhort deploy/helm/bomhort/ -n bomhort -f values-production.yaml \
 #     --set clickhouse.password=<PASSWORD> \
-#     --set 's3.buckets=[{"name":"cncf-subproject-sboms","region":"us-east-1"}]'
+#     --set 's3.buckets=[{"name":"my-org-sboms","region":"us-east-1"}]'
 
 # ─── Images ──────────────────────────────────────────────────────────────────
 image:
@@ -50,8 +50,8 @@ github:
 # Ingest SBOMs directly from S3 buckets. No PVC, git-sync, or seed job needed.
 # Works alongside local files if both are configured.
 s3:
-  # Example: ingest from two public CNCF SBOM buckets
-  # buckets: '[{"name":"cncf-subproject-sboms","region":"us-east-1"},{"name":"cncf-project-sboms","region":"us-east-1"}]'
+  # Example: ingest from two SBOM buckets
+  # buckets: '[{"name":"my-org-sboms","region":"us-east-1"},{"name":"platform-sboms","region":"us-east-1"}]'
   buckets: ""
   accessKey: ""   # pass via --set for private buckets
   secretKey: ""   # pass via --set for private buckets
@@ -69,7 +69,7 @@ gitSync:
   enabled: false
 
 seedJob:
-  sbomRepo: "https://github.com/cncf/sbom.git"    # ← change to your SBOM repo
+  sbomRepo: "https://github.com/my-org/sboms.git" # ← change to your SBOM repo
   sbomBranch: main
 
 sbomSource:
@@ -78,8 +78,8 @@ sbomSource:
   storageSize: 20Gi
 
 # ─── License Config ─────────────────────────────────────────────────────────
-# Default: CNCF Allowed Third-Party License Policy
-# (Apache-2.0 + CNCF Allowlist are permissive, everything else needs an exception)
+# Default: the policy bundled with the chart
+# (permissive SPDX IDs pass, everything else needs an exception)
 licenseExceptions:
   enabled: true
   mountPath: /data/config/license-exceptions.json
@@ -88,7 +88,7 @@ licenseExceptions:
 licensePolicy:
   enabled: true
   mountPath: /data/config/license-policy.json
-  # Override the default CNCF policy if your org has different rules:
+  # Override the default policy if your org has different rules:
   # custom: |
   #   {
   #     "description": "My org policy",

@@ -1,5 +1,5 @@
 {
-  "description": "Based on the CNCF Allowed Third-Party License Policy (https://github.com/cncf/foundation/blob/main/policies-guidance/allowed-third-party-license-policy.md). Apache-2.0 plus the CNCF Allowlist are permissive. Everything else requires a CNCF Governing Board exception.",
+  "description": "Based on the CNCF Allowed Third-Party License Policy (https://github.com/cncf/foundation/blob/main/policies-guidance/allowed-third-party-license-policy.md). Apache-2.0 and the other SPDX IDs listed below are permissive. Everything else requires an explicit, operator-configured exception.",
   "permissive": [
     "Apache-2.0",
     "MIT",

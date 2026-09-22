@@ -54,7 +54,7 @@ github:
 # This is the default ingestion method. Works alongside or instead of the PVC.
 s3:
   # JSON array of bucket configs. Credentials injected via --set or K8s Secret.
-  # buckets: '[{"name":"cncf-subproject-sboms","region":"us-east-1"},{"name":"cncf-project-sboms","region":"us-east-1"}]'
+  # buckets: '[{"name":"my-org-sboms","region":"us-east-1"},{"name":"platform-sboms","region":"us-east-1"}]'
   buckets: ""
   accessKey: ""   # injected via --set or K8s Secret
   secretKey: ""   # injected via --set or K8s Secret
@@ -72,16 +72,16 @@ gitSync:
   enabled: false
 
 seedJob:
-  sbomRepo: "https://github.com/cncf/sbom.git"
+  sbomRepo: "https://github.com/my-org/sboms.git"
   sbomBranch: main
 
 sbomSource:
   pvcName: bomhort-sbom-data
   mountPath: /data/sboms
-  storageSize: 15Gi     # CNCF repo = ~14 GB (6500+ SBOMs)
+  storageSize: 15Gi     # sized for a multi-GB SBOM repo
 
 # ─── License Config ─────────────────────────────────────────────────────────
-# Uses the CNCF Allowed Third-Party License Policy by default (from the Helm
+# Uses the bundled default license policy (from the Helm
 # chart ConfigMap). Override with licensePolicy.custom if needed.
 licenseExceptions:
   enabled: true
@@ -91,7 +91,7 @@ licenseExceptions:
 licensePolicy:
   enabled: true
   mountPath: /data/config/license-policy.json
-  # Uncomment to override the default CNCF policy:
+  # Uncomment to override the default policy:
   # custom: |
   #   {
   #     "permissive": ["Apache-2.0", "MIT"],

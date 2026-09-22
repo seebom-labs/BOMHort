@@ -70,15 +70,15 @@ looks in production, where each tier is typically its own bucket:
 
 ```json
 S3_BUCKETS='[
-  {"name":"cncf-sandbox",    "pathLayout":"project", "tags":["sandbox-applications"]},
-  {"name":"cncf-incubating", "pathLayout":"project", "tags":["incubating"]},
-  {"name":"cncf-graduated",  "pathLayout":"project", "tags":["graduated"]}
+  {"name":"sboms-sandbox",    "pathLayout":"project", "tags":["sandbox-applications"]},
+  {"name":"sboms-incubating", "pathLayout":"project", "tags":["incubating"]},
+  {"name":"sboms-graduated",  "pathLayout":"project", "tags":["graduated"]}
 ]'
 ```
 
 Per-bucket tags are **merged** with the instance-wide `TAGS`, not overridden —
 a bucket saying "these are sandbox apps" does not contradict an instance-wide
-"all of this is CNCF". Tags are many-to-many by nature: a project can be both
+"all of this is the platform group". Tags are many-to-many by nature: a project can be both
 `graduated` and `security-critical`.
 
 ## Run it

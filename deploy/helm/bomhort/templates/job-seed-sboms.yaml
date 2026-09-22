@@ -33,13 +33,13 @@ spec:
               #  TARGET="/data/sboms"
               #  mkdir -p "$TARGET"
 
-              #  SBOM_REPO="{{ .Values.seedJob.sbomRepo | default "https://github.com/cncf/sbom.git" }}"
+              #  SBOM_REPO="{{ .Values.seedJob.sbomRepo | default "https://github.com/my-org/sboms.git" }}"
               #  SBOM_BRANCH="{{ .Values.seedJob.sbomBranch | default "main" }}"
               #  echo "⏳ Cloning $SBOM_REPO (branch: $SBOM_BRANCH) ..."
               #  git clone --depth 1 --single-branch --branch "$SBOM_BRANCH" "$SBOM_REPO" /tmp/sbom-repo
 
               #  echo "⏳ Copying SBOM files..."
-              #  # CNCF SBOM repo has nested dirs with duplicate basenames
+              #  # some SBOM repos have nested dirs with duplicate basenames
               #  # (e.g. 50× cli.json). Flatten paths into unique filenames:
               #  #   sbom/argo-cd/argo-cd/2.5.0/argo-cd.json → argo-cd_argo-cd_2.5.0_argo-cd.json
               #  REPO_ROOT="/tmp/sbom-repo"

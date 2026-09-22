@@ -14,7 +14,7 @@ import (
 
 // BucketConfig holds the configuration for a single S3 bucket source.
 type BucketConfig struct {
-	Name         string `json:"name"`         // Bucket name (e.g. "cncf-subproject-sboms")
+	Name         string `json:"name"`         // Bucket name (e.g. "my-org-sboms")
 	Endpoint     string `json:"endpoint"`     // S3 endpoint (e.g. "s3.amazonaws.com")
 	Region       string `json:"region"`       // AWS region (e.g. "us-east-1")
 	AccessKey    string `json:"accessKey"`    // Access key ID (optional for public buckets)

@@ -5,7 +5,7 @@
 -- Kubernetes semantics and are structurally empty for catalogue-style
 -- instances (a foundation collecting SBOMs of its member projects never has
 -- a cluster). Those instances still need to group projects: "these 300 SBOMs
--- are CNCF sandbox applications", "these are graduated". Overloading
+-- are sandbox applications", "these are graduated". Overloading
 -- `namespace` for that would mean two different meanings in one column
 -- depending on how the instance is operated, which breaks the moment someone
 -- runs both models side by side.

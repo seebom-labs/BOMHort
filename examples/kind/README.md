@@ -29,7 +29,7 @@ Edit `local/values-local.yaml` to set your S3 bucket(s):
 
 ```yaml
 s3:
-  buckets: '[{"name":"cncf-subproject-sboms","region":"us-east-1"}]'
+  buckets: '[{"name":"my-org-sboms","region":"us-east-1"}]'
 ```
 
 Or keep the default seed job (PVC-based) if you don't have S3 access.
@@ -45,7 +45,7 @@ This will:
 2. Install the [Altinity ClickHouse Operator](https://github.com/Altinity/clickhouse-operator)
 3. Deploy BOMHort via Helm with [`values-kind.yaml`](values-kind.yaml)
 4. If S3 is configured: Ingestion Watcher streams SBOMs from your buckets
-5. If S3 is not configured: Seed job clones the CNCF SBOM repo into a PVC (6500+ SBOMs, ~14 GB)
+5. If S3 is not configured: Seed job clones the repo configured in `seedJob.sbomRepo` into a PVC
 
 ### 4. Access
 

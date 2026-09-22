@@ -12,7 +12,7 @@ data:
     {{ .Values.licensePolicy.custom | nindent 4 }}
     {{- else }}
     {
-      "description": "Based on the CNCF Allowed Third-Party License Policy. Apache-2.0 plus the CNCF Allowlist are permissive.",
+      "description": "Derived from the CNCF Allowed Third-Party License Policy. Replace it entirely via licensePolicy.custom.",
       "permissive": [
         "Apache-2.0", "MIT", "MIT-0", "0BSD",
         "BSD-2-Clause", "BSD-2-Clause-FreeBSD", "BSD-3-Clause",

@@ -28,7 +28,7 @@ vi my-values.yaml
 # 4. Install (with S3 ingestion)
 helm install bomhort deploy/helm/bomhort/ \
   -n bomhort -f my-values.yaml \
-  --set 's3.buckets=[{"name":"cncf-subproject-sboms","region":"us-east-1"}]'
+  --set 's3.buckets=[{"name":"my-org-sboms","region":"us-east-1"}]'
 
 # Or from the OCI registry:
 helm install bomhort oci://ghcr.io/seebom-labs/bomhort/charts/bomhort \
@@ -54,7 +54,7 @@ The Ingestion Watcher streams `ListObjects` from each configured S3 bucket (pagi
 
 ```yaml
 s3:
-  buckets: '[{"name":"cncf-subproject-sboms","region":"us-east-1"},{"name":"cncf-project-sboms","region":"us-east-1"}]'
+  buckets: '[{"name":"my-org-sboms","region":"us-east-1"},{"name":"platform-sboms","region":"us-east-1"}]'
   accessKey: ""   # pass via --set for private buckets
   secretKey: ""
 ```
@@ -85,7 +85,7 @@ gitSync:
   enabled: false           # disable git-sync
 
 seedJob:
-  sbomRepo: "https://github.com/cncf/sbom.git"
+  sbomRepo: "https://github.com/my-org/sboms.git"
   sbomBranch: main
 
 sbomSource:
@@ -119,7 +119,7 @@ gitSync:
   timeout: 120             # seconds for git operations
 ```
 
-**⚠️  Limitation:** git-sync struggles with very large repos (multi-GB). Use S3 or the seed job for repos like `cncf/sbom` (~14 GB).
+**⚠️  Limitation:** git-sync struggles with very large repos (multi-GB). Use S3 or the seed job for repos in the multi-GB range.
 
 ### Method 4: Pre-populated PVC (manual / CI pipeline)
 

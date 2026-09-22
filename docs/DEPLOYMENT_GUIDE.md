@@ -23,14 +23,14 @@ Ingest SBOMs directly from S3-compatible buckets (AWS S3, MinIO, GCS). The Inges
 
 ```yaml
 s3:
-  buckets: '[{"name":"cncf-subproject-sboms","region":"us-east-1"}]'
+  buckets: '[{"name":"my-org-sboms","region":"us-east-1"}]'
 ```
 
 **Multiple buckets:**
 
 ```yaml
 s3:
-  buckets: '[{"name":"cncf-subproject-sboms","region":"us-east-1"},{"name":"cncf-project-sboms","region":"us-east-1"}]'
+  buckets: '[{"name":"my-org-sboms","region":"us-east-1"},{"name":"platform-sboms","region":"us-east-1"}]'
 ```
 
 **Private buckets with credentials:**
@@ -78,7 +78,7 @@ s3:
 | Pattern | Type |
 |---------|------|
 | `*.spdx.json` | SPDX SBOM |
-| `*_spdx.json` | SPDX SBOM (CNCF naming convention) |
+| `*_spdx.json` | SPDX SBOM (underscore variant) |
 | `*.openvex.json` | OpenVEX statement |
 | `*.vex.json` | OpenVEX statement |
 
@@ -96,7 +96,7 @@ gitSync:
   enabled: false
 
 seedJob:
-  sbomRepo: "https://github.com/cncf/sbom.git"
+  sbomRepo: "https://github.com/my-org/sboms.git"
   sbomBranch: main
 
 sbomSource:
@@ -130,7 +130,7 @@ gitSync:
   timeout: 120
 ```
 
-> **⚠️  Limitation:** git-sync struggles with large repos (multi-GB). For repos like `cncf/sbom` (~14 GB), it times out or OOM-kills. Use S3 or the seed job instead.
+> **⚠️  Limitation:** git-sync struggles with large repos. Past a few GB it times out or gets OOM-killed. Use S3 or the seed job instead.
 
 ### Option D: Pre-populated PVC (manual / CI pipeline)
 
@@ -552,7 +552,7 @@ UI_CONFIG=./my-ui-config.json docker compose up -d --force-recreate ui
 # 1. Install with S3 ingestion
 helm install bomhort ./deploy/helm/bomhort \
   -f values-production.yaml \
-  --set 's3.buckets=[{"name":"cncf-subproject-sboms","region":"us-east-1"},{"name":"cncf-project-sboms","region":"us-east-1"}]' \
+  --set 's3.buckets=[{"name":"my-org-sboms","region":"us-east-1"},{"name":"platform-sboms","region":"us-east-1"}]' \
   --set s3.accessKey="AKIA..." \
   --set s3.secretKey="..." \
   --set parsingWorker.replicas=10 \

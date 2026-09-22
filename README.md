@@ -87,7 +87,7 @@ cp .env.example .env
 | `NAMESPACE` | *(empty)* | Default deployment-namespace label (#138) stamped onto all ingested data. Overridable per bucket and per upload (`?namespace=`). |
 | `PROJECT` | *(empty)* | Default project label (#57) stamped onto all ingested data. Overridable per bucket and per upload (`?project=`). |
 | `INGEST_PATH_LAYOUT` | *(empty)* | Opt-in: derive `cluster`/`namespace`/`project` from an SBOM's position in the source, e.g. `cluster/namespace/project` for keys like `prod-eu/payments/payment-service/app.spdx.json`. `_` skips a level. A malformed layout fails at startup. Explicit config always outranks derivation. |
-| `TAGS` | *(empty)* | Comma-separated free-form grouping labels (#357) stamped onto all ingested data, e.g. `sandbox-applications,cncf`. Tags group projects — they do not replace them: a project keeps its identity and can carry several tags. Unlike `CLUSTER_NAME`/`NAMESPACE`/`PROJECT`, per-bucket and per-upload (`?tags=`) values are **merged**, not overridden. Normalised to lowercase, trimmed, deduplicated and sorted. Read back via `GET /api/v1/tags`; filter with `GET /api/v1/projects?tag=<tag>`. |
+| `TAGS` | *(empty)* | Comma-separated free-form grouping labels (#357) stamped onto all ingested data, e.g. `sandbox-applications,platform`. Tags group projects — they do not replace them: a project keeps its identity and can carry several tags. Unlike `CLUSTER_NAME`/`NAMESPACE`/`PROJECT`, per-bucket and per-upload (`?tags=`) values are **merged**, not overridden. Normalised to lowercase, trimmed, deduplicated and sorted. Read back via `GET /api/v1/tags`; filter with `GET /api/v1/projects?tag=<tag>`. |
 | `AUTH_ENABLED` | `false` | Enable API authentication middleware. When `false` (default), all API endpoints are unauthenticated. |
 | `SERVICE_TOKEN` | *(empty)* | Shared secret for upstream proxy/gateway integrations. Accepted via `Authorization: Bearer <token>` or `X-Service-Token: <token>`. |
 | `API_KEYS` | *(empty)* | Comma-separated list of API keys for direct API consumers (CI/CD, scripts). Accepted via `X-API-Key: <key>`. |
@@ -227,7 +227,7 @@ Ingest SBOMs directly from S3-compatible buckets (AWS S3, MinIO, GCS). This is t
 
 ```bash
 # .env
-S3_BUCKET=cncf-subproject-sboms
+S3_BUCKET=my-org-sboms
 S3_ENDPOINT=s3.amazonaws.com
 S3_REGION=us-east-1
 ```
@@ -236,7 +236,7 @@ S3_REGION=us-east-1
 
 ```bash
 # .env
-S3_BUCKETS='[{"name":"cncf-subproject-sboms","endpoint":"s3.amazonaws.com","region":"us-east-1"},{"name":"cncf-project-sboms","region":"us-east-1"}]'
+S3_BUCKETS='[{"name":"my-org-sboms","endpoint":"s3.amazonaws.com","region":"us-east-1"},{"name":"platform-sboms","region":"us-east-1"}]'
 ```
 
 **Private buckets with credentials:**
@@ -284,7 +284,7 @@ See [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) for Kubernetes deployme
 
 ### Option B: Local Kubernetes (Kind)
 
-Deploy the full stack to a local [Kind](https://kind.sigs.k8s.io/) cluster, including ClickHouse Operator, CNCF SBOM ingestion, and the Angular UI:
+Deploy the full stack to a local [Kind](https://kind.sigs.k8s.io/) cluster, including ClickHouse Operator, SBOM ingestion, and the Angular UI:
 
 ```bash
 # 1. Copy secrets template and fill in your values
@@ -504,7 +504,7 @@ make dev-reset
 
 ## License Policy
 
-By default, BOMHort enforces the [CNCF Allowed Third-Party License Policy](https://github.com/cncf/foundation/blob/main/policies-guidance/allowed-third-party-license-policy.md):
+The bundled default policy is derived from the [CNCF Allowed Third-Party License Policy](https://github.com/cncf/foundation/blob/main/policies-guidance/allowed-third-party-license-policy.md), because it is a well-reviewed public baseline — not because BOMHort targets CNCF projects. Replace it wholesale via `licensePolicy.custom`:
 
 - **Permissive (allowed):** Apache-2.0, MIT, MIT-0, 0BSD, BSD-2-Clause, BSD-3-Clause, ISC, PSF-2.0, Python-2.0, PostgreSQL, UPL-1.0, X11, Zlib, OpenSSL, and a few more (18 total)
 - **Copyleft (flagged):** GPL, LGPL, AGPL, MPL-2.0, EPL, EUPL, CPAL, and others (21 total)

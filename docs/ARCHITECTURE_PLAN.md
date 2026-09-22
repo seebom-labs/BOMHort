@@ -123,8 +123,8 @@ bomhort/
 │                    SBOM Sources                          │
 │                                                          │
 │  S3 (default):                                           │
-│    s3://cncf-subproject-sboms/k3s-io/...spdx.json       │
-│    s3://cncf-project-sboms/k3s-io/...spdx.json          │
+│    s3://my-org-sboms/k3s-io/...spdx.json       │
+│    s3://platform-sboms/k3s-io/...spdx.json          │
 │    (multiple buckets, streamed with pagination)          │
 │                                                          │
 │  Local (alternative):                                    │

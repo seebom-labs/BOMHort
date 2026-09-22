@@ -282,7 +282,7 @@ This endpoint refuses every request with `403 Forbidden` unless `AUTH_ENABLED=tr
 | `cluster` | string | Overrides this instance's configured `CLUSTER_NAME` for the resulting ingestion job. |
 | `namespace` | string | Overrides the configured `NAMESPACE` (#138). The deployment namespace the artifact belongs to, e.g. `payments`. |
 | `project` | string | Overrides the configured `PROJECT` (#57), e.g. `payment-service`. |
-| `tags` | string | Comma-separated grouping labels (#357), e.g. `sandbox-applications,cncf`. **Merged** with the instance-wide `TAGS` rather than overriding them — a CI job adding a grouping does not contradict a configured one. Normalised (trimmed, lowercased, deduplicated, max 32 × 64 chars). |
+| `tags` | string | Comma-separated grouping labels (#357), e.g. `sandbox-applications,platform`. **Merged** with the instance-wide `TAGS` rather than overriding them — a CI job adding a grouping does not contradict a configured one. Normalised (trimmed, lowercased, deduplicated, max 32 × 64 chars). |
 | `sbom_id` | — | **VEX uploads only** (#350): scopes every statement in the document to this SBOM. Must be a valid SBOM UUID; rejected with `400` on SBOM uploads or malformed values. Without it, the worker resolves the statement's OpenVEX product `@id` against `sboms` (`source_repo`, `document_namespace`, `document_name`); if nothing matches the statement is stored **unscoped** and suppresses nothing — until a later ingest of the product's SBOM lets the **VEX rescue** pass (migration `020`) re-resolve and scope it. |
 
 The ownership parameters are optional and independent. A parameter that is absent **or blank** inherits the instance default — `?namespace=` and omitting it entirely mean the same thing, so a client cannot accidentally blank out a configured value. Values are trimmed.
@@ -741,8 +741,8 @@ Paginated list of projects. A project is its configured `project` label when set
 
 `tag` narrows *which* projects are listed; it never merges them. Filtering by
 `sandbox-applications` returns each sandbox project as its own entry, with its
-own version count. Values are normalised (trimmed, lowercased), so `tag=CNCF`
-matches data stored as `cncf`.
+own version count. Values are normalised (trimmed, lowercased), so `tag=Platform`
+matches data stored as `platform`.
 
 **Response:** `200 OK`
 ```json
@@ -1168,7 +1168,7 @@ Paginated list of SBOMs for a specific cluster.
   "data": [
     {
       "sbom_id": "550e8400-e29b-41d4-a716-446655440000",
-      "source_file": "s3://cncf-project-sboms/containerd/v1.7.spdx.json",
+      "source_file": "s3://platform-sboms/containerd/v1.7.spdx.json",
       "spdx_version": "SPDX-2.3",
       "document_name": "containerd-v1.7",
       "package_count": 245,

@@ -60,7 +60,7 @@ Tags are a **list**, because the groupings are genuinely many-to-many: a
 project can be a sandbox application *and* an observability tool. They are also
 **additive** across configuration levels, unlike the three dimensions above
 which override — a bucket adding `sandbox-applications` does not contradict an
-instance-wide `cncf`, so both are kept.
+instance-wide `platform`, so both are kept.
 
 Values are normalised on ingestion (trimmed, lowercased, deduplicated), so
 casing in configuration is not load-bearing.
@@ -68,16 +68,16 @@ casing in configuration is not load-bearing.
 ### Configuring tags
 
 ```yaml
-# Helm — every SBOM on this instance is a CNCF project
+# Helm — every SBOM on this instance belongs to the platform group
 ownership:
-  tags: ["cncf"]
+  tags: ["platform"]
 ```
 
 ```json
 // S3_BUCKETS — one bucket per category, real projects from the path
 [
-  { "name": "cncf-sandbox",   "tags": ["sandbox-applications"], "pathLayout": "_/_/project" },
-  { "name": "cncf-graduated", "tags": ["graduated"],            "pathLayout": "_/project"   }
+  { "name": "sboms-sandbox",   "tags": ["sandbox-applications"], "pathLayout": "_/_/project" },
+  { "name": "sboms-graduated", "tags": ["graduated"],            "pathLayout": "_/project"   }
 ]
 ```
 

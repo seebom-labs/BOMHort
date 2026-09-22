@@ -49,7 +49,7 @@ Daily CVE Refresher finds newly disclosed vulnerabilities without re-scanning.
 {{% blocks/feature icon="fa-balance-scale" title="License Governance" url="/docs/deployment/#2-license-exceptions" %}}
 <img class="fb-icon-lg me-1" src="/images/flowbite/scale-balanced.svg" alt="">
 Externalized license policy and exceptions.
-CNCF Allowed Third-Party License Policy enforced out of the box.
+A permissive/copyleft default policy out of the box — replace it with your own.
 {{% /blocks/feature %}}
 
 {{< /blocks/section >}}

@@ -30,7 +30,7 @@ Kubernetes-native SBOM platform as a monorepo. Go backend with four binaries (Cr
 ┌─────────────────────────────────────────────────────────┐
 │                    SBOM Sources                          │
 │  S3 (default):                                           │
-│    s3://cncf-subproject-sboms/k3s-io/...spdx.json       │
+│    s3://my-org-sboms/k3s-io/...spdx.json       │
 │  Local (alternative):                                    │
 │    sboms/*.spdx.json + *.openvex.json                   │
 └──────────────────────┬──────────────────────────────────┘
