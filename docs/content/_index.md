@@ -4,9 +4,8 @@ linkTitle: "BOMHort"
 description: "BOMHort is a Kubernetes-native SBOM visualization and governance platform. Ingest SPDX and CycloneDX SBOMs from S3, detect CVEs via OSV, enforce license compliance, and apply VEX statements."
 ---
 
-{{< blocks/cover title="" image_anchor="top" height="med" color="dark" >}}
-<img src="/images/bomhort-mascot.png" alt="BOMHort dragon mascot" style="max-width: 150px; width: 100%; margin-bottom: 1rem;">
-<img src="/images/logo-with-text.svg" alt="BOMHort" style="max-width: 300px; width: 100%; margin-bottom: 1rem;">
+{{< blocks/cover title="BOMHort" image_anchor="top" height="med" color="dark" >}}
+<img src="/images/bomhort-mascot.png" alt="" style="max-width: 170px; width: 100%; margin-bottom: 1rem;">
 <p class="lead mt-4">Kubernetes-native Software Bill of Materials (SBOM) Visualization &amp; Governance Platform</p>
 <a class="btn btn-lg btn-bomhort me-3 mb-4" href="/docs/">
   <img class="fb-icon" src="/images/flowbite/book-open.svg" alt="" loading="lazy">

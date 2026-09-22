@@ -1,8 +1,4 @@
 <p align="center">
-  <img src="docs/static/images/bomhort-mascot.png" alt="BOMHort dragon mascot" width="180">
-</p>
-
-<p align="center">
   <img src="docs/static/images/logo-with-text.svg" alt="BOMHort" width="340">
 </p>
 
