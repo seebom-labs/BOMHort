@@ -176,7 +176,7 @@ jobs:
           cp "${{ steps.provenance.outputs.bundle-path }}" bomhort-${{ steps.version.outputs.version }}.spdx.json.intoto.jsonl
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v2.3.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v2.3.2
         with:
           tag_name: ${{ github.ref_name }}
           name: BOMHort ${{ steps.version.outputs.version }}
