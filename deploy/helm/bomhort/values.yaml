@@ -4,7 +4,12 @@
 image:
   registry: ghcr.io
   repository: seebom-labs/bomhort
-  tag: "0.1.3"
+  # Empty means "use the chart's appVersion", which release CI rewrites to the
+  # git tag. Pinning a literal here is what shipped chart 0.6.0 pointing at
+  # 0.1.3 images: CI bumps Chart.yaml on tag, never values.yaml, so the two
+  # drifted apart silently for five releases. Set it only to pin a specific
+  # image, e.g. for a hotfix or a local build.
+  tag: ""
   pullPolicy: IfNotPresent
 
 # GitHub API token for license resolution (optional, increases rate limit from 60 to 5000 req/h)

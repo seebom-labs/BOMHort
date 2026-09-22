@@ -63,7 +63,7 @@ spec:
       {{- end }}
       containers:
         - name: parsing-worker
-          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}/parsing-worker:{{ .Values.image.tag }}"
+          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}/parsing-worker:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           envFrom:
             - configMapRef:

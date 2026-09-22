@@ -41,7 +41,7 @@ spec:
       {{- end }}
       containers:
         - name: api-gateway
-          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}/api-gateway:{{ .Values.image.tag }}"
+          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}/api-gateway:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http

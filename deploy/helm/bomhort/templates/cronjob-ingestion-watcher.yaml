@@ -55,7 +55,7 @@ spec:
           {{- end }}
           containers:
             - name: ingestion-watcher
-              image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}/ingestion-watcher:{{ .Values.image.tag }}"
+              image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}/ingestion-watcher:{{ .Values.image.tag | default .Chart.AppVersion }}"
               imagePullPolicy: {{ .Values.image.pullPolicy }}
               envFrom:
                 - configMapRef:

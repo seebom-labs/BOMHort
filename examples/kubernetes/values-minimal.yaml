@@ -15,7 +15,8 @@
 image:
   registry: ghcr.io
   repository: seebom-labs/bomhort
-  tag: "0.1.3"
+  # Omitted on purpose: the chart defaults to its own appVersion, so the
+  # images always match the chart you installed. Set it only to pin one.
   pullPolicy: IfNotPresent
 
 # ─── ClickHouse ──────────────────────────────────────────────────────────────

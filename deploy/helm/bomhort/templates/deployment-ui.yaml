@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
         - name: ui
-          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}/ui:{{ .Values.image.tag }}"
+          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}/ui:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http
