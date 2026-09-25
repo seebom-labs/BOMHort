@@ -56,7 +56,7 @@ labels:
   # Also the catalogue for labels set by other tooling (dependabot, release.yml, issue
   # templates) so that label-sync keeps their colors and descriptions.
   labels:
-    # ─── Release notes categories (.github/release.yml) ────────────────────
+    release-notes:
     - name: enhancement
       color: a2eeef
       description: New feature or improvement
@@ -84,8 +84,7 @@ labels:
     - name: security
       color: ee0701
       description: Security related changes
-
-    # ─── Maintenance ──────────────────────────────────────────────────────
+    maintenance:
     - name: chore
       color: fef2c0
       description: Maintenance and housekeeping
@@ -95,8 +94,7 @@ labels:
     - name: ci
       color: e1e4e8
       description: CI/CD pipeline changes
-
-    # ─── Components (applied automatically via OWNERS `labels:`) ───────────
+    components:
     - name: backend
       color: 00ADD8
       description: Go backend (API, workers, parsers)
@@ -112,8 +110,7 @@ labels:
     - name: examples
       color: 5319e7
       description: Example manifests and sample SBOMs
-
-    # ─── Status ────────────────────────────────────────────────────────────
+    status:
     - name: good first issue
       color: 7057ff
       description: Good for newcomers
