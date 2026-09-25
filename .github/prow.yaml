@@ -85,7 +85,7 @@ labels:
       color: ee0701
       description: Security related changes
 
-    # ─── Maintenance ──────────────────────────────────────���────────────────
+    # ─── Maintenance ──────────────────────────────────────────────────────
     - name: chore
       color: fef2c0
       description: Maintenance and housekeeping
