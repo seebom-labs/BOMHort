@@ -60,6 +60,12 @@ updates:
     commit-message:
       prefix: "deps(actions):"
     open-pull-requests-limit: 5
+    groups:
+      # init/analyze/upload-sarif ship from one repo and must stay on the
+      # same version (see #425 / #429).
+      codeql:
+        patterns:
+          - "github/codeql-action/*"
 
   # Docker base images (backend and ui)
   - package-ecosystem: "docker"
