@@ -131,7 +131,7 @@ All v0.x releases are development milestones. They may contain breaking changes 
 | Status | Issue | Description |
 |:------:|-------|-------------|
 | ⏫ | [#332](https://github.com/seebom-labs/BOMHort/issues/332), [#335](https://github.com/seebom-labs/BOMHort/issues/335) | Correctness blockers — pulled into Phase 2. |
-| 🔲 | [#336 — Idempotent VEX upload + job status](https://github.com/seebom-labs/BOMHort/issues/336) | Content-hash dedupe; `GET /api/v1/uploads/{job_id}` → applied / matched / unmatched. New table `018_create_upload_jobs`. |
+| 🔲 | [#336 — Idempotent VEX upload + job status](https://github.com/seebom-labs/BOMHort/issues/336) | Content-hash dedupe; `GET /api/v1/uploads/{job_id}` → applied / matched / unmatched. New table `03x_create_upload_jobs`. |
 | 🔲 | [#333 — Incremental listing + `vex_status=missing`](https://github.com/seebom-labs/BOMHort/issues/333) | `?since=&cursor=` on `/sboms`; server-side "no VEX yet" filter. Query-only. |
 | 🔲 | [#334 — Provenance UI](https://github.com/seebom-labs/BOMHort/issues/334) | Automated vs. human badge, `status_notes`, `?vex_source=` filter. |
 | 🔲 | [#337 — Outbound webhooks](https://github.com/seebom-labs/BOMHort/issues/337) | `sbom.ingested`, `findings.updated`, `vex.applied`, `upload.rejected`; HMAC-signed; Helm values. |
@@ -154,7 +154,7 @@ All v0.x releases are development milestones. They may contain breaking changes 
 |:------:|-------|-------------|
 | 🔲 | [#266](https://github.com/seebom-labs/BOMHort/issues/266) → [#62 — Auditor reports](https://github.com/seebom-labs/BOMHort/issues/62) | CSV export first (stdlib, good first issue), then PDF after the dependency decision. |
 | 🔲 | [#60 — Local OSV Mirror](https://github.com/seebom-labs/BOMHort/issues/60) | Clone osv.dev into ClickHouse — offline, no rate limits. |
-| 🔲 | [#143 — In-toto Witness integration](https://github.com/seebom-labs/BOMHort/issues/143) | `019_create_attestations`, signature verification, provenance display. Prerequisite for #141. |
+| 🔲 | [#143 — In-toto Witness integration](https://github.com/seebom-labs/BOMHort/issues/143) | `03x_create_attestations`, signature verification, provenance display. Prerequisite for #141. |
 
 **Exit criteria:** External tooling discovers new findings without polling and pushes VEX idempotently; cluster + namespace filters in the UI; CSV export; OSV works offline.
 
@@ -184,7 +184,7 @@ All v0.x releases are development milestones. They may contain breaking changes 
 
 ## Schema Change Register {#schema}
 
-Everything that touches `db/migrations/` or a frozen response shape. After 1.0, `ORDER BY` and column-type changes are **never** allowed; `ADD COLUMN … DEFAULT` and new tables are fine at any time.
+Everything that touches `db/migrations/` or a frozen response shape. The authoritative register — including Helm-values and DTO changes — is the one in [`ROADMAP.md`](https://github.com/seebom-labs/BOMHort/blob/main/ROADMAP.md#schema-change-register); check it, upstream `main` and open pull requests before claiming a number. After 1.0, `ORDER BY` and column-type changes are **never** allowed; `ADD COLUMN … DEFAULT` and new tables are fine at any time.
 
 | Migration | Issue | Change | Pre/Post 1.0 |
 |-----------|-------|--------|:------------:|
@@ -195,11 +195,23 @@ Everything that touches `db/migrations/` or a frozen response shape. After 1.0, 
 | `016_add_source_columns` | #332 | `ADD COLUMN source_repo, source_ref` (`sboms` + `ingestion_queue`) | ✅ shipped (**pre**) |
 | `017_add_vex_provenance` | #334 | `ADD COLUMN author, role, tooling, status_notes` | ✅ shipped (**pre**) |
 | `018_add_vex_sbom_scope` | #350 | `ADD COLUMN sbom_id` on `vex_statements` + `target_sbom_id` on `ingestion_queue` — VEX scoped to its SBOM | ✅ shipped (**pre**) |
+| `019_add_vulnerability_aliases` | — | `ADD COLUMN aliases` on `vulnerabilities` (GHSA ↔ CVE); VEX matches by alias | ✅ shipped (**pre**) |
+| `020_add_vex_product_ref` | — | `ADD COLUMN product_ref` on `vex_statements` (VEX rescue pass) | ✅ shipped (**pre**) |
+| `021_add_document_version` | — | `ADD COLUMN document_version` on `sboms` | ✅ shipped (**pre**) |
+| `022_add_sbom_tags` | #357 | `ADD COLUMN tags` on `sboms` + `ingestion_queue` | ✅ shipped (**pre**) |
+| `023_add_project_parent` | — | `ADD COLUMN parent` on `sboms`/`ingestion_queue`, `root_purl`, `supplier` on `sboms` (project groups) | ✅ shipped (**pre**) |
+| `024_add_package_license_sources` | [#439](https://github.com/seebom-labs/BOMHort/issues/439) | `ADD COLUMN package_license_sources` on `sbom_packages` — where each license came from or why it is missing ([License Resolution](/docs/license-resolution/)) | **pre** (v0.8.0) |
 | — | #335 | Row semantics of `/sboms/{id}/vulnerabilities` | ✅ shipped (**pre**, API) |
-| — | #177 | `cluster` in `SBOMListItem` | **pre** (API) |
-| `018_create_upload_jobs` | #336 | New table | post |
-| `019_create_attestations` | #143 | New table | post |
-| `02x_*` | #64, #61, #82, #7, #255, #60 | New tables | post |
+| — | #177 | `cluster` in `SBOMListItem` | ✅ shipped (**pre**, API) |
+| `025_add_vulnerability_cvss_cwe` | #408, #409 | CVSS score/vector/version and CWE IDs on `vulnerabilities` | **pre** (v0.9.0) |
+| `026_create_kev_catalog` | #410 | New table | **pre** (v0.9.0) |
+| `027_create_epss_scores` | #64 | New table | **pre** (v0.9.0) |
+| `028_add_vex_action_statement_timestamp` | #413 | `ADD COLUMN action_statement_timestamp` on `vex_statements` | **pre** (v0.9.0) |
+| `029_create_vulnerability_resolutions` | #7 | New table | **pre** (v1.0.0, stretch) |
+| `030_create_crypto_libraries` | #419 | New table (or MV over `sbom_packages`) | **pre** (v1.0.0) |
+| `03x_create_upload_jobs` | #336 | New table | post |
+| `03x_create_attestations` | #143 | New table | post |
+| `03x_*` | #61, #82, #255, #60 | New tables | post |
 | — | #268 | Operator swap | **v2.0** |
 
 ---

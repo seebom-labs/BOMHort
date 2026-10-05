@@ -58,50 +58,76 @@ func TestCategorize_Expressions(t *testing.T) {
 	// contract the issue's acceptance criteria spell out.
 	cases := []exprCase{
 		// All-permissive conjunction: the motivating case. Only "off" flags it.
-		{"Apache-2.0 AND MIT", CategoryPermissive, CategoryPermissive, CategoryUnknown},
-		{"Apache-2.0 AND BSD-3-Clause AND MIT", CategoryPermissive, CategoryPermissive, CategoryUnknown},
+		{"Apache-2.0 AND MIT", CategoryPermissive, CategoryPermissive, CategoryUnapproved},
+		{"Apache-2.0 AND BSD-3-Clause AND MIT", CategoryPermissive, CategoryPermissive, CategoryUnapproved},
 		// Lower-case operators occur in the wild.
-		{"Apache-2.0 and MIT", CategoryPermissive, CategoryPermissive, CategoryUnknown},
+		{"Apache-2.0 and MIT", CategoryPermissive, CategoryPermissive, CategoryUnapproved},
 		// Comma is read as AND.
-		{"MIT, BSD-3-Clause", CategoryPermissive, CategoryPermissive, CategoryUnknown},
+		{"MIT, BSD-3-Clause", CategoryPermissive, CategoryPermissive, CategoryUnapproved},
 
 		// Conjunction with copyleft: strict keeps the obligation visible.
-		{"MIT AND GPL-3.0-only", CategoryCopyleft, CategoryPermissive, CategoryUnknown},
-		{"GPL-2.0-only AND GPL-2.0-or-later", CategoryCopyleft, CategoryCopyleft, CategoryUnknown},
+		{"MIT AND GPL-3.0-only", CategoryCopyleft, CategoryPermissive, CategoryUnapproved},
+		{"GPL-2.0-only AND GPL-2.0-or-later", CategoryCopyleft, CategoryCopyleft, CategoryUnapproved},
 
 		// Conjunction with an unclassified operand.
-		{"MIT AND SomeWeirdLicense", CategoryUnknown, CategoryPermissive, CategoryUnknown},
-		{"GPL-3.0-only AND SomeWeirdLicense", CategoryCopyleft, CategoryUnknown, CategoryUnknown},
+		{"MIT AND SomeWeirdLicense", CategoryUnapproved, CategoryPermissive, CategoryUnapproved},
+		{"GPL-3.0-only AND SomeWeirdLicense", CategoryCopyleft, CategoryUnapproved, CategoryUnapproved},
 
 		// Disjunction: the consumer chooses, so permissive wins in every mode
 		// that evaluates at all.
-		{"MIT OR GPL-3.0-only", CategoryPermissive, CategoryPermissive, CategoryUnknown},
-		{"GPL-2.0-only OR GPL-3.0-only", CategoryCopyleft, CategoryCopyleft, CategoryUnknown},
-		{"GPL-2.0-only OR SomeWeirdLicense", CategoryUnknown, CategoryUnknown, CategoryUnknown},
+		{"MIT OR GPL-3.0-only", CategoryPermissive, CategoryPermissive, CategoryUnapproved},
+		{"GPL-2.0-only OR GPL-3.0-only", CategoryCopyleft, CategoryCopyleft, CategoryUnapproved},
+		{"GPL-2.0-only OR SomeWeirdLicense", CategoryUnapproved, CategoryUnapproved, CategoryUnapproved},
 
 		// WITH: the exception does not change the base license's class.
-		{"GPL-2.0-only WITH Classpath-exception-2.0", CategoryCopyleft, CategoryCopyleft, CategoryUnknown},
-		{"Apache-2.0 WITH LLVM-exception", CategoryPermissive, CategoryPermissive, CategoryUnknown},
+		{"GPL-2.0-only WITH Classpath-exception-2.0", CategoryCopyleft, CategoryCopyleft, CategoryUnapproved},
+		{"Apache-2.0 WITH LLVM-exception", CategoryPermissive, CategoryPermissive, CategoryUnapproved},
 
 		// Precedence and grouping: AND binds tighter than OR.
-		{"MIT OR (GPL-3.0-only AND SomeWeirdLicense)", CategoryPermissive, CategoryPermissive, CategoryUnknown},
-		{"(MIT OR GPL-3.0-only) AND GPL-2.0-only", CategoryCopyleft, CategoryPermissive, CategoryUnknown},
-		{"MIT OR GPL-3.0-only AND GPL-2.0-only", CategoryPermissive, CategoryPermissive, CategoryUnknown},
+		{"MIT OR (GPL-3.0-only AND SomeWeirdLicense)", CategoryPermissive, CategoryPermissive, CategoryUnapproved},
+		{"(MIT OR GPL-3.0-only) AND GPL-2.0-only", CategoryCopyleft, CategoryPermissive, CategoryUnapproved},
+		{"MIT OR GPL-3.0-only AND GPL-2.0-only", CategoryPermissive, CategoryPermissive, CategoryUnapproved},
 
-		// Deprecated "+" spelling.
-		{"GPL-2.0+", CategoryCopyleft, CategoryCopyleft, CategoryUnknown},
-		{"LGPL-2.1+ OR MIT", CategoryPermissive, CategoryPermissive, CategoryUnknown},
+		// Deprecated "+" spelling. A single deprecated ID is rewritten by
+		// Normalize before any lookup, so even "off" recognises it.
+		{"GPL-2.0+", CategoryCopyleft, CategoryCopyleft, CategoryCopyleft},
+		{"LGPL-2.1+ OR MIT", CategoryPermissive, CategoryPermissive, CategoryUnapproved},
+
+		// Deprecated bare GNU IDs mean "-only"; the "-with-…-exception" IDs are
+		// the old spelling of "WITH". A policy listing only current IDs must
+		// still recognise them as copyleft — single IDs in every mode, since
+		// Normalize rewrites them before the verbatim lookup.
+		{"GPL-2.0", CategoryCopyleft, CategoryCopyleft, CategoryCopyleft},
+		{"GPL-3.0", CategoryCopyleft, CategoryCopyleft, CategoryCopyleft},
+		{"LGPL-2.1", CategoryCopyleft, CategoryCopyleft, CategoryCopyleft},
+		{"LGPL-3.0", CategoryCopyleft, CategoryCopyleft, CategoryCopyleft},
+		{"AGPL-3.0", CategoryCopyleft, CategoryCopyleft, CategoryCopyleft},
+		{"GPL-2.0-with-classpath-exception", CategoryCopyleft, CategoryCopyleft, CategoryUnapproved},
+		{"GPL-3.0 AND GPL-3.0-or-later", CategoryCopyleft, CategoryCopyleft, CategoryUnapproved},
+		{"MIT OR GPL-2.0", CategoryPermissive, CategoryPermissive, CategoryUnapproved},
+		{"SomeWeirdLicense-1.0", CategoryUnapproved, CategoryUnapproved, CategoryUnapproved},
 
 		// Malformed: never silently accepted.
-		{"MIT AND", CategoryUnknown, CategoryUnknown, CategoryUnknown},
-		{"(MIT OR GPL-3.0-only", CategoryUnknown, CategoryUnknown, CategoryUnknown},
-		{"AND MIT", CategoryUnknown, CategoryUnknown, CategoryUnknown},
+		{"MIT AND", CategoryUnknown, CategoryUnknown, CategoryUnapproved},
+		{"(MIT OR GPL-3.0-only", CategoryUnknown, CategoryUnknown, CategoryUnapproved},
+		{"AND MIT", CategoryUnknown, CategoryUnknown, CategoryUnapproved},
 
 		// Bare identifiers are untouched by the mode.
 		{"MIT", CategoryPermissive, CategoryPermissive, CategoryPermissive},
 		{"GPL-3.0-only", CategoryCopyleft, CategoryCopyleft, CategoryCopyleft},
 		{"MPL-2.0-no-copyleft-exception", CategoryCopyleft, CategoryCopyleft, CategoryCopyleft},
 		{"NOASSERTION", CategoryUnknown, CategoryUnknown, CategoryUnknown},
+
+		// Declared but not listed: unapproved, a violation even though it is
+		// not copyleft. Only a missing license stays unknown.
+		{"CC0-1.0", CategoryUnapproved, CategoryUnapproved, CategoryUnapproved},
+		{"NONE", CategoryUnknown, CategoryUnknown, CategoryUnknown},
+		// Severity order permissive < unknown < unapproved < copyleft.
+		{"CC0-1.0 AND NOASSERTION", CategoryUnapproved, CategoryUnknown, CategoryUnapproved},
+		{"MIT AND NOASSERTION", CategoryUnknown, CategoryPermissive, CategoryUnapproved},
+		{"CC0-1.0 AND GPL-3.0-only", CategoryCopyleft, CategoryUnapproved, CategoryUnapproved},
+		{"CDDL-1.0 OR GPL-2.0-only", CategoryUnapproved, CategoryUnapproved, CategoryUnapproved},
+		{"NOASSERTION OR CC0-1.0", CategoryUnknown, CategoryUnknown, CategoryUnapproved},
 	}
 
 	modes := []struct {

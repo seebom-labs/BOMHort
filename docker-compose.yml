@@ -177,6 +177,9 @@ services:
       SKIP_GITHUB_RESOLVE: ${SKIP_GITHUB_RESOLVE:-false}
       SKIP_NPM_RESOLVE: ${SKIP_NPM_RESOLVE:-false}
       SKIP_NUGET_RESOLVE: ${SKIP_NUGET_RESOLVE:-false}
+      SKIP_DEPSDEV_RESOLVE: ${SKIP_DEPSDEV_RESOLVE:-false}
+      SKIP_PACKAGIST_RESOLVE: ${SKIP_PACKAGIST_RESOLVE:-false}
+      SKIP_PYPI_RESOLVE: ${SKIP_PYPI_RESOLVE:-false}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       EXCEPTIONS_FILE: /data/config/license-exceptions.json
       LICENSE_POLICY_FILE: /data/config/license-policy.json
@@ -271,4 +274,3 @@ services:
 volumes:
   clickhouse_data:
   originals_data:
-

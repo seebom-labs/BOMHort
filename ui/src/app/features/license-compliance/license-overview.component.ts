@@ -1,9 +1,10 @@
-import { Component, OnInit, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, ChangeDetectionStrategy, ChangeDetectorRef, ElementRef, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { ScrollingModule } from '@angular/cdk/scrolling';
 import { ApiService } from '../../core/api.service';
-import { LicenseComplianceItem, LicenseAffectedSBOM } from '../../core/api.models';
+import { LicenseComplianceItem, LicenseAffectedSBOM, LicenseSourceItem } from '../../core/api.models';
+import { describeLicenseSource, isExcludedFromCompliance, licenseReasonHint } from '../../shared/license-source';
 
 type SortField = 'severity' | 'usages' | 'name' | 'projects' | 'non-compliant';
 
@@ -30,7 +31,12 @@ interface GroupedProject {
           <h3>Copyleft</h3>
           <span class="count">{{ getCategoryCount('copyleft') | number }}</span>
         </div>
-        <div class="category-card unknown">
+        <div class="category-card unapproved" title="Declared license that is not on the policy allow-list">
+          <h3>Not Approved</h3>
+          <span class="count">{{ getCategoryCount('unapproved') | number }}</span>
+        </div>
+        <div class="category-card unknown clickable" (click)="openResolution()"
+             title="No license could be determined (NOASSERTION / NONE) — click to see why">
           <h3>Unknown</h3>
           <span class="count">{{ getCategoryCount('unknown') | number }}</span>
         </div>
@@ -39,6 +45,57 @@ interface GroupedProject {
           <span class="count">{{ getExemptedCount() | number }}</span>
         </div>
       </div>
+
+      <section #resolution class="resolution" *ngIf="resolvedSources.length || unresolvedSources.length">
+        <div class="resolution-header" (click)="toggleResolution()">
+          <h2>License Resolution</h2>
+          <span class="resolution-summary">
+            {{ resolvedTotal | number }} resolved · {{ openTotal | number }} unknown
+          </span>
+          <span class="toggle-icon">{{ resolutionOpen ? '▾' : '▸' }}</span>
+        </div>
+        <div class="resolution-content" *ngIf="resolutionOpen">
+          <p class="resolution-headline" *ngIf="gapTotal > 0">
+            The SBOMs left <strong>{{ gapTotal | number }}</strong> packages without a license.
+            BOMHort resolved <strong class="ok">{{ registryResolvedTotal | number }} ({{ resolvedShare }})</strong>
+            from public registries;
+            <strong [class.bad]="openTotal > 0">{{ openTotal | number }}</strong> remain unknown, each with a reason below.
+          </p>
+          <div class="resolution-body">
+            <div class="resolution-col narrow">
+              <h4>Where licenses came from</h4>
+              <div *ngFor="let s of resolvedSources; trackBy: trackBySource" class="source-row"
+                   [title]="'Examples: ' + (s.examples.join(', ') || '—')">
+                <span class="source-label">{{ sourceLabel(s) }}</span>
+                <span class="source-count">{{ s.package_count | number }}</span>
+              </div>
+            </div>
+            <div class="resolution-col wide">
+              <h4>Why licenses are unknown</h4>
+              <table class="reason-table" *ngIf="openSources.length">
+                <thead>
+                  <tr><th>Reason</th><th class="num">Packages</th><th class="num">SBOMs</th><th>Examples</th><th>What you can do</th></tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let s of openSources; trackBy: trackBySource" class="reason-row">
+                    <td class="reason-label">{{ sourceLabel(s) }}</td>
+                    <td class="num">{{ s.package_count | number }}</td>
+                    <td class="num">{{ s.sbom_count | number }}</td>
+                    <td class="reason-examples">{{ s.examples.join(', ') || '—' }}</td>
+                    <td class="reason-hint">{{ reasonHint(s) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <p class="resolution-empty" *ngIf="!openSources.length">Every dependency has a license.</p>
+              <p class="resolution-excluded" *ngFor="let s of excludedSources; trackBy: trackBySource"
+                 [title]="'Examples: ' + (s.examples.join(', ') || '—')">
+                Not counted: {{ s.package_count | number }} first-party components in {{ s.sbom_count | number }} SBOMs.
+                {{ reasonHint(s) }}
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <div class="list-header">
         <h2>All Licenses</h2>
@@ -139,9 +196,39 @@ interface GroupedProject {
     .category-card h3 { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-secondary); margin: 0 0 4px; font-weight: 600; }
     .permissive { background: var(--surface-alt); }
     .copyleft { background: var(--severity-critical-bg); }
+    .unapproved { background: var(--severity-high-bg); }
     .unknown { background: var(--surface-alt); }
     .exempted { background: var(--status-success-bg); }
     .count { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; }
+
+    .resolution { border: 1px solid var(--border); border-radius: 4px; margin-bottom: 20px; background: var(--surface); }
+    .resolution-header { display: flex; align-items: center; gap: 12px; padding: 10px 14px; cursor: pointer; }
+    .resolution-header:hover { background: var(--surface-alt); }
+    .resolution-summary { font-size: 0.75rem; color: var(--text-secondary); }
+    .resolution-content { border-top: 1px solid var(--border); padding: 12px 14px; }
+    .resolution-headline { font-size: 0.85rem; margin: 0 0 12px; color: var(--text); }
+    .resolution-headline .ok { color: var(--status-success); }
+    .resolution-headline .bad { color: var(--severity-high); }
+    .resolution-body { display: flex; gap: 24px; flex-wrap: wrap; }
+    .resolution-col { flex: 1; min-width: 300px; }
+    .resolution-col.narrow { flex: 1; }
+    .resolution-col.wide { flex: 3; min-width: 480px; }
+    .reason-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+    .reason-table th { text-align: left; font-weight: 600; color: var(--text-secondary); padding: 4px 8px 4px 0; border-bottom: 1px solid var(--border); }
+    .reason-table td { padding: 6px 8px 6px 0; vertical-align: top; border-bottom: 1px solid var(--border); }
+    .reason-table .num { text-align: right; white-space: nowrap; }
+    .reason-label { color: var(--severity-high); font-weight: 500; }
+    .reason-examples { color: var(--text-secondary); font-family: monospace; font-size: 0.72rem; word-break: break-word; }
+    .reason-hint { color: var(--text-secondary); }
+    .resolution-excluded { font-size: 0.75rem; color: var(--text-muted); margin: 8px 0 0; cursor: help; }
+    .category-card.clickable { cursor: pointer; }
+    .resolution-col h4 {
+      font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.03em; color: var(--text-secondary); margin: 0 0 6px;
+    }
+    .source-row { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; font-size: 0.78rem; cursor: help; }
+    .source-count { font-weight: 600; white-space: nowrap; }
+    .resolution-empty { font-size: 0.78rem; color: var(--text-muted); margin: 0; }
 
     .list-header {
       display: flex; align-items: center; justify-content: space-between;
@@ -181,6 +268,7 @@ interface GroupedProject {
     .cat-permissive { background: var(--status-success-bg); color: var(--status-success); }
     .cat-copyleft { background: var(--severity-critical-bg); color: var(--severity-critical); }
     .cat-copyleft-exempted { background: var(--status-success-bg); color: var(--status-success); }
+    .cat-unapproved { background: var(--severity-high-bg); color: var(--severity-high); }
     .cat-unknown { background: var(--bg); color: var(--text-secondary); }
 
     .header-main { display: flex; align-items: center; gap: 8px; min-width: 280px; }
@@ -248,6 +336,20 @@ interface GroupedProject {
 })
 export class LicenseOverviewComponent implements OnInit {
   licenses: LicenseComplianceItem[] = [];
+  resolvedSources: LicenseSourceItem[] = [];
+  unresolvedSources: LicenseSourceItem[] = [];
+  resolvedTotal = 0;
+  unresolvedTotal = 0;
+  /** Unknown reasons that count against compliance (first-party excluded). */
+  openSources: LicenseSourceItem[] = [];
+  excludedSources: LicenseSourceItem[] = [];
+  openTotal = 0;
+  /** Packages the SBOM left without a license that a registry resolved. */
+  registryResolvedTotal = 0;
+  gapTotal = 0;
+  resolvedShare = '';
+  resolutionOpen = true;
+  @ViewChild('resolution') private resolutionEl?: ElementRef<HTMLElement>;
   expandedLicense: string | null = null;
   private rawLicenses: LicenseComplianceItem[] = [];
   private groupedCache = new Map<string, GroupedProject[]>();
@@ -265,8 +367,9 @@ export class LicenseOverviewComponent implements OnInit {
 
   private readonly severityOrder: Record<string, number> = {
     copyleft: 0,
-    unknown: 1,
-    permissive: 2,
+    unapproved: 1,
+    unknown: 2,
+    permissive: 3,
   };
 
   constructor(
@@ -281,6 +384,46 @@ export class LicenseOverviewComponent implements OnInit {
       this.applySort();
       this.cdr.markForCheck();
     });
+    this.api.getLicenseSources().subscribe((items) => {
+      this.resolvedSources = items.filter((s) => s.resolved);
+      this.unresolvedSources = items.filter((s) => !s.resolved);
+      this.resolvedTotal = this.resolvedSources.reduce((n, s) => n + s.package_count, 0);
+      this.unresolvedTotal = this.unresolvedSources.reduce((n, s) => n + s.package_count, 0);
+      this.openSources = this.unresolvedSources.filter((s) => !isExcludedFromCompliance(s.origin));
+      this.excludedSources = this.unresolvedSources.filter((s) => isExcludedFromCompliance(s.origin));
+      this.openTotal = this.openSources.reduce((n, s) => n + s.package_count, 0);
+      this.registryResolvedTotal = this.resolvedSources
+        .filter((s) => s.origin !== 'declared')
+        .reduce((n, s) => n + s.package_count, 0);
+      this.gapTotal = this.registryResolvedTotal + this.openTotal;
+      this.resolvedShare = this.gapTotal
+        ? `${((100 * this.registryResolvedTotal) / this.gapTotal).toFixed(1)}%`
+        : '';
+      this.cdr.markForCheck();
+    });
+  }
+
+  toggleResolution(): void {
+    this.resolutionOpen = !this.resolutionOpen;
+    this.cdr.markForCheck();
+  }
+
+  openResolution(): void {
+    this.resolutionOpen = true;
+    this.cdr.markForCheck();
+    this.resolutionEl?.nativeElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  reasonHint(item: LicenseSourceItem): string {
+    return licenseReasonHint(item.origin);
+  }
+
+  sourceLabel(item: LicenseSourceItem): string {
+    return describeLicenseSource(item.source)?.label ?? item.source;
+  }
+
+  trackBySource(_index: number, item: LicenseSourceItem): string {
+    return item.source;
   }
 
   toggle(licenseId: string): void {
@@ -289,7 +432,7 @@ export class LicenseOverviewComponent implements OnInit {
   }
 
   getCategoryClass(item: LicenseComplianceItem): string {
-    if (item.category === 'copyleft' && item.exempted_packages?.length) {
+    if ((item.category === 'copyleft' || item.category === 'unapproved') && item.exempted_packages?.length) {
       return 'cat-copyleft-exempted';
     }
     return 'cat-' + item.category;
@@ -315,8 +458,8 @@ export class LicenseOverviewComponent implements OnInit {
     this.licenses = [...this.rawLicenses].sort((a, b) => {
       switch (this.sortField) {
         case 'severity': {
-          const sa = this.severityOrder[a.category] ?? 1;
-          const sb = this.severityOrder[b.category] ?? 1;
+          const sa = this.severityOrder[a.category] ?? 2;
+          const sb = this.severityOrder[b.category] ?? 2;
           // exempted copyleft should sort between copyleft and unknown
           const ea = a.exempted_packages?.length ? 0.5 : 0;
           const eb = b.exempted_packages?.length ? 0.5 : 0;

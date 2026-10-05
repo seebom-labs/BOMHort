@@ -25,7 +25,8 @@ func TestCategorize(t *testing.T) {
 		{"NOASSERTION", CategoryUnknown},
 		{"NONE", CategoryUnknown},
 		{"", CategoryUnknown},
-		{"SomeWeirdLicense", CategoryUnknown},
+		{"none", CategoryUnknown},
+		{"SomeWeirdLicense", CategoryUnapproved},
 	}
 
 	for _, tt := range tests {
@@ -204,9 +205,9 @@ func TestLoadPolicy(t *testing.T) {
 	if got := Categorize("GPL-3.0-only"); got != CategoryCopyleft {
 		t.Errorf("expected GPL-3.0-only=copyleft, got %s", got)
 	}
-	// Not listed = unknown
-	if got := Categorize("WTFPL"); got != CategoryUnknown {
-		t.Errorf("expected WTFPL=unknown, got %s", got)
+	// Declared but not listed = unapproved
+	if got := Categorize("WTFPL"); got != CategoryUnapproved {
+		t.Errorf("expected WTFPL=unapproved, got %s", got)
 	}
 }
 

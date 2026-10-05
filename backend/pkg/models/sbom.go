@@ -57,20 +57,23 @@ type SBOM struct {
 // SBOMPackages stores the full dependency tree of an SBOM as parallel arrays.
 // One row per SBOM – ClickHouse compresses columnar arrays extremely well.
 type SBOMPackages struct {
-	IngestedAt       time.Time `json:"ingested_at"`
-	SBOMID           uuid.UUID `json:"sbom_id"`
-	SourceFile       string    `json:"source_file"`
-	PackageSPDXIDs   []string  `json:"package_spdx_ids"`
-	PackageNames     []string  `json:"package_names"`
-	PackageVersions  []string  `json:"package_versions"`
-	PackagePURLs     []string  `json:"package_purls"`
-	PackageLicenses  []string  `json:"package_licenses"`
-	RelSourceIndices []uint32  `json:"rel_source_indices"`
-	RelTargetIndices []uint32  `json:"rel_target_indices"`
-	RelTypes         []string  `json:"rel_types"`
-	Cluster          string    `json:"cluster,omitempty"`
-	Namespace        string    `json:"namespace,omitempty"`
-	Project          string    `json:"project,omitempty"`
+	IngestedAt      time.Time `json:"ingested_at"`
+	SBOMID          uuid.UUID `json:"sbom_id"`
+	SourceFile      string    `json:"source_file"`
+	PackageSPDXIDs  []string  `json:"package_spdx_ids"`
+	PackageNames    []string  `json:"package_names"`
+	PackageVersions []string  `json:"package_versions"`
+	PackagePURLs    []string  `json:"package_purls"`
+	PackageLicenses []string  `json:"package_licenses"`
+	// PackageLicenseSources is parallel to PackageLicenses: where each license
+	// came from, or why there is none (vocabulary in internal/license/source.go).
+	PackageLicenseSources []string `json:"package_license_sources"`
+	RelSourceIndices      []uint32 `json:"rel_source_indices"`
+	RelTargetIndices      []uint32 `json:"rel_target_indices"`
+	RelTypes              []string `json:"rel_types"`
+	Cluster               string   `json:"cluster,omitempty"`
+	Namespace             string   `json:"namespace,omitempty"`
+	Project               string   `json:"project,omitempty"`
 	// RootIndices marks the package(s) the SBOM DESCRIBES – the product itself,
 	// not a dependency. Kept in the arrays (index 0 is the dependency-tree root)
 	// but excluded from license compliance. Not persisted to ClickHouse.
@@ -105,7 +108,7 @@ type LicenseCompliance struct {
 	SBOMID               uuid.UUID `json:"sbom_id"`
 	SourceFile           string    `json:"source_file"`
 	LicenseID            string    `json:"license_id"`
-	Category             string    `json:"category"` // permissive, copyleft, unknown
+	Category             string    `json:"category"` // permissive, copyleft, unapproved, unknown
 	PackageCount         uint32    `json:"package_count"`
 	NonCompliantPackages []string  `json:"non_compliant_packages"`
 	ExemptedPackages     []string  `json:"exempted_packages"`

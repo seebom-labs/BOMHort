@@ -4,7 +4,7 @@ import { provideHttpClientTesting, HttpTestingController } from '@angular/common
 import { provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { provideLocationMocks } from '@angular/common/testing';
-import { ProjectDetailComponent } from './project-detail.component';
+import { ProjectDetailComponent, splitPurl } from './project-detail.component';
 import { ProjectDetail } from '../../core/api.models';
 
 describe('ProjectDetailComponent', () => {
@@ -192,7 +192,7 @@ describe('ProjectDetailComponent', () => {
     const enc = 'kubernetes-mcp-server';
     httpMock.expectOne((r) => r.url === `/api/v1/projects/${enc}`).flush(detail({
       sbom_count: 3,
-      license_breakdown: { permissive: 40, copyleft: 2, unknown: 1 },
+      license_breakdown: { permissive: 40, copyleft: 2, unapproved: 4, unknown: 1 },
     }));
     httpMock.expectOne((r) => r.url === `/api/v1/projects/${enc}/sboms`).flush({ data: [], total: 3, page: 1, page_size: 100 });
     const vuln = (id: string, over: object = {}) => ({
@@ -212,13 +212,55 @@ describe('ProjectDetailComponent', () => {
     expect(component.effectiveVulns).toBe(2);
     expect(component.inEveryVersion).toBe(2);
     // Findings = everything that is not permissive.
-    expect(component.licenseViolations).toBe(3);
-    expect(component.licenseSegments.map((s) => s.value)).toEqual([40, 2, 1]);
+    // Not-approved licenses are violations just like copyleft.
+    expect(component.licenseViolations).toBe(7);
+    expect(component.licenseSegments.map((s) => s.value)).toEqual([40, 2, 4, 1]);
     expect(component.vexSegments.length).toBe(2);
 
     const el = harness.routeNativeElement!;
     expect(el.querySelectorAll('.kpi-card').length).toBeGreaterThanOrEqual(5);
     expect(el.querySelectorAll('app-donut-chart').length).toBe(3);
+  });
+
+  it('should tell two versions of one package apart and count distinct vulnerability ids', async () => {
+    const { harness, component } = await open('cni');
+    const enc = 'cni';
+    httpMock.expectOne((r) => r.url === `/api/v1/projects/${enc}`).flush(detail({ project_name: 'cni', sbom_count: 1, vuln_count: 3 }));
+    httpMock.expectOne((r) => r.url === `/api/v1/projects/${enc}/sboms`).flush({ data: [], total: 1, page: 1, page_size: 100 });
+    const vuln = (id: string, purl: string) => ({
+      vuln_id: id, severity: 'HIGH', purl, summary: '', fixed_version: '',
+      source_file: '', discovered_at: '', affected_sboms: 1,
+    });
+    // An SBOM generated from go.sum lists the same module twice; OSV then
+    // reports the same advisory once per version.
+    httpMock.expectOne((r) => r.url === `/api/v1/projects/${enc}/vulnerabilities`).flush([
+      vuln('GHSA-4374', 'pkg:golang/golang.org/x/net@v0.0.0-20201006153459-a7d1128ccaa0'),
+      vuln('GHSA-4374', 'pkg:golang/golang.org/x/net@v0.0.0-20210428140749-89ef3d95e781'),
+      vuln('GO-2023-1', 'pkg:golang/stdlib@v1.14'),
+    ]);
+    harness.detectChanges();
+
+    expect(component.distinctVulnIds).toBe(2);
+    expect(component.vulnRows.map((v) => v.pkg_version)).toEqual([
+      'v0.0.0-20201006153459-a7d1128ccaa0',
+      'v0.0.0-20210428140749-89ef3d95e781',
+      'v1.14',
+    ]);
+    const el = harness.routeNativeElement!;
+    const distinct = el.querySelector('.stat.distinct-ids') as HTMLButtonElement;
+    expect(distinct.textContent).toContain('2 distinct IDs');
+    distinct.click();
+    harness.detectChanges();
+    expect(component.activeTab).toBe('vulns');
+    expect(el.querySelector('.vuln-hint')?.textContent).toContain('3 findings across 2 distinct vulnerability IDs');
+  });
+
+  it('should split PURLs into a display name and version', () => {
+    expect(splitPurl('pkg:golang/golang.org/x/net@v0.17.0')).toEqual({ pkg_name: 'golang.org/x/net', pkg_version: 'v0.17.0' });
+    expect(splitPurl('pkg:npm/%40angular/core@17.0.0?foo=bar#sub')).toEqual({ pkg_name: '@angular/core', pkg_version: '17.0.0' });
+    expect(splitPurl('pkg:generic/containernetworking%2Fcni@v1.1.1')).toEqual({ pkg_name: 'containernetworking/cni', pkg_version: 'v1.1.1' });
+    expect(splitPurl('pkg:golang/example.com/m')).toEqual({ pkg_name: 'example.com/m', pkg_version: '' });
+    expect(splitPurl('')).toEqual({ pkg_name: '', pkg_version: '' });
   });
 });
 

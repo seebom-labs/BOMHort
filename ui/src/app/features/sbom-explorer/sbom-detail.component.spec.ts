@@ -55,6 +55,21 @@ describe('SbomDetailComponent', () => {
     expect(component.isCopyleft('Apache-2.0')).toBe(false);
   });
 
+  it('should explain where a dependency license came from', () => {
+    const fixture = TestBed.createComponent(SbomDetailComponent);
+    const component = fixture.componentInstance as unknown as {
+      flattenTree(nodes: unknown[]): { licenseTitle: string }[];
+    };
+    const flat = component.flattenTree([
+      { index: 0, spdx_id: 'a', name: 'a', version: '1', purl: '', license: 'MIT', license_source: 'npm+latest', children: [] },
+      { index: 1, spdx_id: 'b', name: 'b', version: '1', purl: '', license: 'NOASSERTION', license_source: 'not-published', children: [] },
+      { index: 2, spdx_id: 'c', name: 'c', version: '1', purl: '', license: 'MIT', children: [] },
+    ]);
+    expect(flat[0].licenseTitle).toContain('Source: npm registry (taken from the latest release');
+    expect(flat[1].licenseTitle).toContain('Unknown: Not published');
+    expect(flat[2].licenseTitle).toBe('');
+  });
+
   it('should render every package of an expanded license as a non-shrinking row', () => {
     const fixture = TestBed.createComponent(SbomDetailComponent);
     const component = fixture.componentInstance;

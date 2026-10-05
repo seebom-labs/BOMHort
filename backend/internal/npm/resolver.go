@@ -18,6 +18,7 @@ import (
 
 	json "github.com/goccy/go-json"
 
+	"github.com/seebom-labs/bomhort/backend/internal/license"
 	"github.com/seebom-labs/bomhort/backend/internal/ratelimit"
 )
 
@@ -73,20 +74,40 @@ func (r *Resolver) Resolve(ctx context.Context, purl string) string {
 
 	key := CacheKey(name, version)
 	if cached, found := r.cache.Load(key); found {
-		return cached.(string)
+		lic, _ := license.SplitCacheValue(cached.(string))
+		return lic
 	}
 
 	if err := r.limiter.Wait(ctx); err != nil {
 		return ""
 	}
 
-	lic := r.fetchLicense(ctx, name, version)
-	r.cache.Store(key, lic)
+	lic, reason := r.fetchLicense(ctx, name, version)
+	if lic == "" {
+		r.cache.Store(key, license.NegativeCacheValue(reason))
+	} else {
+		r.cache.Store(key, lic)
+	}
 
 	if lic != "" {
 		log.Printf("  npm license resolved: %s → %s", key, lic)
 	}
 	return lic
+}
+
+// Explain reports, for an npm purl, why it stayed unresolved (a license.Reason*
+// value, "" when unknown) and whether the license is that of the "latest"
+// dist-tag because the purl carries no version. handled is false for other
+// ecosystems.
+func (r *Resolver) Explain(purl string) (handled bool, reason string, latest bool) {
+	name, version, ok := ExtractNPMPackage(purl)
+	if !ok {
+		return false, "", false
+	}
+	if cached, found := r.cache.Load(CacheKey(name, version)); found {
+		_, reason = license.SplitCacheValue(cached.(string))
+	}
+	return true, reason, version == ""
 }
 
 // PreloadCache seeds the in-memory cache (e.g. from ClickHouse).
@@ -115,8 +136,10 @@ type manifest struct {
 }
 
 // fetchLicense fetches {registry}/{name}/{version}. If no version is given,
-// the "latest" dist-tag is used.
-func (r *Resolver) fetchLicense(ctx context.Context, name, version string) string {
+// the "latest" dist-tag is used. A negative result carries the reason when the
+// registry gave a definite answer: 404 (not published) or a manifest without a
+// usable license. Transport errors leave the reason empty.
+func (r *Resolver) fetchLicense(ctx context.Context, name, version string) (string, string) {
 	if version == "" {
 		version = "latest"
 	}
@@ -125,7 +148,7 @@ func (r *Resolver) fetchLicense(ctx context.Context, name, version string) strin
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return ""
+		return "", ""
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "bomhort-license-resolver")
@@ -133,19 +156,25 @@ func (r *Resolver) fetchLicense(ctx context.Context, name, version string) strin
 	resp, err := r.httpClient.Do(req)
 	if err != nil {
 		log.Printf("  npm registry request failed for %s: %v", CacheKey(name, version), err)
-		return ""
+		return "", ""
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusNotFound {
+		return "", license.ReasonNotPublished
+	}
 	if resp.StatusCode != http.StatusOK {
-		return ""
+		return "", ""
 	}
 
 	var m manifest
 	if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
-		return ""
+		return "", ""
 	}
-	return NormalizeLicense(m.License, m.Licenses)
+	if lic := NormalizeLicense(m.License, m.Licenses); lic != "" {
+		return lic, ""
+	}
+	return "", license.ReasonNoLicenseUpstream
 }
 
 // NormalizeLicense converts the various historical shapes of the npm license

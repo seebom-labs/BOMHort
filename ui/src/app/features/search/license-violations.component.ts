@@ -36,6 +36,7 @@ type Tab = 'non-compliant' | 'exceptions';
               <a [routerLink]="['/sboms', v.sbom_id]" class="project-name">{{ v.document_name || v.source_file }}</a>
               <div class="counts">
                 <span class="copyleft-badge" *ngIf="v.copyleft_count">{{ v.copyleft_count | number }} copyleft</span>
+                <span class="unapproved-badge" *ngIf="v.unapproved_count">{{ v.unapproved_count | number }} not approved</span>
                 <span class="unknown-badge" *ngIf="v.unknown_count">{{ v.unknown_count | number }} unknown</span>
               </div>
             </div>
@@ -121,6 +122,7 @@ type Tab = 'non-compliant' | 'exceptions';
     .project-name { font-weight: 600; font-size: 0.9rem; color: var(--accent); text-decoration: none; }
     .counts { display: flex; gap: 6px; }
     .copyleft-badge { background: var(--severity-critical-bg); color: var(--severity-critical); padding: 1px 6px; border-radius: 2px; font-size: 0.7rem; font-weight: 600; }
+    .unapproved-badge { background: var(--severity-high-bg); color: var(--severity-high); padding: 1px 6px; border-radius: 2px; font-size: 0.7rem; font-weight: 600; }
     .unknown-badge { background: var(--bg); color: var(--text-secondary); padding: 1px 6px; border-radius: 2px; font-size: 0.7rem; font-weight: 600; }
     .details { margin-top: 3px; font-size: 0.75rem; color: var(--text-secondary); }
     .licenses { font-style: normal; }

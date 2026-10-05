@@ -250,6 +250,7 @@ interface SearchResultItem {
     }
     .license-permissive { background: var(--license-permissive); }
     .license-copyleft { background: var(--license-copyleft); }
+    .license-unapproved { background: var(--license-unapproved); }
     .license-unknown { background: var(--license-unknown); }
     
     .dropdown-footer {

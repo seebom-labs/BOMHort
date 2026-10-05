@@ -20,7 +20,12 @@ type Category string
 const (
 	CategoryPermissive Category = "permissive"
 	CategoryCopyleft   Category = "copyleft"
-	CategoryUnknown    Category = "unknown"
+	// CategoryUnapproved is a declared license the policy does not list. It is
+	// not necessarily copyleft, but nobody approved it, so it is a violation.
+	CategoryUnapproved Category = "unapproved"
+	// CategoryUnknown means the SBOM carries no usable license information
+	// (NOASSERTION, NONE, empty) or the expression cannot be parsed.
+	CategoryUnknown Category = "unknown"
 )
 
 // PolicyFile represents the license-policy.json structure.
@@ -156,10 +161,14 @@ func GetPolicy() *PolicyFile {
 // parentheses) is evaluated operand by operand under the active
 // ExpressionMode — unless the policy lists the whole expression verbatim, in
 // which case that entry wins, or the mode is "off".
+//
+// A declared license the policy does not list is CategoryUnapproved; only a
+// missing license (NOASSERTION, NONE, empty) or an unparseable expression is
+// CategoryUnknown.
 func Categorize(licenseID string) Category {
-	id := strings.TrimSpace(licenseID)
+	id := Normalize(strings.TrimSpace(licenseID))
 
-	if id == "" || id == "NOASSERTION" || id == "NONE" {
+	if isNoLicenseInfo(id) {
 		return CategoryUnknown
 	}
 
@@ -169,8 +178,11 @@ func Categorize(licenseID string) Category {
 
 	// A verbatim policy entry for the whole string always wins. This is also
 	// the complete behaviour when expression evaluation is off.
-	if cat := p.categorizeSingle(id); cat != CategoryUnknown || p.mode == ExpressionModeOff {
+	if cat := p.categorizeSingle(id); cat != CategoryUnknown {
 		return cat
+	}
+	if p.mode == ExpressionModeOff {
+		return CategoryUnapproved
 	}
 
 	if !hasOperator(tokenize(id)) {
@@ -188,6 +200,8 @@ func Categorize(licenseID string) Category {
 }
 
 // categorizeSingle classifies one identifier against the policy lists.
+// CategoryUnknown here means "not listed"; callers decide whether that is
+// unapproved or a missing license.
 func (p *Policy) categorizeSingle(id string) Category {
 	// Exact match first.
 	if p.permissive[id] {
@@ -223,7 +237,7 @@ type Result struct {
 }
 
 // Check analyzes a list of packages and their licenses and produces compliance results.
-// Uses no exceptions – all copyleft/unknown packages are flagged.
+// Uses no exceptions – all non-permissive packages are flagged.
 func Check(packageNames, packageLicenses []string) []Result {
 	return CheckWithExceptions(packageNames, packageLicenses, nil)
 }
@@ -280,14 +294,14 @@ func CheckWithExceptions(packageNames, packageLicenses []string, exceptions *Exc
 		} else if cat == CategoryPermissive {
 			// Permissive licenses are always compliant – don't track packages.
 		} else if exceptions != nil {
-			// Copyleft or unknown: check per-package exception.
+			// Copyleft, unapproved or unknown: check per-package exception.
 			if exempt, _ := exceptions.IsExempt(name, lic, project...); exempt {
 				entry.exempted = append(entry.exempted, name)
 			} else {
 				entry.packages = append(entry.packages, name)
 			}
 		} else {
-			// No exceptions loaded: all copyleft/unknown packages are non-compliant.
+			// No exceptions loaded: all non-permissive packages are non-compliant.
 			entry.packages = append(entry.packages, name)
 		}
 	}

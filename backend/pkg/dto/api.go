@@ -80,13 +80,36 @@ type VulnerabilityListItem struct {
 
 // DependencyNode represents a single node in the dependency tree for the UI.
 type DependencyNode struct {
-	Index    uint32   `json:"index"`
-	SPDXID   string   `json:"spdx_id"`
-	Name     string   `json:"name"`
-	Version  string   `json:"version"`
-	PURL     string   `json:"purl"`
-	License  string   `json:"license"`
-	Children []uint32 `json:"children"`
+	Index   uint32 `json:"index"`
+	SPDXID  string `json:"spdx_id"`
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	PURL    string `json:"purl"`
+	License string `json:"license"`
+	// LicenseSource says where License came from, or why there is none
+	// (vocabulary in internal/license/source.go). Empty for SBOMs ingested
+	// before it was recorded.
+	LicenseSource string   `json:"license_source,omitempty"`
+	Children      []uint32 `json:"children"`
+}
+
+// LicenseSourceItem is one row of GET /api/v1/licenses/sources: how many
+// packages got their license from one source, or stayed unresolved for one
+// reason.
+type LicenseSourceItem struct {
+	// Source is the full value, e.g. "depsdev+latest" or "not-published".
+	// "unrecorded" counts packages ingested before sources were recorded.
+	Source string `json:"source"`
+	// Origin is Source without modifiers ("depsdev").
+	Origin string `json:"origin"`
+	// Modifiers are the "+"-joined suffixes ("latest", "normalized").
+	Modifiers []string `json:"modifiers"`
+	// Resolved is false when Source is a reason for a missing license.
+	Resolved     bool   `json:"resolved"`
+	PackageCount uint64 `json:"package_count"`
+	SBOMCount    uint64 `json:"sbom_count"`
+	// Examples are up to five of the most frequent package names.
+	Examples []string `json:"examples"`
 }
 
 // LicenseComplianceItem is the response DTO for license compliance overview.
@@ -171,6 +194,7 @@ type ProjectLicenseViolation struct {
 	SourceFile           string   `json:"source_file"`
 	DocumentName         string   `json:"document_name"`
 	CopyleftCount        uint64   `json:"copyleft_count"`
+	UnapprovedCount      uint64   `json:"unapproved_count"`
 	UnknownCount         uint64   `json:"unknown_count"`
 	ViolatingLicenses    []string `json:"violating_licenses"`
 	NonCompliantPackages []string `json:"non_compliant_packages"`

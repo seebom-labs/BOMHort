@@ -1,0 +1,453 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "golden-app",
+  "documentNamespace": "https://example.com/golden-app",
+  "creationInfo": {
+    "created": "2026-01-01T00:00:00Z",
+    "creators": [
+      "Tool: golden"
+    ]
+  },
+  "documentDescribes": [
+    "SPDXRef-root"
+  ],
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-root",
+      "name": "golden-app",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:npm/golden-app@1.0.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-declared-mit",
+      "name": "declared-mit",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:npm/declared-mit@1.0.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-declared-freetext",
+      "name": "declared-freetext",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache License 2.0",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:npm/declared-freetext@1.0.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-declared-deprecated",
+      "name": "declared-deprecated",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "GPL-2.0+",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:npm/declared-deprecated@1.0.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-declared-or",
+      "name": "declared-or",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT OR GPL-3.0-only",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:npm/declared-or@1.0.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-declared-and",
+      "name": "declared-and",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT AND GPL-3.0-only",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:npm/declared-and@1.0.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-declared-custom",
+      "name": "declared-custom",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "LicenseRef-Remix-Icon-License-1.0",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:npm/declared-custom@1.0.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-via-github",
+      "name": "github.com/acme/lib",
+      "versionInfo": "v1.2.3",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/github.com/acme/lib@v1.2.3"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-via-npm",
+      "name": "npm-pkg",
+      "versionInfo": "2.0.0",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:npm/npm-pkg@2.0.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-via-npm-latest",
+      "name": "npm-versionless",
+      "versionInfo": "",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:npm/npm-versionless"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-yarn-patch",
+      "name": "fsevents",
+      "versionInfo": "2.3.3",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:npm/fsevents@patch:fsevents@npm%3A^2.3.3#optional!builtin<compat/fsevents>, fsevents@patch:fsevents@2.3.3"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-npm-unpublished",
+      "name": "internal-ui",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:npm/internal-ui@1.0.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-yarn-workspace",
+      "name": "@golden/web",
+      "versionInfo": "0.0.0-use.local",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:npm/%40golden/web@0.0.0-use.local"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-maven-module",
+      "name": "golden-core",
+      "versionInfo": "unknown",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/${project.groupId}/golden-core@unknown"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-maven-depsdev",
+      "name": "commons-lang3",
+      "versionInfo": "3.14.0",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/org.apache.commons/commons-lang3@3.14.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-maven-depsdev-raw",
+      "name": "jakarta.xml.bind-api",
+      "versionInfo": "4.0.2",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:maven/jakarta.xml.bind/jakarta.xml.bind-api@4.0.2"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-composer-dev",
+      "name": "monolog/monolog",
+      "versionInfo": "dev-main",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:composer/monolog/monolog@dev-main"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-pypi-fallback",
+      "name": "typing-extensions",
+      "versionInfo": "4.0.0",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/typing-extensions@4.0.0"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-pypi-nolicense",
+      "name": "legacy-tool",
+      "versionInfo": "0.1",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/legacy-tool@0.1"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-generic-binary",
+      "name": "libc.so.6",
+      "versionInfo": "",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:generic/libc.so.6?file-sha256=abc"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-no-purl",
+      "name": "vendored-blob",
+      "versionInfo": "",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION"
+    },
+    {
+      "SPDXID": "SPDXRef-resolver-error",
+      "name": "flaky-crate",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:cargo/flaky-crate@1.0.0"
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-root"
+    },
+    {
+      "spdxElementId": "SPDXRef-root",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-declared-mit"
+    },
+    {
+      "spdxElementId": "SPDXRef-root",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-declared-freetext"
+    },
+    {
+      "spdxElementId": "SPDXRef-root",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-declared-deprecated"
+    },
+    {
+      "spdxElementId": "SPDXRef-root",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-declared-or"
+    },
+    {
+      "spdxElementId": "SPDXRef-root",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-declared-and"
+    },
+    {
+      "spdxElementId": "SPDXRef-root",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-declared-custom"
+    },
+    {
+      "spdxElementId": "SPDXRef-root",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-via-github"
+    },
+    {
+      "spdxElementId": "SPDXRef-root",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-via-npm"
+    },
+    {
+      "spdxElementId": "SPDXRef-root",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-via-npm-latest"
+    },
+    {
+      "spdxElementId": "SPDXRef-root",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-yarn-patch"
+    },
+    {
+      "spdxElementId": "SPDXRef-root",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-npm-unpublished"
+    },
+    {
+      "spdxElementId": "SPDXRef-root",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-yarn-workspace"
+    },
+    {
+      "spdxElementId": "SPDXRef-root",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-maven-module"
+    },
+    {
+      "spdxElementId": "SPDXRef-root",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-maven-depsdev"
+    },
+    {
+      "spdxElementId": "SPDXRef-root",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-maven-depsdev-raw"
+    },
+    {
+      "spdxElementId": "SPDXRef-root",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-composer-dev"
+    },
+    {
+      "spdxElementId": "SPDXRef-root",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-pypi-fallback"
+    },
+    {
+      "spdxElementId": "SPDXRef-root",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-pypi-nolicense"
+    },
+    {
+      "spdxElementId": "SPDXRef-root",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-generic-binary"
+    },
+    {
+      "spdxElementId": "SPDXRef-root",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-no-purl"
+    },
+    {
+      "spdxElementId": "SPDXRef-root",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-resolver-error"
+    }
+  ]
+}

@@ -107,7 +107,7 @@ A full re-ingestion (truncate + re-ingest) is required when:
 | Changed the **license policy** (`license-policy.json`) | Existing packages need reclassification |
 | Enabled/disabled **OSV scanning** (`skipOSV`) | Vulnerability data needs to be fetched or cleared |
 | Enabled/disabled **GitHub license resolution** (`skipGitHubResolve`) | Unknown licenses need re-resolution |
-| Enabled/disabled **npm / NuGet license resolution** (`skipNPMResolve`, `skipNuGetResolve`) | Unknown `pkg:npm/*` / `pkg:nuget/*` licenses need re-resolution |
+| Enabled/disabled **npm / NuGet / deps.dev / Packagist / PyPI license resolution** (`skipNPMResolve`, `skipNuGetResolve`, `skipDepsDevResolve`, `skipPackagistResolve`, `skipPyPIResolve`) | Unknown package-registry licenses need re-resolution |
 | Upgraded **parsing logic** (new image version) | Existing SBOMs may parse differently (e.g., new in-toto attestation support or improved license resolution with well-known Go module mappings) |
 | Changed **license exceptions** | Exception matching is applied during ingestion |
 | Added a **GitHub token** (`GITHUB_TOKEN`) | Previously rate-limited resolution may have missed packages — a re-ingestion with the token resolves all licenses |
@@ -303,3 +303,38 @@ This checks all known PURLs against the [OSV database](https://osv.dev) for newl
 make cve-refresh
 ```
 
+---
+
+## Why is a license "unknown" or "NOASSERTION"?
+
+Many SBOM generators write `NOASSERTION` instead of a license. BOMHort fills
+these gaps at ingest time from public sources (npm, NuGet, deps.dev, Packagist,
+PyPI, GitHub) and records for **every** package where its license came from — or
+why it is still missing:
+
+| Reason | Meaning |
+|--------|---------|
+| `not-published` | Not on any public registry — usually an internal or private package |
+| `no-license-upstream` | The registry knows the package, but no license is declared upstream (e.g. Maven artifacts that inherit it from a parent POM) |
+| `unsupported-ecosystem` | No resolver exists for this package type (e.g. `pkg:generic` files such as `libc.so.6`) |
+| `no-purl` | The SBOM has no package URL, so there is nothing to look up |
+| `unresolved` | Every lookup failed or matched nothing |
+| `first-party` | The project's own code — excluded from license compliance |
+
+The **Licenses** page shows the result in the *License Resolution* panel: how
+many packages the SBOMs left without a license, how many BOMHort resolved, and
+the remaining unknowns per reason with examples and what you can do. Hover a
+license in an SBOM's dependency list to see its source. All rules — and the ones
+BOMHort deliberately does not apply — are on the
+[License Resolution](/docs/license-resolution/) page.
+
+SBOMs ingested before license sources were recorded show as `unrecorded`;
+re-process them to fill it in (see [full re-ingestion](#full-re-ingestion-from-scratch)).
+
+## What does "Not Approved" mean?
+
+The SBOM declares a license, but it is not on the policy allow-list — for
+example `LicenseRef-…`, an ambiguous `BSD` or `Public Domain`. BOMHort never
+guesses which license such a name means, because that would approve a license
+nobody approved. Add the exact SPDX ID to the [license policy](/docs/deployment/#4-license-policy),
+or exempt the package via [license exceptions](/docs/deployment/#3-license-exceptions).

@@ -411,7 +411,7 @@ compliance results after changing or revoking approvals.
 
 ## 4. License Policy – Defining Permissive vs. Copyleft
 
-The license policy defines which SPDX IDs are classified as **permissive**, **copyleft**, or **unknown**. Any license not listed falls into `unknown`.
+The license policy defines which SPDX IDs are classified as **permissive** or **copyleft**. A declared license that is not listed is **unapproved** (a policy violation, not necessarily copyleft); only a missing license (`NOASSERTION`, `NONE`, empty) is **unknown**.
 
 ### Edit the default ConfigMap
 
@@ -646,6 +646,12 @@ cp .env.example .env
 | `WORKER_REPLICAS` | `1` | Number of parallel parsing worker containers |
 | `WORKER_BATCH_SIZE` | `50` | Jobs claimed per polling cycle per worker |
 | `SKIP_OSV` | `false` | Skip OSV vulnerability API calls. Set `true` for fast initial bulk load. |
+| `SKIP_GITHUB_RESOLVE` | `false` | Skip GitHub license resolution for packages with unknown licenses. |
+| `SKIP_NPM_RESOLVE` | `false` | Skip npm registry license resolution for npm packages with unknown licenses. |
+| `SKIP_NUGET_RESOLVE` | `false` | Skip NuGet license resolution for NuGet packages with unknown licenses. |
+| `SKIP_DEPSDEV_RESOLVE` | `false` | Skip deps.dev fallback license resolution for supported package registries. |
+| `SKIP_PACKAGIST_RESOLVE` | `false` | Skip Packagist license resolution for Composer packages with unknown licenses. |
+| `SKIP_PYPI_RESOLVE` | `false` | Skip PyPI license resolution for Python packages deps.dev could not resolve. |
 | `LICENSE_EXPRESSION_MODE` | *(empty → `strict`)* | Classification of compound SPDX expressions (`A AND B`, `A OR B`): `strict`, `permissive-wins` or `off`. Overrides `expressionMode` in `license-policy.json`. Re-scan after changing. |
 | `CUSTOM_THEME` | (example file) | Path to a custom CSS theme file for the UI |
 | `UI_CONFIG` | `./ui/public/ui-config.json` | Path to a JSON file with UI text overrides (brand, titles, disclaimer) |

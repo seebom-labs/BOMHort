@@ -53,6 +53,7 @@ bomhort/
 │   │   │   ├── queries_refresh.go # CVE Refresh: PURL dedup, reverse-lookup, refresh log
 │   │   │   └── queries_github_cache.go # GitHub license cache read/write
 │   │   ├── github/            # GitHub API client for license resolution (PURL→license)
+│   │   ├── npm/ nuget/ depsdev/ packagist/ pypi/ # Registry license resolvers (see docs: License Resolution)
 │   │   ├── osv/               # OSV API client (rate-limited, exponential backoff retry)
 │   │   ├── osvutil/           # Shared OSV helpers (severity, fixed version, affected versions)
 │   │   ├── s3/                # S3-compatible bucket client (AWS S3, MinIO, GCS)
@@ -175,7 +176,7 @@ ClickHouse: sboms, sbom_packages, vulnerabilities, license_compliance, vex_state
        ├── SBOM Detail:    Vulns + licenses (with package list) + dependencies per project
        ├── SBOM Explorer:  Full-text search across project name/file path/version
        ├── CVE Impact:     has(package_purls, ?) → all affected projects
-       ├── Violations:     sumIf(copyleft|unknown) − exceptions (from config file)
+       ├── Violations:     sumIf(copyleft|unapproved|unknown) − exceptions (from config file)
        └── Dep Stats:      ARRAY JOIN + count(DISTINCT sbom_id) cross-project
        ▼
 API Gateway (REST) → 29 Endpoints
@@ -229,9 +230,10 @@ S3 project grouping continues to use the source path. See the
 | GET | `/api/v1/vulnerabilities?page=&page_size=` | Paginated vuln list (every finding, VEX status attached) |
 | GET | `/api/v1/vulnerabilities/{id}/affected-projects` | All projects affected by a CVE (direct + transitive) |
 | GET | `/api/v1/licenses/compliance` | Aggregated license overview |
+| GET | `/api/v1/licenses/sources` | License provenance breakdown (source / unresolved reason per package) |
 | GET | `/api/v1/projects?page=&page_size=&search=` | Grouped project listing (derived from S3 path or document_name) |
 | GET | `/api/v1/projects?group_by=parent` | Projects grouped under their resolved parent (`internal/projectgroup`: mapping file `PROJECT_GROUPS_FILE`, explicit bucket/path/upload `parent`, tag, then repository owner, document name, purl namespace, supplier — ambiguous owners group nothing) |
-| GET | `/api/v1/projects/license-compliance` | Projects with copyleft/unknown licenses (filtered by exceptions) |
+| GET | `/api/v1/projects/license-compliance` | Projects with copyleft/unapproved/unknown licenses (filtered by exceptions) |
 | GET | `/api/v1/license-exceptions` | Active license exceptions (read-only, from config file) |
 | GET | `/api/v1/license-policy` | Active license classification (permissive/copyleft lists) |
 | GET | `/api/v1/vex/statements?page=&page_size=` | Paginated VEX statements with matched affected_sboms |
@@ -334,7 +336,7 @@ one bucket is nested and another flat.
 | `cve_refresh_log` | MergeTree | (started_at, refresh_id) | CVE refresh run history (timestamp, results, status) |
 | `github_license_cache` | ReplacingMergeTree | (repo) | Cache for resolved GitHub licenses (avoids API redundancy) |
 | `github_repo_metadata` | ReplacingMergeTree | (repo) | GitHub repo metadata (archived, fork, stars, pushed_at) for dependency health |
-| `registry_license_cache` | ReplacingMergeTree | (registry, package) | Cache for npm/NuGet resolved licenses |
+| `registry_license_cache` | ReplacingMergeTree | (registry, package) | Cache for npm/NuGet/deps.dev/Packagist/PyPI resolved licenses; negatives stored as `!<reason>` |
 | `document_store` | ReplacingMergeTree | (sbom_id) | Reference + sha256 of the captured original SBOM bytes (#256); bytes live in the blob store |
 
 ### Key Queries for Search Features
@@ -464,7 +466,7 @@ The HTTP transport is remote tool execution, so both guards are mandatory rather
 
 ## 10. License Governance
 
-**License Policy** (`license-policy.json`): Defines which SPDX IDs are permissive/copyleft. Read by API Gateway and workers. Anything not listed = `unknown`.
+**License Policy** (`license-policy.json`): Defines which SPDX IDs are permissive/copyleft. Read by API Gateway and workers. A declared license not listed = `unapproved` (violation); no license information (`NOASSERTION`/`NONE`) = `unknown`.
 
 **License Exceptions** (`license-exceptions.json`): Operator-managed blanket and package/license/project rules, empty by default. No automatic CNCF download or project-to-blanket promotion. An inactive structure example lives in `examples/license-exceptions/`. Blanket exceptions retain SPDX modifier-prefix matching (e.g. `MPL-2.0` matches `MPL-2.0-no-copyleft-exception`). Package rules match case-sensitive exact names or complete slash-delimited suffixes; optional project restrictions use the exact SBOM document name in both worker and API filtering. Multiple project rules are preserved and matching order is deterministic. Scope descriptions and dates remain audit metadata, not executable conditions.
 
@@ -552,3 +554,5 @@ Exemptions are written at ingest time into `exempted_packages` + `exemption_reas
 | 34 | Configurable file ignore prefix: `SBOM_IGNORE_PREFIX` env var (default `_`) skips local files starting with prefix during scanning. Empty string = no skip. Useful for excluding demo/example files from ingestion. | ✅ Implemented |
 | 35 | S3 shared settings inheritance: JSON-configured buckets (`S3_BUCKETS`) inherit shared env vars (`S3_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_USE_PATH_STYLE`, `S3_USE_SSL`) as fallback when bucket-specific values are empty. | ✅ Implemented |
 | 36 | Generic JSON file acceptance: Scanner accepts any `.json` file (not just `.spdx.json`/`.cdx.json`). Format is auto-detected at parse time by the `internal/sbom` dispatch layer. Config files (`license-policy.json`, `license-exceptions.json`, `project-groups.json`) are still excluded. | ✅ Implemented |
+| 37 | License hygiene at ingest: Yarn-Berry lockfile PURLs/names (`ws@npm:^8, ws@8.20.0`, `patch:` protocol) repaired in `internal/sbom`; free-text license spellings (`MPL 2.0`, `CC BY-SA 4.0`) rewritten to SPDX IDs by `license.Normalize`; remaining NOASSERTION resolved via deps.dev (Maven, PyPI, Cargo, Go, npm, NuGet). Licenses missing from the policy are `unapproved`, `unknown` means no license information. | ✅ Implemented |
+| 38 | License provenance (#439): Packagist and PyPI resolvers; every package records where its license came from or why it is missing (`sbom_packages.package_license_sources`, migration `024`), exposed via `GET /api/v1/licenses/sources`, the `license_source` field of the dependency tree, and the License Resolution panel in the UI. All heuristics are documented in `docs/content/docs/license-resolution/` and the page's tables are asserted against the code (`cmd/parsing-worker/docs_sync_test.go`, `golden_test.go`). | ✅ Implemented |

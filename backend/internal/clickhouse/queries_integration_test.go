@@ -105,6 +105,11 @@ func TestQueriesExecute(t *testing.T) {
 		{"QuerySBOMVulnerabilities", func() error { _, err := c.QuerySBOMVulnerabilities(ctx, someID); return err }},
 		{"QuerySBOMLicenses", func() error { _, err := c.QuerySBOMLicenses(ctx, someID); return err }},
 		{"QuerySBOMVEXStatements", func() error { _, err := c.QuerySBOMVEXStatements(ctx, someID); return err }},
+		{"QuerySBOMDependencies", func() error { _, err := c.QuerySBOMDependencies(ctx, someID); return err }},
+		// License provenance (#439, migration 024) and the unapproved category.
+		{"QueryLicenseCompliance", func() error { _, err := c.QueryLicenseCompliance(ctx); return err }},
+		{"QueryLicenseSources", func() error { _, err := c.QueryLicenseSources(ctx); return err }},
+		{"QueryProjectsWithLicenseViolations", func() error { _, err := c.QueryProjectsWithLicenseViolations(ctx, nil); return err }},
 		{"QueryVulnerabilities", func() error { _, err := c.QueryVulnerabilities(ctx, 1, 10); return err }},
 		{"QueryVEXStatements", func() error { _, err := c.QueryVEXStatements(ctx, 1, 10); return err }},
 		{"QueryClusters", func() error { _, err := c.QueryClusters(ctx); return err }},

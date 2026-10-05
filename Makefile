@@ -82,6 +82,10 @@ re-scan: ## Reset all data + queue, then re-ingest (e.g. after enabling OSV)
 		docker compose exec -T clickhouse clickhouse-client --database=bomhort --multiquery < "$$f" 2>/dev/null || true; \
 	done
 	@echo "🗑️  Clearing all data tables and queue..."
+	@# Stop the workers first: a worker still busy with a job would otherwise
+	@# write that SBOM after the truncate and mark its job done, so the
+	@# re-ingest skips it and its rows stay stale.
+	@docker compose stop parsing-worker
 	@docker compose exec -T clickhouse clickhouse-client --database=bomhort \
 		--query "TRUNCATE TABLE ingestion_queue"
 	@docker compose exec -T clickhouse clickhouse-client --database=bomhort \

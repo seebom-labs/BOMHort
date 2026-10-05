@@ -428,6 +428,7 @@ func (c *Client) QuerySBOMDependencies(ctx context.Context, sbomID string) ([]dt
 		versions   []string
 		purls      []string
 		licenses   []string
+		sources    []string
 		relSources []uint32
 		relTargets []uint32
 		relTypes   []string
@@ -436,13 +437,13 @@ func (c *Client) QuerySBOMDependencies(ctx context.Context, sbomID string) ([]dt
 	err := c.Conn.QueryRow(ctx, `
 		SELECT
 			package_spdx_ids, package_names, package_versions,
-			package_purls, package_licenses,
+			package_purls, package_licenses, package_license_sources,
 			rel_source_indices, rel_target_indices, rel_types
 		FROM sbom_packages
 		WHERE sbom_id = ?
 		LIMIT 1
 	`, sbomID).Scan(
-		&spdxIDs, &names, &versions, &purls, &licenses,
+		&spdxIDs, &names, &versions, &purls, &licenses, &sources,
 		&relSources, &relTargets, &relTypes,
 	)
 	if err != nil {
@@ -476,6 +477,10 @@ func (c *Client) QuerySBOMDependencies(ctx context.Context, sbomID string) ([]dt
 		if i < len(versions) {
 			version = versions[i]
 		}
+		source := ""
+		if i < len(sources) {
+			source = sources[i]
+		}
 
 		children := childrenMap[idx]
 		if children == nil {
@@ -483,13 +488,14 @@ func (c *Client) QuerySBOMDependencies(ctx context.Context, sbomID string) ([]dt
 		}
 
 		nodes[i] = dto.DependencyNode{
-			Index:    idx,
-			SPDXID:   spdxID,
-			Name:     names[i],
-			Version:  version,
-			PURL:     purl,
-			License:  lic,
-			Children: children,
+			Index:         idx,
+			SPDXID:        spdxID,
+			Name:          names[i],
+			Version:       version,
+			PURL:          purl,
+			License:       lic,
+			LicenseSource: source,
+			Children:      children,
 		}
 	}
 

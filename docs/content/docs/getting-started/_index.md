@@ -102,9 +102,11 @@ cp .env.example .env
 | `GITHUB_TOKEN` | *(empty)* | GitHub PAT (increases rate limit to 5000 req/h) |
 | `SKIP_NPM_RESOLVE` | `false` | Skip npm registry license resolution |
 | `SKIP_NUGET_RESOLVE` | `false` | Skip NuGet license resolution |
+| `SKIP_DEPSDEV_RESOLVE` | `false` | Skip deps.dev fallback license resolution |
+| `SKIP_PACKAGIST_RESOLVE` | `false` | Skip Packagist (Composer) license resolution |
+| `SKIP_PYPI_RESOLVE` | `false` | Skip PyPI license resolution |
 | `LICENSE_EXPRESSION_MODE` | *(empty → `strict`)* | Classification of compound SPDX expressions: `strict`, `permissive-wins` or `off`. See [Deployment → License Policy](/docs/deployment/#4-license-policy) |
 
 {{% alert title="Recommended: Set GITHUB_TOKEN" color="warning" %}}
 Without a GitHub token, license resolution is limited to **60 requests per hour** — most container-image SBOMs will have many packages stuck as `NOASSERTION`. Create a [Personal Access Token (classic)](https://github.com/settings/tokens) with **no scopes** and set it in your `.env` file. See [FAQ: Should I use a GitHub token?](/docs/faq/#should-i-use-a-github-token) for details.
 {{% /alert %}}
-

@@ -72,10 +72,13 @@ Copy `.env.example` to `.env` and adjust as needed. Key variables for developmen
 
 - **Standard idiomatic Go.** Handle errors explicitly; never swallow them.
 - **HTTP routing:** Go 1.22+ stdlib `net/http` with method-pattern registration (e.g., `mux.HandleFunc("GET /api/v1/sboms", ...)`). No web framework.
-- **Minimal dependencies:** Only 4 direct dependencies (`clickhouse-go/v2`, `goccy/go-json`, `google/uuid`, `minio/minio-go/v7`).
+- **Minimal dependencies:** Only 6 direct dependencies (`clickhouse-go/v2`, `goccy/go-json`, `google/uuid`, `minio/minio-go/v7`, `protobom/protobom`, `modelcontextprotocol/go-sdk`). Adding another one is a maintainer decision.
 - **JSON parsing:** Use `goccy/go-json` for all SPDX document parsing (performance-critical).
 - **OSV integration:** Use batch endpoints (`/v1/querybatch`). Shared logic in `internal/osvutil`.
-- **License logic:** All categorization in `internal/license` with externalized policy files.
+- **License logic:** All categorization and normalization in `internal/license` with externalized policy files; registry lookups in their own resolver packages (`internal/npm`, `nuget`, `depsdev`, `packagist`, `pypi`, `github`). Three rules apply:
+  - **Every heuristic is a documented decision.** A new or changed rule needs an entry in the decision log on [License Resolution](/docs/license-resolution/), a row in the synced tables there, and a package in the golden fixture. `TestLicensePipelineGolden` and `TestDocsLicenseResolutionInSync` fail if code, fixture and page drift apart (see [Testing](/docs/development/testing/#license-resolution-golden-and-docs-sync-tests)).
+  - **Never guess.** Map a license name to an SPDX ID only when it names one license unambiguously. Ambiguous names (`BSD`, `Apache Software License`, `Public Domain`) are kept as declared and categorized **unapproved** — mapping them would approve a license nobody approved. A declared license is never overridden by a resolver.
+  - **Every unknown carries a reason.** A license that stays `NOASSERTION` records why (`license.UnresolvedReasons`); a new reason needs its UI label and a docs row too.
 
 ### Angular Frontend
 

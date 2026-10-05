@@ -79,13 +79,16 @@ type Config struct {
 	WorkerBatchSize int
 
 	// Feature flags
-	SkipOSV           bool   // Skip OSV vulnerability lookups (fast ingestion, licenses only)
-	SkipGitHubResolve bool   // Skip GitHub license resolution for unknown licenses
-	SkipNPMResolve    bool   // Skip npm registry license resolution for unknown licenses
-	SkipNuGetResolve  bool   // Skip NuGet license resolution for unknown licenses
-	SBOMLimit         int    // Max number of SBOMs to enqueue (0 = unlimited)
-	IgnorePrefix      string // Files with this prefix are skipped during local scan (default "_")
-	ExceptionsFile    string // Path to license-exceptions.json
+	SkipOSV              bool   // Skip OSV vulnerability lookups (fast ingestion, licenses only)
+	SkipGitHubResolve    bool   // Skip GitHub license resolution for unknown licenses
+	SkipNPMResolve       bool   // Skip npm registry license resolution for unknown licenses
+	SkipNuGetResolve     bool   // Skip NuGet license resolution for unknown licenses
+	SkipDepsDevResolve   bool   // Skip deps.dev license resolution for unknown licenses
+	SkipPackagistResolve bool   // Skip Packagist (Composer) license resolution for unknown licenses
+	SkipPyPIResolve      bool   // Skip PyPI license resolution for unknown licenses
+	SBOMLimit            int    // Max number of SBOMs to enqueue (0 = unlimited)
+	IgnorePrefix         string // Files with this prefix are skipped during local scan (default "_")
+	ExceptionsFile       string // Path to license-exceptions.json
 	// ProjectGroupsFile is the optional mapping file that assigns projects
 	// to parents explicitly (internal/projectgroup). A missing file means
 	// "no explicit rules"; the automatic grouping still applies.
@@ -211,6 +214,9 @@ func Load() (*Config, error) {
 		SkipGitHubResolve:     getEnvBool("SKIP_GITHUB_RESOLVE", false),
 		SkipNPMResolve:        getEnvBool("SKIP_NPM_RESOLVE", false),
 		SkipNuGetResolve:      getEnvBool("SKIP_NUGET_RESOLVE", false),
+		SkipDepsDevResolve:    getEnvBool("SKIP_DEPSDEV_RESOLVE", false),
+		SkipPackagistResolve:  getEnvBool("SKIP_PACKAGIST_RESOLVE", false),
+		SkipPyPIResolve:       getEnvBool("SKIP_PYPI_RESOLVE", false),
 		SBOMLimit:             getEnvInt("SBOM_LIMIT", 0),
 		IgnorePrefix:          getEnv("SBOM_IGNORE_PREFIX", "_"),
 		ExceptionsFile:        getEnv("EXCEPTIONS_FILE", "/data/config/license-exceptions.json"),

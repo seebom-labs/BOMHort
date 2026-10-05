@@ -90,7 +90,19 @@ export interface DependencyNode {
   version: string;
   purl: string;
   license: string;
+  /** Where `license` came from, or why it is unknown (see shared/license-source.ts). */
+  license_source?: string;
   children: number[];
+}
+
+export interface LicenseSourceItem {
+  source: string;
+  origin: string;
+  modifiers: string[];
+  resolved: boolean;
+  package_count: number;
+  sbom_count: number;
+  examples: string[];
 }
 
 export interface LicenseComplianceItem {
@@ -169,6 +181,8 @@ export interface ProjectLicenseViolation {
   source_file: string;
   document_name: string;
   copyleft_count: number;
+  /** Declared licenses that are not on the policy allow-list. */
+  unapproved_count: number;
   unknown_count: number;
   violating_licenses: string[];
   non_compliant_packages: string[];

@@ -19,6 +19,26 @@ import { parentSourceLabel } from '../../shared/parent-source';
 
 type Tab = 'overview' | 'versions' | 'vulns' | 'packages' | 'subprojects';
 
+type VulnRow = VulnerabilityListItem & { pkg_name: string; pkg_version: string };
+
+/**
+ * Splits a PURL into a display name (namespace/name) and version.
+ * Qualifiers and subpath are dropped; an unparseable value is returned as the name.
+ */
+export function splitPurl(purl: string): { pkg_name: string; pkg_version: string } {
+  if (!purl) return { pkg_name: '', pkg_version: '' };
+  const core = purl.split(/[?#]/)[0];
+  const at = core.lastIndexOf('@');
+  const path = at >= 0 ? core.slice(0, at) : core;
+  const version = at >= 0 ? core.slice(at + 1) : '';
+  const slash = path.indexOf('/');
+  const name = path.startsWith('pkg:') && slash >= 0 ? path.slice(slash + 1) : path;
+  const decode = (s: string) => {
+    try { return decodeURIComponent(s); } catch { return s; }
+  };
+  return { pkg_name: decode(name), pkg_version: decode(version) };
+}
+
 /**
  * One project as a unit (#398).
  *
@@ -105,6 +125,11 @@ type Tab = 'overview' | 'versions' | 'vulns' | 'packages' | 'subprojects';
       <div class="stats-row">
         <div class="stat" title="Distinct components across all versions"><strong>{{ detail.package_count | number }}</strong> packages</div>
         <div class="stat" title="Distinct (vulnerability, package) pairs across all versions"><strong>{{ detail.vuln_count | number }}</strong> vulnerabilities</div>
+        <button type="button" class="stat distinct-ids" *ngIf="distinctVulnIds && distinctVulnIds !== vulns.length"
+                (click)="activeTab = 'vulns'"
+                title="Distinct vulnerability IDs — one ID can affect several packages, or several versions of the same package. Click to open the list.">
+          {{ distinctVulnIds | number }} distinct IDs
+        </button>
         <div class="stat critical" *ngIf="detail.critical_vulns">{{ detail.critical_vulns | number }} critical</div>
         <div class="stat high" *ngIf="detail.high_vulns">{{ detail.high_vulns | number }} high</div>
         <div class="stat medium" *ngIf="detail.medium_vulns">{{ detail.medium_vulns | number }} medium</div>
@@ -234,8 +259,12 @@ type Tab = 'overview' | 'versions' | 'vulns' | 'packages' | 'subprojects';
       <!-- Vulnerabilities: one row per (vuln, package), with reach across versions -->
       <div *ngIf="activeTab === 'vulns'" class="tab-content">
         <div *ngIf="vulns.length === 0" class="empty">No vulnerabilities across any version.</div>
+        <p *ngIf="distinctVulnIds && distinctVulnIds !== vulns.length" class="vuln-hint">
+          {{ vulns.length | number }} findings across {{ distinctVulnIds | number }} distinct vulnerability IDs —
+          one row per affected package version, so the same ID appears once for every version that carries it.
+        </p>
         <cdk-virtual-scroll-viewport *ngIf="vulns.length > 0" itemSize="56" class="viewport">
-          <div *cdkVirtualFor="let vuln of vulns; trackBy: trackByVuln" class="vuln-row">
+          <div *cdkVirtualFor="let vuln of vulnRows; trackBy: trackByVuln" class="vuln-row">
             <span class="severity-badge" [class]="'sev-' + vuln.severity.toLowerCase()">{{ vuln.severity }}</span>
             <div class="vuln-info">
               <a [routerLink]="['/cve-impact']" [queryParams]="{vuln: vuln.vuln_id}" class="vuln-id">{{ vuln.vuln_id }}</a>
@@ -247,7 +276,12 @@ type Tab = 'overview' | 'versions' | 'vulns' | 'packages' | 'subprojects';
                   [title]="'Present in ' + vuln.affected_sboms + ' of ' + detail.sbom_count + ' versions'">
               {{ vuln.affected_sboms }}/{{ detail.sbom_count }}
             </span>
-            <span class="purl">{{ vuln.purl }}</span>
+            <!-- Name and version separately: a truncated PURL cuts exactly the
+                 version off, and two versions of one module then read as a duplicate. -->
+            <span class="vuln-pkg" [title]="vuln.purl">
+              <span class="vuln-pkg-name">{{ vuln.pkg_name }}</span>
+              <span class="pkg-version" *ngIf="vuln.pkg_version">{{ vuln.pkg_version }}</span>
+            </span>
           </div>
         </cdk-virtual-scroll-viewport>
       </div>
@@ -432,6 +466,12 @@ type Tab = 'overview' | 'versions' | 'vulns' | 'packages' | 'subprojects';
     .vex-affected { background: var(--severity-critical-bg); color: var(--severity-critical); }
     .vex-under_investigation { background: var(--severity-high-bg); color: var(--status-warning); }
     .purl { color: var(--text-secondary); font-size: 0.7rem; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .vuln-pkg { display: flex; align-items: baseline; gap: 6px; max-width: 420px; min-width: 0; flex-shrink: 1; }
+    .vuln-pkg-name { color: var(--text-secondary); font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .vuln-pkg .pkg-version { flex-shrink: 0; white-space: nowrap; }
+    .vuln-hint { margin: 0 0 8px; font-size: 0.75rem; color: var(--text-secondary); }
+    .stat.distinct-ids { color: var(--text-secondary); cursor: pointer; font-family: inherit; }
+    .stat.distinct-ids:hover { border-color: var(--accent); color: var(--accent); }
 
     /* Reach: in how many of the project's versions. Full reach is emphasised —
        a finding in every version is a project problem, not a version problem. */
@@ -477,6 +517,8 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
   sboms: SBOMListItem[] = [];
   sbomsTotal = 0;
   vulns: VulnerabilityListItem[] = [];
+  vulnRows: VulnRow[] = [];
+  distinctVulnIds = 0;
   packages: ProjectPackageItem[] = [];
   packagesTotal = 0;
   packagesLoading = false;
@@ -550,6 +592,8 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
       this.sboms = res.sboms.data;
       this.sbomsTotal = res.sboms.total;
       this.vulns = res.vulns;
+      this.vulnRows = res.vulns.map((v) => ({ ...v, ...splitPurl(v.purl) }));
+      this.distinctVulnIds = new Set(res.vulns.map((v) => v.vuln_id)).size;
       // Packages total is known from the header without loading the list;
       // the list itself loads on first tab open.
       this.packagesTotal = res.detail.package_count;
@@ -577,10 +621,11 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
     this.licenseSegments = [
       { label: 'Permissive', value: lb['permissive'] || 0, color: '#0D6B5E' },
       { label: 'Copyleft', value: lb['copyleft'] || 0, color: '#C43030' },
+      { label: 'Not Approved', value: lb['unapproved'] || 0, color: '#C07012' },
       { label: 'Unknown', value: lb['unknown'] || 0, color: '#9ca3af' },
     ];
     this.licenseBars = [...this.licenseSegments];
-    this.licenseViolations = (lb['copyleft'] || 0) + (lb['unknown'] || 0);
+    this.licenseViolations = (lb['copyleft'] || 0) + (lb['unapproved'] || 0) + (lb['unknown'] || 0);
 
     this.suppressedVulns = vulns.filter((v) => v.vex_status === 'not_affected').length;
     this.effectiveVulns = Math.max(0, vulns.length - this.suppressedVulns);
@@ -693,6 +738,8 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
     this.sboms = [];
     this.sbomsTotal = 0;
     this.vulns = [];
+    this.vulnRows = [];
+    this.distinctVulnIds = 0;
     this.packages = [];
     this.packagesTotal = 0;
     this.packageSearch = '';

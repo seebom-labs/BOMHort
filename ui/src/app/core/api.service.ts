@@ -10,6 +10,7 @@ import {
   VulnerabilityListItem,
   DependencyNode,
   LicenseComplianceItem,
+  LicenseSourceItem,
   VEXStatementItem,
   ProjectLicenseViolation,
   AffectedProject,
@@ -103,6 +104,10 @@ export class ApiService {
 
   getLicenseCompliance(): Observable<LicenseComplianceItem[]> {
     return this.http.get<LicenseComplianceItem[]>(`${this.baseUrl}/licenses/compliance`);
+  }
+
+  getLicenseSources(): Observable<LicenseSourceItem[]> {
+    return this.http.get<LicenseSourceItem[]>(`${this.baseUrl}/licenses/sources`);
   }
 
   getProjectsWithLicenseViolations(): Observable<ProjectLicenseViolation[]> {

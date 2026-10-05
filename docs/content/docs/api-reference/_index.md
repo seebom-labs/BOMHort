@@ -25,7 +25,7 @@ In headless mode (Helm: `ui.enabled: false`), only the API Gateway is deployed. 
 
 ## Authentication
 
-Authentication is **fully optional** and disabled by default. Enable it via the `AUTH_ENABLED=true` environment variable on the API Gateway. See the [Deployment Guide](/docs/deployment/#6-api-authentication-optional) for full setup instructions.
+Authentication is **fully optional** and disabled by default. Enable it via the `AUTH_ENABLED=true` environment variable on the API Gateway. See the [Deployment Guide](/docs/deployment/#7-api-authentication-optional) for full setup instructions.
 
 ### Two modes (combinable)
 
@@ -171,9 +171,10 @@ Aggregated platform statistics for the dashboard view.
   "medium_vulns": 412,
   "low_vulns": 270,
   "license_breakdown": {
-    "Apache-2.0": 8421,
-    "MIT": 6234,
-    "BSD-3-Clause": 2100
+    "permissive": 16755,
+    "copyleft": 312,
+    "unapproved": 41,
+    "unknown": 18
   },
   "exempted_packages": 14,
   "total_vex_statements": 42,
@@ -619,6 +620,7 @@ Dependency tree reconstructed as a flat array with parent→child index referenc
     "version": "1.7.2",
     "purl": "pkg:golang/github.com/containerd/containerd@v1.7.2",
     "license": "Apache-2.0",
+    "license_source": "declared",
     "children": [1, 2, 3]
   },
   {
@@ -628,12 +630,15 @@ Dependency tree reconstructed as a flat array with parent→child index referenc
     "version": "1.1.12",
     "purl": "pkg:golang/github.com/opencontainers/runc@v1.1.12",
     "license": "Apache-2.0",
+    "license_source": "github",
     "children": [4, 5]
   }
 ]
 ```
 
 The UI reconstructs the tree by following `children` indices. Root nodes are those not referenced as children by any other node.
+
+`license_source` says where `license` came from (`declared`, `github`, `npm`, `nuget`, `depsdev`, `packagist`, `pypi`, optionally with `+latest` / `+normalized`) or, when the license is still unknown, why (`first-party`, `not-published`, `no-license-upstream`, `no-purl`, `unsupported-ecosystem`, `unresolved`). It is omitted for SBOMs ingested before BOMHort recorded it. See [License Resolution](/docs/license-resolution/).
 
 ---
 
@@ -727,6 +732,45 @@ Aggregated license compliance overview across all projects, with exemption detai
         "document_name": "my-project-v1.0"
       }
     ]
+  }
+]
+```
+
+`category` is one of `permissive`, `copyleft`, `unapproved` (a declared license that is not on the policy allow-list, e.g. `LicenseRef-…`, `BSD`, `Public Domain`) or `unknown` (no license information, `NOASSERTION` / `NONE`). Why a license is unknown is answered by `GET /api/v1/licenses/sources` below; the rules are on the [License Resolution](/docs/license-resolution/) page.
+
+### `GET /api/v1/licenses/sources`
+
+How every package across all SBOMs got its license — or why it has none. One row per distinct `license_source` value (see [License Resolution](/docs/license-resolution/)), most frequent first. Packages from SBOMs ingested before sources were recorded are counted as `unrecorded`.
+
+**Response:** `200 OK`
+```json
+[
+  {
+    "source": "declared",
+    "origin": "declared",
+    "modifiers": [],
+    "resolved": true,
+    "package_count": 251204,
+    "sbom_count": 498,
+    "examples": ["golang.org/x/sys", "github.com/stretchr/testify"]
+  },
+  {
+    "source": "depsdev+latest",
+    "origin": "depsdev",
+    "modifiers": ["latest"],
+    "resolved": true,
+    "package_count": 812,
+    "sbom_count": 37,
+    "examples": ["org.apache.commons:commons-pool2"]
+  },
+  {
+    "source": "not-published",
+    "origin": "not-published",
+    "modifiers": [],
+    "resolved": false,
+    "package_count": 242,
+    "sbom_count": 19,
+    "examples": ["athenz-zms", "internal-ui"]
   }
 ]
 ```
@@ -889,7 +933,7 @@ percent-encoded. `404` when no SBOM resolves to that name.
   "latest_sbom_id": "8ca2efd4-9b83-5b93-a013-d53b7ddc54a9",
   "clusters": ["prod-eu"],
   "namespaces": ["platform"],
-  "license_breakdown": { "permissive": 7, "copyleft": 3, "unknown": 1 },
+  "license_breakdown": { "permissive": 7, "copyleft": 3, "unapproved": 1, "unknown": 1 },
   "parent": "platform-suite",
   "parent_source": "repo",
   "parent_owner": "acme-platform",
@@ -936,7 +980,7 @@ or PURL.
 
 ### `GET /api/v1/projects/license-compliance`
 
-Projects with copyleft or unknown license packages (filtered by active exceptions).
+Projects with copyleft, unapproved or unknown license packages (filtered by active exceptions). `unapproved_count` counts packages whose declared license is not on the policy allow-list; `unknown_count` counts packages without license information.
 
 **Response:** `200 OK`
 ```json
@@ -946,8 +990,9 @@ Projects with copyleft or unknown license packages (filtered by active exception
     "source_file": "my-project.spdx.json",
     "document_name": "my-project-v2.1",
     "copyleft_count": 3,
+    "unapproved_count": 2,
     "unknown_count": 1,
-    "violating_licenses": ["LGPL-2.1-only", "UNKNOWN"],
+    "violating_licenses": ["LGPL-2.1-only", "CC0-1.0", "NOASSERTION"],
     "non_compliant_packages": ["github.com/some/lgpl-lib", "github.com/unknown/pkg"]
   }
 ]
@@ -1294,7 +1339,8 @@ Per-cluster dashboard statistics including severity breakdown and license distri
   "license_breakdown": {
     "permissive": 9800,
     "copyleft": 340,
-    "unknown": 2260
+    "unapproved": 410,
+    "unknown": 1850
   },
   "last_ingested": "2026-06-01T14:30:00Z"
 }

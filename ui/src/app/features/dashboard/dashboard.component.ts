@@ -301,6 +301,7 @@ export class DashboardComponent implements OnInit {
     this.licenseSegments = [
       { label: 'Permissive', value: lb['permissive'] || 0, color: '#0D6B5E' },
       { label: 'Copyleft', value: lb['copyleft'] || 0, color: '#C43030' },
+      { label: 'Not Approved', value: lb['unapproved'] || 0, color: '#C07012' },
       { label: 'Exempted', value: s.exempted_packages || 0, color: '#E8871E' },
       { label: 'Unknown', value: lb['unknown'] || 0, color: '#9ca3af' },
     ];

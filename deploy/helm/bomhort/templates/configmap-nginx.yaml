@@ -22,6 +22,15 @@ data:
         ""      "${BOMHORT_AUTH_HEADER_VALUE}";
     }
 
+    # index.html must be revalidated on every load: it names the hashed JS
+    # chunks, so a cached copy keeps serving the previous build after an upgrade.
+    # The chunks themselves are immutable (see the static-asset location below).
+    # An empty value makes add_header emit nothing.
+    map $uri $bomhort_cache_control {
+        default      "";
+        ~\.html$     "no-cache";
+    }
+
     server {
         listen 80;
         server_name _;
@@ -31,6 +40,10 @@ data:
 
         # Use kube-dns for runtime DNS resolution (prevents crash if upstream isn't ready yet).
         resolver kube-dns.kube-system.svc.cluster.local valid=10s;
+
+        # Inherited only by locations without their own add_header, i.e. the
+        # SPA fallback that serves index.html.
+        add_header Cache-Control $bomhort_cache_control always;
 
         # Angular routing: serve index.html for all non-file routes.
         location / {

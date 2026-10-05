@@ -182,3 +182,25 @@ func TestRepoKey(t *testing.T) {
 		})
 	}
 }
+
+func TestExtractGitHubRepo_GopkgInRedirectRule(t *testing.T) {
+	tests := []struct {
+		purl, owner, repo string
+		ok                bool
+	}{
+		{"pkg:golang/gopkg.in/bsm/ratelimit.v1@v1.0.0-20170922094635-f56db5e73a5e", "bsm", "ratelimit", true},
+		{"pkg:golang/gopkg.in/couchbaselabs/gojcbmock.v1@v1.0.4", "couchbaselabs", "gojcbmock", true},
+		{"pkg:golang/gopkg.in/ini.v1@v1.67.0", "go-ini", "ini", true},
+		{"pkg:golang/gopkg.in/user/pkg.v2/subpkg@v2.0.0", "user", "pkg", true},
+		// The well-known table still wins over the generic rule.
+		{"pkg:golang/gopkg.in/yaml.v3@v3.0.1", "go-yaml", "yaml", true},
+		{"pkg:golang/gopkg.in/noversion@v1.0.0", "", "", false},
+		{"pkg:golang/gopkg.in/user/pkg.vx@v1.0.0", "", "", false},
+	}
+	for _, tc := range tests {
+		owner, repo, ok := ExtractGitHubRepo(tc.purl)
+		if owner != tc.owner || repo != tc.repo || ok != tc.ok {
+			t.Errorf("ExtractGitHubRepo(%q) = (%q, %q, %v), want (%q, %q, %v)", tc.purl, owner, repo, ok, tc.owner, tc.repo, tc.ok)
+		}
+	}
+}

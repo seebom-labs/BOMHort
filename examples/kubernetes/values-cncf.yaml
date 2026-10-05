@@ -131,6 +131,9 @@ parsingWorker:
   skipGitHubResolve: false
   skipNPMResolve: false
   skipNuGetResolve: false
+  skipDepsDevResolve: false
+  skipPackagistResolve: false
+  skipPyPIResolve: false
   resources:
     requests: { cpu: 250m, memory: 512Mi }
     limits:   { cpu: "1", memory: 1Gi }
@@ -204,4 +207,3 @@ cveRefresher:
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits:   { cpu: 500m, memory: 512Mi }
-

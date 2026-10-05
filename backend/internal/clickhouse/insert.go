@@ -55,7 +55,7 @@ func (c *Client) InsertSBOMPackages(ctx context.Context, pkg *models.SBOMPackage
 		`INSERT INTO sbom_packages (
 			ingested_at, sbom_id, source_file,
 			package_spdx_ids, package_names, package_versions,
-			package_purls, package_licenses,
+			package_purls, package_licenses, package_license_sources,
 			rel_source_indices, rel_target_indices, rel_types,
 			cluster, namespace, project
 		)`)
@@ -72,6 +72,7 @@ func (c *Client) InsertSBOMPackages(ctx context.Context, pkg *models.SBOMPackage
 		pkg.PackageVersions,
 		pkg.PackagePURLs,
 		pkg.PackageLicenses,
+		licenseSourcesFor(pkg),
 		pkg.RelSourceIndices,
 		pkg.RelTargetIndices,
 		pkg.RelTypes,
@@ -83,6 +84,14 @@ func (c *Client) InsertSBOMPackages(ctx context.Context, pkg *models.SBOMPackage
 	}
 
 	return batch.Send()
+}
+
+// licenseSourcesFor returns the license sources padded or trimmed to one entry
+// per package, so the parallel arrays never disagree in length.
+func licenseSourcesFor(pkg *models.SBOMPackages) []string {
+	out := make([]string, len(pkg.PackageLicenses))
+	copy(out, pkg.PackageLicenseSources)
+	return out
 }
 
 // InsertVulnerabilities batch-inserts vulnerability rows for an SBOM.

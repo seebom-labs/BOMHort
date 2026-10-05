@@ -1,0 +1,25 @@
+-- 024_add_package_license_sources.up.sql
+-- Where each package's license came from, or why it has none.
+--
+-- package_license_sources is parallel to package_licenses (same index = same
+-- package). A resolved license names its origin, optionally followed by
+-- "+"-joined modifiers:
+--
+--   declared | github | npm | nuget | depsdev | packagist | pypi
+--   …+latest       the license of the newest release was used because the
+--                  SBOM's version was missing or unknown to the registry
+--   …+normalized   free text ("Apache License 2.0") was rewritten to SPDX
+--
+-- A package whose license is still unknown carries the reason instead:
+--
+--   first-party | not-published | no-license-upstream | no-purl |
+--   unsupported-ecosystem | unresolved
+--
+-- The vocabulary is defined in internal/license/source.go and documented on
+-- the "License Resolution" docs page. It makes every heuristic visible per
+-- package and lets the UI separate actionable gaps from ones where looking
+-- further makes no sense.
+--
+-- Cheap ADD COLUMN, no ORDER BY change. Rows ingested before this migration
+-- have an empty array; readers treat a missing entry as "unrecorded".
+ALTER TABLE sbom_packages ADD COLUMN IF NOT EXISTS package_license_sources Array(LowCardinality(String)) DEFAULT [];

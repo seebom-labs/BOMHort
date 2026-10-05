@@ -196,6 +196,17 @@ func main() {
 		writeJSON(w, http.StatusOK, items)
 	})
 
+	// Where package licenses came from, or why they are missing (migration 024).
+	mux.HandleFunc("GET /api/v1/licenses/sources", func(w http.ResponseWriter, r *http.Request) {
+		items, err := chClient.QueryLicenseSources(r.Context())
+		if err != nil {
+			log.Printf("ERROR: license sources: %v", err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch license sources")
+			return
+		}
+		writeJSON(w, http.StatusOK, items)
+	})
+
 	// SBOM dependency tree.
 	mux.HandleFunc("GET /api/v1/sboms/{id}/dependencies", func(w http.ResponseWriter, r *http.Request) {
 		sbomID := r.PathValue("id")

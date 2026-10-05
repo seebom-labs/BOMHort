@@ -118,8 +118,43 @@ func ExtractGitHubRepo(purl string) (owner, repo string, ok bool) {
 				}
 			}
 		}
+		if owner, repo, ok := gopkgInRepo(modulePath); ok {
+			return owner, repo, true
+		}
 	}
 
+	return "", "", false
+}
+
+// gopkgInRepo applies gopkg.in's own redirect rule to modules missing from
+// the well-known table: gopkg.in/pkg.vN serves github.com/go-pkg/pkg and
+// gopkg.in/user/pkg.vN serves github.com/user/pkg.
+func gopkgInRepo(modulePath string) (owner, repo string, ok bool) {
+	rest, found := strings.CutPrefix(modulePath, "gopkg.in/")
+	if !found {
+		return "", "", false
+	}
+	parts := strings.Split(rest, "/")
+	versioned := func(seg string) (string, bool) {
+		i := strings.LastIndex(seg, ".v")
+		if i <= 0 || i+2 >= len(seg) {
+			return "", false
+		}
+		for _, r := range seg[i+2:] {
+			if r < '0' || r > '9' {
+				return "", false
+			}
+		}
+		return seg[:i], true
+	}
+	if name, ok := versioned(parts[0]); ok {
+		return "go-" + name, name, true
+	}
+	if len(parts) >= 2 && parts[0] != "" {
+		if name, ok := versioned(parts[1]); ok {
+			return parts[0], name, true
+		}
+	}
 	return "", "", false
 }
 

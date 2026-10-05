@@ -31,6 +31,9 @@ data:
   SKIP_GITHUB_RESOLVE: {{ .Values.parsingWorker.skipGitHubResolve | quote }}
   SKIP_NPM_RESOLVE: {{ .Values.parsingWorker.skipNPMResolve | default false | quote }}
   SKIP_NUGET_RESOLVE: {{ .Values.parsingWorker.skipNuGetResolve | default false | quote }}
+  SKIP_DEPSDEV_RESOLVE: {{ .Values.parsingWorker.skipDepsDevResolve | default false | quote }}
+  SKIP_PACKAGIST_RESOLVE: {{ .Values.parsingWorker.skipPackagistResolve | default false | quote }}
+  SKIP_PYPI_RESOLVE: {{ .Values.parsingWorker.skipPyPIResolve | default false | quote }}
   SBOM_LIMIT: {{ .Values.ingestionWatcher.sbomLimit | quote }}
   EXCEPTIONS_FILE: {{ .Values.licenseExceptions.mountPath | quote }}
   {{- /* projectGroups may be absent on `helm upgrade --reuse-values` from a
@@ -66,4 +69,3 @@ data:
   S3_BUCKETS: {{ .Values.s3.buckets | toJson | quote }}
   {{- end }}
   {{- end }}
-

@@ -95,7 +95,16 @@ func Parse(r io.Reader, sourceFile, sha256Hash string) (*ParseResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read SBOM data: %w", err)
 	}
+	result, err := dispatch(data, sourceFile, sha256Hash)
+	if err != nil {
+		return nil, err
+	}
+	normalizeNPMIdentities(&result.Packages)
+	return result, nil
+}
 
+// dispatch routes the raw document to the parser backend for its format.
+func dispatch(data []byte, sourceFile, sha256Hash string) (*ParseResult, error) {
 	// If protobom backend is enabled, delegate everything to it.
 	if UseProtobom() {
 		return parseWithProtobom(data, sourceFile, sha256Hash)

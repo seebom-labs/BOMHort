@@ -307,7 +307,33 @@ func (n *exprNode) evaluate(mode ExpressionMode, lookup func(string) Category) C
 // full clause explicitly; otherwise the exception does not change the
 // classification of L — an exception narrows obligations but never turns a
 // copyleft license permissive on its own.
+//
+// A leaf the policy does not list is a declared license nobody approved:
+// unapproved, i.e. a violation. Only a leaf that carries no license
+// information at all (NOASSERTION, NONE) stays unknown.
 func lookupLeaf(id string, lookup func(string) Category) Category {
+	if cat := resolveLeaf(id, lookup); cat != CategoryUnknown {
+		return cat
+	}
+	if isNoLicenseInfo(id) {
+		return CategoryUnknown
+	}
+	return CategoryUnapproved
+}
+
+// isNoLicenseInfo reports whether id is a placeholder for "no license
+// information" rather than a declared license.
+func isNoLicenseInfo(id string) bool {
+	switch strings.ToUpper(strings.TrimSpace(id)) {
+	case "", "NOASSERTION", "NONE", "UNKNOWN":
+		return true
+	}
+	return false
+}
+
+// resolveLeaf tries the policy lookup on the identifier and its alternative
+// spellings. CategoryUnknown means "not in the policy".
+func resolveLeaf(id string, lookup func(string) Category) Category {
 	if cat := lookup(id); cat != CategoryUnknown {
 		return cat
 	}
@@ -322,44 +348,61 @@ func lookupLeaf(id string, lookup func(string) Category) Category {
 		}
 		return lookup(base)
 	}
-	return CategoryUnknown
+	return lookupDeprecated(id, lookup)
 }
 
-// combineChoice is the OR rule: the consumer picks the best option. One
-// permissive operand is enough. Failing that, an unknown operand keeps the
-// result unknown — it needs review and may turn out permissive — and only an
-// all-copyleft choice is copyleft.
+// lookupDeprecated maps deprecated SPDX identifiers onto their current form.
+// The bare GNU IDs ("GPL-2.0", "LGPL-2.1", "AGPL-3.0") mean "-only", and
+// "GPL-2.0-with-classpath-exception" is the old spelling of
+// "GPL-2.0-only WITH Classpath-exception-2.0". Without this, a policy that
+// lists only the current IDs reports these copyleft licenses as unknown.
+func lookupDeprecated(id string, lookup func(string) Category) Category {
+	base := id
+	if b, _, ok := strings.Cut(id, "-with-"); ok {
+		base = b
+		if cat := lookup(base); cat != CategoryUnknown {
+			return cat
+		}
+	}
+	return lookup(base + "-only")
+}
+
+// severity orders the categories from best to worst for folding:
+// permissive < unknown (needs review, may turn out fine) < unapproved
+// (declared, not on the allow-list) < copyleft.
+func severity(c Category) int {
+	switch c {
+	case CategoryPermissive:
+		return 0
+	case CategoryUnknown:
+		return 1
+	case CategoryUnapproved:
+		return 2
+	default:
+		return 3
+	}
+}
+
+// combineChoice is the OR rule: the consumer picks the best option, so the
+// least severe operand wins. One permissive operand is enough.
 func combineChoice(cats []Category) Category {
-	sawUnknown := false
-	for _, c := range cats {
-		switch c {
-		case CategoryPermissive:
-			return CategoryPermissive
-		case CategoryUnknown:
-			sawUnknown = true
+	best := cats[0]
+	for _, c := range cats[1:] {
+		if severity(c) < severity(best) {
+			best = c
 		}
 	}
-	if sawUnknown {
-		return CategoryUnknown
-	}
-	return CategoryCopyleft
+	return best
 }
 
-// combineConjunction is the strict AND rule: every operand binds. One
-// copyleft operand makes the whole expression copyleft; otherwise one
-// unknown operand makes it unknown; only all-permissive is permissive.
+// combineConjunction is the strict AND rule: every operand binds, so the
+// most severe operand wins. Only all-permissive is permissive.
 func combineConjunction(cats []Category) Category {
-	sawUnknown := false
-	for _, c := range cats {
-		switch c {
-		case CategoryCopyleft:
-			return CategoryCopyleft
-		case CategoryUnknown:
-			sawUnknown = true
+	worst := cats[0]
+	for _, c := range cats[1:] {
+		if severity(c) > severity(worst) {
+			worst = c
 		}
 	}
-	if sawUnknown {
-		return CategoryUnknown
-	}
-	return CategoryPermissive
+	return worst
 }

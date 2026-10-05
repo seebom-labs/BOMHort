@@ -83,6 +83,9 @@ cp .env.example .env
 | `GITHUB_TOKEN` | *(empty)* | GitHub personal access token for license resolution. Increases rate limit from 60 to 5000 req/h. No scopes needed. |
 | `SKIP_NPM_RESOLVE` | `false` | Skip npm registry license resolution for `pkg:npm/*` packages with `NOASSERTION`/empty licenses. |
 | `SKIP_NUGET_RESOLVE` | `false` | Skip NuGet license resolution for `pkg:nuget/*` packages with `NOASSERTION`/empty licenses. Legacy packages without `licenseExpression` fall back to their GitHub repository license. |
+| `SKIP_DEPSDEV_RESOLVE` | `false` | Skip deps.dev fallback license resolution for Maven, PyPI, Cargo, Go, NuGet and npm packages with `NOASSERTION`/empty licenses. Composer is not supported by deps.dev. |
+| `SKIP_PACKAGIST_RESOLVE` | `false` | Skip Packagist license resolution for `pkg:composer/*` packages (development branches use the branch's or the latest release's license). |
+| `SKIP_PYPI_RESOLVE` | `false` | Skip PyPI license resolution for `pkg:pypi/*` packages deps.dev could not resolve (free-text licenses, trove classifiers). |
 | `LICENSE_EXPRESSION_MODE` | *(empty → `strict`)* | How compound SPDX expressions (`Apache-2.0 AND MIT`, `MIT OR GPL-2.0-only`) are classified: `strict` (SPDX semantics), `permissive-wins` (one permissive operand suffices) or `off` (whole string looked up verbatim). Overrides `expressionMode` in `license-policy.json`. See "License Policy". |
 | `CLUSTER_NAME` | *(empty)* | Cluster identifier for multi-cluster deployments. All ingested data is tagged with this value. Empty = single-instance mode. |
 | `NAMESPACE` | *(empty)* | Default deployment-namespace label (#138) stamped onto all ingested data. Overridable per bucket and per upload (`?namespace=`). |
@@ -118,7 +121,7 @@ Two JSON config files control license governance. Edit them and restart the affe
 
 | File | Mounted in | Purpose |
 |------|-----------|---------|
-| `sboms/license-policy.json` | API Gateway, Workers | Defines which SPDX IDs are **permissive** vs. **copyleft**. Anything not listed = `unknown`. |
+| `sboms/license-policy.json` | API Gateway, Workers | Defines which SPDX IDs are **permissive** vs. **copyleft**. A declared license not listed = `unapproved` (policy violation); no license information = `unknown`. |
 | `sboms/license-exceptions.json` | API Gateway, Workers | Empty by default. Explicit organization-approved blanket or package/license/project exceptions. [Structure and configuration](examples/license-exceptions/README.md). |
 
 ### Custom Theme (CSS)
@@ -482,6 +485,7 @@ See the [API Reference](https://docs.bomhort.dev/docs/api-reference/) for comple
 | GET | `/api/v1/vulnerabilities?page=&page_size=` | Paginated vulnerabilities (every finding, VEX status attached) |
 | GET | `/api/v1/vulnerabilities/{id}/affected-projects` | All projects affected by a CVE |
 | GET | `/api/v1/licenses/compliance` | Global license compliance overview |
+| GET | `/api/v1/licenses/sources` | Where package licenses came from, or why they are missing |
 | GET | `/api/v1/projects/license-compliance` | Projects with license violations (filtered by exceptions) |
 | GET | `/api/v1/license-exceptions` | Active license exceptions (read-only, from config file) |
 | GET | `/api/v1/license-policy` | Active license classification policy (permissive/copyleft lists) |
@@ -532,7 +536,8 @@ The bundled default policy is derived from the [CNCF Allowed Third-Party License
 SBOM generators frequently declare SPDX *expressions* rather than single IDs —
 `Apache-2.0 AND BSD-3-Clause AND MIT`, `MIT OR GPL-2.0-only`,
 `GPL-2.0-only WITH Classpath-exception-2.0`. BOMHort parses these (precedence
-`WITH` > `AND` > `OR`, parentheses, case-insensitive operators, deprecated `+`)
+`WITH` > `AND` > `OR`, parentheses, case-insensitive operators, deprecated `+`,
+free-text spellings such as `MPL 2.0` → `MPL-2.0`)
 and folds the operands into one category. The rule is configurable:
 
 | Mode | `Apache-2.0 AND MIT` | `MIT AND GPL-3.0-only` | `MIT OR GPL-3.0-only` |

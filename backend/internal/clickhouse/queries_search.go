@@ -258,7 +258,7 @@ func (c *Client) QuerySBOMDetail(ctx context.Context, sbomID string) (*dto.SBOMD
 	return &detail, nil
 }
 
-// QueryProjectsWithLicenseViolations finds all SBOMs that have copyleft or unknown licenses,
+// QueryProjectsWithLicenseViolations finds all SBOMs that have copyleft, unapproved or unknown licenses,
 // excluding any licenses/packages covered by exceptions.
 func (c *Client) QueryProjectsWithLicenseViolations(ctx context.Context, exceptions *license.ExceptionIndex) ([]dto.ProjectLicenseViolation, error) {
 	rows, err := c.Conn.Query(ctx, `
@@ -272,7 +272,7 @@ func (c *Client) QueryProjectsWithLicenseViolations(ctx context.Context, excepti
 			lc.non_compliant_packages
 		FROM (SELECT * FROM license_compliance FINAL) AS lc
 		LEFT JOIN (SELECT * FROM sboms FINAL) AS s ON s.sbom_id = lc.sbom_id
-		WHERE lc.category IN ('copyleft', 'unknown')
+		WHERE lc.category IN ('copyleft', 'unapproved', 'unknown')
 		ORDER BY lc.sbom_id, lc.license_id
 	`)
 	if err != nil {
@@ -285,6 +285,7 @@ func (c *Client) QueryProjectsWithLicenseViolations(ctx context.Context, excepti
 		sourceFile   string
 		documentName string
 		copyleft     uint64
+		unapproved   uint64
 		unknown      uint64
 		licenses     []string
 		packages     []string
@@ -329,9 +330,12 @@ func (c *Client) QueryProjectsWithLicenseViolations(ctx context.Context, excepti
 			agg[sbomID] = entry
 			order = append(order, sbomID)
 		}
-		if category == "copyleft" {
+		switch category {
+		case "copyleft":
 			entry.copyleft += uint64(len(violatingPkgs))
-		} else {
+		case "unapproved":
+			entry.unapproved += uint64(len(violatingPkgs))
+		default:
 			entry.unknown += uint64(len(violatingPkgs))
 		}
 		entry.licenses = append(entry.licenses, licenseID)
@@ -362,6 +366,7 @@ func (c *Client) QueryProjectsWithLicenseViolations(ctx context.Context, excepti
 			SourceFile:           e.sourceFile,
 			DocumentName:         e.documentName,
 			CopyleftCount:        e.copyleft,
+			UnapprovedCount:      e.unapproved,
 			UnknownCount:         e.unknown,
 			ViolatingLicenses:    uniqueLics,
 			NonCompliantPackages: e.packages,

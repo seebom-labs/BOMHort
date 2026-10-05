@@ -122,6 +122,18 @@ describe('ApiService', () => {
     req.flush([]);
   });
 
+  it('should fetch license sources', () => {
+    service.getLicenseSources().subscribe((items) => {
+      expect(items.length).toBe(1);
+      expect(items[0].source).toBe('depsdev+latest');
+    });
+
+    const req = httpMock.expectOne('/api/v1/licenses/sources');
+    expect(req.request.method).toBe('GET');
+    req.flush([{ source: 'depsdev+latest', origin: 'depsdev', modifiers: ['latest'], resolved: true,
+      package_count: 3, sbom_count: 1, examples: ['a'] }]);
+  });
+
   it('should fetch SBOM detail', () => {
     const mockDetail: SBOMDetail = {
       sbom_id: 'abc-123',

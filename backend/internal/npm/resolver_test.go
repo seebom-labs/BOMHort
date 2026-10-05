@@ -119,8 +119,45 @@ func TestResolve(t *testing.T) {
 	if entries["@istanbuljs/load-nyc-config@1.1.0"] != "ISC" {
 		t.Errorf("cache export missing entry: %v", entries)
 	}
-	if v, ok := entries["missing@9.9.9"]; !ok || v != "" {
-		t.Errorf("negative result should be cached as empty string: %v", entries)
+	if v := entries["missing@9.9.9"]; v != "!not-published" {
+		t.Errorf("404 should be cached with its reason, got %q", v)
+	}
+	if v := entries["private@1.0.0"]; v != "!no-license-upstream" {
+		t.Errorf("license-less manifest should be cached with its reason, got %q", v)
+	}
+
+	explain := []struct {
+		purl    string
+		handled bool
+		reason  string
+		latest  bool
+	}{
+		{"pkg:npm/missing@9.9.9", true, "not-published", false},
+		{"pkg:npm/private@1.0.0", true, "no-license-upstream", false},
+		{"pkg:npm/lodash", true, "", true},
+		{"pkg:npm/%40istanbuljs/load-nyc-config@1.1.0", true, "", false},
+		{"pkg:golang/github.com/foo/bar@v1", false, "", false},
+	}
+	for _, tc := range explain {
+		handled, reason, latest := r.Explain(tc.purl)
+		if handled != tc.handled || reason != tc.reason || latest != tc.latest {
+			t.Errorf("Explain(%s) = (%v, %q, %v), want (%v, %q, %v)",
+				tc.purl, handled, reason, latest, tc.handled, tc.reason, tc.latest)
+		}
+	}
+}
+
+func TestPreloadedNegativeKeepsReason(t *testing.T) {
+	r := NewResolverWithRegistry("http://127.0.0.1:0")
+	r.PreloadCache(map[string]string{"gone@1.0.0": "!not-published", "legacy@1.0.0": ""})
+	if got := r.Resolve(context.Background(), "pkg:npm/gone@1.0.0"); got != "" {
+		t.Errorf("negative marker must not leak as a license, got %q", got)
+	}
+	if _, reason, _ := r.Explain("pkg:npm/gone@1.0.0"); reason != "not-published" {
+		t.Errorf("reason lost across preload: %q", reason)
+	}
+	if _, reason, _ := r.Explain("pkg:npm/legacy@1.0.0"); reason != "" {
+		t.Errorf("legacy negative has no reason, got %q", reason)
 	}
 }
 

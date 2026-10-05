@@ -100,8 +100,8 @@ func main() {
 		log.Println("GitHub license resolver disabled (SKIP_GITHUB_RESOLVE=true)")
 	}
 
-	// Initialize package-registry license resolvers (npm, NuGet) for licenses
-	// that are still unknown after the GitHub pass.
+	// Initialize package-registry license resolvers (npm, NuGet, deps.dev)
+	// for licenses that are still unknown after the GitHub pass.
 	registryResolvers := newRegistryResolvers(context.Background(), cfg, chClient, ghResolver)
 
 	// Initialize S3 client if S3 buckets are configured.
@@ -360,40 +360,36 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 		}
 	}
 
-	// 2. Resolve unknown licenses via GitHub API BEFORE inserting into ClickHouse,
-	// so that sbom_packages.package_licenses contains the resolved values.
+	// 2.–2d. Resolve unknown licenses (GitHub, then package registries),
+	// normalise free-text spellings and record each package's license source
+	// BEFORE inserting into ClickHouse, so sbom_packages.package_licenses holds
+	// the resolved values. See resolvePackageLicenses.
+	var ghLookup githubLookup
+	archived := 0
 	if ghResolver != nil {
-		resolved := 0
-		archived := 0
-		for i, lic := range result.Packages.PackageLicenses {
-			purl := ""
-			if i < len(result.Packages.PackagePURLs) {
-				purl = result.Packages.PackagePURLs[i]
+		ghLookup = func(ctx context.Context, purl string) string {
+			meta := ghResolver.ResolveWithMetadata(ctx, purl)
+			if meta == nil {
+				return ""
 			}
-			if purl == "" {
-				continue
+			if meta.Archived {
+				archived++
 			}
-
-			// For unknown licenses, fetch full metadata (license + archived status)
-			if lic == "" || lic == "NOASSERTION" || lic == "NONE" {
-				if meta := ghResolver.ResolveWithMetadata(ctx, purl); meta != nil {
-					if meta.SPDXID != "" {
-						result.Packages.PackageLicenses[i] = meta.SPDXID
-						resolved++
-					}
-					if meta.Archived {
-						archived++
-					}
-				}
-			}
+			return meta.SPDXID
 		}
-		if resolved > 0 {
-			log.Printf("  Resolved %d unknown licenses via GitHub API", resolved)
+	}
+	sources, resolvedBy := resolvePackageLicenses(ctx, ghLookup, registryResolvers,
+		result.Packages.PackagePURLs, result.Packages.PackageLicenses, result.Packages.RootIndices)
+	result.Packages.PackageLicenseSources = sources
+	for name, n := range resolvedBy {
+		if n > 0 {
+			log.Printf("  Resolved %d unknown licenses via %s", n, name)
 		}
-		if archived > 0 {
-			log.Printf("  ⚠️  Found %d packages using ARCHIVED GitHub repos", archived)
-		}
-		// Persist caches to ClickHouse.
+	}
+	if archived > 0 {
+		log.Printf("  ⚠️  Found %d packages using ARCHIVED GitHub repos", archived)
+	}
+	if ghResolver != nil {
 		if entries := ghResolver.CacheEntries(); len(entries) > 0 {
 			_ = chClient.InsertGitHubLicenseCache(ctx, entries)
 		}
@@ -401,9 +397,7 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 			_ = chClient.InsertGitHubRepoMetadata(ctx, metaEntries)
 		}
 	}
-
-	// 2b. Resolve remaining unknown licenses via package registries (npm, NuGet).
-	resolveViaRegistries(ctx, chClient, registryResolvers, result.Packages.PackagePURLs, result.Packages.PackageLicenses)
+	persistRegistryCaches(ctx, chClient, registryResolvers)
 
 	// 3. Insert SBOM metadata. Every row written from here on carries the
 	// job's ownership dimensions (#131 cluster, #138 namespace, #57 project).
@@ -528,9 +522,10 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 	}
 
 	// 6. License compliance check (uses the already-resolved licenses).
-	// The described root (the product itself) is not a dependency and must not
-	// show up in the license breakdown, e.g. as a NOASSERTION finding.
-	licNames, licLicenses := excludeIndices(result.Packages.PackageNames, result.Packages.PackageLicenses, result.Packages.RootIndices)
+	// The described root (the product itself) and the project's own workspace
+	// packages are not dependencies and must not show up in the license
+	// breakdown, e.g. as NOASSERTION findings.
+	licNames, licLicenses := excludeIndices(result.Packages.PackageNames, result.Packages.PackageLicenses, licenseCheckSkips(result.Packages.RootIndices, result.Packages.PackagePURLs))
 	licResults := license.CheckWithExceptions(licNames, licLicenses, exceptions, result.SBOM.DocumentName)
 	if len(licResults) > 0 {
 		licModels := make([]models.LicenseCompliance, len(licResults))

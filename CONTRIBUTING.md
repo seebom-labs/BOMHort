@@ -37,9 +37,11 @@ See the [Development Guide](https://docs.bomhort.dev/docs/development/) for deta
 
 - Standard idiomatic Go with explicit error handling
 - HTTP routing via Go 1.22+ stdlib (`net/http` method-pattern registration)
-- Only 4 direct dependencies — keep it minimal
+- Only 6 direct dependencies — keep it minimal; adding one is a maintainer decision
 - Use `goccy/go-json` for JSON parsing
 - All ClickHouse queries use parameterized queries (`?` placeholders)
+- License heuristics are documented decisions: a new or changed rule needs a decision-log entry and table row on the [License Resolution](https://docs.bomhort.dev/docs/license-resolution/) page plus a golden-fixture package — `TestLicensePipelineGolden` and `TestDocsLicenseResolutionInSync` fail otherwise
+- Never guess ambiguous license names (`BSD`, `Apache Software License`, `Public Domain`): they are kept as declared and categorized unapproved. A resolver never overrides a declared license, and every remaining `NOASSERTION` records a reason from `license.UnresolvedReasons`
 
 ### Angular (Frontend)
 
@@ -53,6 +55,7 @@ See the [Development Guide](https://docs.bomhort.dev/docs/development/) for deta
 
 - All new features must have tests
 - Run `cd backend && go test ./... -count=1 -race` before submitting
+- Changed or added a ClickHouse query? Add it to `TestQueriesExecute` and run it against a live database: `make dev-up`, then `CLICKHOUSE_HOST=localhost go test ./internal/clickhouse/ -run TestQueriesExecute` (skipped without `CLICKHOUSE_HOST`)
 - See [Testing Guide](https://docs.bomhort.dev/docs/development/testing/) for patterns and conventions
 
 ### Demo SBOMs
@@ -200,7 +203,7 @@ recommend: "let a human's review, which the plugin also counts, satisfy the prot
 
 ## Boundaries
 
-- **Ask first** before adding new third-party dependencies, modifying the ClickHouse schema, or changing Kubernetes manifest structures
+- **Ask first** before adding new third-party dependencies, modifying the ClickHouse schema, or changing Kubernetes manifest structures. A new migration takes the next free number in the Schema Change Register in `ROADMAP.md` — check upstream `main` and open PRs first, numbers collide easily
 - **Never** commit secrets or API keys
 - **Never** add write APIs for license exceptions (frontend is public)
 - **Never** use a relational database for core SBOM data

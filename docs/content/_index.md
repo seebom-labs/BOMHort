@@ -46,10 +46,10 @@ Automatic OSV API lookups for every package URL.
 Daily CVE Refresher finds newly disclosed vulnerabilities without re-scanning.
 {{% /blocks/feature %}}
 
-{{% blocks/feature icon="fa-balance-scale" title="License Governance" url="/docs/deployment/#2-license-exceptions" %}}
+{{% blocks/feature icon="fa-balance-scale" title="License Governance" url="/docs/license-resolution/" %}}
 <img class="fb-icon-lg me-1" src="/images/flowbite/scale-balanced.svg" alt="">
 Externalized license policy and exceptions.
-A permissive/copyleft default policy out of the box — replace it with your own.
+Missing licenses are resolved from public registries — every package records where its license came from, or why it is unknown.
 {{% /blocks/feature %}}
 
 {{< /blocks/section >}}
