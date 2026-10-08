@@ -66,11 +66,11 @@ func TestFetchLicense_OtherClassifiedFromContent(t *testing.T) {
 
 	r := newTestResolverWithServer(server)
 
-	if got := r.fetchLicense(context.Background(), "protocolbuffers", "protobuf"); got != "BSD-3-Clause" {
-		t.Errorf("expected text classification to yield BSD-3-Clause, got %q", got)
+	if got, err := r.fetchLicense(context.Background(), "protocolbuffers", "protobuf"); err != nil || got != "BSD-3-Clause" {
+		t.Errorf("expected text classification to yield BSD-3-Clause, got %q (err %v)", got, err)
 	}
-	if got := r.fetchLicense(context.Background(), "acme", "eula"); got != "" {
-		t.Errorf("proprietary text must not be classified, got %q", got)
+	if got, err := r.fetchLicense(context.Background(), "acme", "eula"); err != nil || got != "" {
+		t.Errorf("proprietary text must not be classified, got %q (err %v)", got, err)
 	}
 }
 

@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
+	gh "github.com/seebom-labs/bomhort/backend/internal/github"
 	"github.com/seebom-labs/bomhort/backend/internal/license"
 )
 
@@ -80,21 +83,24 @@ func TestResolvePackageLicenses(t *testing.T) {
 	licenses := []string{"Apache-2.0", "NOASSERTION", "", "NONE", "NOASSERTION", "NOASSERTION"} // one more license than purls
 
 	githubCalls := map[string]int{}
-	github := func(_ context.Context, purl string) string {
+	github := func(_ context.Context, purl string) (string, error) {
 		githubCalls[purl]++
 		switch purl {
 		case "pkg:golang/github.com/acme/lib@v1":
-			return "MIT"
+			return "MIT", nil
 		case "pkg:golang/github.com/acme/freetext@v1":
-			return "Apache License 2.0"
+			return "Apache License 2.0", nil
 		}
-		return ""
+		return "", nil
 	}
 	npm := registryResolver{"npm", &fakeRegistry{prefixes: []string{"pkg:npm/"}, known: map[string]outcome{
 		"pkg:npm/from-npm@1.0.0": {license: "ISC", latest: true},
 	}}}
 
-	sources, counts := resolvePackageLicenses(context.Background(), github, []registryResolver{npm}, purls, licenses, nil)
+	sources, counts, err := resolvePackageLicenses(context.Background(), github, []registryResolver{npm}, purls, licenses, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	wantLic := []string{"Apache-2.0", "MIT", "Apache-2.0", "ISC", "NOASSERTION", "NOASSERTION"}
 	wantSrc := []string{"declared", "github", "github+normalized", "npm+latest", license.ReasonNoPURL, license.ReasonNoPURL}
@@ -113,12 +119,53 @@ func TestResolvePackageLicenses(t *testing.T) {
 
 func TestResolvePackageLicensesWithoutGitHub(t *testing.T) {
 	licenses := []string{"NOASSERTION", "GPL-2.0+"}
-	sources, counts := resolvePackageLicenses(context.Background(), nil, nil,
+	sources, counts, _ := resolvePackageLicenses(context.Background(), nil, nil,
 		[]string{"pkg:cargo/c@1", "pkg:cargo/d@1"}, licenses, []uint32{})
 	if sources[0] != license.ReasonUnresolved || sources[1] != "declared+normalized" || licenses[1] != "GPL-2.0-or-later" {
 		t.Errorf("got licenses %v sources %v", licenses, sources)
 	}
 	if len(counts) != 0 {
 		t.Errorf("counts = %v, want none", counts)
+	}
+}
+
+// A rate-limited GitHub lookup must abort resolution: no later resolver may
+// answer for a package GitHub was never able to look at, and nothing may be
+// inserted for the SBOM. The job is deferred by the caller.
+func TestResolvePackageLicenses_GitHubRateLimitAborts(t *testing.T) {
+	purls := []string{
+		"pkg:golang/github.com/acme/declared@v1",
+		"pkg:golang/github.com/google/licenseclassifier/v2@v2.0.0",
+		"pkg:npm/from-npm@1.0.0",
+	}
+	licenses := []string{"Apache-2.0", "NOASSERTION", "NOASSERTION"}
+
+	github := func(_ context.Context, purl string) (string, error) {
+		return "", gh.ErrRateLimited
+	}
+	registryCalls := 0
+	npm := registryResolver{"npm", &fakeRegistry{prefixes: []string{"pkg:npm/"}, known: map[string]outcome{
+		"pkg:npm/from-npm@1.0.0": {license: "ISC"},
+	}, onLookup: func() { registryCalls++ }}}
+
+	sources, counts, err := resolvePackageLicenses(context.Background(), github, []registryResolver{npm}, purls, licenses, nil)
+	if !errors.Is(err, gh.ErrRateLimited) {
+		t.Fatalf("err = %v, want ErrRateLimited", err)
+	}
+	if sources != nil || counts != nil {
+		t.Errorf("sources/counts = %v/%v, want nil on abort", sources, counts)
+	}
+	if registryCalls != 0 {
+		t.Errorf("registry resolvers ran %d lookups after the GitHub abort, want 0", registryCalls)
+	}
+	if licenses[1] != "NOASSERTION" {
+		t.Errorf("license[1] = %q, want untouched NOASSERTION", licenses[1])
+	}
+
+	// The job loop recognises the deferral through deferError.
+	var d *deferError
+	wrapped := &deferError{until: time.Now().Add(time.Hour), cause: err}
+	if !errors.As(error(wrapped), &d) || !errors.Is(wrapped, gh.ErrRateLimited) {
+		t.Error("deferError must unwrap to ErrRateLimited")
 	}
 }

@@ -188,6 +188,14 @@ func main() {
 
 		for _, job := range jobs {
 			if err := processJob(ctx, cfg, chClient, osvClient, exceptionsIndex, ghResolver, registryResolvers, s3c, originals, job); err != nil {
+				var deferErr *deferError
+				if errors.As(err, &deferErr) {
+					log.Printf("Deferred %s until %s: %v", job.SourceFile, deferErr.until.Format(time.RFC3339), deferErr.cause)
+					if dErr := chClient.DeferJob(ctx, job, deferErr.until, deferErr.Error()); dErr != nil {
+						log.Printf("ERROR: Failed to defer job: %v", dErr)
+					}
+					continue
+				}
 				log.Printf("ERROR: Failed to process %s: %v", job.SourceFile, err)
 				if failErr := chClient.FailJob(ctx, job, err.Error()); failErr != nil {
 					log.Printf("ERROR: Failed to mark job as failed: %v", failErr)
@@ -368,19 +376,31 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 	var ghLookup githubLookup
 	archived := 0
 	if ghResolver != nil {
-		ghLookup = func(ctx context.Context, purl string) string {
-			meta := ghResolver.ResolveWithMetadata(ctx, purl)
+		ghLookup = func(ctx context.Context, purl string) (string, error) {
+			meta, err := ghResolver.ResolveWithMetadataErr(ctx, purl)
+			if err != nil {
+				return "", err
+			}
 			if meta == nil {
-				return ""
+				return "", nil
 			}
 			if meta.Archived {
 				archived++
 			}
-			return meta.SPDXID
+			return meta.SPDXID, nil
 		}
 	}
-	sources, resolvedBy := resolvePackageLicenses(ctx, ghLookup, registryResolvers,
+	sources, resolvedBy, err := resolvePackageLicenses(ctx, ghLookup, registryResolvers,
 		result.Packages.PackagePURLs, result.Packages.PackageLicenses, result.Packages.RootIndices)
+	if err != nil {
+		if errors.Is(err, gh.ErrRateLimited) {
+			// Not a failure of this SBOM: GitHub will answer later. Put the
+			// job back instead of resolving from a worse source (see docs
+			// "License Resolution", D15).
+			return &deferError{until: ghResolver.RateLimitResetAt(), cause: err}
+		}
+		return err
+	}
 	result.Packages.PackageLicenseSources = sources
 	for name, n := range resolvedBy {
 		if n > 0 {

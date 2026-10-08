@@ -22,6 +22,7 @@ type outcome struct {
 type fakeRegistry struct {
 	prefixes []string
 	known    map[string]outcome
+	onLookup func()
 }
 
 func (f *fakeRegistry) handles(purl string) bool {
@@ -36,6 +37,9 @@ func (f *fakeRegistry) handles(purl string) bool {
 func (f *fakeRegistry) Resolve(_ context.Context, purl string) string {
 	if !f.handles(purl) {
 		return ""
+	}
+	if f.onLookup != nil {
+		f.onLookup()
 	}
 	return f.known[purl].license
 }
@@ -72,11 +76,11 @@ func TestLicensePipelineGolden(t *testing.T) {
 	}
 	pkgs := result.Packages
 
-	github := func(_ context.Context, purl string) string {
+	github := func(_ context.Context, purl string) (string, error) {
 		if strings.HasPrefix(purl, "pkg:golang/github.com/acme/lib@") {
-			return "MIT"
+			return "MIT", nil
 		}
-		return ""
+		return "", nil
 	}
 	resolvers := []registryResolver{
 		{"npm", &fakeRegistry{prefixes: []string{"pkg:npm/"}, known: map[string]outcome{
@@ -103,8 +107,11 @@ func TestLicensePipelineGolden(t *testing.T) {
 		}}},
 	}
 
-	sources, _ := resolvePackageLicenses(context.Background(), github, resolvers,
+	sources, _, err := resolvePackageLicenses(context.Background(), github, resolvers,
 		pkgs.PackagePURLs, pkgs.PackageLicenses, pkgs.RootIndices)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	skipped := map[int]bool{}
 	for _, i := range licenseCheckSkips(pkgs.RootIndices, pkgs.PackagePURLs) {

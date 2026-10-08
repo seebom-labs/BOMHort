@@ -2,14 +2,17 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/seebom-labs/bomhort/backend/internal/license"
 )
 
 // githubLookup returns the license GitHub reports for a purl's repository, or
-// "". nil disables the GitHub step.
-type githubLookup func(ctx context.Context, purl string) string
+// "". nil disables the GitHub step. A non-nil error means GitHub could not be
+// asked at all (rate limit); resolution then aborts rather than letting a
+// later step answer a question GitHub was never able to see.
+type githubLookup func(ctx context.Context, purl string) (string, error)
 
 // resolvePackageLicenses runs the license resolution steps of the parsing
 // pipeline on one SBOM's parallel package arrays, in place, and returns the
@@ -22,7 +25,12 @@ type githubLookup func(ctx context.Context, purl string) string
 //
 // Every heuristic involved is documented on the "License Resolution" docs
 // page; golden_test.go pins the end-to-end outcome.
-func resolvePackageLicenses(ctx context.Context, github githubLookup, resolvers []registryResolver, purls, licenses []string, roots []uint32) (sources []string, counts map[string]int) {
+//
+// The GitHub step is all-or-nothing: if the lookup reports an error the
+// function returns it and the caller must not insert anything — licenses may
+// already be partially rewritten. Resolution runs before every ClickHouse
+// insert, so aborting here leaves no trace of the SBOM.
+func resolvePackageLicenses(ctx context.Context, github githubLookup, resolvers []registryResolver, purls, licenses []string, roots []uint32) (sources []string, counts map[string]int, err error) {
 	sources = make([]string, len(licenses))
 	for i, lic := range licenses {
 		if !isUnknownLicense(lic) {
@@ -36,7 +44,11 @@ func resolvePackageLicenses(ctx context.Context, github githubLookup, resolvers 
 			if !isUnknownLicense(lic) || i >= len(purls) || purls[i] == "" {
 				continue
 			}
-			if spdx := github(ctx, purls[i]); spdx != "" {
+			spdx, err := github(ctx, purls[i])
+			if err != nil {
+				return nil, nil, fmt.Errorf("github lookup for %s: %w", purls[i], err)
+			}
+			if spdx != "" {
 				licenses[i] = spdx
 				sources[i] = license.SourceGitHub
 				counts[license.SourceGitHub]++
@@ -56,7 +68,7 @@ func resolvePackageLicenses(ctx context.Context, github githubLookup, resolvers 
 	}
 
 	explainUnresolved(resolvers, purls, licenses, sources, roots)
-	return sources, counts
+	return sources, counts, nil
 }
 
 // coveredPURLTypes are the ecosystems at least one resolver looks up. A

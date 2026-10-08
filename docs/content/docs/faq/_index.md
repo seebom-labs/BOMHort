@@ -216,8 +216,10 @@ Many container-image SBOMs contain packages with `NOASSERTION` as the declared l
 | | Without token | With token |
 |---|---|---|
 | Rate limit | 60 req/h | **5,000 req/h** |
-| License resolution | Partial (many remain `NOASSERTION`) | Complete |
+| License resolution | Slow — jobs wait for the next reset | Complete |
 | Recommended | Only for small test runs | **Always** |
+
+When the limit is hit, BOMHort does **not** fall back to a guess: the affected SBOM job is deferred (`ingestion_queue.retry_after`) until GitHub's reset time and picked up again automatically. Nothing is cached for the package, so a later run resolves it correctly — but a large backlog without a token advances only ~60 lookups per hour.
 
 ### How to set it up
 

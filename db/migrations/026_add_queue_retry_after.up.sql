@@ -1,0 +1,19 @@
+-- 026_add_queue_retry_after.up.sql
+-- Let a job be put back without guessing.
+--
+-- When the GitHub license resolver hits its rate limit in the middle of an
+-- SBOM, the parsing worker used to sleep until the reset, then record the
+-- repository as "no license" and let deps.dev answer instead. For a package
+-- whose repository GitHub would have answered for, that is a guess — and for
+-- github.com/google/licenseclassifier/v2 the guess was 148 licenses joined
+-- with AND, because deps.dev scans the files a module ships.
+--
+-- Now the worker stops the job before anything is written, puts it back to
+-- 'pending' with retry_after = the rate-limit reset time, and ClaimJobs skips
+-- pending jobs whose retry_after is still in the future. Nothing is cached,
+-- nothing is resolved from a worse source; the same job runs again when
+-- GitHub answers again.
+--
+-- toDateTime(0) ("never deferred") rather than Nullable: the claim filter is
+-- a plain comparison and the column stays out of ORDER BY. Cheap ADD COLUMN.
+ALTER TABLE ingestion_queue ADD COLUMN IF NOT EXISTS retry_after DateTime DEFAULT toDateTime(0);

@@ -240,6 +240,37 @@ it off, and which test pins it.
   following gopkg.in's documented redirect rule.
 - **Test:** `internal/github/purl_test.go`.
 
+### D15. A GitHub rate limit defers the job; nothing is guessed
+
+- **Decision:** When GitHub answers `429`, or `403` with
+  `X-RateLimit-Remaining: 0` / `Retry-After`, the resolver returns an error
+  instead of a result. The worker stops processing that SBOM before any
+  registry resolver runs and parks the job (`ingestion_queue.retry_after`,
+  `error_message = github rate limit …`) until the reset time GitHub reports
+  (`X-RateLimit-Reset`, else `Retry-After`, else one hour). Nothing is cached
+  for the package, the worker does not sleep, and the remaining jobs in the
+  queue keep flowing. Only a rate limit is treated this way — a plain `403`
+  or `404` is still a negative answer (D13).
+- **Why:** The previous behaviour slept inside the worker for up to an hour
+  and then recorded `""` as the GitHub answer, which was *cached* as a
+  negative. The registry resolvers then answered instead — and deps.dev
+  answers by scanning the files a module ships, so a license-detection
+  library that bundles the SPDX corpus (`google/licenseclassifier/v2`) came
+  back as 148 licenses `AND`-ed together, while its `LICENSE` is Apache-2.0.
+  A missing answer is not an answer; a resolver that is temporarily unable
+  to reply must not let a lower-precedence one speak for it (D10). Capping
+  the number of licenses would have been a guess about which multi-license
+  results are real; it is not done.
+- **Risk:** Without a `GITHUB_TOKEN` (60 req/h) an instance with many
+  unresolved packages makes slow progress: each deferral waits for the reset.
+  Set the token (5,000 req/h); see [Operations](#operations).
+- **Switch:** `SKIP_GITHUB_RESOLVE=true` — without the GitHub pass there is
+  nothing to defer for.
+- **Test:** `internal/github/ratelimit_test.go`,
+  `cmd/parsing-worker/license_provenance_test.go`
+  (`TestResolvePackageLicenses_GitHubRateLimitAborts`),
+  `internal/clickhouse/queue_defer_integration_test.go`.
+
 ## Deliberately not guessed
 
 | Input | Stays | Why |
@@ -372,6 +403,35 @@ ALTER TABLE registry_license_cache DELETE WHERE spdx_id = '';
 ALTER TABLE registry_license_cache DELETE WHERE registry = 'pypi' AND startsWith(spdx_id, '!');
 ```
 
+**Deferred jobs.** A job parked by a GitHub rate limit ([D15](#d15-a-github-rate-limit-defers-the-job-nothing-is-guessed))
+stays `pending` with a `retry_after` in the future and the reason in
+`error_message`; the worker picks it up again on its own once the time has
+passed. To see what is waiting and until when:
+
+```sql
+SELECT job_id, source_file, retry_after, error_message
+FROM (
+    SELECT job_id, argMax(source_file, created_at) AS source_file,
+           argMax(status, created_at) AS status,
+           argMax(retry_after, created_at) AS retry_after,
+           argMax(error_message, created_at) AS error_message
+    FROM ingestion_queue GROUP BY job_id
+)
+WHERE status = 'pending' AND retry_after > now();
+```
+
+**Values recorded before D15.** Instances that ran without a `GITHUB_TOKEN`
+before BOMHort 0.8 may hold negatives in `github_license_cache` that were
+really rate limits, and registry answers that only won because of them.
+Delete both and re-scan:
+
+```sql
+-- GitHub negatives (a real "no license" answer is re-fetched for one request)
+ALTER TABLE github_license_cache DELETE WHERE spdx_id = '';
+-- deps.dev answers built from shipped license texts rather than the declared license
+ALTER TABLE registry_license_cache DELETE WHERE registry = 'depsdev' AND position(spdx_id, ' AND ') > 0;
+```
+
 ## Tests
 
 | Test | Covers |
@@ -382,3 +442,4 @@ ALTER TABLE registry_license_cache DELETE WHERE registry = 'pypi' AND startsWith
 | `internal/license/normalize_test.go`, `expression_test.go` | Normalization, deprecated IDs, expression folding |
 | `internal/{npm,nuget,depsdev,packagist,pypi}/*_test.go` | Each registry's parsing, version fallback and negative reasons (recorded HTTP responses) |
 | `internal/github/purl_test.go` | PURL → repository mapping |
+| `internal/github/ratelimit_test.go`, `internal/clickhouse/queue_defer_integration_test.go` | Rate limit → `ErrRateLimited` without sleep or cache; deferred job invisible to `ClaimJobs` until `retry_after` ([D15](#d15-a-github-rate-limit-defers-the-job-nothing-is-guessed)) |

@@ -903,6 +903,8 @@ BOMHort resolves unknown package licenses (`NOASSERTION`) by querying the GitHub
 
 **We strongly recommend setting a GitHub token for any production deployment.**
 
+When the limit is hit, the parsing worker does not guess and does not wait: the SBOM's job is parked in `ingestion_queue` (`status = pending`, `retry_after` = the reset time GitHub reports, `error_message = github rate limit …`) and claimed again automatically once that time has passed. Other jobs keep flowing. Without a token this means an SBOM-heavy backlog advances about 60 lookups per hour — see [License resolution, D15](/docs/license-resolution/#d15-a-github-rate-limit-defers-the-job-nothing-is-guessed).
+
 Create a [Personal Access Token (classic)](https://github.com/settings/tokens) with **no scopes required**.
 
 ```yaml

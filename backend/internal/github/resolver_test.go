@@ -319,6 +319,7 @@ func newTestResolverWithServer(server *httptest.Server) *Resolver {
 	}))
 
 	r := &Resolver{
+		apiBase:    githubAPIBase,
 		httpClient: proxy.Client(),
 		limiter:    newTokenBucket(1000, 100),
 	}

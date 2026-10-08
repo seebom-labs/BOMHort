@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -76,13 +77,28 @@ var knownLicenseOverrides = map[string]string{
 	"go-check/check":           "BSD-2-Clause",
 }
 
+// ErrRateLimited is returned while GitHub's rate limit is exhausted. The
+// resolver does not wait it out and does not cache anything for the
+// repository in question: an answer GitHub could not give is not a negative
+// result, and a caller that treated it as one would resolve the package from
+// a worse source. Callers defer their work until RateLimitResetAt.
+var ErrRateLimited = errors.New("github: rate limited")
+
+// rateLimitFallback is how long the resolver stays rate-limited when GitHub
+// sends no usable X-RateLimit-Reset header.
+const rateLimitFallback = time.Hour
+
 // Resolver resolves unknown package licenses by querying the GitHub API.
 type Resolver struct {
 	token         string
+	apiBase       string
 	httpClient    *http.Client
 	licenseCache  sync.Map // map[string]string (repo key → SPDX ID or "")
 	metadataCache sync.Map // map[string]*RepoMetadata
 	limiter       *tokenBucket
+
+	mu               sync.Mutex
+	rateLimitedUntil time.Time
 }
 
 // NewResolver creates a new GitHub license resolver.
@@ -93,7 +109,8 @@ func NewResolver(token string) *Resolver {
 		rate = authenticatedRate
 	}
 	return &Resolver{
-		token: token,
+		token:   token,
+		apiBase: githubAPIBase,
 		httpClient: &http.Client{
 			Timeout: 15 * time.Second,
 		},
@@ -104,25 +121,42 @@ func NewResolver(token string) *Resolver {
 // Resolve attempts to find the SPDX license ID for a package via the GitHub API.
 // Returns the SPDX ID (e.g., "Apache-2.0") or empty string if not resolvable.
 // Results are cached in-memory to avoid duplicate API calls.
+//
+// Resolve swallows ErrRateLimited (it returns ""); callers that must not
+// mistake a rate limit for "no license" use ResolveErr.
 func (r *Resolver) Resolve(ctx context.Context, purl string) string {
+	spdxID, _ := r.ResolveErr(ctx, purl)
+	return spdxID
+}
+
+// ResolveErr is Resolve returning ErrRateLimited instead of "" while GitHub's
+// rate limit is exhausted. Nothing is cached in that case.
+func (r *Resolver) ResolveErr(ctx context.Context, purl string) (string, error) {
 	owner, repo, ok := ExtractGitHubRepo(purl)
 	if !ok {
-		return ""
+		return "", nil
 	}
 
 	key := strings.ToLower(owner + "/" + repo)
 
 	// Check in-memory cache.
 	if cached, found := r.licenseCache.Load(key); found {
-		return cached.(string)
+		return cached.(string), nil
+	}
+
+	if r.isRateLimited() {
+		return "", ErrRateLimited
 	}
 
 	// Rate-limit the request.
 	if err := r.limiter.Wait(ctx); err != nil {
-		return ""
+		return "", nil
 	}
 
-	spdxID := r.fetchLicense(ctx, owner, repo)
+	spdxID, err := r.fetchLicense(ctx, owner, repo)
+	if err != nil {
+		return "", err
+	}
 
 	// Fallback: use manually verified overrides for repos where GitHub
 	// returns "Other" / NOASSERTION despite having a valid LICENSE file.
@@ -138,30 +172,49 @@ func (r *Resolver) Resolve(ctx context.Context, purl string) string {
 		log.Printf("  GitHub license resolved: %s/%s → %s", owner, repo, spdxID)
 	}
 
-	return spdxID
+	return spdxID, nil
 }
 
 // ResolveWithMetadata fetches license AND repo metadata (archived, fork, last push).
 // Use this for comprehensive package health checks.
+//
+// ResolveWithMetadata swallows ErrRateLimited (it returns nil); callers that
+// must not mistake a rate limit for "unknown repository" use
+// ResolveWithMetadataErr.
 func (r *Resolver) ResolveWithMetadata(ctx context.Context, purl string) *RepoMetadata {
+	meta, _ := r.ResolveWithMetadataErr(ctx, purl)
+	return meta
+}
+
+// ResolveWithMetadataErr is ResolveWithMetadata returning ErrRateLimited
+// instead of nil while GitHub's rate limit is exhausted. Nothing is cached in
+// that case, so the repository is looked up for real once the limit resets.
+func (r *Resolver) ResolveWithMetadataErr(ctx context.Context, purl string) (*RepoMetadata, error) {
 	owner, repo, ok := ExtractGitHubRepo(purl)
 	if !ok {
-		return nil
+		return nil, nil
 	}
 
 	key := strings.ToLower(owner + "/" + repo)
 
 	// Check in-memory cache.
 	if cached, found := r.metadataCache.Load(key); found {
-		return cached.(*RepoMetadata)
+		return cached.(*RepoMetadata), nil
+	}
+
+	if r.isRateLimited() {
+		return nil, ErrRateLimited
 	}
 
 	// Rate-limit the request.
 	if err := r.limiter.Wait(ctx); err != nil {
-		return nil
+		return nil, nil
 	}
 
-	meta := r.fetchRepoMetadata(ctx, owner, repo)
+	meta, err := r.fetchRepoMetadata(ctx, owner, repo)
+	if err != nil {
+		return nil, err
+	}
 	if meta != nil {
 		r.metadataCache.Store(key, meta)
 		r.licenseCache.Store(key, meta.SPDXID) // Also populate license cache
@@ -177,7 +230,22 @@ func (r *Resolver) ResolveWithMetadata(ctx context.Context, purl string) *RepoMe
 		r.metadataCache.Store(key, &RepoMetadata{Repo: key})
 	}
 
-	return meta
+	return meta, nil
+}
+
+// RateLimitResetAt reports when GitHub's rate limit is expected to reset, or
+// the zero time when the resolver is not rate-limited.
+func (r *Resolver) RateLimitResetAt() time.Time {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if time.Now().Before(r.rateLimitedUntil) {
+		return r.rateLimitedUntil
+	}
+	return time.Time{}
+}
+
+func (r *Resolver) isRateLimited() bool {
+	return !r.RateLimitResetAt().IsZero()
 }
 
 // PreloadCache loads known repo→license mappings (e.g., from ClickHouse).
@@ -219,12 +287,12 @@ func (r *Resolver) MetadataCacheEntries() []*RepoMetadata {
 	return entries
 }
 
-func (r *Resolver) fetchLicense(ctx context.Context, owner, repo string) string {
-	url := fmt.Sprintf("%s/repos/%s/%s/license", githubAPIBase, owner, repo)
+func (r *Resolver) fetchLicense(ctx context.Context, owner, repo string) (string, error) {
+	url := fmt.Sprintf("%s/repos/%s/%s/license", r.apiBase, owner, repo)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return ""
+		return "", nil
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
@@ -234,38 +302,37 @@ func (r *Resolver) fetchLicense(ctx context.Context, owner, repo string) string 
 
 	resp, err := r.httpClient.Do(req)
 	if err != nil {
-		return ""
+		return "", nil
 	}
 	defer resp.Body.Close()
 
-	// Handle rate limiting.
-	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
-		r.handleRateLimit(resp)
-		return ""
+	if isRateLimitResponse(resp) {
+		r.noteRateLimit(resp)
+		return "", ErrRateLimited
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		// 404 = private repo or not found – cache empty to avoid retries.
 		io.Copy(io.Discard, resp.Body)
-		return ""
+		return "", nil
 	}
 
 	var lr licenseResponse
 	if err := json.NewDecoder(resp.Body).Decode(&lr); err != nil {
-		return ""
+		return "", nil
 	}
 
 	if lr.License != nil && lr.License.SPDXID != "" && lr.License.SPDXID != "NOASSERTION" {
-		return lr.License.SPDXID
+		return lr.License.SPDXID, nil
 	}
 
 	// GitHub labelled the file "Other" (custom preamble, reformatted text, …).
 	// Best effort: classify the license text ourselves.
 	if spdxID := detectFromContent(lr.Content, lr.Encoding); spdxID != "" {
 		log.Printf("  GitHub license for %s/%s classified from text: %s", owner, repo, spdxID)
-		return spdxID
+		return spdxID, nil
 	}
-	return ""
+	return "", nil
 }
 
 // detectFromContent decodes the license file returned by the GitHub API and
@@ -293,12 +360,12 @@ func detectFromContent(content, encoding string) string {
 }
 
 // fetchRepoMetadata gets full repo info including archived status.
-func (r *Resolver) fetchRepoMetadata(ctx context.Context, owner, repo string) *RepoMetadata {
-	url := fmt.Sprintf("%s/repos/%s/%s", githubAPIBase, owner, repo)
+func (r *Resolver) fetchRepoMetadata(ctx context.Context, owner, repo string) (*RepoMetadata, error) {
+	url := fmt.Sprintf("%s/repos/%s/%s", r.apiBase, owner, repo)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
@@ -308,23 +375,23 @@ func (r *Resolver) fetchRepoMetadata(ctx context.Context, owner, repo string) *R
 
 	resp, err := r.httpClient.Do(req)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
-		r.handleRateLimit(resp)
-		return nil
+	if isRateLimitResponse(resp) {
+		r.noteRateLimit(resp)
+		return nil, ErrRateLimited
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		io.Copy(io.Discard, resp.Body)
-		return nil
+		return nil, nil
 	}
 
 	var rr repoResponse
 	if err := json.NewDecoder(resp.Body).Decode(&rr); err != nil {
-		return nil
+		return nil, nil
 	}
 
 	meta := &RepoMetadata{
@@ -350,9 +417,11 @@ func (r *Resolver) fetchRepoMetadata(ctx context.Context, owner, repo string) *R
 	// /repos/{owner}/{repo}/license endpoint which does deeper file analysis.
 	if meta.SPDXID == "" {
 		if err := r.limiter.Wait(ctx); err == nil {
-			if spdxID := r.fetchLicense(ctx, owner, repo); spdxID != "" {
-				meta.SPDXID = spdxID
+			spdxID, err := r.fetchLicense(ctx, owner, repo)
+			if err != nil {
+				return nil, err
 			}
+			meta.SPDXID = spdxID
 		}
 	}
 
@@ -365,25 +434,45 @@ func (r *Resolver) fetchRepoMetadata(ctx context.Context, owner, repo string) *R
 		}
 	}
 
-	return meta
+	return meta, nil
 }
 
-func (r *Resolver) handleRateLimit(resp *http.Response) {
-	resetStr := resp.Header.Get("X-RateLimit-Reset")
-	if resetStr != "" {
-		resetUnix, err := strconv.ParseInt(resetStr, 10, 64)
-		if err == nil {
-			waitTime := time.Until(time.Unix(resetUnix, 0))
-			if waitTime > 0 && waitTime < 60*time.Minute {
-				log.Printf("  GitHub rate limited, waiting %v until reset", waitTime.Round(time.Second))
-				time.Sleep(waitTime + time.Second)
-				return
+// isRateLimitResponse recognises GitHub's two rate-limit signals: 429, and
+// 403 with the remaining quota reported as 0 (primary limit) or a Retry-After
+// header (secondary limit). A plain 403 is an access problem, not a limit.
+func isRateLimitResponse(resp *http.Response) bool {
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return true
+	}
+	if resp.StatusCode != http.StatusForbidden {
+		return false
+	}
+	return resp.Header.Get("X-RateLimit-Remaining") == "0" || resp.Header.Get("Retry-After") != ""
+}
+
+// noteRateLimit records until when the resolver is rate-limited, from
+// X-RateLimit-Reset (epoch seconds) or Retry-After (seconds), falling back
+// to rateLimitFallback. It never sleeps: the worker holding a job must put
+// the job back rather than stall the whole queue.
+func (r *Resolver) noteRateLimit(resp *http.Response) {
+	until := time.Now().Add(rateLimitFallback)
+	if v := resp.Header.Get("X-RateLimit-Reset"); v != "" {
+		if resetUnix, err := strconv.ParseInt(v, 10, 64); err == nil {
+			if t := time.Unix(resetUnix, 0); t.After(time.Now()) {
+				until = t.Add(time.Second)
 			}
 		}
+	} else if v := resp.Header.Get("Retry-After"); v != "" {
+		if secs, err := strconv.Atoi(v); err == nil && secs > 0 {
+			until = time.Now().Add(time.Duration(secs) * time.Second)
+		}
 	}
-	// Fallback: wait 60 seconds.
-	log.Printf("  GitHub rate limited, waiting 60s")
-	time.Sleep(60 * time.Second)
+	r.mu.Lock()
+	if until.After(r.rateLimitedUntil) {
+		r.rateLimitedUntil = until
+	}
+	r.mu.Unlock()
+	log.Printf("  GitHub rate limited until %s; jobs needing GitHub are deferred", until.Format(time.RFC3339))
 }
 
 // tokenBucket is a simple rate limiter (same pattern as osv package).

@@ -314,6 +314,33 @@ and the denormalised `vulnerabilities.dependency_depth UInt16`.
   `is_direct` is now derived from the stored depth.
 - Rows ingested before the migration are `unknown` until `make re-scan`.
 
+### Deferred Jobs on GitHub Rate Limit (migration `026`)
+
+The GitHub license resolver used to sleep inside the worker for up to an hour
+when the API rate limit was hit, and then record `""` as the answer — which
+was cached as a negative, so the registry resolvers answered instead. deps.dev
+derives licenses from the files a module ships, which turned
+`google/licenseclassifier/v2` (Apache-2.0, bundles the SPDX corpus) into
+148 licenses `AND`-ed together on a public instance.
+
+Now a rate limit (`429`, or `403` with `X-RateLimit-Remaining: 0` /
+`Retry-After`) is an **error, not a result**:
+
+- `github.Resolver` returns `ErrRateLimited`, records the reset time from
+  `X-RateLimit-Reset` (fallback `Retry-After`, then one hour), never sleeps,
+  caches nothing, and short-circuits further lookups until the reset.
+- `resolvePackageLicenses` aborts before any registry resolver runs, so a
+  lower-precedence resolver can never answer for GitHub.
+- The worker calls `DeferJob`: a new `pending` row with
+  `retry_after = reset time` and the reason in `error_message`. `ClaimJobs`
+  filters `argMax(retry_after, created_at) <= now()`, so the job is invisible
+  until then and claimed again automatically. Other jobs keep flowing.
+
+Decision log: license-resolution docs, D15. Tests:
+`internal/github/ratelimit_test.go`,
+`cmd/parsing-worker/license_provenance_test.go`,
+`internal/clickhouse/queue_defer_integration_test.go` (live).
+
 ### Ingestion Path Layout (`internal/ingestpath`)
 
 Teams already organise buckets hierarchically. Rather than guessing that
@@ -356,7 +383,7 @@ one bucket is nested and another flat.
 
 | `vulnerabilities` | MergeTree | (sbom_id, purl, vuln_id) | OSV results |
 | `license_compliance` | SummingMergeTree | (sbom_id, license_id) | License compliance per SBOM (+exempted_packages, exemption_reason) |
-| `ingestion_queue` | ReplacingMergeTree | (job_id) | Job queue (job_type: sbom/vex) |
+| `ingestion_queue` | ReplacingMergeTree | (job_id) | Job queue (job_type: sbom/vex); `retry_after` (migration `026`) parks a job until a time, e.g. a GitHub rate-limit reset |
 | `dashboard_stats_mv` | SummingMergeTree (MV) | (stat_date) | Pre-aggregated daily stats |
 | `vex_statements` | ReplacingMergeTree | (vuln_id, product_purl, vex_id) | OpenVEX statements |
 | `cve_refresh_log` | MergeTree | (started_at, refresh_id) | CVE refresh run history (timestamp, results, status) |

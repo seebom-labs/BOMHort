@@ -13,7 +13,7 @@ import (
 // updates), so all five writers must agree on the column set exactly —
 // keeping it in one place is what stops a newly added dimension from being
 // silently dropped on claim/complete/fail and resurfacing as empty data.
-const queueColumns = "created_at, job_id, source_file, sha256_hash, status, job_type, claimed_by, claimed_at, finished_at, error_message, cluster, namespace, project, source_repo, source_ref, target_sbom_id, tags, parent"
+const queueColumns = "created_at, job_id, source_file, sha256_hash, status, job_type, claimed_by, claimed_at, finished_at, error_message, cluster, namespace, project, source_repo, source_ref, target_sbom_id, tags, parent, retry_after"
 
 // EnqueueJobs inserts a batch of new ingestion jobs with status 'pending'.
 func (c *Client) EnqueueJobs(ctx context.Context, jobs []models.IngestionJob) error {
@@ -50,6 +50,7 @@ func (c *Client) EnqueueJobs(ctx context.Context, jobs []models.IngestionJob) er
 			job.TargetSBOMID,
 			job.Tags,
 			job.Parent,
+			time.Time{},
 		); err != nil {
 			return fmt.Errorf("failed to append queue job: %w", err)
 		}
@@ -83,11 +84,12 @@ func (c *Client) ClaimJobs(ctx context.Context, workerID string, limit int) ([]m
 		        argMax(source_ref, created_at)    AS source_ref,
 		        argMax(target_sbom_id, created_at) AS target_sbom_id,
 		        argMax(tags, created_at)          AS tags,
-		        argMax(parent, created_at)        AS parent
+		        argMax(parent, created_at)        AS parent,
+		        argMax(retry_after, created_at)   AS retry_after
 		    FROM ingestion_queue
 		    GROUP BY job_id
 		) sub
-		WHERE latest_status = 'pending'
+		WHERE latest_status = 'pending' AND retry_after <= now()
 		ORDER BY min_created ASC
 		LIMIT ?`, limit)
 	if err != nil {
@@ -138,6 +140,7 @@ func (c *Client) ClaimJobs(ctx context.Context, workerID string, limit int) ([]m
 			job.TargetSBOMID,
 			job.Tags,
 			job.Parent,
+			time.Time{},
 		); err != nil {
 			return nil, fmt.Errorf("failed to append claim: %w", err)
 		}
@@ -155,8 +158,8 @@ func (c *Client) CompleteJob(ctx context.Context, job models.IngestionJob) error
 	now := time.Now()
 	return c.Conn.Exec(ctx,
 		`INSERT INTO ingestion_queue (`+queueColumns+`)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		now, job.JobID, job.SourceFile, job.SHA256Hash, models.JobStatusDone, job.JobType, job.ClaimedBy, job.ClaimedAt, &now, "", job.Cluster, job.Namespace, job.Project, job.SourceRepo, job.SourceRef, job.TargetSBOMID, job.Tags, job.Parent)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		now, job.JobID, job.SourceFile, job.SHA256Hash, models.JobStatusDone, job.JobType, job.ClaimedBy, job.ClaimedAt, &now, "", job.Cluster, job.Namespace, job.Project, job.SourceRepo, job.SourceRef, job.TargetSBOMID, job.Tags, job.Parent, time.Time{})
 }
 
 // FailJob marks a job as failed with an error message.
@@ -164,6 +167,19 @@ func (c *Client) FailJob(ctx context.Context, job models.IngestionJob, errMsg st
 	now := time.Now()
 	return c.Conn.Exec(ctx,
 		`INSERT INTO ingestion_queue (`+queueColumns+`)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		now, job.JobID, job.SourceFile, job.SHA256Hash, models.JobStatusFailed, job.JobType, job.ClaimedBy, job.ClaimedAt, &now, errMsg, job.Cluster, job.Namespace, job.Project, job.SourceRepo, job.SourceRef, job.TargetSBOMID, job.Tags, job.Parent)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		now, job.JobID, job.SourceFile, job.SHA256Hash, models.JobStatusFailed, job.JobType, job.ClaimedBy, job.ClaimedAt, &now, errMsg, job.Cluster, job.Namespace, job.Project, job.SourceRepo, job.SourceRef, job.TargetSBOMID, job.Tags, job.Parent, time.Time{})
+}
+
+// DeferJob puts a claimed job back to 'pending' so that ClaimJobs picks it up
+// again once retryAfter has passed. Nothing about the job's result is
+// recorded: a deferred job ran into a condition that will clear by itself
+// (an upstream rate limit) and must run again from the start rather than
+// finish with whatever a worse source would say. reason is kept in
+// error_message for operators watching the queue.
+func (c *Client) DeferJob(ctx context.Context, job models.IngestionJob, retryAfter time.Time, reason string) error {
+	return c.Conn.Exec(ctx,
+		`INSERT INTO ingestion_queue (`+queueColumns+`)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		time.Now(), job.JobID, job.SourceFile, job.SHA256Hash, models.JobStatusPending, job.JobType, "", (*time.Time)(nil), (*time.Time)(nil), reason, job.Cluster, job.Namespace, job.Project, job.SourceRepo, job.SourceRef, job.TargetSBOMID, job.Tags, job.Parent, retryAfter)
 }
