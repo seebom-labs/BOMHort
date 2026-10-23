@@ -142,11 +142,12 @@ func (c *Client) searchProjectsFacet(ctx context.Context, pattern string, limit 
 		SELECT
 			project_name,
 			count() AS sbom_count,
-			argMax(toString(s.sbom_id), s.ingested_at) AS latest_sbom_id
+			argMax(toString(s.sbom_id), `+fmt.Sprintf(latestKey, "s")+`) AS latest_sbom_id
 		FROM (
 			SELECT
 				s.sbom_id,
 				s.ingested_at,
+				s.document_version,
 				%s AS project_name
 			FROM (SELECT * FROM sboms FINAL) AS s
 		) AS s

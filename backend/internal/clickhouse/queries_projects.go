@@ -96,6 +96,12 @@ const packageKeyExpr = `arrayMap(
 	p.package_purls, p.package_names, p.package_versions
 )`
 
+// latestKey orders a project's SBOMs for "latest" (#494): numeric parts of
+// document_version as a tuple (v1.2.3, 1.2, chart-1.12.7 all parse), a
+// pre-release ("-rc.1") below its release, ingested_at as the tie-breaker
+// and the only key when the version has no number. %s is the table alias.
+const latestKey = "(arrayMap(x -> toUInt64OrZero(x), extractAll(splitByChar('-', %[1]s.document_version)[1], '\\d+')), position(%[1]s.document_version, '-') = 0, %[1]s.ingested_at)"
+
 // QueryProjects fetches a grouped project listing.
 //
 // tag, when non-empty, restricts the listing to projects having at least one
@@ -149,19 +155,19 @@ func (c *Client) QueryProjects(ctx context.Context, page, pageSize uint64, searc
 	//
 	// groupUniqArrayArray flattens the per-SBOM tag arrays into one distinct
 	// set per project, so the listing can show a project's groupings without a
-	// second round trip. argMax picks the id of the newest SBOM, which is what
-	// "latest" should mean — groupArray order is not defined.
+	// second round trip. argMax over latestKey picks the highest version.
 	query := fmt.Sprintf(`
 		SELECT
 			project_name,
 			count() AS sbom_count,
 			max(s.ingested_at) AS latest_ingested,
-			argMax(toString(s.sbom_id), s.ingested_at) AS latest_sbom_id,
+			argMax(toString(s.sbom_id), `+fmt.Sprintf(latestKey, "s")+`) AS latest_sbom_id,
 			arraySort(groupUniqArrayArray(s.tags)) AS project_tags
 		FROM (
 			SELECT
 				s.sbom_id,
 				s.ingested_at,
+				s.document_version,
 				s.tags,
 				%s AS project_name
 			FROM (SELECT * FROM sboms FINAL) AS s

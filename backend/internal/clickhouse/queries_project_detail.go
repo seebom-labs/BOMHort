@@ -42,8 +42,8 @@ func (c *Client) QueryProjectDetail(ctx context.Context, name string) (*dto.Proj
 		SELECT
 			count(),
 			max(ingested_at),
-			argMax(toString(sbom_id), ingested_at),
-			argMax(document_version, ingested_at),
+			argMax(toString(sbom_id), `+fmt.Sprintf(latestKey, "s")+`),
+			argMax(document_version, `+fmt.Sprintf(latestKey, "s")+`),
 			argMaxIf(source_repo, ingested_at, source_repo != ''),
 			arraySort(groupUniqArrayArray(tags)),
 			arraySort(arrayFilter(x -> x != '', groupUniqArray(cluster))),

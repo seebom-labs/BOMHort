@@ -266,12 +266,13 @@ func (c *Client) queryAllProjectRows(ctx context.Context, tag string) ([]dto.Pro
 			project_name,
 			count() AS sbom_count,
 			max(s.ingested_at) AS latest_ingested,
-			argMax(toString(s.sbom_id), s.ingested_at) AS latest_sbom_id,
+			argMax(toString(s.sbom_id), `+fmt.Sprintf(latestKey, "s")+`) AS latest_sbom_id,
 			arraySort(groupUniqArrayArray(s.tags)) AS project_tags
 		FROM (
 			SELECT
 				s.sbom_id,
 				s.ingested_at,
+				s.document_version,
 				s.tags,
 				%s AS project_name
 			FROM (SELECT * FROM sboms FINAL) AS s

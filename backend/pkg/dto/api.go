@@ -553,8 +553,9 @@ type ProjectDetail struct {
 	MediumVulns   uint64 `json:"medium_vulns"`
 	LowVulns      uint64 `json:"low_vulns"`
 
-	// LatestVersion is the document_version of the most recently ingested
-	// SBOM, LatestSBOMID its id — the natural entry point into the versions.
+	// LatestVersion is the highest document_version among the project's
+	// SBOMs (ingest time breaks ties and orders unparseable versions),
+	// LatestSBOMID its id — the natural entry point into the versions.
 	LatestIngested string `json:"latest_ingested,omitempty"`
 	LatestVersion  string `json:"latest_version,omitempty"`
 	LatestSBOMID   string `json:"latest_sbom_id,omitempty"`
