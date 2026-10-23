@@ -14,8 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	json "github.com/goccy/go-json"
-
 	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
 	"github.com/seebom-labs/bomhort/backend/internal/config"
 	"github.com/seebom-labs/bomhort/backend/internal/depgraph"
@@ -541,37 +539,22 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 					log.Printf("  WARNING: Hydration failed: %v", err)
 				}
 
-				// Build vulnerability models using hydrated data.
+				// Un-hydrated IDs are skipped, not stubbed: the daily
+				// cve-refresher inserts them once OSV answers (#485).
+				skipped := 0
 				for _, d := range discovered {
-					var entry osv.VulnEntry
-					if h, ok := hydrated[d.id]; ok {
-						entry = *h
-					} else {
-						// Fallback: minimal entry if hydration failed for this ID.
-						entry = osv.VulnEntry{ID: d.id}
+					h, ok := hydrated[d.id]
+					if !ok {
+						skipped++
+						continue
 					}
-
-					severity := osvutil.ClassifySeverity(entry)
-					fixedVersion := osvutil.ExtractFixedVersion(entry)
-					affectedVersions := osvutil.ExtractAffectedVersions(entry)
-					rawJSON, _ := json.Marshal(entry)
-
-					v := models.Vulnerability{
-						DiscoveredAt:     time.Now(),
-						SBOMID:           result.SBOM.SBOMID,
-						SourceFile:       job.SourceFile,
-						PURL:             d.purl,
-						VulnID:           entry.ID,
-						Severity:         severity,
-						Summary:          entry.Summary,
-						Aliases:          entry.Aliases,
-						AffectedVersions: affectedVersions,
-						FixedVersion:     fixedVersion,
-						OSVJSON:          string(rawJSON),
-						DependencyDepth:  depgraph.MinDepthForPURL(result.Packages.PackagePURLs, result.Packages.PackageDepths, d.purl),
-					}
+					v := osvutil.BuildVulnerability(*h, result.SBOM.SBOMID, job.SourceFile, d.purl,
+						depgraph.MinDepthForPURL(result.Packages.PackagePURLs, result.Packages.PackageDepths, d.purl))
 					own.applyVulnerability(&v)
 					vulns = append(vulns, v)
+				}
+				if skipped > 0 {
+					log.Printf("  WARNING: %d findings skipped (hydration failed); cve-refresher will add them", skipped)
 				}
 			}
 
