@@ -1118,6 +1118,7 @@ The full listing carries every non-compliant package name of every SBOM and grow
 | Parameter | Description |
 |---|---|
 | `summary` | `true` returns one summary per SBOM instead: the counts and licenses as above, the package lists reduced to `non_compliant_package_count` (equal to the length of `non_compliant_packages` in the full listing), `direct_count` and `transitive_count`. Root packages and packages without a recorded depth are in neither. The server reads the SBOMs in batches, so memory does not grow with the instance. The UI's License Compliance page uses this form. |
+| `search` | With `summary=true`: keep only SBOMs whose project, document name or source file contains the term (case-insensitive). The UI's `/license-compliance?search=` uses it; on a large instance the unfiltered summary is several MB. |
 
 **Response (`?summary=true`):** `200 OK`
 ```json

@@ -13,6 +13,8 @@ func TestClientIP(t *testing.T) {
 		{"remote addr without port", "203.0.113.9:4711", "", "", "203.0.113.9"},
 		{"last XFF entry wins over spoofed first", "127.0.0.1:1", "1.2.3.4, 5.6.7.8", "", "5.6.7.8"},
 		{"X-Real-IP beats XFF", "127.0.0.1:1", "1.2.3.4", "9.9.9.9", "9.9.9.9"},
+		{"private peer (in-cluster proxy) is trusted", "10.244.1.7:1", "1.2.3.4", "", "1.2.3.4"},
+		{"public peer: headers ignored", "203.0.113.9:1", "1.2.3.4", "9.9.9.9", "203.0.113.9"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -98,9 +98,10 @@ const packageKeyExpr = `arrayMap(
 
 // latestKey orders a project's SBOMs for "latest" (#494): numeric parts of
 // document_version as a tuple (v1.2.3, 1.2, chart-1.12.7 all parse), a
-// pre-release ("-rc.1") below its release, ingested_at as the tie-breaker
+// pre-release ("-rc.1") below its release, build metadata ("+build.4")
+// ignored, ingested_at as the tie-breaker
 // and the only key when the version has no number. %s is the table alias.
-const latestKey = "(arrayMap(x -> toUInt64OrZero(x), extractAll(splitByChar('-', %[1]s.document_version)[1], '\\d+')), position(%[1]s.document_version, '-') = 0, %[1]s.ingested_at)"
+const latestKey = "(arrayMap(x -> toUInt64OrZero(x), extractAll(splitByRegexp('[-+]', %[1]s.document_version)[1], '\\d+')), position(%[1]s.document_version, '-') = 0, %[1]s.ingested_at)"
 
 // QueryProjects fetches a grouped project listing.
 //

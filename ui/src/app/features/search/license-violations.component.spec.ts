@@ -125,26 +125,22 @@ describe('LicenseViolationsComponent', () => {
     expect(badges[0].textContent).toContain('2 not approved');
   });
 
-  it('filters by ?search= from the URL and updates the tab count', () => {
+  it('passes ?search= from the URL to the API and shows the filtered rows', () => {
     const route = TestBed.inject(ActivatedRoute);
     vi.spyOn(route, 'queryParamMap', 'get').mockReturnValue(of(convertToParamMap({ search: 'cilium' })));
     const api = TestBed.inject(ApiService);
-    const row = (id: string, name: string) => ({
-      sbom_id: id, source_file: name + '.spdx.json', document_name: name,
+    const summaries = vi.spyOn(api, 'getProjectLicenseViolationSummaries').mockReturnValue(of([{
+      sbom_id: '1', source_file: 'cilium.spdx.json', document_name: 'cilium/cilium v1.18.0',
       copyleft_count: 1, unapproved_count: 0, unknown_count: 0, violating_licenses: ['GPL-3.0-only'],
       non_compliant_package_count: 1, direct_count: 0, transitive_count: 0,
-    });
-    vi.spyOn(api, 'getProjectLicenseViolationSummaries').mockReturnValue(of([
-      row('1', 'cilium/cilium v1.18.0'), row('2', 'cilium/cilium-cli v0.18.9'), row('3', 'openfga v0.4.0'),
-    ]));
+    }]));
     vi.spyOn(api, 'getLicenseExceptions').mockReturnValue(of({
       version: '1.0.0', lastUpdated: '', blanketExceptions: [], exceptions: [],
     }));
     const fixture = TestBed.createComponent(LicenseViolationsComponent);
     fixture.detectChanges();
-    const component = fixture.componentInstance;
-    expect(component.filtered.map((v) => v.sbom_id)).toEqual(['1', '2']);
-    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Non-Compliant (2 of 3)');
+    expect(summaries).toHaveBeenCalledWith('cilium');
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Non-Compliant (1)');
     expect((fixture.nativeElement as HTMLElement).querySelector<HTMLInputElement>('.search-box')?.value).toBe('cilium');
   });
 

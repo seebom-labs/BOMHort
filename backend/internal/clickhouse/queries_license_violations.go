@@ -47,6 +47,24 @@ const violatingSBOMsQuery = `
 	ORDER BY sbom_id
 `
 
+// violatingSBOMsSearchQuery narrows violatingSBOMsQuery to SBOMs whose
+// project, document name or source file contains the term (#492): the
+// unfiltered summary is 8 MB on a 13k-SBOM instance, too much to filter in
+// the browser.
+const violatingSBOMsSearchQuery = `
+	SELECT toString(lc.sbom_id)
+	FROM license_compliance AS lc FINAL
+	INNER JOIN (
+		SELECT sbom_id FROM sboms FINAL
+		WHERE positionCaseInsensitive(project, ?) > 0
+		   OR positionCaseInsensitive(document_name, ?) > 0
+		   OR positionCaseInsensitive(source_file, ?) > 0
+	) AS s ON s.sbom_id = lc.sbom_id
+	WHERE lc.category IN ('copyleft', 'unapproved', 'unknown')
+	GROUP BY lc.sbom_id
+	ORDER BY lc.sbom_id
+`
+
 // violationRow is one row of violationsQuery.
 type violationRow struct {
 	sbomID, sourceFile, documentName string
@@ -182,8 +200,12 @@ func (c *Client) scanLicenseViolations(ctx context.Context, exceptions *license.
 
 // violatingSBOMs returns the ids of all SBOMs with a non-compliant license row,
 // before exceptions are applied.
-func (c *Client) violatingSBOMs(ctx context.Context) ([]string, error) {
-	rows, err := c.Conn.Query(ctx, violatingSBOMsQuery)
+func (c *Client) violatingSBOMs(ctx context.Context, search string) ([]string, error) {
+	query, args := violatingSBOMsQuery, []any{}
+	if search != "" {
+		query, args = violatingSBOMsSearchQuery, []any{search, search, search}
+	}
+	rows, err := c.Conn.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query violating sboms: %w", err)
 	}
@@ -246,9 +268,10 @@ func (c *Client) QueryProjectsWithLicenseViolations(ctx context.Context, excepti
 // non-compliant packages are direct or transitive dependencies. SBOMs are
 // read in batches of scopeBatchSize — violations, then their scopes — so
 // memory is bounded by one batch, not by the instance, and only one query is
-// open at a time.
-func (c *Client) QueryProjectLicenseViolationSummaries(ctx context.Context, exceptions *license.ExceptionIndex) ([]dto.ProjectLicenseViolationSummary, error) {
-	ids, err := c.violatingSBOMs(ctx)
+// open at a time. search, when non-empty, keeps only SBOMs whose project,
+// document name or source file contains it (case-insensitive).
+func (c *Client) QueryProjectLicenseViolationSummaries(ctx context.Context, exceptions *license.ExceptionIndex, search string) ([]dto.ProjectLicenseViolationSummary, error) {
+	ids, err := c.violatingSBOMs(ctx, search)
 	if err != nil {
 		return nil, err
 	}

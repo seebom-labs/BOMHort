@@ -115,7 +115,7 @@ func TestQueriesExecute(t *testing.T) {
 		{"QueryLicenseCompliance(license)", func() error { _, err := c.QueryLicenseCompliance(ctx, "MIT"); return err }},
 		{"QueryLicenseSources", func() error { _, err := c.QueryLicenseSources(ctx); return err }},
 		{"QueryProjectsWithLicenseViolations", func() error { _, err := c.QueryProjectsWithLicenseViolations(ctx, nil); return err }},
-		{"QueryProjectLicenseViolationSummaries", func() error { _, err := c.QueryProjectLicenseViolationSummaries(ctx, nil); return err }},
+		{"QueryProjectLicenseViolationSummaries", func() error { _, err := c.QueryProjectLicenseViolationSummaries(ctx, nil, ""); return err }},
 		// The batched form an empty database never reaches through the summary.
 		{"scanLicenseViolations/ids", func() error {
 			return c.scanLicenseViolations(ctx, nil, []string{someID}, func(*sbomViolations) error { return nil })

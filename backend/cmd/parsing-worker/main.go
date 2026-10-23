@@ -541,11 +541,11 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 
 				// Un-hydrated IDs are skipped, not stubbed: the daily
 				// cve-refresher inserts them once OSV answers (#485).
-				skipped := 0
+				var skipped []string
 				for _, d := range discovered {
 					h, ok := hydrated[d.id]
 					if !ok {
-						skipped++
+						skipped = append(skipped, d.id)
 						continue
 					}
 					v := osvutil.BuildVulnerability(*h, result.SBOM.SBOMID, job.SourceFile, d.purl,
@@ -553,8 +553,9 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 					own.applyVulnerability(&v)
 					vulns = append(vulns, v)
 				}
-				if skipped > 0 {
-					log.Printf("  WARNING: %d findings skipped (hydration failed); cve-refresher will add them", skipped)
+				if len(skipped) > 0 {
+					log.Printf("  WARNING: %d findings skipped (hydration failed), e.g. %v; cve-refresher will add them",
+						len(skipped), skipped[:min(5, len(skipped))])
 				}
 			}
 

@@ -346,7 +346,7 @@ func main() {
 			return
 		}
 		if r.URL.Query().Get("summary") == "true" {
-			summaries, err := chClient.QueryProjectLicenseViolationSummaries(r.Context(), excIdx)
+			summaries, err := chClient.QueryProjectLicenseViolationSummaries(r.Context(), excIdx, r.URL.Query().Get("search"))
 			if err != nil {
 				log.Printf("ERROR: license violation summaries: %v", err)
 				writeError(w, http.StatusInternalServerError, "Failed to fetch license violations")
@@ -1227,8 +1227,18 @@ func authMiddleware(enabled bool, serviceToken string, apiKeys []string, next ht
 
 // clientIP returns the address the trusted proxy saw: X-Real-IP, else the
 // LAST X-Forwarded-For entry (the proxy appends it; earlier entries are
-// client-supplied and spoofable), else RemoteAddr without the port.
+// client-supplied and spoofable), else the TCP peer. Proxy headers are only
+// honoured when the peer is a private or loopback address — a proxy or an
+// ingress in the cluster — so a client reaching the gateway directly cannot
+// pick its own rate-limit bucket (#484).
 func clientIP(r *http.Request) string {
+	peer := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(peer); err == nil {
+		peer = host
+	}
+	if ip := net.ParseIP(peer); ip == nil || !(ip.IsPrivate() || ip.IsLoopback()) {
+		return peer
+	}
 	if ip := strings.TrimSpace(r.Header.Get("X-Real-IP")); ip != "" {
 		return ip
 	}
@@ -1238,10 +1248,7 @@ func clientIP(r *http.Request) string {
 			return ip
 		}
 	}
-	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		return host
-	}
-	return r.RemoteAddr
+	return peer
 }
 
 // pinger is the minimal surface readyzHandler needs, kept small for testing.

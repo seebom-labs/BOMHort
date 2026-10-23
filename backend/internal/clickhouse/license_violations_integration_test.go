@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"context"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,6 +28,12 @@ func TestProjectLicenseViolationsSeeded(t *testing.T) {
 	sbomID := uuid.New()
 	project := "violations-it-" + sbomID.String()[:8]
 	source := "integration-test/" + project + ".spdx.json"
+	t.Cleanup(func() {
+		for _, table := range []string{"sboms", "sbom_packages", "license_compliance"} {
+			_ = c.Conn.Exec(context.Background(),
+				"ALTER TABLE "+table+" DELETE WHERE sbom_id = ? SETTINGS mutations_sync = 1", sbomID)
+		}
+	})
 	if err := c.InsertSBOM(ctx, &models.SBOM{
 		IngestedAt:   time.Now(),
 		SBOMID:       sbomID,
@@ -90,7 +97,7 @@ func TestProjectLicenseViolationsSeeded(t *testing.T) {
 		t.Fatalf("seeded SBOM missing from the full listing")
 	}
 
-	summaries, err := c.QueryProjectLicenseViolationSummaries(ctx, nil)
+	summaries, err := c.QueryProjectLicenseViolationSummaries(ctx, nil, "")
 	if err != nil {
 		t.Fatalf("QueryProjectLicenseViolationSummaries: %v", err)
 	}
@@ -107,5 +114,18 @@ func TestProjectLicenseViolationsSeeded(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("seeded SBOM missing from the summary listing")
+	}
+
+	// ?search= narrows server-side (#492): the seeded project is found by a
+	// case-insensitive substring and absent for a term that matches nothing.
+	hits, err := c.QueryProjectLicenseViolationSummaries(ctx, nil, strings.ToUpper(project))
+	if err != nil {
+		t.Fatalf("summaries with search: %v", err)
+	}
+	if len(hits) != 1 || hits[0].SBOMID != sbomID.String() {
+		t.Errorf("search hits = %+v, want only %s", hits, sbomID)
+	}
+	if miss, err := c.QueryProjectLicenseViolationSummaries(ctx, nil, project+"-nope"); err != nil || len(miss) != 0 {
+		t.Errorf("search miss = %+v, %v", miss, err)
 	}
 }

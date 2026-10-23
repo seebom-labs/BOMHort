@@ -459,17 +459,10 @@ func (c *Client) QueryVulnerabilities(ctx context.Context, page, pageSize uint64
 // names one license: across all licenses it was 264k entries and 27 MB on a
 // 19k-SBOM instance, which the ingress cut off at 10 MiB (#447).
 func (c *Client) QueryLicenseCompliance(ctx context.Context, licenseID string) ([]dto.LicenseComplianceItem, error) {
-	filter, args := "", []any{}
-	sbomCols := "[] AS sbom_ids, [] AS sbom_names"
-	join := ""
-	if licenseID != "" {
-		filter = "WHERE license_id = ?"
-		args = append(args, licenseID)
-		sbomCols = `groupArray(DISTINCT toString(lc.sbom_id)) AS sbom_ids,
-			groupArray(DISTINCT ifNull(s.document_name, lc.source_file)) AS sbom_names`
-		join = "LEFT JOIN (SELECT sbom_id, document_name FROM sboms FINAL) AS s ON s.sbom_id = lc.sbom_id"
-	}
-	rows, err := c.Conn.Query(ctx, fmt.Sprintf(`
+	var rows driver.Rows
+	var err error
+	if licenseID == "" {
+		rows, err = c.Conn.Query(ctx, `
 		SELECT
 			lc.license_id,
 			lc.category,
@@ -478,12 +471,30 @@ func (c *Client) QueryLicenseCompliance(ctx context.Context, licenseID string) (
 			arrayDistinct(groupArrayArray(lc.exempted_packages)) AS all_exempted,
 			any(lc.exemption_reason) AS exemption_reason,
 			count(DISTINCT lc.sbom_id) AS sbom_count,
-			%s
-		FROM (SELECT * FROM license_compliance FINAL %s) AS lc
-		%s
+			[] AS sbom_ids,
+			[] AS sbom_names
+		FROM (SELECT * FROM license_compliance FINAL) AS lc
 		GROUP BY lc.license_id, lc.category
 		ORDER BY total_packages DESC
-	`, sbomCols, filter, join), args...)
+	`)
+	} else {
+		rows, err = c.Conn.Query(ctx, `
+		SELECT
+			lc.license_id,
+			lc.category,
+			sum(lc.package_count) AS total_packages,
+			arrayDistinct(groupArrayArray(lc.non_compliant_packages)) AS all_non_compliant,
+			arrayDistinct(groupArrayArray(lc.exempted_packages)) AS all_exempted,
+			any(lc.exemption_reason) AS exemption_reason,
+			count(DISTINCT lc.sbom_id) AS sbom_count,
+			groupArray(DISTINCT toString(lc.sbom_id)) AS sbom_ids,
+			groupArray(DISTINCT ifNull(s.document_name, lc.source_file)) AS sbom_names
+		FROM (SELECT * FROM license_compliance FINAL WHERE license_id = ?) AS lc
+		LEFT JOIN (SELECT sbom_id, document_name FROM sboms FINAL) AS s ON s.sbom_id = lc.sbom_id
+		GROUP BY lc.license_id, lc.category
+		ORDER BY total_packages DESC
+	`, licenseID)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to query license compliance: %w", err)
 	}

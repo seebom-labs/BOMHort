@@ -135,8 +135,9 @@ export class ApiService {
   }
 
   /** Same rows without the package lists; what the compliance page renders. */
-  getProjectLicenseViolationSummaries(): Observable<ProjectLicenseViolationSummary[]> {
-    const params = new HttpParams().set('summary', 'true');
+  getProjectLicenseViolationSummaries(search = ''): Observable<ProjectLicenseViolationSummary[]> {
+    let params = new HttpParams().set('summary', 'true');
+    if (search) params = params.set('search', search);
     return this.http.get<ProjectLicenseViolationSummary[]>(`${this.baseUrl}/projects/license-compliance`, { params });
   }
 
