@@ -217,8 +217,10 @@ func main() {
 		}, time.Now))
 
 	// License compliance overview.
+	// ?license=<id> returns that one license with its affected_sboms; the
+	// unfiltered list omits them (#447).
 	mux.HandleFunc("GET /api/v1/licenses/compliance", func(w http.ResponseWriter, r *http.Request) {
-		items, err := chClient.QueryLicenseCompliance(r.Context())
+		items, err := chClient.QueryLicenseCompliance(r.Context(), r.URL.Query().Get("license"))
 		if err != nil {
 			log.Printf("ERROR: license compliance: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch license compliance")

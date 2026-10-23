@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { provideRouter } from '@angular/router';
 import { LicenseOverviewComponent } from './license-overview.component';
 
 describe('LicenseOverviewComponent', () => {
@@ -10,6 +11,7 @@ describe('LicenseOverviewComponent', () => {
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
+        provideRouter([]),
       ],
     }).compileComponents();
   });
@@ -28,6 +30,31 @@ describe('LicenseOverviewComponent', () => {
     // permissive, copyleft, not approved, unknown, exempted
     expect(cards.length).toBe(5);
     expect(compiled.querySelector('.category-card.unapproved h3')?.textContent).toContain('Not Approved');
+  });
+
+  it('loads affected SBOMs per license on expand, not up front', () => {
+    const fixture = TestBed.createComponent(LicenseOverviewComponent);
+    fixture.detectChanges();
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne('/api/v1/licenses/compliance').flush([
+      { license_id: 'GPL-3.0-only', category: 'copyleft', package_count: 3, sbom_count: 2 },
+    ]);
+    http.expectOne('/api/v1/licenses/sources').flush([]);
+    fixture.detectChanges();
+    expect(fixture.componentInstance.groupedCache.size).toBe(0);
+
+    fixture.componentInstance.toggle('GPL-3.0-only');
+    http.expectOne('/api/v1/licenses/compliance?license=GPL-3.0-only').flush([
+      { license_id: 'GPL-3.0-only', category: 'copyleft', package_count: 3, sbom_count: 2, affected_sboms: [
+        { sbom_id: '1', document_name: 'cilium v1.18.0' }, { sbom_id: '2', document_name: 'cilium v1.17.0' },
+      ] },
+    ]);
+    fixture.detectChanges();
+    const groups = fixture.componentInstance.groupedCache.get('GPL-3.0-only')!;
+    expect(groups).toHaveLength(1);
+    expect(groups[0].project_name).toBe('cilium');
+    expect(groups[0].versions.map((v) => v.label)).toEqual(['v1.18.0', 'v1.17.0']);
+    http.verify();
   });
 
   it('splits license sources into resolved, open and excluded', () => {

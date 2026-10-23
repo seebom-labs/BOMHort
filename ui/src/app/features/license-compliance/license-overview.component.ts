@@ -151,8 +151,9 @@ interface GroupedProject {
             </div>
 
             <!-- Affected Projects grouped by name with version tags -->
-            <div class="detail-section" *ngIf="item.affected_sboms?.length">
+            <div class="detail-section" *ngIf="item.sbom_count">
               <h4>Affected Projects</h4>
+              <p *ngIf="!groupedCache.has(item.license_id)" class="loading-inline">Loading…</p>
               <div class="project-groups">
                 <div *ngFor="let group of getGroupedProjects(item)" class="project-group">
                   <span class="project-name">{{ group.project_name }}</span>
@@ -360,7 +361,7 @@ export class LicenseOverviewComponent implements OnInit {
   @ViewChild('resolution') private resolutionEl?: ElementRef<HTMLElement>;
   expandedLicense: string | null = null;
   private rawLicenses: LicenseComplianceItem[] = [];
-  private groupedCache = new Map<string, GroupedProject[]>();
+  readonly groupedCache = new Map<string, GroupedProject[]>();
 
   sortField: SortField = 'severity';
   sortAsc = false;
@@ -389,7 +390,6 @@ export class LicenseOverviewComponent implements OnInit {
     this.api.getLicenseCompliance().subscribe({
       next: (data) => {
         this.rawLicenses = data;
-        this.buildGroupedCache();
         this.applySort();
         this.loading = false;
         this.cdr.markForCheck();
@@ -444,6 +444,13 @@ export class LicenseOverviewComponent implements OnInit {
 
   toggle(licenseId: string): void {
     this.expandedLicense = this.expandedLicense === licenseId ? null : licenseId;
+    if (this.expandedLicense && !this.groupedCache.has(licenseId)) {
+      // affected_sboms are fetched per license on expand: all at once was 27 MB (#447).
+      this.api.getLicenseCompliance(licenseId).subscribe((items) => {
+        this.groupedCache.set(licenseId, this.groupSBOMs(items.flatMap((i) => i.affected_sboms ?? [])));
+        this.cdr.markForCheck();
+      });
+    }
     this.cdr.markForCheck();
   }
 
@@ -498,15 +505,6 @@ export class LicenseOverviewComponent implements OnInit {
           return 0;
       }
     });
-  }
-
-  private buildGroupedCache(): void {
-    this.groupedCache.clear();
-    for (const lic of this.rawLicenses) {
-      if (lic.affected_sboms?.length) {
-        this.groupedCache.set(lic.license_id, this.groupSBOMs(lic.affected_sboms));
-      }
-    }
   }
 
   private groupSBOMs(sboms: LicenseAffectedSBOM[]): GroupedProject[] {

@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { provideRouter } from '@angular/router';
+import { ActivatedRoute, provideRouter, convertToParamMap } from '@angular/router';
 import { of, throwError } from 'rxjs';
 import { vi } from 'vitest';
 import { CdkVirtualScrollViewport } from '@angular/cdk/scrolling';
@@ -123,6 +123,29 @@ describe('LicenseViolationsComponent', () => {
     expect(element.querySelectorAll('.violation-card').length).toBe(2);
     expect(badges.length).toBe(1);
     expect(badges[0].textContent).toContain('2 not approved');
+  });
+
+  it('filters by ?search= from the URL and updates the tab count', () => {
+    const route = TestBed.inject(ActivatedRoute);
+    vi.spyOn(route, 'queryParamMap', 'get').mockReturnValue(of(convertToParamMap({ search: 'cilium' })));
+    const api = TestBed.inject(ApiService);
+    const row = (id: string, name: string) => ({
+      sbom_id: id, source_file: name + '.spdx.json', document_name: name,
+      copyleft_count: 1, unapproved_count: 0, unknown_count: 0, violating_licenses: ['GPL-3.0-only'],
+      non_compliant_package_count: 1, direct_count: 0, transitive_count: 0,
+    });
+    vi.spyOn(api, 'getProjectLicenseViolationSummaries').mockReturnValue(of([
+      row('1', 'cilium/cilium v1.18.0'), row('2', 'cilium/cilium-cli v0.18.9'), row('3', 'openfga v0.4.0'),
+    ]));
+    vi.spyOn(api, 'getLicenseExceptions').mockReturnValue(of({
+      version: '1.0.0', lastUpdated: '', blanketExceptions: [], exceptions: [],
+    }));
+    const fixture = TestBed.createComponent(LicenseViolationsComponent);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+    expect(component.filtered.map((v) => v.sbom_id)).toEqual(['1', '2']);
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('Non-Compliant (2 of 3)');
+    expect((fixture.nativeElement as HTMLElement).querySelector<HTMLInputElement>('.search-box')?.value).toBe('cilium');
   });
 
   describe('scopeSummary', () => {

@@ -817,6 +817,11 @@ CVE-2024-45338,GO-2024-3333,CVE-2024-45338;GHSA-w32m-9786-jp63,HIGH,pkg:golang/g
 
 Aggregated license compliance overview across all projects, with exemption details.
 
+**Query parameters:**
+| Param | Description |
+|-------|-------------|
+| `license` | Return only this license id, **with** its `affected_sboms`. Without it the list omits `affected_sboms` (on a 19k-SBOM instance they were 27 MB; the UI fetches them per license on expand). |
+
 **Response:** `200 OK`
 ```json
 [

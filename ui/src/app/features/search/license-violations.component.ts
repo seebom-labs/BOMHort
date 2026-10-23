@@ -1,6 +1,6 @@
 import { Component, OnInit, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterModule } from '@angular/router';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { ScrollingModule } from '@angular/cdk/scrolling';
 import { ApiService } from '../../core/api.service';
 import { ProjectLicenseViolationSummary, LicenseExceptionsFile } from '../../core/api.models';
@@ -21,7 +21,7 @@ type Tab = 'non-compliant' | 'exceptions';
 
       <div class="tabs">
         <button [class.active]="activeTab === 'non-compliant'" (click)="activeTab = 'non-compliant'">
-          Non-Compliant ({{ violations.length | number }})
+          Non-Compliant ({{ filtered.length | number }}<ng-container *ngIf="search"> of {{ violations.length | number }}</ng-container>)
         </button>
         <button [class.active]="activeTab === 'exceptions'" (click)="activeTab = 'exceptions'">
           Configured Exceptions ({{ totalExceptions | number }})
@@ -30,8 +30,11 @@ type Tab = 'non-compliant' | 'exceptions';
 
       <!-- Non-Compliant Tab -->
       <div *ngIf="activeTab === 'non-compliant'" class="tab-content">
+        <input type="search" class="search-box" placeholder="Filter by project or SBOM name…"
+               aria-label="Filter by project or SBOM name"
+               [value]="search" (input)="onSearch($any($event.target).value)">
         <cdk-virtual-scroll-viewport itemSize="80" class="viewport">
-          <div *cdkVirtualFor="let v of violations; trackBy: trackByViolation" class="violation-card">
+          <div *cdkVirtualFor="let v of filtered; trackBy: trackByViolation" class="violation-card">
             <div class="project-header">
               <a [routerLink]="['/sboms', v.sbom_id]" class="project-name">{{ v.document_name || v.source_file }}</a>
               <div class="counts">
@@ -48,8 +51,8 @@ type Tab = 'non-compliant' | 'exceptions';
             </div>
           </div>
         </cdk-virtual-scroll-viewport>
-        <p *ngIf="loaded && violations.length === 0" class="empty">
-          No non-compliant licenses found in the stored results.
+        <p *ngIf="loaded && filtered.length === 0" class="empty">
+          {{ search ? 'No non-compliant SBOM matches "' + search + '".' : 'No non-compliant licenses found in the stored results.' }}
         </p>
       </div>
 
@@ -104,6 +107,7 @@ type Tab = 'non-compliant' | 'exceptions';
     .subtitle { color: var(--text-secondary); margin: 4px 0 16px; font-size: 0.8rem; }
     .subtitle code { background: var(--bg); padding: 1px 4px; border-radius: 2px; font-size: 0.75rem; }
     .tabs { display: flex; gap: 2px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+    .search-box { width: 100%; box-sizing: border-box; margin-bottom: 12px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text); font: inherit; }
     .tabs button {
       padding: 8px 18px; border: none; background: transparent; cursor: pointer;
       font-size: 0.8rem; border-radius: 0; transition: all 0.15s;
@@ -168,6 +172,8 @@ export class LicenseViolationsComponent implements OnInit {
   }
 
   violations: ProjectLicenseViolationSummary[] = [];
+  filtered: ProjectLicenseViolationSummary[] = [];
+  search = '';
   exceptionsFile: LicenseExceptionsFile = {
     version: '1.0.0', lastUpdated: '', blanketExceptions: [], exceptions: [],
   };
@@ -178,15 +184,23 @@ export class LicenseViolationsComponent implements OnInit {
   constructor(
     private readonly api: ApiService,
     private readonly cdr: ChangeDetectorRef,
+    private readonly route: ActivatedRoute,
+    private readonly router: Router,
   ) {}
 
   ngOnInit(): void {
+    this.route.queryParamMap.subscribe((q) => {
+      this.search = q.get('search') ?? '';
+      this.applyFilter();
+      this.cdr.markForCheck();
+    });
     forkJoin({
       violations: this.api.getProjectLicenseViolationSummaries(),
       exceptions: this.api.getLicenseExceptions(),
     }).subscribe({
       next: ({ violations, exceptions }) => {
         this.violations = violations;
+        this.applyFilter();
         this.exceptionsFile = exceptions;
         this.loaded = true;
         this.cdr.markForCheck();
@@ -200,6 +214,17 @@ export class LicenseViolationsComponent implements OnInit {
 
   get totalExceptions(): number {
     return this.exceptionsFile.blanketExceptions.length + this.exceptionsFile.exceptions.length;
+  }
+
+  onSearch(value: string): void {
+    this.router.navigate([], { queryParams: { search: value || null }, queryParamsHandling: 'merge', replaceUrl: true });
+  }
+
+  private applyFilter(): void {
+    const q = this.search.trim().toLowerCase();
+    this.filtered = q
+      ? this.violations.filter((v) => (v.document_name || v.source_file).toLowerCase().includes(q))
+      : this.violations;
   }
 
   trackByViolation(_i: number, v: ProjectLicenseViolationSummary): string { return v.sbom_id; }

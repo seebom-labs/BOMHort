@@ -120,8 +120,10 @@ export class ApiService {
     return this.http.get<AffectedProject[]>(`${this.baseUrl}/vulnerabilities/${vulnId}/affected-projects`);
   }
 
-  getLicenseCompliance(): Observable<LicenseComplianceItem[]> {
-    return this.http.get<LicenseComplianceItem[]>(`${this.baseUrl}/licenses/compliance`);
+  /** Without `license` the items carry no affected_sboms; pass one id to get them. */
+  getLicenseCompliance(license?: string): Observable<LicenseComplianceItem[]> {
+    const params = license ? new HttpParams().set('license', license) : undefined;
+    return this.http.get<LicenseComplianceItem[]>(`${this.baseUrl}/licenses/compliance`, { params });
   }
 
   getLicenseSources(): Observable<LicenseSourceItem[]> {
