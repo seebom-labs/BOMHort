@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path"
@@ -1124,14 +1125,7 @@ func rateLimitMiddleware(next http.Handler) http.Handler {
 	}()
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Extract client IP (prefer X-Forwarded-For behind reverse proxy).
-		ip := r.Header.Get("X-Forwarded-For")
-		if ip != "" {
-			ip = strings.SplitN(ip, ",", 2)[0]
-			ip = strings.TrimSpace(ip)
-		} else {
-			ip = r.RemoteAddr
-		}
+		ip := clientIP(r)
 
 		mu.Lock()
 		v, exists := visitors[ip]
@@ -1231,11 +1225,21 @@ func authMiddleware(enabled bool, serviceToken string, apiKeys []string, next ht
 	})
 }
 
-// clientIP extracts the originating IP, preferring X-Forwarded-For.
+// clientIP returns the address the trusted proxy saw: X-Real-IP, else the
+// LAST X-Forwarded-For entry (the proxy appends it; earlier entries are
+// client-supplied and spoofable), else RemoteAddr without the port.
 func clientIP(r *http.Request) string {
-	if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
-		ip = strings.SplitN(ip, ",", 2)[0]
-		return strings.TrimSpace(ip)
+	if ip := strings.TrimSpace(r.Header.Get("X-Real-IP")); ip != "" {
+		return ip
+	}
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		parts := strings.Split(xff, ",")
+		if ip := strings.TrimSpace(parts[len(parts)-1]); ip != "" {
+			return ip
+		}
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
 	}
 	return r.RemoteAddr
 }
