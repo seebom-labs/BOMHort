@@ -102,10 +102,19 @@ func main() {
 	var totalEnqueued int
 	sbomCount := 0 // tracks SBOMs seen (for SBOM_LIMIT enforcement)
 
+	// One query for the whole run instead of one per file (#487). A job
+	// whose latest status is 'failed' is not in the set, so its file is
+	// enqueued again (#482).
+	known, err := chClient.KnownHashes(ctx)
+	if err != nil {
+		log.Fatalf("Failed to load known hashes: %v", err)
+	}
+	log.Printf("Loaded %d known content hashes", len(known))
+
 	// ── Source 1: Local filesystem ─────────────────────────────────────
 	if cfg.SBOMDir != "" {
 		if info, err := os.Stat(cfg.SBOMDir); err == nil && info.IsDir() {
-			localEnqueued, _ := ingestLocalFiles(ctx, cfg, chClient, &sbomCount)
+			localEnqueued, _ := ingestLocalFiles(ctx, cfg, chClient, known, &sbomCount)
 			totalEnqueued += localEnqueued
 		} else {
 			log.Printf("Local: SBOM directory %s does not exist, skipping local scan", cfg.SBOMDir)
@@ -114,7 +123,7 @@ func main() {
 
 	// ── Source 2: S3 buckets ───────────────────────────────────────────
 	if cfg.HasS3Sources() {
-		s3Enqueued := ingestS3Buckets(ctx, cfg, chClient, &sbomCount)
+		s3Enqueued := ingestS3Buckets(ctx, cfg, chClient, known, &sbomCount)
 		totalEnqueued += s3Enqueued
 	}
 
@@ -127,7 +136,7 @@ func main() {
 
 // ingestLocalFiles scans the local SBOM directory and enqueues new files.
 // Returns (enqueued count, sbom files seen).
-func ingestLocalFiles(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, sbomCount *int) (int, int) {
+func ingestLocalFiles(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, known map[string]struct{}, sbomCount *int) (int, int) {
 	scanner := repo.NewScannerWithIgnorePrefix(cfg.SBOMDir, cfg.IgnorePrefix)
 	files, err := scanner.Scan()
 	if err != nil {
@@ -154,6 +163,7 @@ func ingestLocalFiles(ctx context.Context, cfg *config.Config, chClient *clickho
 	// Stream-process files in batches for efficient enqueuing.
 	var batch []models.IngestionJob
 	enqueued := 0
+	seen := map[string]struct{}{} // hashes enqueued by this scan, for the duplicate log line
 
 	for _, f := range files {
 		// Apply SBOM_LIMIT (VEX files are never limited).
@@ -164,15 +174,13 @@ func ingestLocalFiles(ctx context.Context, cfg *config.Config, chClient *clickho
 			*sbomCount++
 		}
 
-		// Dedup against ClickHouse.
-		exists, err := chClient.HashExists(ctx, f.SHA256Hash)
-		if err != nil {
-			log.Printf("WARNING: Failed to check hash for %s: %v", f.RelPath, err)
+		if _, exists := known[f.SHA256Hash]; exists {
+			if _, thisScan := seen[f.SHA256Hash]; thisScan {
+				log.Printf("Local: skipping %s, same content as an earlier file in this scan (first path's ownership wins)", f.RelPath)
+			}
 			continue
 		}
-		if exists {
-			continue
-		}
+		known[f.SHA256Hash], seen[f.SHA256Hash] = struct{}{}, struct{}{}
 
 		jobType := models.JobTypeSBOM
 		if f.FileType == "vex" {
@@ -233,7 +241,7 @@ func ingestLocalFiles(ctx context.Context, cfg *config.Config, chClient *clickho
 }
 
 // ingestS3Buckets streams objects from all configured S3 buckets and enqueues new files.
-func ingestS3Buckets(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, sbomCount *int) int {
+func ingestS3Buckets(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, known map[string]struct{}, sbomCount *int) int {
 	// Convert config bucket types to s3 package types.
 	bucketConfigs := make([]s3client.BucketConfig, len(cfg.S3Buckets))
 	// Build the bucket->ownership mapping: per-bucket values override the
@@ -278,6 +286,7 @@ func ingestS3Buckets(ctx context.Context, cfg *config.Config, chClient *clickhou
 
 	var batch []models.IngestionJob
 	enqueued := 0
+	seen := map[string]struct{}{}
 	skipped := 0
 	errors := 0
 
@@ -300,15 +309,14 @@ func ingestS3Buckets(ctx context.Context, cfg *config.Config, chClient *clickhou
 			*sbomCount++
 		}
 
-		// Dedup against ClickHouse using S3 ETag (changes when content changes).
-		exists, err := chClient.HashExists(ctx, obj.ETag)
-		if err != nil {
-			log.Printf("WARNING: Failed to check hash for %s: %v", obj.URI(), err)
+		// Dedup on the S3 ETag (changes when content changes).
+		if _, exists := known[obj.ETag]; exists {
+			if _, thisScan := seen[obj.ETag]; thisScan {
+				log.Printf("S3: skipping %s, same content as an earlier object in this scan (first object's ownership wins)", obj.URI())
+			}
 			continue
 		}
-		if exists {
-			continue
-		}
+		known[obj.ETag], seen[obj.ETag] = struct{}{}, struct{}{}
 
 		jobType := models.JobTypeSBOM
 		if obj.FileType == "vex" {

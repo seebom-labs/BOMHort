@@ -63,6 +63,11 @@ func recheckDelay(interval time.Duration, remote bool) time.Duration {
 // recheck twice is harmless: it is idempotent.
 const recheckStaleAfter = time.Hour
 
+// staleClaimAfter is how long any claimed job may stay 'processing' before a
+// worker sweep hands it back to the queue (see RequeueStaleJobs). Large
+// SBOMs with full OSV hydration finish in minutes; an hour is a dead worker.
+const staleClaimAfter = time.Hour
+
 // ensureLicenseRecheck enqueues a recheck unless the latest one already
 // covers digest. A recheck for the same digest that failed, or whose worker
 // died while processing it, is queued again. Workers call it on every poll,

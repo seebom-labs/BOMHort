@@ -191,6 +191,32 @@ func main() {
 
 	log.Printf("Worker %s polling for jobs (batch size: %d, skip_osv: %v)...", cfg.WorkerID, cfg.WorkerBatchSize, cfg.SkipOSV)
 
+	// A worker that died mid-job (OOM, node loss) never wrote a final status;
+	// its claims would stay 'processing' forever. Every worker sweeps on
+	// start and then hourly. A job that legitimately runs this long is
+	// deferred and redone, which is correct: without its sboms commit marker
+	// the retry is not skipped, and the child rows are replaced by key.
+	requeueStale := func() {
+		if n, err := chClient.RequeueStaleJobs(ctx, staleClaimAfter); err != nil {
+			log.Printf("WARNING: stale-claim sweep failed: %v", err)
+		} else if n > 0 {
+			log.Printf("Requeued %d jobs stuck in 'processing' for more than %s", n, staleClaimAfter)
+		}
+	}
+	requeueStale()
+	go func() {
+		t := time.NewTicker(time.Hour)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				requeueStale()
+			}
+		}
+	}()
+
 	// Main polling loop.
 	for {
 		select {
@@ -224,6 +250,15 @@ func main() {
 				if errors.As(err, &deferErr) {
 					log.Printf("Deferred %s until %s: %v", job.SourceFile, deferErr.until.Format(time.RFC3339), deferErr.cause)
 					if dErr := chClient.DeferJob(statusCtx, job, deferErr.until, deferErr.Error()); dErr != nil {
+						log.Printf("ERROR: Failed to defer job: %v", dErr)
+					}
+					continue
+				}
+				if ctx.Err() != nil {
+					// Shutdown, not a bad document: hand the job back so the
+					// next worker redoes it from the start.
+					log.Printf("Shutdown interrupted %s, deferring: %v", job.SourceFile, err)
+					if dErr := chClient.DeferJob(statusCtx, job, time.Now(), "shutdown"); dErr != nil {
 						log.Printf("ERROR: Failed to defer job: %v", dErr)
 					}
 					continue
@@ -400,8 +435,7 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 
 	// 1c. Tier-2 fidelity capture (#256): persist the original bytes BEFORE any
 	// ClickHouse row is written. If the blob store is unavailable the job fails
-	// here and is retried later; had we inserted first, the SBOMExists guard
-	// above would skip the retry and the original would be lost for good.
+	// here; once the watcher re-enqueues the file the retry starts clean.
 	if originals != nil {
 		if err := captureOriginal(ctx, chClient, originals, job, raw, &result.SBOM); err != nil {
 			return err
@@ -459,14 +493,15 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 	}
 	persistRegistryCaches(ctx, chClient, registryResolvers)
 
-	// 3. Insert SBOM metadata. Every row written from here on carries the
-	// job's ownership dimensions (#131 cluster, #138 namespace, #57 project).
+	// 3. Every row written from here on carries the job's ownership
+	// dimensions (#131 cluster, #138 namespace, #57 project). The sboms row
+	// itself is written last (step 6b) as the commit marker: a job that
+	// dies between the inserts is retried instead of being skipped by the
+	// SBOMExists guard (#482). The child tables are ReplacingMergeTree keyed
+	// by sbom_id, so the retry's rows supersede the partial ones.
 	own := ownershipOf(job)
 	own.applySBOM(&result.SBOM)
 	applySourceOverride(&result.SBOM, job)
-	if err := chClient.InsertSBOM(ctx, &result.SBOM); err != nil {
-		return err
-	}
 
 	// 4. Insert package arrays (with resolved licenses).
 	own.applyPackages(&result.Packages)
@@ -603,6 +638,11 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 		if err := chClient.InsertLicenseCompliance(ctx, licModels); err != nil {
 			return err
 		}
+	}
+
+	// 6b. Commit marker: the SBOM becomes visible.
+	if err := chClient.InsertSBOM(ctx, &result.SBOM); err != nil {
+		return err
 	}
 
 	// 7. Rescue VEX statements that arrived before this SBOM (#350): their

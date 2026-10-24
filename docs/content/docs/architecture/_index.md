@@ -38,7 +38,7 @@ Kubernetes-native SBOM platform as a monorepo. Go backend with five binaries (Cr
        │ SHA256 hashing + file-type detection (sbom|vex)
        ▼
 Ingestion Watcher (CronJob)
-       │ Hash dedup → batch INSERT INTO ingestion_queue (500/batch)
+       │ Hash dedup (one query per run, in-memory set) → batch INSERT INTO ingestion_queue (500/batch)
        ▼
 ClickHouse: ingestion_queue (status='pending')
        │ SELECT + Claim (status='processing')
@@ -393,7 +393,7 @@ GET /sboms/{id}/download ──▶ document_store? ──▶ GetEncoded(ref) ─
 - **Re-ingest replaces, it doesn't accumulate.** A second capture for the same `sbom_id` supersedes the `document_store` row (`ReplacingMergeTree`) *and* deletes the previous blob once the new one is durable, so re-processing never leaves orphans behind. The S3 backend refuses to delete anything outside its own prefix as a guard against a misconfigured `ORIGINAL_STORE_S3_PREFIX` pointing at ingestion sources.
 - **Memory: one buffer, not two.** `sbom.Parse` already needs the whole document in memory; the worker reads the source exactly once and hands the same buffer to the parser and the capture. The compressed copy adds ~10–15 % on top for the duration of the `Put`.
 - **Two backends, one interface** (`internal/docstore`): `s3` writes to a configured bucket under a reserved prefix (default `_bomhort/originals/`, skipped by the ingestion watcher so originals are never re-ingested); `fs` writes atomically (temp file + rename) below a directory — a PVC shared by workers and gateway for air-gapped setups. References are opaque (`s3://…`, `fs://…`), so the gateway resolves them without knowing how they were produced. Compression lives in the shared layer above both, so a new backend only has to move bytes.
-- **Capture happens before any ClickHouse insert.** If the blob store is unavailable the job fails and is retried; had the SBOM row been written first, the idempotency guard would skip the retry and the original would be lost for good.
+- **Capture happens before any ClickHouse insert.** If the blob store is unavailable the job fails; the watcher re-enqueues the file on its next run (a failed job's hash no longer counts as known), and the retry starts clean because the `sboms` row — the idempotency guard's input — is the last row a job writes.
 - **The worker computes the sha256 itself.** S3-discovered jobs carry the bucket ETag as their dedup hash, which is not a sha256 (and never is for multipart uploads).
 - **Download stays backward compatible.** `GET /api/v1/sboms/{id}/download` prefers the stored original (with `ETag`, `X-BOMHort-SHA256`, `X-BOMHort-Original: true`) and falls back to re-reading `source_file` for SBOMs ingested before this feature or with the store disabled.
 - **Single capture point covers push uploads too.** `POST /api/v1/sboms/upload` only stages the file and enqueues a job; the worker reads that same file, so pushed and pulled SBOMs are treated identically.

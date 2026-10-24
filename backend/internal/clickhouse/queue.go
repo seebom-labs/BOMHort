@@ -63,13 +63,14 @@ func (c *Client) EnqueueJobs(ctx context.Context, jobs []models.IngestionJob) er
 	return nil
 }
 
-// ClaimJobs selects up to `limit` pending jobs and marks them as processing.
-// Uses argMax aggregation to reliably determine the latest status per job,
-// regardless of merge timing. This avoids phantom re-claims entirely.
-func (c *Client) ClaimJobs(ctx context.Context, workerID string, limit int) ([]models.IngestionJob, error) {
-	rows, err := c.Conn.Query(ctx, `
-		SELECT job_id, source_file, sha256_hash, min_created, job_type, cluster, namespace, project, source_repo, source_ref, target_sbom_id, tags, parent
-		FROM (
+// latestJobs reduces the append-only queue to one row per job carrying the
+// latest value of every column. Every reader that asks "what state is this
+// job in" must go through it: the table is ORDER BY (status, created_at,
+// job_id), so FINAL never collapses a job's older status rows and a plain
+// WHERE status = … matches history, not state.
+// where optionally prefilters the rows before aggregation.
+func latestJobs(where string) string {
+	return `
 		    SELECT
 		        job_id,
 		        argMax(source_file, created_at)  AS source_file,
@@ -77,6 +78,7 @@ func (c *Client) ClaimJobs(ctx context.Context, workerID string, limit int) ([]m
 		        min(created_at)                  AS min_created,
 		        argMax(job_type, created_at)      AS job_type,
 		        argMax(status, created_at)        AS latest_status,
+		        argMax(claimed_at, created_at)    AS claimed_at,
 		        argMax(cluster, created_at)       AS cluster,
 		        argMax(namespace, created_at)     AS namespace,
 		        argMax(project, created_at)       AS project,
@@ -86,14 +88,20 @@ func (c *Client) ClaimJobs(ctx context.Context, workerID string, limit int) ([]m
 		        argMax(tags, created_at)          AS tags,
 		        argMax(parent, created_at)        AS parent,
 		        argMax(retry_after, created_at)   AS retry_after
-		    FROM ingestion_queue
-		    GROUP BY job_id
-		) sub
-		WHERE latest_status = 'pending' AND retry_after <= now()
+		    FROM ingestion_queue ` + where + `
+		    GROUP BY job_id`
+}
+
+// selectJobs returns the jobs whose latest state matches where, oldest first.
+func (c *Client) selectJobs(ctx context.Context, where string, limit int) ([]models.IngestionJob, error) {
+	rows, err := c.Conn.Query(ctx, `
+		SELECT job_id, source_file, sha256_hash, min_created, job_type, cluster, namespace, project, source_repo, source_ref, target_sbom_id, tags, parent
+		FROM (`+latestJobs("")+`) sub
+		WHERE `+where+`
 		ORDER BY min_created ASC
 		LIMIT ?`, limit)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query pending jobs: %w", err)
+		return nil, fmt.Errorf("failed to query jobs: %w", err)
 	}
 	defer rows.Close()
 
@@ -103,11 +111,24 @@ func (c *Client) ClaimJobs(ctx context.Context, workerID string, limit int) ([]m
 		if err := rows.Scan(&job.JobID, &job.SourceFile, &job.SHA256Hash, &job.CreatedAt, &job.JobType, &job.Cluster, &job.Namespace, &job.Project, &job.SourceRepo, &job.SourceRef, &job.TargetSBOMID, &job.Tags, &job.Parent); err != nil {
 			return nil, fmt.Errorf("failed to scan job row: %w", err)
 		}
-		job.Status = models.JobStatusProcessing
-		job.ClaimedBy = workerID
-		now := time.Now()
-		job.ClaimedAt = &now
 		jobs = append(jobs, job)
+	}
+	return jobs, rows.Err()
+}
+
+// ClaimJobs selects up to `limit` pending jobs and marks them as processing.
+// Uses argMax aggregation to reliably determine the latest status per job,
+// regardless of merge timing. This avoids phantom re-claims entirely.
+func (c *Client) ClaimJobs(ctx context.Context, workerID string, limit int) ([]models.IngestionJob, error) {
+	jobs, err := c.selectJobs(ctx, "latest_status = 'pending' AND retry_after <= now()", limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query pending jobs: %w", err)
+	}
+	now := time.Now()
+	for i := range jobs {
+		jobs[i].Status = models.JobStatusProcessing
+		jobs[i].ClaimedBy = workerID
+		jobs[i].ClaimedAt = &now
 	}
 
 	if len(jobs) == 0 {
@@ -122,7 +143,7 @@ func (c *Client) ClaimJobs(ctx context.Context, workerID string, limit int) ([]m
 
 	for _, job := range jobs {
 		if err := batch.Append(
-			time.Now(),
+			now,
 			job.JobID,
 			job.SourceFile,
 			job.SHA256Hash,
@@ -182,4 +203,44 @@ func (c *Client) DeferJob(ctx context.Context, job models.IngestionJob, retryAft
 		`INSERT INTO ingestion_queue (`+queueColumns+`)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		time.Now(), job.JobID, job.SourceFile, job.SHA256Hash, models.JobStatusPending, job.JobType, "", (*time.Time)(nil), (*time.Time)(nil), reason, job.Cluster, job.Namespace, job.Project, job.SourceRepo, job.SourceRef, job.TargetSBOMID, job.Tags, job.Parent, retryAfter)
+}
+
+// RequeueStaleJobs puts jobs back to 'pending' that have been 'processing'
+// for longer than olderThan. A worker that was OOM-killed or lost its node
+// never writes a final status, and without this its claims would stay
+// 'processing' forever. Returns how many jobs were requeued.
+func (c *Client) RequeueStaleJobs(ctx context.Context, olderThan time.Duration) (int, error) {
+	stale, err := c.selectJobs(ctx, fmt.Sprintf("latest_status = 'processing' AND claimed_at < now() - INTERVAL %d SECOND", int(olderThan.Seconds())), 10000)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query stale jobs: %w", err)
+	}
+	for _, job := range stale {
+		if err := c.DeferJob(ctx, job, time.Now(), fmt.Sprintf("requeued: processing for more than %s", olderThan)); err != nil {
+			return 0, err
+		}
+	}
+	return len(stale), nil
+}
+
+// KnownHashes returns every content hash the queue has a non-failed job for,
+// judged on each job's latest status. The watcher checks a whole scan against
+// this set in memory instead of asking once per file (#487); a failed job's
+// hash is absent, so the next scan enqueues the file again (#482).
+func (c *Client) KnownHashes(ctx context.Context) (map[string]struct{}, error) {
+	// toString strips the NUL padding of FixedString(64): S3 ETags are 32
+	// chars and would otherwise never match a Go string.
+	rows, err := c.Conn.Query(ctx, "SELECT DISTINCT toString(sha256_hash) FROM ("+latestJobs("")+") WHERE latest_status != 'failed'")
+	if err != nil {
+		return nil, fmt.Errorf("failed to load known hashes: %w", err)
+	}
+	defer rows.Close()
+	known := make(map[string]struct{})
+	for rows.Next() {
+		var h string
+		if err := rows.Scan(&h); err != nil {
+			return nil, fmt.Errorf("failed to scan hash: %w", err)
+		}
+		known[h] = struct{}{}
+	}
+	return known, rows.Err()
 }

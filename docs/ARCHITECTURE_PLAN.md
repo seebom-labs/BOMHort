@@ -147,7 +147,7 @@ bomhort/
        │ Configurable ignore prefix (SBOM_IGNORE_PREFIX, default "_")
        ▼
 Ingestion Watcher (CronJob)
-       │ Hash dedup → batch INSERT INTO ingestion_queue (500/batch)
+       │ Hash dedup (one KnownHashes query per run, checked in memory) → batch INSERT INTO ingestion_queue (500/batch)
        │ SBOM_LIMIT applies to SBOMs only – VEX files are always included
        │ SourceFile = relative path (local) or s3://bucket/key (S3)
        ▼
@@ -346,6 +346,33 @@ Decision log: license-resolution docs, D15. Tests:
 `internal/github/ratelimit_test.go`,
 `cmd/parsing-worker/license_provenance_test.go`,
 `internal/clickhouse/queue_defer_integration_test.go` (live).
+
+### Queue state and retries (#482, #487)
+
+`ingestion_queue` is append-only and `ORDER BY (status, created_at, job_id)`,
+so a job's older status rows never collapse under `FINAL`. Every reader that
+asks "what state is this job in" goes through one subquery (`latestJobs` in
+`queue.go`: `argMax(<col>, created_at) … GROUP BY job_id`) — `ClaimJobs`,
+`HashExists`, `KnownHashes`, `RequeueStaleJobs`. Consequences:
+
+- **A failed job's file is picked up again.** The watcher loads the set of
+  hashes whose *latest* status is not `failed` once per run (`KnownHashes`,
+  ~10 ms for 20k jobs) and checks the scan against it in memory — one query
+  instead of one per file. A job marked `failed` drops out of the set, so
+  the next scan enqueues the file as a new job.
+- **The `sboms` row is the commit marker.** `processSBOMJob` writes
+  `sbom_packages` → `vulnerabilities` → `license_compliance` → `sboms`. The
+  `SBOMExists` guard skips a retry only when the previous run got all the
+  way through; a run that died in between is redone, and its partial child
+  rows are superseded by key (`ReplacingMergeTree` on `sbom_id`).
+- **Shutdown defers, it does not fail.** When `ctx` is cancelled mid-job
+  (rolling restart), the worker calls `DeferJob(now, "shutdown")` instead of
+  `FailJob`; the next worker redoes the job from the start.
+- **Dead workers are swept.** Every worker runs `RequeueStaleJobs(1h)` on
+  start and hourly: a claim that has been `processing` longer than that is
+  returned to `pending`. Nothing legitimately runs that long.
+
+Tests: `internal/clickhouse/queue_retry_integration_test.go` (live).
 
 ### Ingestion Path Layout (`internal/ingestpath`)
 

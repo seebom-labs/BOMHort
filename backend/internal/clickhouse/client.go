@@ -73,12 +73,13 @@ func (c *Client) Close() error {
 	return c.Conn.Close()
 }
 
-// HashExists checks if a SHA256 hash already exists in the ingestion queue.
-// This covers both SBOM and VEX files and prevents re-enqueueing.
+// HashExists reports whether the queue has a non-failed job for this content
+// hash, judged on the job's latest status (see latestJobs). A failed job does
+// not count, so its file is picked up again.
 func (c *Client) HashExists(ctx context.Context, hash string) (bool, error) {
 	var count uint64
 	err := c.Conn.QueryRow(ctx,
-		"SELECT count() FROM ingestion_queue FINAL WHERE sha256_hash = ? AND status != 'failed'", hash).Scan(&count)
+		"SELECT count() FROM ("+latestJobs("WHERE job_id IN (SELECT job_id FROM ingestion_queue WHERE sha256_hash = ?)")+") WHERE latest_status != 'failed'", hash).Scan(&count)
 	if err != nil {
 		return false, fmt.Errorf("failed to check hash existence: %w", err)
 	}

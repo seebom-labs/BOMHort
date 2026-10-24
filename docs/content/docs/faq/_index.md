@@ -13,7 +13,7 @@ Common questions about running BOMHort — re-ingestion, database resets, GitHub
 
 ## How do I force a re-ingestion?
 
-The Ingestion Watcher runs as a **CronJob** (default: every 6 hours). It deduplicates files by SHA-256 hash — only new or changed SBOMs are enqueued. There are two scenarios:
+The Ingestion Watcher runs as a **CronJob** (default: every 6 hours). It deduplicates files by SHA-256 hash — only new or changed SBOMs are enqueued. A file whose last job **failed** does not count as known and is enqueued again on the next run; a job stuck in `processing` for more than an hour (worker OOM-killed, node lost) is handed back to the queue by the next worker sweep. There are two scenarios:
 
 ### Ingest new/changed files immediately
 
