@@ -1,0 +1,73 @@
+name: 'Upload SBOM to BOMHort'
+description: 'Upload an existing SBOM file to BOMHort via the push API'
+author: 'BOMHort maintainers'
+
+inputs:
+  url:
+    description: 'BOMHort instance URL (e.g. https://bomhort.example.com)'
+    required: true
+  token:
+    description: 'Upload authentication token (passed as Authorization: Bearer)'
+    required: true
+  sbom:
+    description: 'Path or pattern to an existing SBOM file (e.g. build/sbom.spdx.json)'
+    required: true
+  project:
+    description: 'Project name in BOMHort'
+    required: false
+    default: ${{ github.event.repository.name }}
+  version:
+    description: 'Version or tag of the artifact (optional metadata)'
+    required: false
+    default: ${{ github.ref_name }}
+  cluster:
+    description: 'Deployment cluster name'
+    required: false
+  namespace:
+    description: 'Deployment namespace'
+    required: false
+  parent:
+    description: 'Parent product or group name'
+    required: false
+  tags:
+    description: 'Comma-separated grouping tags'
+    required: false
+  source-repo:
+    description: 'Source repository URL'
+    required: false
+    default: ${{ github.server_url }}/${{ github.repository }}
+  source-ref:
+    description: 'Source git commit SHA, tag, or ref'
+    required: false
+    default: ${{ github.ref }}
+
+outputs:
+  status:
+    description: 'Upload status (pending or duplicate)'
+    value: ${{ steps.upload.outputs.status }}
+  job-id:
+    description: 'Ingestion job ID returned by BOMHort'
+    value: ${{ steps.upload.outputs.job-id }}
+  sha256-hash:
+    description: 'SHA-256 digest of the uploaded SBOM'
+    value: ${{ steps.upload.outputs.sha256-hash }}
+
+runs:
+  using: 'composite'
+  steps:
+    - id: upload
+      shell: bash
+      env:
+        INPUT_URL: ${{ inputs.url }}
+        INPUT_TOKEN: ${{ inputs.token }}
+        INPUT_SBOM: ${{ inputs.sbom }}
+        INPUT_PROJECT: ${{ inputs.project }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_CLUSTER: ${{ inputs.cluster }}
+        INPUT_NAMESPACE: ${{ inputs.namespace }}
+        INPUT_PARENT: ${{ inputs.parent }}
+        INPUT_TAGS: ${{ inputs.tags }}
+        INPUT_SOURCE_REPO: ${{ inputs.source-repo }}
+        INPUT_SOURCE_REF: ${{ inputs.source-ref }}
+      run: |
+        "${{ github.action_path }}/upload.sh"

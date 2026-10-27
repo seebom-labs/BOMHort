@@ -115,3 +115,30 @@ cp .env.example .env
 {{% alert title="Recommended: Set GITHUB_TOKEN" color="warning" %}}
 Without a GitHub token, license resolution is limited to **60 requests per hour** — most container-image SBOMs will have many packages stuck as `NOASSERTION`. Create a [Personal Access Token (classic)](https://github.com/settings/tokens) with **no scopes** and set it in your `.env` file. See [FAQ: Should I use a GitHub token?](/docs/faq/#should-i-use-a-github-token) for details.
 {{% /alert %}}
+
+## CI Integration
+
+To push SBOMs from your GitHub Actions workflows, use the first-party composite action:
+
+```yaml
+name: CI
+on: [push]
+
+jobs:
+  upload-sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # (Optional) Generate your SBOM here with Syft / cdxgen / bom
+
+      - name: Upload SBOM to BOMHort
+        uses: seebom-labs/BOMHort/.github/actions/upload-sbom@main
+        with:
+          url: 'https://bomhort.example.com'
+          token: ${{ secrets.BOMHORT_UPLOAD_TOKEN }}
+          sbom: 'build/app.spdx.json'
+          cluster: 'prod-eu'
+          namespace: 'payments'
+          tags: 'production,backend'
+```
