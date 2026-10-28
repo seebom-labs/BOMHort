@@ -1,0 +1,14 @@
+{
+  "name": "@bomhort/api-client",
+  "version": "0.0.0",
+  "description": "Framework-free, read-only TypeScript client and types for the BOMHort REST API",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist", "src"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "sideEffects": false
+}

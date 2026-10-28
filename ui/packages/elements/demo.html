@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <link rel="icon" href="data:," />
+  <title>BOMHort elements demo</title>
+  <link rel="stylesheet" href="dist/browser/styles.css" />
+  <script>window.BOMHORT_API_URL = "http://localhost:8080/api/v1";</script>
+  <script type="module" src="dist/browser/main.js"></script>
+  <style>
+    body { padding: 24px; display: grid; gap: 24px; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+    .row { display: flex; gap: 24px; align-items: center; flex-wrap: wrap; }
+    /* Feature elements fill a fixed-height host: the list uses a virtual-scroll viewport. */
+    bomhort-page { height: 700px; }
+    nav button { margin-right: 8px; }
+  </style>
+</head>
+<body>
+  <div class="card row">
+    <bomhort-donut-chart id="donut" center-label="42"></bomhort-donut-chart>
+    <bomhort-bar-chart id="bars"></bomhort-bar-chart>
+    <bomhort-scope-badge scope="direct"></bomhort-scope-badge>
+    <bomhort-scope-badge scope="transitive" depth="4"></bomhort-scope-badge>
+  </div>
+  <div class="card"><bomhort-scope-matrix id="matrix"></bomhort-scope-matrix></div>
+  <div class="card">
+    <nav id="nav">
+      <button data-route="/">Dashboard</button>
+      <button data-route="/vulnerabilities">Vulnerabilities</button>
+      <button data-route="/projects">Projects</button>
+      <button data-route="/license-compliance">Licenses</button>
+    </nav>
+    <p>Current route: <code id="current">/vulnerabilities</code></p>
+    <bomhort-page id="page" route="/vulnerabilities"></bomhort-page>
+  </div>
+  <script>
+    document.getElementById('donut').segments = [
+      { label: 'Critical', value: 2, color: '#C43030' },
+      { label: 'Low', value: 40, color: '#4b5563' },
+    ];
+    document.getElementById('bars').bars = [
+      { label: 'MIT', value: 120, color: 'var(--chart-1)' },
+      { label: 'Apache-2.0', value: 80, color: 'var(--chart-2)' },
+    ];
+    const page = document.getElementById('page');
+    document.getElementById('nav').addEventListener('click', (e) => {
+      if (e.target.dataset.route) page.setAttribute('route', e.target.dataset.route);
+    });
+    page.addEventListener('navigate', (e) => { document.getElementById('current').textContent = e.detail; });
+    fetch(window.BOMHORT_API_URL + '/stats/dashboard').then((r) => r.json())
+      .then((s) => { document.getElementById('matrix').breakdown = s.scope_breakdown; });
+  </script>
+</body>
+</html>

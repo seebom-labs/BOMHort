@@ -490,6 +490,10 @@ Moved to Section 10 for comprehensive coverage including exemptions and visual r
 
 **All components:** Standalone, OnPush change detection, lazy-loaded.
 
+**Parity gate:** `ui/e2e/` (Playwright) drives every route above through nginx against a demo-fleet stack and `e2e/bundle-size.mjs` checks the production bundle against a committed baseline — the contract any frontend refactor or component extraction has to keep (see Development → Testing).
+
+**Reusable packages (`ui/packages/`):** `@bomhort/api-client` is a zero-dependency fetch client with all DTO types (the Angular `ApiService` is proven equivalent by `api-client-parity.spec.ts`); `@bomhort/elements` builds the shared charts, scope badge/matrix and vuln aliases into framework-independent custom elements, plus `<bomhort-page route=…>`, which renders any app route through the real router on an in-memory `LocationStrategy` (`src/elements/page.component.ts`) and emits `navigate` to the host — so every page of the UI is embeddable without a second implementation via `@angular/elements` (`ng run ui:build-elements`, API base from `window.BOMHORT_API_URL`, injected through the `API_BASE_URL` token); `@bomhort/react` wraps those elements for React apps. The Angular app itself keeps its own bundle — the extraction adds a second build entry (`src/elements/main.ts`), not a rewrite.
+
 **Theming:**
 - 60+ CSS custom properties in `styles.scss` (layout, brand, navbar, text, severity, status, license, charts)
 - **Dark Mode Toggle** in the navbar (top right), persisted to `localStorage`, respects `prefers-color-scheme`

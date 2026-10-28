@@ -84,6 +84,23 @@
         },
         "test": {
           "builder": "@angular/build:unit-test"
+        },
+        "build-elements": {
+          "builder": "@angular/build:application",
+          "options": {
+            "browser": "src/elements/main.ts",
+            "tsConfig": "tsconfig.app.json",
+            "inlineStyleLanguage": "scss",
+            "outputPath": "packages/elements/dist",
+            "index": false,
+            "styles": [
+              "src/styles.scss"
+            ],
+            "outputHashing": "none",
+            "optimization": true,
+            "sourceMap": false,
+            "budgets": []
+          }
         }
       }
     }

@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Inject, Injectable, InjectionToken, Optional } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
@@ -34,13 +34,21 @@ import {
   NamespaceStats,
 } from './api.models';
 
+/** Base URL of the REST API; the app uses the nginx proxy at `/api/v1`, embedded elements point it elsewhere. */
+export const API_BASE_URL = new InjectionToken<string>('API_BASE_URL');
+
 @Injectable({
   providedIn: 'root',
 })
 export class ApiService {
-  private readonly baseUrl = '/api/v1';
+  private readonly baseUrl: string;
 
-  constructor(private readonly http: HttpClient) {}
+  constructor(
+    private readonly http: HttpClient,
+    @Optional() @Inject(API_BASE_URL) baseUrl: string | null,
+  ) {
+    this.baseUrl = (baseUrl ?? '/api/v1').replace(/\/$/, '');
+  }
 
   getDashboardStats(): Observable<DashboardStats> {
     return this.http.get<DashboardStats>(`${this.baseUrl}/stats/dashboard`);

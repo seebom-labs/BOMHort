@@ -1,0 +1,14 @@
+{
+  "name": "@bomhort/elements",
+  "version": "0.0.0",
+  "description": "BOMHort UI as framework-independent web components (charts, scope badge/matrix, <bomhort-page> for every route)",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/browser/main.js",
+  "files": [
+    "dist/browser",
+    "demo.html",
+    "README.md"
+  ],
+  "sideEffects": true
+}

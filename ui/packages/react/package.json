@@ -1,0 +1,11 @@
+{
+  "name": "@bomhort/react",
+  "version": "0.0.0",
+  "description": "React wrappers around the BOMHort web components (@bomhort/elements)",
+  "type": "module",
+  "main": "src/index.tsx",
+  "types": "src/index.tsx",
+  "license": "Apache-2.0",
+  "peerDependencies": { "react": ">=18" },
+  "files": ["src", "README.md"]
+}

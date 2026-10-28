@@ -240,10 +240,52 @@ jobs:
       - name: Push chart
         run: helm push "bomhort-${VERSION}.tgz" "oci://$REGISTRY/$REPO/charts"
 
+  npm:
+    name: Publish npm packages
+    runs-on: ubuntu-latest
+    needs: [prepare, images]
+    permissions:
+      contents: read
+      id-token: write       # npm trusted publishing (OIDC) + provenance; no NPM_TOKEN secret
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - run: npm ci
+
+      # Packages carry 0.0.0 in git; the release tag is the only version source.
+      - name: Stamp version
+        run: |
+          for p in api-client elements react; do
+            npm version "$VERSION" --no-git-tag-version --prefix "packages/$p"
+          done
+
+      - name: Build
+        run: npx tsc -p packages/api-client && npm run build:elements
+
+      - name: Publish
+        env:
+          NPM_TAG: ${{ needs.prepare.outputs.prerelease == 'true' && 'next' || 'latest' }}
+        run: |
+          for p in api-client elements react; do
+            npm publish "./packages/$p" --provenance --access public --tag "$NPM_TAG"
+          done
+
   github-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [prepare, images, helm]
+    needs: [prepare, images, helm, npm]
     permissions:
       contents: write       # Create the release (and, for manual runs, the tag)
       id-token: write

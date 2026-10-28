@@ -137,7 +137,8 @@ The GitHub Actions workflow (`.github/workflows/release.yml`) triggers on any `v
    - `ghcr.io/seebom-labs/bomhort/<component>:latest` — **final releases only**; an RC never moves `latest`
 4. **Packages the Helm chart** with `version` and `appVersion` set to the release version, so the chart deploys exactly the images of its own release
 5. **Pushes the Helm chart** as an OCI artifact to `oci://ghcr.io/seebom-labs/bomhort/charts`
-6. **Creates a GitHub Release** with:
+6. **Publishes the npm packages** `@bomhort/api-client`, `@bomhort/elements`, `@bomhort/react` to npmjs.org with the release version stamped in (the repo keeps `0.0.0`) and npm provenance. Final releases get the `latest` dist-tag, pre-releases `next`. Auth is npm **trusted publishing** (OIDC, no token secret): the `@bomhort` org on npmjs.com must list this repo + `release.yml` as trusted publisher for each package — a one-time setup per package, done by hand (the first publish of a new package also has to be manual, trusted publishing only covers existing packages).
+7. **Creates a GitHub Release** with:
    - Release notes generated against the **previous final release** (not the previous tag), so `v0.8.0` lists everything since `v0.7.1`, not only what changed since `v0.8.0-rc.2`
    - `helm install` / `helm upgrade` and `docker pull` commands for all 6 images
    - SPDX SBOM of the repository, signed, with provenance
@@ -166,6 +167,9 @@ docker pull ghcr.io/seebom-labs/bomhort/api-gateway:0.8.0
 
 # Check Helm chart
 helm show chart oci://ghcr.io/seebom-labs/bomhort/charts/bomhort --version 0.8.0
+
+# Check npm packages
+npm view @bomhort/elements@0.8.0 version
 ```
 
 ---
