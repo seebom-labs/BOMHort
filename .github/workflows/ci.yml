@@ -132,6 +132,9 @@ jobs:
   frontend-e2e:
     name: Frontend e2e (Playwright)
     runs-on: ubuntu-latest
+    concurrency:
+      group: frontend-e2e-${{ github.ref }}
+      cancel-in-progress: true
     defaults:
       run:
         working-directory: ui
@@ -150,10 +153,17 @@ jobs:
       - name: Bundle size against baseline
         run: npx ng build --configuration=production && npm run e2e:bundle-size && npm run build:elements
 
+      # Same manifests the release job publishes; a broken `files`/`main` fails here, not on release day.
+      - name: npm publish dry-run
+        run: for p in api-client elements react; do npm publish "./packages/$p" --dry-run; done
+
       # The suite runs against the real stack (nginx, /api proxy, CSP), seeded
       # with the demo fleet, so a broken proxy or header fails here, not in prod.
       - name: Start stack with demo fleet
         working-directory: .
+        env:
+          # License resolution asks GitHub; unauthenticated it parks jobs on the rate limit and the queue never drains.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # The vulnerability pages need real OSV findings; .env.example disables them.
           sed 's/^SKIP_OSV=true/SKIP_OSV=false/' .env.example > .env

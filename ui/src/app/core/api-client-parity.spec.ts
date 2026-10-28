@@ -22,7 +22,7 @@ const calls: Record<string, unknown[]> = {
   getLicenseSources: [],
   getProjectsWithLicenseViolations: [],
   getProjectLicenseViolationSummaries: ['pay'],
-  getDependencyStats: [100],
+  getDependencyStats: [0], // 0 is a real value and must not be dropped like '' / undefined
   getVersionSkew: [1, 20, 'lodash'],
   getVEXStatements: [1, 50],
   getLicenseExceptions: [],

@@ -9,10 +9,12 @@ const baselineFile = join(import.meta.dirname, 'bundle-size.baseline.json');
 const tolerance = 0.1;
 
 const js = readdirSync(dir).filter((f) => f.endsWith('.js'));
+// Initial = every script index.html loads eagerly (main, polyfills, shared chunks).
+const initial = [
+  ...readFileSync(join(dir, 'index.html'), 'utf8').matchAll(/<script[^>]+src="([^"]+\.js)"/g),
+].map((m) => m[1]);
 const actual = {
-  initialBytes: js
-    .filter((f) => f.startsWith('main-'))
-    .reduce((n, f) => n + statSync(join(dir, f)).size, 0),
+  initialBytes: initial.reduce((n, f) => n + statSync(join(dir, f)).size, 0),
   totalBytes: js.reduce((n, f) => n + statSync(join(dir, f)).size, 0),
   chunks: js.length,
 };

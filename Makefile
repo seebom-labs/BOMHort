@@ -285,9 +285,10 @@ ui-e2e: ## Run the Playwright UI suite against the running demo fleet (make dev-
 ui-e2e-wait: ## Block until the ingestion queue is drained (demo fleet fully processed)
 	@for i in $$(seq 1 60); do \
 		n=$$(docker compose exec -T clickhouse clickhouse-client --database=bomhort --query \
-			"SELECT countIf(s IN ('pending','processing')) FROM (SELECT argMax(status, created_at) AS s FROM ingestion_queue GROUP BY job_id)" 2>/dev/null); \
+			"SELECT countIf(s IN ('pending','processing')) FROM (SELECT argMax(status, created_at) AS s FROM ingestion_queue GROUP BY job_id)"); \
 		[ "$$n" = "0" ] && echo "ingestion queue drained" && exit 0; sleep 5; \
-	done; echo "ingestion queue not drained in time"; exit 1
+	done; echo "ingestion queue not drained in time:"; docker compose exec -T clickhouse clickhouse-client --database=bomhort --query \
+		"SELECT s, count() FROM (SELECT argMax(status, created_at) AS s FROM ingestion_queue GROUP BY job_id) GROUP BY s"; exit 1
 
 # ─── Container Images ────────────────────────────────────────────────────────
 images: ## Build all container images locally (TAG=dev)

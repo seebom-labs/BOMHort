@@ -58,9 +58,13 @@ export class PageComponent implements OnInit, OnChanges, OnDestroy {
   constructor(private readonly router: Router) {}
 
   ngOnInit(): void {
+    // shortcut: all elements share one Router, so two pages would swap content together; one app per element when a host needs two
+    if (document.querySelectorAll('bomhort-page').length > 1)
+      throw new Error('bomhort-page: only one instance per document is supported');
     this.sub = this.router.events
       .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
       .subscribe((e) => this.navigate.emit(e.urlAfterRedirects));
+    void this.router.navigateByUrl(this.route || '/');
   }
 
   ngOnChanges(): void {

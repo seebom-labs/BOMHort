@@ -28,18 +28,27 @@ function wrap<P extends object>(tag: string) {
       if (!el) return;
       for (const [key, value] of objectProps) el[key] = value;
     });
-    // React does not bind `onX` to custom events, so Angular outputs are attached by hand.
+    // React does not bind `onX` to custom events. One stable listener per event name,
+    // reading the latest handler from a ref, so re-renders never detach and miss an event.
+    const handlers = useRef<Record<string, unknown>>({});
+    handlers.current = props;
+    const eventNames = Object.keys(props)
+      .filter((k) => k.startsWith('on'))
+      .join(',');
     useLayoutEffect(() => {
       const el = ref.current;
-      if (!el) return;
-      const handlers = Object.entries(props).filter(
-        ([k, v]) => k.startsWith('on') && typeof v === 'function',
-      ) as [string, EventListener][];
-      for (const [k, fn] of handlers) el.addEventListener(k.slice(2).toLowerCase(), fn);
+      if (!el || !eventNames) return;
+      const pairs = eventNames
+        .split(',')
+        .map((k): [string, EventListener] => [
+          k.slice(2).toLowerCase(),
+          (e) => (handlers.current[k] as EventListener | undefined)?.(e),
+        ]);
+      for (const [name, fn] of pairs) el.addEventListener(name, fn);
       return () => {
-        for (const [k, fn] of handlers) el.removeEventListener(k.slice(2).toLowerCase(), fn);
+        for (const [name, fn] of pairs) el.removeEventListener(name, fn);
       };
-    });
+    }, [eventNames]);
     return createElement(tag, attrs);
   };
 }
@@ -65,9 +74,7 @@ export const BarChart = wrap<{ bars: BarItem[] }>('bomhort-bar-chart');
 export const ScopeBadge = wrap<{ scope: string; depth?: number; size?: 'sm' | 'md' }>(
   'bomhort-scope-badge',
 );
-export const ScopeMatrix = wrap<{ breakdown?: ScopeBreakdown; vulnLink?: string }>(
-  'bomhort-scope-matrix',
-);
+export const ScopeMatrix = wrap<{ breakdown?: ScopeBreakdown }>('bomhort-scope-matrix');
 export const VulnAliases = wrap<{ vuln: Vulnerability; max?: number }>('bomhort-vuln-aliases');
 /** Any BOMHort route (`/`, `/projects/:name`, `/sboms/:id`, `/vulnerabilities`, …). Give it a height. */
 export const BomhortPage = wrap<{ route: string; onNavigate?: (e: CustomEvent<string>) => void }>(

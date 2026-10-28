@@ -13,8 +13,13 @@ import { ScopeBadgeComponent } from '../app/shared/scope-badge/scope-badge.compo
 import { ScopeMatrixComponent } from '../app/shared/scope-matrix/scope-matrix.component';
 import { VulnAliasesComponent } from '../app/shared/vuln-aliases/vuln-aliases.component';
 
-/** Set `window.BOMHORT_API_URL` before loading the bundle; module scripts cannot read their own data attributes. */
-const apiBase = (window as unknown as { BOMHORT_API_URL?: string }).BOMHORT_API_URL ?? '/api/v1';
+declare global {
+  interface Window {
+    /** Set before loading the bundle; module scripts cannot read their own data attributes. */
+    BOMHORT_API_URL?: string;
+  }
+}
+const apiBase = window.BOMHORT_API_URL ?? '/api/v1';
 
 const elements: [string, unknown][] = [
   ['bomhort-donut-chart', DonutChartComponent],
