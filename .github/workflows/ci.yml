@@ -129,6 +129,53 @@ jobs:
       - name: Build
         run: npx ng build --configuration=production
 
+  frontend-e2e:
+    name: Frontend e2e (Playwright)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci && npx playwright install --with-deps chromium
+
+      - name: Bundle size against baseline
+        run: npx ng build --configuration=production && npm run e2e:bundle-size && npm run build:elements
+
+      # The suite runs against the real stack (nginx, /api proxy, CSP), seeded
+      # with the demo fleet, so a broken proxy or header fails here, not in prod.
+      - name: Start stack with demo fleet
+        working-directory: .
+        run: |
+          # The vulnerability pages need real OSV findings; .env.example disables them.
+          sed 's/^SKIP_OSV=true/SKIP_OSV=false/' .env.example > .env
+          make dev-up && make demo-fleet && make ui-e2e-wait
+
+      - name: Run Playwright
+        run: npm run e2e
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            ui/playwright-report
+            ui/test-results
+          retention-days: 7
+
+      - name: Stack logs
+        if: failure()
+        working-directory: .
+        run: docker compose logs --no-color --tail=200
+
   helm:
     name: Helm Lint
     runs-on: ubuntu-latest

@@ -249,6 +249,34 @@ npx ng test --watch=false
 | `loading-bar.component.spec.ts` | 3 | Loading bar visibility, slow-request hint, ARIA attributes |
 | **Total** | **144** | **21 spec files** |
 
+## UI end-to-end tests (Playwright)
+
+The unit specs mock HTTP; the e2e suite in `ui/e2e/` drives the **built UI through nginx against a live stack**, so the `/api` proxy, security headers, `ui-config.json`, `custom-theme.css` and the real API contract are all under test. It is the parity gate for any frontend refactor: the suite must stay green and unchanged.
+
+```bash
+make dev-up && make demo-fleet && make ui-e2e-wait   # seed examples/fleet, wait for the queue to drain
+make ui-e2e                                          # or: cd ui && npm run e2e / npm run e2e:ui
+E2E_BASE_URL=http://localhost:4200 npm run e2e       # against `make ui-dev` instead of nginx
+```
+
+| Spec | Routes | What's covered |
+|------|--------|---------------|
+| `app-shell.spec.ts` | all | Dark mode (OS preference, toggle, localStorage), CSP + security headers, `ui-config.json` / `custom-theme.css`, navbar links, dashboard error state when the API is down |
+| `dashboard.spec.ts` | `/`, `**` | KPI cards, charts, sanitized description, unknown-route redirect |
+| `fleet.spec.ts` | `/fleet` | Fleet link only with clusters, cluster → namespace → project drill-down, stats aside |
+| `projects.spec.ts` | `/projects`, `/projects/:name` | Search, empty state, all tabs incl. virtual-scrolled versions/packages, not-found |
+| `sboms.spec.ts` | `/sboms`, `/sboms/:id` | Flat/grouped toggle (`?view=grouped`), search, four tabs, original download |
+| `vulnerabilities.spec.ts` | `/vulnerabilities`, `/cve-impact` | Virtual list window, id filter, scope filter + CSV export, CVE search, grouping, alias deep link |
+| `elements-demo.spec.ts` | `packages/elements/demo.html` | The web-components bundle (`npm run build:elements`) mounts outside the Angular app and loads data from the API, and `<bomhort-page>` routes internally (vuln link → CVE impact) and reports the URL to the host; served by Playwright's `webServer` on `:8099` |
+| `licenses.spec.ts` | `/licenses`, `/license-compliance` | Category cards, resolution sources, sort, expand; violations filter (`?search=`), exceptions tab |
+| `search.spec.ts` | `/dependencies`, `/package-search(/:name)`, `/version-skew`, `/archived-packages`, `/search` | Sorting, searching, pagination, navbar dropdown |
+
+Every test fails on a browser console error or a failed `/api` response (fixture `expectApiErrors` opts a not-found test out). Tests read their expectations from the API, not from hard-coded demo names. The suite runs with one worker: the gateway rate limit (100 req/10 s per IP) trips with parallel workers.
+
+**Performance gate:** `npm run e2e:bundle-size` compares the production build with `ui/e2e/bundle-size.baseline.json` (initial and total JS, +10 % tolerance). Update it deliberately with `node e2e/bundle-size.mjs --update` when a size change is intended.
+
+CI runs both in the `frontend-e2e` job (`.github/workflows/ci.yml`), uploading the Playwright report and compose logs on failure.
+
 ### Test Patterns (Angular)
 
 - **Model tests** — Verify TypeScript interfaces match API shapes (no HTTP mocking needed)
