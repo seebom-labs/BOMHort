@@ -7,8 +7,12 @@ inputs:
     description: 'BOMHort instance URL (e.g. https://bomhort.example.com)'
     required: true
   token:
-    description: 'Upload authentication token (passed as Authorization: Bearer)'
+    description: 'Service token or API key, selected by auth-type'
     required: true
+  auth-type:
+    description: 'Credential type: bearer for a service token, or api-key for an API key'
+    required: false
+    default: bearer
   sbom:
     description: 'Path or pattern to an existing SBOM file (e.g. build/sbom.spdx.json)'
     required: true
@@ -16,10 +20,6 @@ inputs:
     description: 'Project name in BOMHort'
     required: false
     default: ${{ github.event.repository.name }}
-  version:
-    description: 'Version or tag of the artifact (optional metadata)'
-    required: false
-    default: ${{ github.ref_name }}
   cluster:
     description: 'Deployment cluster name'
     required: false
@@ -39,7 +39,7 @@ inputs:
   source-ref:
     description: 'Source git commit SHA, tag, or ref'
     required: false
-    default: ${{ github.ref }}
+    default: ${{ github.sha }}
 
 outputs:
   status:
@@ -60,9 +60,9 @@ runs:
       env:
         INPUT_URL: ${{ inputs.url }}
         INPUT_TOKEN: ${{ inputs.token }}
+        INPUT_AUTH_TYPE: ${{ inputs.auth-type }}
         INPUT_SBOM: ${{ inputs.sbom }}
         INPUT_PROJECT: ${{ inputs.project }}
-        INPUT_VERSION: ${{ inputs.version }}
         INPUT_CLUSTER: ${{ inputs.cluster }}
         INPUT_NAMESPACE: ${{ inputs.namespace }}
         INPUT_PARENT: ${{ inputs.parent }}

@@ -142,3 +142,5 @@ jobs:
           namespace: 'payments'
           tags: 'production,backend'
 ```
+
+For reproducible workflows, replace `@main` with a release tag or full commit SHA.
