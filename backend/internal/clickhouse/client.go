@@ -19,6 +19,9 @@ type Client struct {
 	archivedMu    sync.Mutex
 	archivedCount uint64
 	archivedAt    time.Time
+
+	// archivedListMu serialises unscoped QueryArchivedPackages calls.
+	archivedListMu sync.Mutex
 }
 
 // NewClient creates a new ClickHouse client from config.

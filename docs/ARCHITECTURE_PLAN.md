@@ -630,6 +630,10 @@ Exemptions are written at ingest time into `exempted_packages` + `exemption_reas
 - Returns all packages whose PURL points to an archived GitHub repo
 - With project aggregation (name + version tags)
 - Sorted by stars (most popular archived repos first)
+- `?sbom_id=` scopes the result to one SBOM. The detail page uses it; the
+  corpus-wide list (~100k rows, ~200 MiB of allocations per call on the CNCF
+  instance) is served to one caller at a time, because a handful of concurrent
+  calls OOM-killed a 512 MiB gateway.
 
 **UI Integration:**
 - Dashboard: Orange warning banner when archived_repos_count > 0

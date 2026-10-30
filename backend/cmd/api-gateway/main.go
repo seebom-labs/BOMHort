@@ -590,15 +590,7 @@ func main() {
 	})
 
 	// ── Archived GitHub Packages ───────────────────────────────────────
-	mux.HandleFunc("GET /api/v1/packages/archived", func(w http.ResponseWriter, r *http.Request) {
-		packages, err := chClient.QueryArchivedPackages(r.Context())
-		if err != nil {
-			log.Printf("ERROR: archived packages: %v", err)
-			writeError(w, http.StatusInternalServerError, "Failed to fetch archived packages")
-			return
-		}
-		writeJSON(w, http.StatusOK, packages)
-	})
+	mux.HandleFunc("GET /api/v1/packages/archived", archivedPackagesHandler(chClient.QueryArchivedPackages))
 
 	mux.HandleFunc("GET /api/v1/packages/search", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query().Get("q")
@@ -910,6 +902,26 @@ func main() {
 	}
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("Server failed: %v", err)
+	}
+}
+
+// archivedPackagesHandler serves GET /api/v1/packages/archived. `sbom_id`
+// scopes the list to one SBOM; the detail page asks for exactly that and
+// used to pull the corpus-wide list (~100k rows) on every visit.
+func archivedPackagesHandler(query func(context.Context, string) ([]clickhouse.ArchivedPackageInfo, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sbomID := r.URL.Query().Get("sbom_id")
+		if sbomID != "" && !isValidUUID(sbomID) {
+			writeError(w, http.StatusBadRequest, "Invalid sbom_id format")
+			return
+		}
+		packages, err := query(r.Context(), sbomID)
+		if err != nil {
+			log.Printf("ERROR: archived packages: %v", err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch archived packages")
+			return
+		}
+		writeJSON(w, http.StatusOK, packages)
 	}
 }
 

@@ -157,7 +157,7 @@ func TestQueriesExecute(t *testing.T) {
 		// (a LIKE that could never match gopkg.in/yaml.v3 against go-yaml/yaml),
 		// once as a plain type error ClickHouse only raises at plan time, and
 		// once by exceeding max_memory_usage with a per-row SQL mapping.
-		{"QueryArchivedPackages", func() error { _, err := c.QueryArchivedPackages(ctx); return err }},
+		{"QueryArchivedPackages", func() error { _, err := c.QueryArchivedPackages(ctx, ""); return err }},
 		{"QueryArchivedReposInUse", func() error { _, err := c.QueryArchivedReposInUse(ctx); return err }},
 		{"ResolveSBOMByProductRef", func() error {
 			_, err := c.ResolveSBOMByProductRef(ctx, "https://github.com/example-org/example-app")

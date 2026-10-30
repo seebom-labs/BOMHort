@@ -166,8 +166,8 @@ export class BomhortApiClient {
     return this.get('/license-exceptions', signal);
   }
 
-  getArchivedPackages(signal?: AbortSignal): Promise<ArchivedPackageInfo[]> {
-    return this.get('/packages/archived', signal);
+  getArchivedPackages(sbomId?: string, signal?: AbortSignal): Promise<ArchivedPackageInfo[]> {
+    return this.get(`/packages/archived${query({ sbom_id: sbomId })}`, signal);
   }
 
   searchPackages(q: string, page = 1, pageSize = 50, signal?: AbortSignal): Promise<DependencySearchResponse> {

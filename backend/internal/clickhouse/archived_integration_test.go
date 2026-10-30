@@ -94,7 +94,7 @@ func TestArchivedPackagesAndDependenciesSeeded(t *testing.T) {
 		t.Fatalf("dependencies after packages = %d nodes, %v; want %d", len(nodes), err, len(names))
 	}
 
-	all, err := c.QueryArchivedPackages(ctx)
+	all, err := c.QueryArchivedPackages(ctx, "")
 	if err != nil {
 		t.Fatalf("QueryArchivedPackages: %v", err)
 	}
@@ -106,6 +106,17 @@ func TestArchivedPackagesAndDependenciesSeeded(t *testing.T) {
 	}
 	if len(got) != 2 {
 		t.Fatalf("archived packages for the SBOM = %+v, want direct-sub and via-gopkg-in", got)
+	}
+	// Scoped to the SBOM: the same two rows and nothing from other SBOMs.
+	scoped, err := c.QueryArchivedPackages(ctx, sbomID.String())
+	if err != nil {
+		t.Fatalf("QueryArchivedPackages(sbom): %v", err)
+	}
+	if len(scoped) != 2 || scoped[0].SBOMID != sbomID.String() || scoped[1].SBOMID != sbomID.String() {
+		t.Fatalf("scoped archived packages = %+v, want the 2 rows of %s", scoped, sbomID)
+	}
+	if other, err := c.QueryArchivedPackages(ctx, uuid.NewString()); err != nil || len(other) != 0 {
+		t.Fatalf("archived packages for unknown SBOM = %v, %v; want empty", other, err)
 	}
 	if p := got["direct-sub"]; p.Repo != direct || p.Stars != 42 || p.ProjectName != owner+"-project" || p.PackagePURL != purls[1] {
 		t.Errorf("direct-sub = %+v", p)

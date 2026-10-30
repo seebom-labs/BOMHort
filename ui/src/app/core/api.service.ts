@@ -175,8 +175,9 @@ export class ApiService {
     return this.http.get<LicenseExceptionsFile>(`${this.baseUrl}/license-exceptions`);
   }
 
-  getArchivedPackages(): Observable<ArchivedPackageInfo[]> {
-    return this.http.get<ArchivedPackageInfo[]>(`${this.baseUrl}/packages/archived`);
+  getArchivedPackages(sbomId?: string): Observable<ArchivedPackageInfo[]> {
+    const params = sbomId ? new HttpParams().set('sbom_id', sbomId) : undefined;
+    return this.http.get<ArchivedPackageInfo[]>(`${this.baseUrl}/packages/archived`, { params });
   }
 
   searchPackages(query: string, page = 1, pageSize = 50): Observable<DependencySearchResponse> {

@@ -26,7 +26,7 @@ const calls: Record<string, unknown[]> = {
   getVersionSkew: [1, 20, 'lodash'],
   getVEXStatements: [1, 50],
   getLicenseExceptions: [],
-  getArchivedPackages: [],
+  getArchivedPackages: ['id-1'],
   searchPackages: ['net', 2, 10],
   getPackageDetail: ['golang.org/x/net', 1, 50],
   getProjects: [1, 50, '', 'sandbox'],

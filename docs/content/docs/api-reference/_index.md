@@ -1423,6 +1423,12 @@ Only repositories that something in the corpus still depends on are reported.
 distinct `repo` values of exactly this endpoint, so the banner and the list can
 never disagree.
 
+**Query parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `sbom_id` | UUID | Only rows of this SBOM. Use it when you need the archived packages of one document — the unscoped list is corpus-wide (~100k rows on a large instance) and is served to one caller at a time. |
+
 **Response:** `200 OK`
 ```json
 [
@@ -1441,6 +1447,9 @@ never disagree.
 ```
 
 Returns `[]` when nothing is affected, never `null`.
+
+**Errors:**
+- `400` — `sbom_id` is not a UUID
 
 {{% alert title="Import path ≠ repository" color="info" %}}
 `repo` is the GitHub repository, which frequently has no textual relationship
