@@ -591,6 +591,17 @@ func main() {
 
 	// ── Archived GitHub Packages ───────────────────────────────────────
 	mux.HandleFunc("GET /api/v1/packages/archived", archivedPackagesHandler(chClient.QueryArchivedPackages))
+	mux.HandleFunc("GET /api/v1/packages/archived/repos", func(w http.ResponseWriter, r *http.Request) {
+		page := parseUint64(r.URL.Query().Get("page"), 1)
+		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 20))
+		resp, err := chClient.QueryArchivedRepos(r.Context(), page, pageSize)
+		if err != nil {
+			log.Printf("ERROR: archived repos: %v", err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch archived repositories")
+			return
+		}
+		writeJSON(w, http.StatusOK, resp)
+	})
 
 	mux.HandleFunc("GET /api/v1/packages/search", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query().Get("q")

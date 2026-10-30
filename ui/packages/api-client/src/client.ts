@@ -1,6 +1,7 @@
 import type {
   AffectedProject,
   ArchivedPackageInfo,
+  ArchivedRepoGroup,
   ClusterListItem,
   ClusterStats,
   DashboardStats,
@@ -168,6 +169,10 @@ export class BomhortApiClient {
 
   getArchivedPackages(sbomId?: string, signal?: AbortSignal): Promise<ArchivedPackageInfo[]> {
     return this.get(`/packages/archived${query({ sbom_id: sbomId })}`, signal);
+  }
+
+  getArchivedRepos(page = 1, pageSize = 20, signal?: AbortSignal): Promise<PaginatedResponse<ArchivedRepoGroup>> {
+    return this.get(`/packages/archived/repos${query({ page, page_size: pageSize })}`, signal);
   }
 
   searchPackages(q: string, page = 1, pageSize = 50, signal?: AbortSignal): Promise<DependencySearchResponse> {

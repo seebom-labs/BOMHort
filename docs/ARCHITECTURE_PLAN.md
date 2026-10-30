@@ -243,7 +243,8 @@ S3 project grouping continues to use the source path. See the
 | GET | `/api/v1/license-exceptions` | Active license exceptions (read-only, from config file) |
 | GET | `/api/v1/license-policy` | Active license classification (permissive/copyleft lists) |
 | GET | `/api/v1/vex/statements?page=&page_size=` | Paginated VEX statements with matched affected_sboms |
-| GET | `/api/v1/packages/archived` | Packages using archived GitHub repos (no longer maintained) |
+| GET | `/api/v1/packages/archived` | Packages using archived GitHub repos (no longer maintained); `?sbom_id=` scopes to one document |
+| GET | `/api/v1/packages/archived/repos` | Same findings grouped by repository, paginated over repos (what the UI page renders) |
 | GET | `/api/v1/packages/search?q=&page=&page_size=` | Fuzzy package name search across all SBOMs (ILIKE, paginated) |
 | GET | `/api/v1/packages/detail?name=&page=&page_size=` | All projects using a specific package (paginated) |
 | GET | `/api/v1/search?q=&limit=` | Global faceted search across packages, projects, vulnerabilities, licenses |
@@ -635,10 +636,17 @@ Exemptions are written at ingest time into `exempted_packages` + `exemption_reas
   instance) is served to one caller at a time, because a handful of concurrent
   calls OOM-killed a 512 MiB gateway.
 
+**API Endpoint:** `GET /api/v1/packages/archived/repos`
+- Paginated (`page`, `page_size`) over archived repositories, stars desc
+- Each repo carries its dependent SBOMs once (no package-name expansion)
+- Paging over repos happens before package rows are read, so a page is
+  bounded (~50 MiB for the top 20 repos on the CNCF instance vs. ~400 MiB
+  for the flat list)
+
 **UI Integration:**
 - Dashboard: Orange warning banner when archived_repos_count > 0
 - SBOM Detail/Dependencies tab: `📦 ARCHIVED` badge next to affected packages
-- Archived Packages page: Grouped by repo, then by project with version tags
+- Archived Packages page: `/packages/archived/repos`, grouped by repo, then by project with version tags, "Load more" per 20 repos
 
 ## 11. Decision Log
 

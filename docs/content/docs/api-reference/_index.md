@@ -1459,6 +1459,51 @@ mapping is maintained in `internal/github` and applied on both the ingest and
 the query side — do not try to derive one from the other by string matching.
 {{% /alert %}}
 
+### `GET /api/v1/packages/archived/repos`
+
+The same findings grouped by archived repository and paginated. This is what
+the *Archived Packages* UI page uses: pagination happens over repositories
+**before** any package rows are read, so one page costs a bounded amount of
+memory regardless of how many SBOMs depend on `json-iterator/go`.
+
+Repositories are ordered by `stars` descending, then by name. Each repository
+lists every SBOM that depends on it exactly once, without the package names
+(use the flat endpoint with `sbom_id` for those).
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `page` | int | 1 | 1-based page over repositories |
+| `page_size` | int | 20 | Repositories per page, max 500 |
+
+**Response:** `200 OK`
+```json
+{
+  "data": [
+    {
+      "repo": "go-yaml/yaml",
+      "stars": 7019,
+      "last_pushed": "2025-04-01T17:00:11Z",
+      "sboms": [
+        {
+          "sbom_id": "6f2b525a-fbde-5b43-aa92-ac06a3f7220d",
+          "project_name": "k2s",
+          "project_version": "0.3.0"
+        }
+      ]
+    }
+  ],
+  "total": 91,
+  "page": 1,
+  "page_size": 20
+}
+```
+
+`total` is the number of distinct archived repositories, identical to
+`archived_repos_count` in dashboard stats. A page past the end returns an
+empty `data` array with the same `total`.
+
 ---
 
 ## Clusters

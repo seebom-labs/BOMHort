@@ -27,6 +27,7 @@ const calls: Record<string, unknown[]> = {
   getVEXStatements: [1, 50],
   getLicenseExceptions: [],
   getArchivedPackages: ['id-1'],
+  getArchivedRepos: [2, 20],
   searchPackages: ['net', 2, 10],
   getPackageDetail: ['golang.org/x/net', 1, 50],
   getProjects: [1, 50, '', 'sandbox'],

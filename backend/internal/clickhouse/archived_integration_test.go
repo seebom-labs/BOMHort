@@ -125,6 +125,41 @@ func TestArchivedPackagesAndDependenciesSeeded(t *testing.T) {
 		t.Errorf("via-gopkg-in = %+v", p)
 	}
 
+	// Grouped view: both seeded repos present, each with exactly this SBOM
+	// once, even though "direct" is matched via a purl with a subpath.
+	grouped, err := c.QueryArchivedRepos(ctx, 1, 500)
+	if err != nil {
+		t.Fatalf("QueryArchivedRepos: %v", err)
+	}
+	if grouped.Total < 2 || grouped.Page != 1 || grouped.PageSize != 500 {
+		t.Fatalf("QueryArchivedRepos meta = total %d page %d size %d", grouped.Total, grouped.Page, grouped.PageSize)
+	}
+	found := 0
+	for _, g := range grouped.Data {
+		if g.Repo != direct && g.Repo != gopkgIn {
+			continue
+		}
+		found++
+		n := 0
+		for _, sb := range g.SBOMs {
+			if sb.SBOMID == sbomID.String() {
+				n++
+				if sb.ProjectName != owner+"-project" {
+					t.Errorf("%s sbom = %+v", g.Repo, sb)
+				}
+			}
+		}
+		if n != 1 {
+			t.Errorf("%s lists the SBOM %d times, want once: %+v", g.Repo, n, g.SBOMs)
+		}
+	}
+	if found != 2 {
+		t.Errorf("grouped repos found = %d, want direct and gopkg-in", found)
+	}
+	if empty, err := c.QueryArchivedRepos(ctx, grouped.Total+1, 500); err != nil || len(empty.Data) != 0 || empty.Total != grouped.Total {
+		t.Fatalf("page past the end = %+v, %v; want empty data, same total", empty, err)
+	}
+
 	inUse, err := c.QueryArchivedReposInUse(ctx)
 	if err != nil {
 		t.Fatalf("QueryArchivedReposInUse: %v", err)
