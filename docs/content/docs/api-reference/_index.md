@@ -1104,7 +1104,26 @@ or PURL.
 }
 ```
 
----
+### `GET /api/v1/badges/projects/{name}/vulnerabilities.svg`
+
+Status badge for repository READMEs showing vulnerability counts by severity (`0 C · 2 H · 7 M · 11 L`), colored by the worst non-zero bucket (critical: red, high: orange, medium: yellow, low: grey, clean: green). Cached in-process for 1 hour (`Cache-Control: max-age=3600`).
+
+Optional query parameter:
+- `version`: target a specific `document_version` instead of the project aggregate.
+
+**Response:** `200 OK`, `Content-Type: image/svg+xml`
+
+### `GET /api/v1/badges/projects/{name}/licenses.svg`
+
+Status badge for repository READMEs showing license compliance status (`compliant` in green, `N violations` in red, or `N unknown` in grey). Cached in-process for 1 hour (`Cache-Control: max-age=3600`).
+
+Optional query parameter:
+- `version`: target a specific `document_version` instead of the project aggregate.
+
+**Response:** `200 OK`, `Content-Type: image/svg+xml`
+
+> **Note on Authentication (`BADGES_PUBLIC`):**  
+> When `AUTH_ENABLED=true` on the API Gateway, badges require an API key or bearer token like all other REST endpoints. Setting `BADGES_PUBLIC=true` deliberately exempts these two badge endpoints from authentication to enable embedding them in public READMEs. This is an intentional public disclosure of aggregate counts only; no package details or document names beyond the project name in the URL are exposed.
 
 ### `GET /api/v1/projects/license-compliance`
 

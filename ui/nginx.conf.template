@@ -56,7 +56,8 @@ server {
     # Proxy API requests to the API Gateway service.
     # When AUTH_ENABLED=true on the gateway, the UI is authenticated via the
     # SERVICE_TOKEN injected here — the token never reaches the browser.
-    location /api/ {
+    # Uses ^~ so regex static-asset rules (like .svg) don't intercept /api/ calls.
+    location ^~ /api/ {
         # Use Docker's embedded DNS with 30s TTL to handle container restarts
         # without requiring an nginx reload.
         resolver 127.0.0.11 valid=30s;

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -525,6 +526,101 @@ func main() {
 		writeJSON(w, http.StatusOK, resp)
 	})
 
+	// Project README status badges.
+	// First-party Shields-style flat SVGs cached in-process for 1 hour with max-age=3600.
+	// Non-existent projects/versions are cached for 2 minutes (negative caching) to mitigate DoS floods.
+	badgeCache := newBadgeCache(1*time.Hour, 2*time.Minute)
+
+	mux.HandleFunc("GET /api/v1/badges/projects/{name}/vulnerabilities.svg", func(w http.ResponseWriter, r *http.Request) {
+		name := sanitizeProjectName(r.PathValue("name"))
+		if name == "" {
+			writeError(w, http.StatusBadRequest, "Invalid project name")
+			return
+		}
+		version := strings.TrimSpace(r.URL.Query().Get("version"))
+		cacheKey := fmt.Sprintf("vuln:%s:%s", name, version)
+		if svg, found, notFound := badgeCache.Get(cacheKey); found {
+			if notFound {
+				writeError(w, http.StatusNotFound, "Project not found")
+				return
+			}
+			w.Header().Set("Content-Type", "image/svg+xml")
+			w.Header().Set("Cache-Control", "max-age=3600")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(svg)
+			return
+		}
+
+		stats, err := resolveProjectStats(r.Context(), chClient, name, version)
+		if err != nil {
+			if errors.Is(err, clickhouse.ErrSBOMNotFound) {
+				badgeCache.SetNotFound(cacheKey)
+				writeError(w, http.StatusNotFound, "Project not found")
+				return
+			}
+			log.Printf("ERROR: project badge stats for %s: %v", sanitizeLogParam(name), err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch project badge")
+			return
+		}
+
+		label := cfg.BrandName
+		if label == "" {
+			label = "BOMHort"
+		}
+		val := fmt.Sprintf("%d C · %d H · %d M · %d L", stats.CriticalVulns, stats.HighVulns, stats.MediumVulns, stats.LowVulns)
+		color := vulnBadgeColor(stats.CriticalVulns, stats.HighVulns, stats.MediumVulns, stats.LowVulns)
+		svg := renderShieldBadge(label, val, color)
+		badgeCache.Set(cacheKey, svg)
+
+		w.Header().Set("Content-Type", "image/svg+xml")
+		w.Header().Set("Cache-Control", "max-age=3600")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(svg)
+	})
+
+	mux.HandleFunc("GET /api/v1/badges/projects/{name}/licenses.svg", func(w http.ResponseWriter, r *http.Request) {
+		name := sanitizeProjectName(r.PathValue("name"))
+		if name == "" {
+			writeError(w, http.StatusBadRequest, "Invalid project name")
+			return
+		}
+		version := strings.TrimSpace(r.URL.Query().Get("version"))
+		cacheKey := fmt.Sprintf("lic:%s:%s", name, version)
+		if svg, found, notFound := badgeCache.Get(cacheKey); found {
+			if notFound {
+				writeError(w, http.StatusNotFound, "Project not found")
+				return
+			}
+			w.Header().Set("Content-Type", "image/svg+xml")
+			w.Header().Set("Cache-Control", "max-age=3600")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(svg)
+			return
+		}
+
+		stats, err := resolveProjectStats(r.Context(), chClient, name, version)
+		if err != nil {
+			if errors.Is(err, clickhouse.ErrSBOMNotFound) {
+				badgeCache.SetNotFound(cacheKey)
+				writeError(w, http.StatusNotFound, "Project not found")
+				return
+			}
+			log.Printf("ERROR: project license badge stats for %s: %v", sanitizeLogParam(name), err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch project badge")
+			return
+		}
+
+		label := "licenses"
+		val, color := licenseBadgeData(stats.Violations, stats.Unknown)
+		svg := renderShieldBadge(label, val, color)
+		badgeCache.Set(cacheKey, svg)
+
+		w.Header().Set("Content-Type", "image/svg+xml")
+		w.Header().Set("Cache-Control", "max-age=3600")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(svg)
+	})
+
 	// Projects affected by a specific CVE (including transitive dependencies).
 	mux.HandleFunc("GET /api/v1/vulnerabilities/{id}/affected-projects", func(w http.ResponseWriter, r *http.Request) {
 		vulnID := r.PathValue("id")
@@ -879,7 +975,7 @@ func main() {
 	handler := securityHeadersMiddleware(
 		rateLimitMiddleware(
 			corsMiddleware(cfg.CORSAllowedOrigins,
-				authMiddleware(cfg.AuthEnabled, cfg.ServiceToken, cfg.APIKeys, mux),
+				authMiddleware(cfg.AuthEnabled, cfg.BadgesPublic, cfg.ServiceToken, cfg.APIKeys, mux),
 			),
 		),
 	)
@@ -1179,6 +1275,23 @@ var authPublicPaths = map[string]struct{}{
 	"/readyz":  {},
 }
 
+// isBadgePath checks if a request path strictly matches the public badge endpoints:
+//
+//	/api/v1/badges/projects/{name}/vulnerabilities.svg
+//	/api/v1/badges/projects/{name}/licenses.svg
+func isBadgePath(path string) bool {
+	const prefix = "/api/v1/badges/projects/"
+	if !strings.HasPrefix(path, prefix) {
+		return false
+	}
+	sub := path[len(prefix):]
+	parts := strings.Split(sub, "/")
+	if len(parts) != 2 || parts[0] == "" {
+		return false
+	}
+	return parts[1] == "vulnerabilities.svg" || parts[1] == "licenses.svg"
+}
+
 // authMiddleware enforces authentication when enabled. Accepts any of:
 //   - Authorization: Bearer <service-token>
 //   - X-Service-Token: <service-token>
@@ -1186,7 +1299,8 @@ var authPublicPaths = map[string]struct{}{
 //
 // All comparisons use constant-time equality to prevent timing attacks.
 // When AUTH_ENABLED=false, this middleware is a no-op pass-through.
-func authMiddleware(enabled bool, serviceToken string, apiKeys []string, next http.Handler) http.Handler {
+// When badgesPublic=true, GET requests matching exact badge paths bypass authentication.
+func authMiddleware(enabled bool, badgesPublic bool, serviceToken string, apiKeys []string, next http.Handler) http.Handler {
 	if !enabled {
 		return next
 	}
@@ -1201,6 +1315,11 @@ func authMiddleware(enabled bool, serviceToken string, apiKeys []string, next ht
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Public paths bypass auth (health probes).
 		if _, ok := authPublicPaths[r.URL.Path]; ok {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// Badges bypass auth when BADGES_PUBLIC=true for GET requests on badge paths.
+		if badgesPublic && r.Method == http.MethodGet && isBadgePath(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
