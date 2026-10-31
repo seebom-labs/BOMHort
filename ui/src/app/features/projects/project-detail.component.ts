@@ -228,6 +228,27 @@ export function splitPurl(purl: string): { pkg_name: string; pkg_version: string
           </div>
         </div>
 
+        <div class="badges-card">
+          <div class="badges-header">
+            <h3>README Badges</h3>
+            <button type="button" class="btn-copy-badges" (click)="copyBadgesMarkdown()">
+              {{ copiedBadges ? 'Copied!' : 'Copy Markdown' }}
+            </button>
+          </div>
+          <p class="badges-hint">Embed live status badges into your project's README.md.</p>
+          <div class="badges-preview">
+            <div class="badge-item">
+              <span class="badge-label">Vulnerabilities:</span>
+              <img [src]="vulnBadgeUrl" alt="Vulnerabilities badge" />
+            </div>
+            <div class="badge-item">
+              <span class="badge-label">Licenses:</span>
+              <img [src]="licenseBadgeUrl" alt="Licenses badge" />
+            </div>
+          </div>
+          <pre class="badges-code"><code>{{ badgesMarkdown }}</code></pre>
+        </div>
+
         <div class="quick-links">
           <button class="quick-link" (click)="activeTab = 'vulns'">Vulnerabilities <span class="arrow">→</span></button>
           <button class="quick-link" (click)="selectPackages()">Packages <span class="arrow">→</span></button>
@@ -522,6 +543,28 @@ export function splitPurl(purl: string): { pkg_name: string; pkg_version: string
     }
     .load-more-btn:hover { border-color: var(--accent); color: var(--accent); }
 
+    .badges-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 16px;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .badges-header { display: flex; justify-content: space-between; align-items: center; }
+    .badges-header h3 { margin: 0; font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--dark); }
+    .badges-hint { margin: 0; font-size: 0.75rem; color: var(--text-secondary); }
+    .badges-preview { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; margin: 4px 0; }
+    .badge-item { display: flex; align-items: center; gap: 8px; }
+    .badge-label { font-size: 0.75rem; color: var(--text-muted); }
+    .btn-copy-badges {
+      padding: 4px 12px; background: var(--surface-alt); border: 1px solid var(--border);
+      border-radius: 4px; font-size: 0.75rem; cursor: pointer; color: var(--text);
+      font-family: inherit; transition: all 0.15s;
+    }
+    .btn-copy-badges:hover { border-color: var(--accent); color: var(--accent); }
+    .badges-code {
+      margin: 0; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 4px; font-size: 0.72rem; font-family: monospace; color: var(--text-secondary);
+      overflow-x: auto; white-space: pre-wrap; word-break: break-all;
+    }
+
     .not-found h1 { margin-top: 12px; }
     .not-found code { font-family: monospace; background: var(--surface-alt); padding: 1px 6px; border-radius: 2px; }
   `],
@@ -531,6 +574,41 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
   detail: ProjectDetail | null = null;
   notFound = false;
   requestedName = '';
+  copiedBadges = false;
+
+  get vulnBadgeUrl(): string {
+    if (!this.detail) return '';
+    return `/api/v1/badges/projects/${encodeURIComponent(this.detail.project_name)}/vulnerabilities.svg`;
+  }
+
+  get licenseBadgeUrl(): string {
+    if (!this.detail) return '';
+    return `/api/v1/badges/projects/${encodeURIComponent(this.detail.project_name)}/licenses.svg`;
+  }
+
+  get badgesMarkdown(): string {
+    if (!this.detail) return '';
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const projPath = `/projects/${encodeURIComponent(this.detail.project_name)}`;
+    const vulnSvg = `${origin}${this.vulnBadgeUrl}`;
+    const licSvg = `${origin}${this.licenseBadgeUrl}`;
+    const targetUrl = `${origin}${projPath}`;
+
+    return `[![Vulnerabilities](${vulnSvg})](${targetUrl})\n[![Licenses](${licSvg})](${targetUrl})`;
+  }
+
+  copyBadgesMarkdown(): void {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(this.badgesMarkdown).then(() => {
+        this.copiedBadges = true;
+        this.cdr.markForCheck();
+        setTimeout(() => {
+          this.copiedBadges = false;
+          this.cdr.markForCheck();
+        }, 2000);
+      });
+    }
+  }
 
   sboms: SBOMListItem[] = [];
   sbomsTotal = 0;

@@ -9,7 +9,7 @@ import (
 )
 
 func TestAuthMiddleware_PublicPaths_LivezReadyz(t *testing.T) {
-	h := authMiddleware(true, "secret-token", nil, okHandler())
+	h := authMiddleware(true, false, "secret-token", nil, okHandler())
 
 	for _, path := range []string{"/healthz", "/livez", "/readyz"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
