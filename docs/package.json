@@ -8,7 +8,7 @@
     "build": "hugo --minify"
   },
   "devDependencies": {
-    "autoprefixer": "^10.6.1",
+    "autoprefixer": "^10.6.2",
     "postcss": "^8.4.47",
     "postcss-cli": "^12.0.0"
   }
