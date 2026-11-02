@@ -2,7 +2,7 @@ import { Component, OnInit, ChangeDetectionStrategy, ChangeDetectorRef } from '@
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { ApiService } from '../../core/api.service';
-import { ArchivedPackageInfo } from '../../core/api.models';
+import { ArchivedRepoGroup } from '../../core/api.models';
 
 interface VersionInfo {
   version: string;
@@ -45,8 +45,8 @@ interface GroupedArchived {
         </div>
       } @else {
         <div class="summary-bar">
-          <span class="summary-count">{{ grouped.length | number }} archived repo(s)</span>
-          <span class="summary-projects">affecting {{ totalProjects | number }} project(s)</span>
+          <span class="summary-count">{{ total | number }} archived repo(s)</span>
+          <span class="summary-projects">affecting {{ totalProjects | number }} project(s) on this page</span>
         </div>
 
         <div class="repo-list">
@@ -82,6 +82,14 @@ interface GroupedArchived {
             </div>
           }
         </div>
+
+        @if (grouped.length < total) {
+          <div class="load-more">
+            <button (click)="loadMore()" [disabled]="loadingMore" class="load-more-btn">
+              {{ loadingMore ? 'Loading…' : 'Load more (' + (grouped.length | number) + ' / ' + (total | number) + ')' }}
+            </button>
+          </div>
+        }
       }
     </div>
   `,
@@ -147,25 +155,50 @@ interface GroupedArchived {
       font-family: monospace;
     }
     .version-tag:hover { border-color: var(--accent); background: var(--accent); color: #fff; }
+
+    .load-more { display: flex; justify-content: center; padding: 16px; }
+    .load-more-btn {
+      padding: 8px 24px; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 4px; cursor: pointer; font-size: 0.8rem; font-family: inherit;
+      color: var(--text-secondary); transition: all 0.15s;
+    }
+    .load-more-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
   `]
 })
 export class ArchivedPackagesComponent implements OnInit {
   loading = true;
+  loadingMore = false;
   grouped: GroupedArchived[] = [];
+  total = 0;
   totalProjects = 0;
+  private page = 1;
+  private readonly pageSize = 20;
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef) {}
 
   ngOnInit(): void {
-    this.api.getArchivedPackages().subscribe({
-      next: (data) => {
-        this.grouped = this.groupByRepo(data || []);
+    this.load();
+  }
+
+  loadMore(): void {
+    this.page++;
+    this.loadingMore = true;
+    this.load();
+  }
+
+  private load(): void {
+    this.api.getArchivedRepos(this.page, this.pageSize).subscribe({
+      next: (resp) => {
+        this.grouped = [...this.grouped, ...(resp?.data ?? []).map(g => this.toGroup(g))];
+        this.total = resp?.total ?? 0;
         this.totalProjects = this.countUniqueProjects();
         this.loading = false;
+        this.loadingMore = false;
         this.cdr.markForCheck();
       },
       error: () => {
         this.loading = false;
+        this.loadingMore = false;
         this.cdr.markForCheck();
       }
     });
@@ -181,54 +214,30 @@ export class ArchivedPackagesComponent implements OnInit {
     return uniqueProjects.size;
   }
 
-  private groupByRepo(packages: ArchivedPackageInfo[]): GroupedArchived[] {
-    const repoMap = new Map<string, GroupedArchived>();
-
-    for (const pkg of packages) {
-      // Get or create repo group
-      let repoGroup = repoMap.get(pkg.repo);
-      if (!repoGroup) {
-        repoGroup = {
-          repo: pkg.repo,
-          stars: pkg.stars,
-          lastPushed: pkg.last_pushed,
-          projects: []
-        };
-        repoMap.set(pkg.repo, repoGroup);
-      }
-
+  private toGroup(g: ArchivedRepoGroup): GroupedArchived {
+    const projects: AggregatedProject[] = [];
+    for (const sbom of g.sboms ?? []) {
       // The API reports the described product's version in its own field
       // (document_version, migration 021). Guessing it from the display name
       // is the fallback for SBOMs ingested before that column existed —
       // "k2s" carries no version to guess, so those rows rendered as
       // "latest" even though the SBOM states 0.3.0.
-      const baseProjectName = this.extractBaseProjectName(pkg.project_name);
-      const version = pkg.project_version || this.extractVersion(pkg.project_name);
-
-      // Find or create project in this repo group
-      let project = repoGroup.projects.find(p => p.projectName === baseProjectName);
+      const baseProjectName = this.extractBaseProjectName(sbom.project_name);
+      const version = sbom.project_version || this.extractVersion(sbom.project_name);
+      let project = projects.find(p => p.projectName === baseProjectName);
       if (!project) {
         project = { projectName: baseProjectName, versions: [] };
-        repoGroup.projects.push(project);
+        projects.push(project);
       }
-
-      // Add version if not already present
-      const versionExists = project.versions.some(v => v.sbomId === pkg.sbom_id);
-      if (!versionExists) {
-        project.versions.push({ version, sbomId: pkg.sbom_id });
+      if (!project.versions.some(v => v.sbomId === sbom.sbom_id)) {
+        project.versions.push({ version, sbomId: sbom.sbom_id });
       }
     }
-
-    // Sort versions within each project and sort projects alphabetically
-    for (const group of repoMap.values()) {
-      group.projects.sort((a, b) => a.projectName.localeCompare(b.projectName));
-      for (const proj of group.projects) {
-        proj.versions.sort((a, b) => this.compareVersions(a.version, b.version));
-      }
+    projects.sort((a, b) => a.projectName.localeCompare(b.projectName));
+    for (const proj of projects) {
+      proj.versions.sort((a, b) => this.compareVersions(a.version, b.version));
     }
-
-    // Sort repos by stars descending
-    return Array.from(repoMap.values()).sort((a, b) => b.stars - a.stars);
+    return { repo: g.repo, stars: g.stars, lastPushed: g.last_pushed, projects };
   }
 
   private extractBaseProjectName(fullName: string): string {

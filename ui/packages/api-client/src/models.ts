@@ -40,6 +40,20 @@ export interface ArchivedPackageInfo {
   stars: number;
 }
 
+/** One archived GitHub repository with the SBOMs depending on it (GET /packages/archived/repos). */
+export interface ArchivedRepoGroup {
+  repo: string;
+  stars: number;
+  last_pushed: string;
+  sboms: ArchivedRepoSBOM[];
+}
+
+export interface ArchivedRepoSBOM {
+  sbom_id: string;
+  project_name: string;
+  project_version: string;
+}
+
 export interface PaginatedResponse<T> {
   data: T[];
   total: number;

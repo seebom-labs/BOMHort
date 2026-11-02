@@ -7,6 +7,7 @@ import (
 	"time"
 
 	gh "github.com/seebom-labs/bomhort/backend/internal/github"
+	"github.com/seebom-labs/bomhort/backend/pkg/dto"
 )
 
 // Archived-repo reporting: which packages in the corpus come from a GitHub
@@ -86,16 +87,17 @@ func (c *Client) queryArchivedRepos(ctx context.Context) (map[string]archivedRep
 
 // queryArchivedPurls returns cleaned purl → archived repo key for every
 // distinct golang/github purl in the corpus that maps to an archived repo.
-func (c *Client) queryArchivedPurls(ctx context.Context, archived map[string]archivedRepo) (map[string]string, error) {
+func (c *Client) queryArchivedPurls(ctx context.Context, archived map[string]archivedRepo, sbomID string) (map[string]string, error) {
+	scope, args := archivedSBOMScope(sbomID)
 	rows, err := c.Conn.Query(ctx, `
 		SELECT DISTINCT `+archivedPurlCleanExpr+` AS purl_clean
 		FROM (
 			SELECT lower(pkg_purl) AS purl_lower
 			FROM sbom_packages FINAL
 			ARRAY JOIN package_purls AS pkg_purl
-			WHERE `+archivedPurlFilter+`
+			WHERE `+archivedPurlFilter+scope+`
 		)
-	`)
+	`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query package purls: %w", err)
 	}
@@ -129,15 +131,25 @@ func archivedRepoFor[V any](purl string, archived map[string]V) (string, bool) {
 }
 
 // QueryArchivedPackages returns every package in the corpus whose GitHub
-// repository has been archived upstream.
-func (c *Client) QueryArchivedPackages(ctx context.Context) ([]ArchivedPackageInfo, error) {
+// repository has been archived upstream. A non-empty sbomID restricts the
+// scan to that SBOM — its packages are one primary-key range instead of the
+// whole corpus.
+//
+// The unscoped list is built by one caller at a time: on a production corpus
+// it materialises ~100k rows (~200 MiB of allocations per call), and a
+// handful of concurrent calls OOM-killed a 512 MiB gateway.
+func (c *Client) QueryArchivedPackages(ctx context.Context, sbomID string) ([]ArchivedPackageInfo, error) {
+	if sbomID == "" {
+		c.archivedListMu.Lock()
+		defer c.archivedListMu.Unlock()
+	}
 	results := []ArchivedPackageInfo{}
 
 	archived, err := c.queryArchivedRepos(ctx)
 	if err != nil || len(archived) == 0 {
 		return results, err
 	}
-	matches, err := c.queryArchivedPurls(ctx, archived)
+	matches, err := c.queryArchivedPurls(ctx, archived, sbomID)
 	if err != nil || len(matches) == 0 {
 		return results, err
 	}
@@ -150,7 +162,7 @@ func (c *Client) QueryArchivedPackages(ctx context.Context) ([]ArchivedPackageIn
 
 	for start := 0; start < len(purls); start += archivedPurlBatchSize {
 		batch := purls[start:min(start+archivedPurlBatchSize, len(purls))]
-		if err := c.scanArchivedPackages(ctx, batch, func(info ArchivedPackageInfo, purl string) {
+		if err := c.scanArchivedPackages(ctx, batch, sbomID, func(info ArchivedPackageInfo, purl string) {
 			repo := matches[purl]
 			info.Repo = repo
 			info.LastPushed = archived[repo].pushedAt
@@ -174,9 +186,19 @@ func (c *Client) QueryArchivedPackages(ctx context.Context) ([]ArchivedPackageIn
 	return results, nil
 }
 
+// archivedSBOMScope returns the sbom_id predicate and its argument for an
+// optional SBOM scope; "" scopes nothing.
+func archivedSBOMScope(sbomID string) (string, []any) {
+	if sbomID == "" {
+		return "", nil
+	}
+	return " AND sbom_id = ?", []any{sbomID}
+}
+
 // scanArchivedPackages fetches the package rows whose cleaned purl is in
 // purls, with their SBOM's display columns.
-func (c *Client) scanArchivedPackages(ctx context.Context, purls []string, emit func(ArchivedPackageInfo, string)) error {
+func (c *Client) scanArchivedPackages(ctx context.Context, purls []string, sbomID string, emit func(ArchivedPackageInfo, string)) error {
+	scope, args := archivedSBOMScope(sbomID)
 	rows, err := c.Conn.Query(ctx, `
 		SELECT DISTINCT
 			k.sbom_id,
@@ -196,7 +218,7 @@ func (c *Client) scanArchivedPackages(ctx context.Context, purls []string, emit 
 					lower(pkg_purl) AS purl_lower
 				FROM sbom_packages p FINAL
 				ARRAY JOIN p.package_names AS pkg_name, p.package_purls AS pkg_purl
-				WHERE `+archivedPurlFilter+`
+				WHERE `+archivedPurlFilter+scope+`
 			)
 			WHERE purl_clean IN (?)
 		) k
@@ -204,7 +226,7 @@ func (c *Client) scanArchivedPackages(ctx context.Context, purls []string, emit 
 			SELECT sbom_id, source_file, document_name, document_version
 			FROM sboms FINAL
 		) s ON k.sbom_id = s.sbom_id
-	`, purls)
+	`, append(args, purls)...)
 	if err != nil {
 		return fmt.Errorf("failed to query archived packages: %w", err)
 	}
@@ -224,6 +246,139 @@ func (c *Client) scanArchivedPackages(ctx context.Context, purls []string, emit 
 		emit(info, purl)
 	}
 	return rows.Err()
+}
+
+// QueryArchivedRepos returns one page of the archived repositories the corpus
+// depends on, most-starred first, each with the SBOMs that depend on it.
+//
+// This is the archived-packages page's query. Paging happens over repos
+// before any package row is read, so a page costs the rows of its ~20 repos
+// instead of the whole corpus (#archived OOM: 96k rows per call).
+func (c *Client) QueryArchivedRepos(ctx context.Context, page, pageSize uint64) (*dto.PaginatedResponse[ArchivedRepoGroup], error) {
+	if page == 0 {
+		page = 1
+	}
+	resp := &dto.PaginatedResponse[ArchivedRepoGroup]{Data: []ArchivedRepoGroup{}, Page: page, PageSize: pageSize}
+
+	archived, err := c.queryArchivedRepos(ctx)
+	if err != nil || len(archived) == 0 {
+		return resp, err
+	}
+	matches, err := c.queryArchivedPurls(ctx, archived, "")
+	if err != nil {
+		return resp, err
+	}
+	purlsByRepo := map[string][]string{}
+	for purl, repo := range matches {
+		purlsByRepo[repo] = append(purlsByRepo[repo], purl)
+	}
+	repos := make([]string, 0, len(purlsByRepo))
+	for repo := range purlsByRepo {
+		repos = append(repos, repo)
+	}
+	sort.Slice(repos, func(i, j int) bool {
+		if a, b := archived[repos[i]].stars, archived[repos[j]].stars; a != b {
+			return a > b
+		}
+		return repos[i] < repos[j]
+	})
+	resp.Total = uint64(len(repos))
+
+	start := (page - 1) * pageSize
+	if start >= uint64(len(repos)) {
+		return resp, nil
+	}
+	repos = repos[start:min(start+pageSize, uint64(len(repos)))]
+
+	groups := map[string]*ArchivedRepoGroup{}
+	var purls []string
+	for _, repo := range repos {
+		g := &ArchivedRepoGroup{Repo: repo, Stars: archived[repo].stars, LastPushed: archived[repo].pushedAt, SBOMs: []ArchivedRepoSBOM{}}
+		groups[repo] = g
+		resp.Data = append(resp.Data, *g)
+		purls = append(purls, purlsByRepo[repo]...)
+	}
+	sort.Strings(purls)
+
+	seen := map[string]bool{}
+	for start := 0; start < len(purls); start += archivedPurlBatchSize {
+		batch := purls[start:min(start+archivedPurlBatchSize, len(purls))]
+		if err := c.scanArchivedSBOMs(ctx, batch, func(sbom ArchivedRepoSBOM, purl string) {
+			repo := matches[purl]
+			if seen[repo+"\x00"+sbom.SBOMID] {
+				return
+			}
+			seen[repo+"\x00"+sbom.SBOMID] = true
+			groups[repo].SBOMs = append(groups[repo].SBOMs, sbom)
+		}); err != nil {
+			return nil, err
+		}
+	}
+	for i := range resp.Data {
+		g := groups[resp.Data[i].Repo]
+		sort.Slice(g.SBOMs, func(a, b int) bool {
+			if g.SBOMs[a].ProjectName != g.SBOMs[b].ProjectName {
+				return g.SBOMs[a].ProjectName < g.SBOMs[b].ProjectName
+			}
+			return g.SBOMs[a].SBOMID < g.SBOMs[b].SBOMID
+		})
+		resp.Data[i].SBOMs = g.SBOMs
+	}
+	return resp, nil
+}
+
+// scanArchivedSBOMs fetches the distinct (SBOM, cleaned purl) pairs for
+// purls, with the SBOM's display columns. Unlike scanArchivedPackages it does
+// not expand package names: one row per SBOM and purl is all a grouping needs.
+func (c *Client) scanArchivedSBOMs(ctx context.Context, purls []string, emit func(ArchivedRepoSBOM, string)) error {
+	rows, err := c.Conn.Query(ctx, `
+		SELECT DISTINCT k.sbom_id, s.document_name, s.document_version, k.purl_clean
+		FROM (
+			SELECT sbom_id, purl_clean
+			FROM (
+				SELECT p.sbom_id AS sbom_id, lower(pkg_purl) AS purl_lower,
+				       `+archivedPurlCleanExpr+` AS purl_clean
+				FROM sbom_packages p FINAL
+				ARRAY JOIN p.package_purls AS pkg_purl
+				WHERE `+archivedPurlFilter+`
+			)
+			WHERE purl_clean IN (?)
+		) k
+		INNER JOIN (
+			SELECT sbom_id, document_name, document_version FROM sboms FINAL
+		) s ON k.sbom_id = s.sbom_id
+	`, purls)
+	if err != nil {
+		return fmt.Errorf("failed to query archived repo sboms: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			sbom ArchivedRepoSBOM
+			purl string
+		)
+		if err := rows.Scan(&sbom.SBOMID, &sbom.ProjectName, &sbom.ProjectVersion, &purl); err != nil {
+			return fmt.Errorf("failed to scan archived repo sbom: %w", err)
+		}
+		emit(sbom, purl)
+	}
+	return rows.Err()
+}
+
+// ArchivedRepoGroup is one archived repository with the SBOMs depending on it.
+type ArchivedRepoGroup struct {
+	Repo       string             `json:"repo"`
+	Stars      uint32             `json:"stars"`
+	LastPushed time.Time          `json:"last_pushed"`
+	SBOMs      []ArchivedRepoSBOM `json:"sboms"`
+}
+
+// ArchivedRepoSBOM is one SBOM depending on an archived repository.
+type ArchivedRepoSBOM struct {
+	SBOMID         string `json:"sbom_id"`
+	ProjectName    string `json:"project_name"`
+	ProjectVersion string `json:"project_version"`
 }
 
 // QueryArchivedReposInUse counts the archived repositories that are actually
@@ -264,7 +419,7 @@ func (c *Client) queryArchivedReposInUse(ctx context.Context) (uint64, error) {
 	if len(archived) == 0 {
 		return 0, nil
 	}
-	matches, err := c.queryArchivedPurls(ctx, archived)
+	matches, err := c.queryArchivedPurls(ctx, archived, "")
 	if err != nil {
 		return 0, fmt.Errorf("failed to count archived repos in use: %w", err)
 	}

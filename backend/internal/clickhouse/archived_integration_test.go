@@ -94,7 +94,7 @@ func TestArchivedPackagesAndDependenciesSeeded(t *testing.T) {
 		t.Fatalf("dependencies after packages = %d nodes, %v; want %d", len(nodes), err, len(names))
 	}
 
-	all, err := c.QueryArchivedPackages(ctx)
+	all, err := c.QueryArchivedPackages(ctx, "")
 	if err != nil {
 		t.Fatalf("QueryArchivedPackages: %v", err)
 	}
@@ -107,11 +107,57 @@ func TestArchivedPackagesAndDependenciesSeeded(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("archived packages for the SBOM = %+v, want direct-sub and via-gopkg-in", got)
 	}
+	// Scoped to the SBOM: the same two rows and nothing from other SBOMs.
+	scoped, err := c.QueryArchivedPackages(ctx, sbomID.String())
+	if err != nil {
+		t.Fatalf("QueryArchivedPackages(sbom): %v", err)
+	}
+	if len(scoped) != 2 || scoped[0].SBOMID != sbomID.String() || scoped[1].SBOMID != sbomID.String() {
+		t.Fatalf("scoped archived packages = %+v, want the 2 rows of %s", scoped, sbomID)
+	}
+	if other, err := c.QueryArchivedPackages(ctx, uuid.NewString()); err != nil || len(other) != 0 {
+		t.Fatalf("archived packages for unknown SBOM = %v, %v; want empty", other, err)
+	}
 	if p := got["direct-sub"]; p.Repo != direct || p.Stars != 42 || p.ProjectName != owner+"-project" || p.PackagePURL != purls[1] {
 		t.Errorf("direct-sub = %+v", p)
 	}
 	if p := got["via-gopkg-in"]; p.Repo != gopkgIn || p.Stars != 7 {
 		t.Errorf("via-gopkg-in = %+v", p)
+	}
+
+	// Grouped view: both seeded repos present, each with exactly this SBOM
+	// once, even though "direct" is matched via a purl with a subpath.
+	grouped, err := c.QueryArchivedRepos(ctx, 1, 500)
+	if err != nil {
+		t.Fatalf("QueryArchivedRepos: %v", err)
+	}
+	if grouped.Total < 2 || grouped.Page != 1 || grouped.PageSize != 500 {
+		t.Fatalf("QueryArchivedRepos meta = total %d page %d size %d", grouped.Total, grouped.Page, grouped.PageSize)
+	}
+	found := 0
+	for _, g := range grouped.Data {
+		if g.Repo != direct && g.Repo != gopkgIn {
+			continue
+		}
+		found++
+		n := 0
+		for _, sb := range g.SBOMs {
+			if sb.SBOMID == sbomID.String() {
+				n++
+				if sb.ProjectName != owner+"-project" {
+					t.Errorf("%s sbom = %+v", g.Repo, sb)
+				}
+			}
+		}
+		if n != 1 {
+			t.Errorf("%s lists the SBOM %d times, want once: %+v", g.Repo, n, g.SBOMs)
+		}
+	}
+	if found != 2 {
+		t.Errorf("grouped repos found = %d, want direct and gopkg-in", found)
+	}
+	if empty, err := c.QueryArchivedRepos(ctx, grouped.Total+1, 500); err != nil || len(empty.Data) != 0 || empty.Total != grouped.Total {
+		t.Fatalf("page past the end = %+v, %v; want empty data, same total", empty, err)
 	}
 
 	inUse, err := c.QueryArchivedReposInUse(ctx)

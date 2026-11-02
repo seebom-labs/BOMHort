@@ -520,7 +520,7 @@ export class SbomDetailComponent implements OnInit {
       licenses: this.api.getSbomLicenses(sbomId),
       deps: this.api.getSbomDependencies(sbomId),
       vex: this.api.getSbomVex(sbomId).pipe(catchError(() => of([] as VEXStatementItem[]))),
-      archived: this.api.getArchivedPackages().pipe(catchError(() => of([] as ArchivedPackageInfo[]))),
+      archived: this.api.getArchivedPackages(sbomId).pipe(catchError(() => of([] as ArchivedPackageInfo[]))),
     }).subscribe(({ detail, vulns, licenses, deps, vex, archived }) => {
       this.detail = detail;
       this.vulns = vulns;

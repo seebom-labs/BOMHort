@@ -21,6 +21,7 @@ import {
   VersionSkewResponse,
   LicenseExceptionsFile,
   ArchivedPackageInfo,
+  ArchivedRepoGroup,
   ProjectListItem,
   ProjectGroupItem,
   ProjectDetail,
@@ -175,8 +176,14 @@ export class ApiService {
     return this.http.get<LicenseExceptionsFile>(`${this.baseUrl}/license-exceptions`);
   }
 
-  getArchivedPackages(): Observable<ArchivedPackageInfo[]> {
-    return this.http.get<ArchivedPackageInfo[]>(`${this.baseUrl}/packages/archived`);
+  getArchivedRepos(page = 1, pageSize = 20): Observable<PaginatedResponse<ArchivedRepoGroup>> {
+    const params = new HttpParams().set('page', page.toString()).set('page_size', pageSize.toString());
+    return this.http.get<PaginatedResponse<ArchivedRepoGroup>>(`${this.baseUrl}/packages/archived/repos`, { params });
+  }
+
+  getArchivedPackages(sbomId?: string): Observable<ArchivedPackageInfo[]> {
+    const params = sbomId ? new HttpParams().set('sbom_id', sbomId) : undefined;
+    return this.http.get<ArchivedPackageInfo[]>(`${this.baseUrl}/packages/archived`, { params });
   }
 
   searchPackages(query: string, page = 1, pageSize = 50): Observable<DependencySearchResponse> {
