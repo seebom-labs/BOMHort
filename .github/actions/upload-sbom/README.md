@@ -9,7 +9,7 @@ steps:
   - uses: actions/checkout@v4
 
   - name: Upload SBOM to BOMHort
-    uses: seebom-labs/BOMHort/.github/actions/upload-sbom@main
+    uses: seebom-labs/BOMHort/.github/actions/upload-sbom@1b3e829fa97f21f2697bc6fc8d6dba8da77316af
     with:
       url: 'https://bomhort.example.com'
       token: ${{ secrets.BOMHORT_UPLOAD_TOKEN }}
@@ -18,6 +18,8 @@ steps:
       namespace: 'payments'
       tags: 'tier-1,backend'
 ```
+
+> **Pin the action version.** Use a full commit SHA or release tag instead of `@main`, which can change without notice. This example pins to the current action revision; update the pin deliberately when upgrading.
 
 ## Inputs
 
