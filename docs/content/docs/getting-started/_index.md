@@ -133,7 +133,7 @@ jobs:
       # (Optional) Generate your SBOM here with Syft / cdxgen / bom
 
       - name: Upload SBOM to BOMHort
-        uses: seebom-labs/BOMHort/.github/actions/upload-sbom@main
+        uses: seebom-labs/BOMHort/.github/actions/upload-sbom@1b3e829fa97f21f2697bc6fc8d6dba8da77316af
         with:
           url: 'https://bomhort.example.com'
           token: ${{ secrets.BOMHORT_UPLOAD_TOKEN }}
@@ -143,4 +143,4 @@ jobs:
           tags: 'production,backend'
 ```
 
-For reproducible workflows, replace `@main` with a release tag or full commit SHA.
+> **Pin the action version.** Use a full commit SHA or release tag instead of `@main`, which can change without notice. This example pins to the current action revision; update the pin deliberately when upgrading.
