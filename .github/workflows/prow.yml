@@ -56,7 +56,7 @@ jobs:
       pull-requests: write
       statuses: write
       actions: write
-    uses: cncf/prow-github-actions/.github/workflows/prow.yml@187c5e3cd95a329c43448e1bdb3b1f5249232e44 # v3.0.1
+    uses: cncf/prow-github-actions/.github/workflows/prow.yml@ed3bb424a5475f42b5d699048faa4a469a68b9ef # v3.4.0
     with:
       # Every /<key> below must have a matching `labels.<key>` section in .github/prow.yaml,
       # except the built-ins (/assign ... /ok-to-test). /remove-<key> forms come for free.
@@ -78,7 +78,7 @@ jobs:
       pull-requests: write
       statuses: write
       actions: write
-    uses: cncf/prow-github-actions/.github/workflows/prow.yml@187c5e3cd95a329c43448e1bdb3b1f5249232e44 # v3.0.1
+    uses: cncf/prow-github-actions/.github/workflows/prow.yml@ed3bb424a5475f42b5d699048faa4a469a68b9ef # v3.4.0
     with:
       jobs: label-sync
 
