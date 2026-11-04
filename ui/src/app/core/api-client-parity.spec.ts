@@ -33,6 +33,7 @@ const calls: Record<string, unknown[]> = {
   getProjects: [1, 50, '', 'sandbox'],
   getProjectGroups: [1, 50, 'api', ''],
   getTags: [],
+  getOrigins: [],
   getProjectDetail: ['org/project'],
   getProjectSboms: ['org/project', 1, 50],
   getProjectVulnerabilities: ['org/project', 'root'],

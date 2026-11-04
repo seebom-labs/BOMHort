@@ -64,7 +64,7 @@ Everything is configured through environment variables (locally: `.env`; in Kube
 | What | Where | Documentation |
 |---|---|---|
 | SBOM sources — S3 buckets, directory, push uploads | `S3_BUCKETS`, `SBOM_SOURCE_DIR` | [Deployment → SBOMs](https://docs.bomhort.dev/docs/deployment/#1-sboms--getting-data-into-the-cluster) |
-| Ownership — cluster, namespace, project, tags | `CLUSTER_NAME`, `NAMESPACE`, `PROJECT`, `INGEST_PATH_LAYOUT`, `TAGS` | [Fleet Views](https://docs.bomhort.dev/docs/ownership/) |
+| Ownership & provenance — cluster, namespace, project, origin, tags | `CLUSTER_NAME`, `NAMESPACE`, `PROJECT`, `ORIGIN`, `INGEST_PATH_LAYOUT`, `TAGS` | [Fleet Views](https://docs.bomhort.dev/docs/ownership/) |
 | License policy — which SPDX IDs are permissive or copyleft, how expressions fold | `license-policy.json`, `LICENSE_EXPRESSION_MODE` | [Deployment → License Policy](https://docs.bomhort.dev/docs/deployment/#4-license-policy) |
 | License exceptions — reviewed approvals from Helm values, your own ConfigMap, or an https / S3 source; reloaded live, applied retroactively | `license-exceptions.json`, `EXCEPTIONS_SOURCE`, `EXCEPTIONS_REFRESH_INTERVAL` | [License Exceptions](https://docs.bomhort.dev/docs/license-exceptions/), [example](examples/license-exceptions/) |
 | License resolution — registry resolvers, normalization, provenance | `GITHUB_TOKEN`, `SKIP_*_RESOLVE` | [License Resolution](https://docs.bomhort.dev/docs/license-resolution/) |
@@ -72,6 +72,20 @@ Everything is configured through environment variables (locally: `.env`; in Kube
 | API authentication, query limits, upload size | `AUTH_ENABLED`, `SERVICE_TOKEN`, `API_KEYS`, `CLICKHOUSE_MAX_*`, `MAX_UPLOAD_SIZE_MB` | [Deployment → API Authentication](https://docs.bomhort.dev/docs/deployment/#7-api-authentication-optional) |
 
 The complete variable reference with defaults is in [Getting Started → Configuration](https://docs.bomhort.dev/docs/getting-started/#configuration-env); `.env.example` documents the same set inline.
+
+### Origin Dimension
+
+The `origin` dimension records how an SBOM was produced (#455). Unlike tags, it uses a fixed, validated vocabulary:
+
+| Origin | Purpose | Example |
+|---|---|---|
+| `cluster-scan` | Generated from a running workload/image by a runtime scanner | Trivy or Syft walking Kubernetes pods |
+| `ci` | Produced during a build / CI pipeline | Syft run during GitHub Actions / GitLab CI build |
+| `registry` | Pulled from an OCI referrer or attached artifact | Cosign or ORAS pulling an SBOM attached to an image tag |
+| `vendor` | Delivered by a third-party software vendor | Commercial off-the-shelf software deliverable |
+| `manual` | Ad-hoc or manual upload | Developer uploading an SBOM file via API |
+
+Unknown values are rejected with `400 Bad Request`. Empty string (`""`) is allowed for legacy unassigned rows. Set via `ORIGIN` env default, per-bucket `"origin"` in `S3_BUCKETS`, or `?origin=` on upload.
 
 ## Architecture
 

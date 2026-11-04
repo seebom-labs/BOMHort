@@ -46,6 +46,8 @@ type DashboardStats struct {
 	LastCVERefresh       string                    `json:"last_cve_refresh,omitempty"`
 	NewVulnsSinceRefresh uint64                    `json:"new_vulns_since_refresh"`
 	ArchivedReposCount   uint64                    `json:"archived_repos_count"`
+	// OriginBreakdown splits the estate's SBOMs by how they were produced (#455).
+	OriginBreakdown map[string]uint64 `json:"origin_breakdown,omitempty"`
 }
 
 // SBOMListItem is the response DTO for listing SBOMs.
@@ -61,14 +63,15 @@ type SBOMListItem struct {
 	IngestedAt      string `json:"ingested_at"`
 	SourceRepo      string `json:"source_repo,omitempty"`
 	SourceRef       string `json:"source_ref,omitempty"`
-	// Ownership dimensions (#177). Completes the list contract before the
+	// Ownership dimensions (#177, #455). Completes the list contract before the
 	// v1.0 freeze: the detail view and the cluster endpoints already expose
 	// these, so a client could not tell which cluster/namespace/project a
-	// listed SBOM belongs to without a second request per row. All three
+	// listed SBOM belongs to without a second request per row. All four
 	// default to '' and are omitted when unset (single-instance deployments).
 	Cluster   string `json:"cluster,omitempty"`
 	Namespace string `json:"namespace,omitempty"`
 	Project   string `json:"project,omitempty"`
+	Origin    string `json:"origin,omitempty"`
 }
 
 // PaginatedResponse wraps any list response with pagination metadata.
@@ -225,6 +228,10 @@ type SBOMDetail struct {
 	IngestedAt      string `json:"ingested_at"`
 	SourceRepo      string `json:"source_repo,omitempty"`
 	SourceRef       string `json:"source_ref,omitempty"`
+	Cluster         string `json:"cluster,omitempty"`
+	Namespace       string `json:"namespace,omitempty"`
+	Project         string `json:"project,omitempty"`
+	Origin          string `json:"origin,omitempty"`
 	CriticalVulns   uint64 `json:"critical_vulns"`
 	HighVulns       uint64 `json:"high_vulns"`
 	MediumVulns     uint64 `json:"medium_vulns"`
@@ -654,4 +661,11 @@ type TagListItem struct {
 	// its sub-projects. The UI renders such tags as a link to the parent's
 	// page rather than as a plain filter chip.
 	IsProject bool `json:"is_project"`
+}
+
+// OriginItem represents a distinct origin and how many SBOMs were produced
+// under it (#455).
+type OriginItem struct {
+	Origin    string `json:"origin"`
+	SBOMCount uint64 `json:"sbom_count"`
 }

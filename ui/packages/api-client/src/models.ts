@@ -21,6 +21,7 @@ export interface DashboardStats {
   low_vulns: number;
   scope_breakdown?: ScopeBreakdown;
   license_breakdown: Record<string, number>;
+  origin_breakdown?: Record<string, number>;
   exempted_packages: number;
   total_vex_statements: number;
   last_cve_refresh?: string;
@@ -74,10 +75,11 @@ export interface SBOMListItem {
   /** Source attribution (#332); omitted by the API when unknown. */
   source_repo?: string;
   source_ref?: string;
-  /** Ownership dimensions (#177); omitted when unset. */
+  /** Ownership and provenance dimensions (#177, #455); omitted when unset. */
   cluster?: string;
   namespace?: string;
   project?: string;
+  origin?: string;
 }
 
 export interface VulnerabilityListItem {
@@ -208,6 +210,11 @@ export interface SBOMDetail {
   /** Source attribution (#332); omitted by the API when unknown. */
   source_repo?: string;
   source_ref?: string;
+  /** Ownership and provenance dimensions (#177, #455); omitted when unset. */
+  cluster?: string;
+  namespace?: string;
+  project?: string;
+  origin?: string;
   critical_vulns: number;
   high_vulns: number;
   medium_vulns: number;
@@ -500,6 +507,14 @@ export interface TagListItem {
   is_project: boolean;
 }
 
+/**
+ * Origin values in use with counts (#455).
+ */
+export interface OriginItem {
+  origin: string;
+  sbom_count: number;
+}
+
 export interface GlobalSearchPackage {
   package_name: string;
   purl: string;
@@ -580,6 +595,7 @@ export interface OwnerFilter {
   project?: string;
   parent?: string;
   tag?: string;
+  origin?: string;
 }
 
 export interface ClusterListItem {

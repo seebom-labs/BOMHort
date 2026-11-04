@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/seebom-labs/bomhort/backend/pkg/dto"
@@ -62,7 +63,7 @@ const projectKeyExpr = `
 const projectSBOMs = `(
 	SELECT s.sbom_id AS sbom_id, s.ingested_at AS ingested_at, s.tags AS tags,
 	       s.document_version AS document_version, s.source_repo AS source_repo,
-	       s.cluster AS cluster, s.namespace AS namespace,
+	       s.cluster AS cluster, s.namespace AS namespace, s.origin AS origin,
 	       ` + projectKeyExpr + ` AS project_name
 	FROM (SELECT * FROM sboms FINAL) AS s
 )`
@@ -108,24 +109,33 @@ const latestKey = "(arrayMap(x -> toUInt64OrZero(x), extractAll(splitByRegexp('[
 // tag, when non-empty, restricts the listing to projects having at least one
 // SBOM carrying that grouping label. Filtering happens before grouping so the
 // per-project counts describe the filtered set rather than the whole estate.
+// origin, when non-empty, restricts to SBOMs produced with that origin class.
 //
 // A tag narrows *which* projects are listed; it never merges them. Projects
 // stay the unit of the listing, which is the whole point of tags being a
 // separate dimension: asking for "sandbox-applications" returns k2s as its own
 // project, and k2s still shows all three of its SBOMs.
-func (c *Client) QueryProjects(ctx context.Context, page, pageSize uint64, search, tag string) (*dto.PaginatedResponse[dto.ProjectListItem], error) {
+func (c *Client) QueryProjects(ctx context.Context, page, pageSize uint64, search, tag, origin string) (*dto.PaginatedResponse[dto.ProjectListItem], error) {
 	if page == 0 {
 		page = 1
 	}
 	offset := (page - 1) * pageSize
 
-	// The tag filter is a row-level WHERE (pre-grouping), while search matches
-	// the derived project name and must therefore be a HAVING (post-grouping).
-	tagWhere := ""
-	var tagArgs []interface{}
+	// The tag/origin filters are row-level WHEREs (pre-grouping), while search
+	// matches the derived project name and must therefore be a HAVING (post-grouping).
+	var rowConds []string
+	var rowArgs []interface{}
 	if tag != "" {
-		tagWhere = "WHERE has(s.tags, ?)"
-		tagArgs = append(tagArgs, tag)
+		rowConds = append(rowConds, "has(s.tags, ?)")
+		rowArgs = append(rowArgs, tag)
+	}
+	if origin != "" {
+		rowConds = append(rowConds, "s.origin = ?")
+		rowArgs = append(rowArgs, origin)
+	}
+	rowWhere := ""
+	if len(rowConds) > 0 {
+		rowWhere = "WHERE " + strings.Join(rowConds, " AND ")
 	}
 
 	havingClause := ""
@@ -145,9 +155,9 @@ func (c *Client) QueryProjects(ctx context.Context, page, pageSize uint64, searc
 			GROUP BY project_name
 			%s
 		)
-	`, projectKeyExpr, tagWhere, havingClause)
+	`, projectKeyExpr, rowWhere, havingClause)
 
-	countArgs := append(append([]interface{}{}, tagArgs...), searchArgs...)
+	countArgs := append(append([]interface{}{}, rowArgs...), searchArgs...)
 	if err := c.Conn.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, fmt.Errorf("failed to count projects: %w", err)
 	}
@@ -178,9 +188,9 @@ func (c *Client) QueryProjects(ctx context.Context, page, pageSize uint64, searc
 		%s
 		ORDER BY project_name ASC
 		LIMIT ? OFFSET ?
-	`, projectKeyExpr, tagWhere, havingClause)
+	`, projectKeyExpr, rowWhere, havingClause)
 
-	args := append(append([]interface{}{}, tagArgs...), searchArgs...)
+	args := append(append([]interface{}{}, rowArgs...), searchArgs...)
 	args = append(args, pageSize, offset)
 	rows, err := c.Conn.Query(ctx, query, args...)
 	if err != nil {

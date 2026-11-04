@@ -10,7 +10,7 @@ import (
 // developer's shell cannot make a test pass or fail spuriously.
 func setEnvs(t *testing.T, kv map[string]string) {
 	t.Helper()
-	for _, k := range []string{"CLUSTER_NAME", "NAMESPACE", "PROJECT", "INGEST_PATH_LAYOUT", "TAGS", "S3_BUCKETS", "S3_BUCKET"} {
+	for _, k := range []string{"CLUSTER_NAME", "NAMESPACE", "PROJECT", "ORIGIN", "INGEST_PATH_LAYOUT", "TAGS", "S3_BUCKETS", "S3_BUCKET"} {
 		t.Setenv(k, "")
 		_ = os.Unsetenv(k)
 	}
@@ -32,6 +32,9 @@ func TestLoad_OwnershipDefaults(t *testing.T) {
 	if cfg.Project != "" {
 		t.Errorf("Project = %q, want empty by default", cfg.Project)
 	}
+	if cfg.Origin != "" {
+		t.Errorf("Origin = %q, want empty by default", cfg.Origin)
+	}
 	if cfg.IngestPathLayout != "" {
 		t.Errorf("IngestPathLayout = %q, want empty by default", cfg.IngestPathLayout)
 	}
@@ -44,6 +47,7 @@ func TestLoad_OwnershipFromEnv(t *testing.T) {
 	setEnvs(t, map[string]string{
 		"NAMESPACE": "payments",
 		"PROJECT":   "payment-service",
+		"ORIGIN":    "cluster-scan",
 	})
 
 	cfg, err := Load()
@@ -55,6 +59,9 @@ func TestLoad_OwnershipFromEnv(t *testing.T) {
 	}
 	if cfg.Project != "payment-service" {
 		t.Errorf("Project = %q, want payment-service", cfg.Project)
+	}
+	if cfg.Origin != "cluster-scan" {
+		t.Errorf("Origin = %q, want cluster-scan", cfg.Origin)
 	}
 }
 
@@ -101,8 +108,9 @@ func TestLoad_BucketOwnershipOverrides(t *testing.T) {
 		"CLUSTER_NAME": "global-cluster",
 		"NAMESPACE":    "global-ns",
 		"PROJECT":      "global-proj",
+		"ORIGIN":       "ci",
 		"S3_BUCKETS": `[
-			{"name":"team-a","cluster":"prod-eu","namespace":"payments","project":"payment-service"},
+			{"name":"team-a","cluster":"prod-eu","namespace":"payments","project":"payment-service","origin":"cluster-scan"},
 			{"name":"team-b"}
 		]`,
 	})
@@ -116,16 +124,34 @@ func TestLoad_BucketOwnershipOverrides(t *testing.T) {
 	}
 
 	a := cfg.S3Buckets[0]
-	if a.Cluster != "prod-eu" || a.Namespace != "payments" || a.Project != "payment-service" {
-		t.Errorf("bucket team-a = (%q, %q, %q), want the per-bucket values", a.Cluster, a.Namespace, a.Project)
+	if a.Cluster != "prod-eu" || a.Namespace != "payments" || a.Project != "payment-service" || a.Origin != "cluster-scan" {
+		t.Errorf("bucket team-a = (%q, %q, %q, %q), want the per-bucket values", a.Cluster, a.Namespace, a.Project, a.Origin)
 	}
 
 	// team-b sets nothing; the fields stay empty here and the *watcher* is
 	// what falls back to the instance-wide defaults, so assert that the
 	// config layer does not silently pre-fill them.
 	b := cfg.S3Buckets[1]
-	if b.Cluster != "" || b.Namespace != "" || b.Project != "" {
-		t.Errorf("bucket team-b = (%q, %q, %q), want all empty", b.Cluster, b.Namespace, b.Project)
+	if b.Cluster != "" || b.Namespace != "" || b.Project != "" || b.Origin != "" {
+		t.Errorf("bucket team-b = (%q, %q, %q, %q), want all empty", b.Cluster, b.Namespace, b.Project, b.Origin)
+	}
+}
+
+func TestLoad_InvalidOriginFails(t *testing.T) {
+	setEnvs(t, map[string]string{"ORIGIN": "not-a-real-origin"})
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() should reject an unknown ORIGIN")
+	}
+}
+
+func TestLoad_InvalidBucketOriginFails(t *testing.T) {
+	setEnvs(t, map[string]string{
+		"S3_BUCKETS": `[{"name":"sboms","origin":"invalid-origin"}]`,
+	})
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() should reject an unknown per-bucket origin")
 	}
 }
 
