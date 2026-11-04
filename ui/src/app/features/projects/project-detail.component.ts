@@ -232,10 +232,10 @@ export function splitPurl(purl: string): { pkg_name: string; pkg_version: string
           <div class="badges-header">
             <h3>README Badges</h3>
             <button type="button" class="btn-copy-badges" (click)="copyBadgesMarkdown()">
-              {{ copiedBadges ? 'Copied!' : 'Copy Markdown' }}
+              {{ copyState === 'copied' ? 'Copied!' : (copyState === 'failed' ? 'Copy failed' : 'Copy Markdown') }}
             </button>
           </div>
-          <p class="badges-hint">Embed live status badges into your project's README.md.</p>
+          <p class="badges-hint">Embed live status badges into your project's README.md (needs BADGES_PUBLIC=true when auth is on).</p>
           <div class="badges-preview">
             <div class="badge-item">
               <span class="badge-label">Vulnerabilities:</span>
@@ -574,7 +574,11 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
   detail: ProjectDetail | null = null;
   notFound = false;
   requestedName = '';
-  copiedBadges = false;
+  copyState: 'idle' | 'copied' | 'failed' = 'idle';
+
+  get copiedBadges(): boolean {
+    return this.copyState === 'copied';
+  }
 
   get vulnBadgeUrl(): string {
     if (!this.detail) return '';
@@ -598,15 +602,29 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
   }
 
   copyBadgesMarkdown(): void {
-    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(this.badgesMarkdown).then(() => {
-        this.copiedBadges = true;
+        this.copyState = 'copied';
         this.cdr.markForCheck();
         setTimeout(() => {
-          this.copiedBadges = false;
+          this.copyState = 'idle';
+          this.cdr.markForCheck();
+        }, 2000);
+      }).catch(() => {
+        this.copyState = 'failed';
+        this.cdr.markForCheck();
+        setTimeout(() => {
+          this.copyState = 'idle';
           this.cdr.markForCheck();
         }, 2000);
       });
+    } else {
+      this.copyState = 'failed';
+      this.cdr.markForCheck();
+      setTimeout(() => {
+        this.copyState = 'idle';
+        this.cdr.markForCheck();
+      }, 2000);
     }
   }
 

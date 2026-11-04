@@ -191,6 +191,10 @@ func TestAuthMiddleware_BadgesPublic_AllowsBadgePathsWithoutAuth(t *testing.T) {
 	badgePaths := []string{
 		"/api/v1/badges/projects/my-project/vulnerabilities.svg",
 		"/api/v1/badges/projects/my-project/licenses.svg",
+		"/api/v1/badges/projects/org%2Frepo/vulnerabilities.svg",
+		"/api/v1/badges/projects/org%2Frepo/licenses.svg",
+		"/api/v1/badges/projects/org/repo/vulnerabilities.svg",
+		"/api/v1/badges/projects/org/repo/licenses.svg",
 	}
 
 	for _, p := range badgePaths {
@@ -217,6 +221,8 @@ func TestAuthMiddleware_BadgesPublic_AllowsBadgePathsWithoutAuth(t *testing.T) {
 		"/api/v1/badges/projects/",
 		"/api/v1/badges/projects/my-project",
 		"/api/v1/badges/projects/my-project/other.svg",
+		"/api/v1/badges/projects//vulnerabilities.svg",
+		"/api/v1/badges/projects//licenses.svg",
 	}
 	for _, p := range invalidPaths {
 		req := httptest.NewRequest(http.MethodGet, p, nil)
@@ -234,6 +240,10 @@ func TestAuthMiddleware_BadgesPrivate_RejectsBadgePathsWithoutAuth(t *testing.T)
 	badgePaths := []string{
 		"/api/v1/badges/projects/my-project/vulnerabilities.svg",
 		"/api/v1/badges/projects/my-project/licenses.svg",
+		"/api/v1/badges/projects/org%2Frepo/vulnerabilities.svg",
+		"/api/v1/badges/projects/org%2Frepo/licenses.svg",
+		"/api/v1/badges/projects/org/repo/vulnerabilities.svg",
+		"/api/v1/badges/projects/org/repo/licenses.svg",
 	}
 
 	for _, p := range badgePaths {

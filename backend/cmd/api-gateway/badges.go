@@ -3,21 +3,28 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"html"
-	"regexp"
+	"log"
+	"net/http"
 	"strings"
 	"sync"
 	"text/template"
 	"time"
 
 	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
+	"github.com/seebom-labs/bomhort/backend/internal/config"
 )
+
+const maxBadgeCacheEntries = 10000
 
 // badgeCache stores rendered badge SVGs in-process with a TTL so
 // README views in high-traffic repositories never overload ClickHouse.
 // It also provides negative caching (caching 404 not-found entries with
 // a short TTL) to mitigate cache-miss Denial of Service floods.
+// To prevent memory growth, expired entries are evicted on Set and the
+// cache size is capped at maxBadgeCacheEntries.
 type badgeCacheEntry struct {
 	svg       []byte
 	notFound  bool
@@ -52,23 +59,36 @@ func (bc *badgeCache) Get(key string) ([]byte, bool, bool) {
 	return entry.svg, true, false
 }
 
-func (bc *badgeCache) Set(key string, svg []byte) {
+func (bc *badgeCache) setEntry(key string, entry badgeCacheEntry) {
 	bc.Lock()
 	defer bc.Unlock()
-	bc.entries[key] = badgeCacheEntry{
+
+	now := time.Now()
+	for k, e := range bc.entries {
+		if now.After(e.expiresAt) {
+			delete(bc.entries, k)
+		}
+	}
+	if len(bc.entries) >= maxBadgeCacheEntries {
+		bc.entries = make(map[string]badgeCacheEntry)
+	}
+
+	bc.entries[key] = entry
+}
+
+func (bc *badgeCache) Set(key string, svg []byte) {
+	bc.setEntry(key, badgeCacheEntry{
 		svg:       svg,
 		notFound:  false,
 		expiresAt: time.Now().Add(bc.ttl),
-	}
+	})
 }
 
 func (bc *badgeCache) SetNotFound(key string) {
-	bc.Lock()
-	defer bc.Unlock()
-	bc.entries[key] = badgeCacheEntry{
+	bc.setEntry(key, badgeCacheEntry{
 		notFound:  true,
 		expiresAt: time.Now().Add(bc.negativeTTL),
-	}
+	})
 }
 
 // Shields-style flat SVG template (zero external dependencies).
@@ -128,9 +148,7 @@ func measureText(text string) int {
 	return width
 }
 
-var hexColorRegex = regexp.MustCompile(`^#[0-9a-fA-F]{3,6}$`)
-
-func renderShieldBadge(label, value, color string) []byte {
+func renderShieldBadge(label, value, color string) ([]byte, error) {
 	lblTextW := measureText(label)
 	valTextW := measureText(value)
 
@@ -138,15 +156,10 @@ func renderShieldBadge(label, value, color string) []byte {
 	valW := valTextW + 10
 	totW := lblW + valW
 
-	safeColor := color
-	if !hexColorRegex.MatchString(color) {
-		safeColor = "#555"
-	}
-
 	v := badgeView{
 		Label:           html.EscapeString(label),
 		Value:           html.EscapeString(value),
-		Color:           safeColor,
+		Color:           color,
 		LabelWidth:      lblW,
 		ValueWidth:      valW,
 		TotalWidth:      totW,
@@ -156,8 +169,10 @@ func renderShieldBadge(label, value, color string) []byte {
 		ValueTextLength: valTextW * 10,
 	}
 	var buf bytes.Buffer
-	_ = parsedBadgeTmpl.Execute(&buf, v)
-	return buf.Bytes()
+	if err := parsedBadgeTmpl.Execute(&buf, v); err != nil {
+		return nil, fmt.Errorf("render badge svg: %w", err)
+	}
+	return buf.Bytes(), nil
 }
 
 // vulnBadgeColor returns the background color for the vulnerability badge
@@ -203,48 +218,53 @@ type projectBadgeStats struct {
 }
 
 // resolveProjectStats fetches the vulnerability and license stats for a project.
-// If version is non-empty and differs from latest, it locates that specific version.
+// If version is empty, it resolves the latest SBOM ID for the project.
+// Both paths evaluate unsuppressed vulnerabilities (accounting for VEX) and
+// active license violations (excluding approved exemptions).
 func resolveProjectStats(ctx context.Context, chClient *clickhouse.Client, name, version string) (*projectBadgeStats, error) {
-	detail, err := chClient.QueryProjectDetail(ctx, name)
-	if err != nil {
-		return nil, err
-	}
-
-	// If no specific version requested, or requested version is latest, use project aggregates.
-	if version == "" || version == detail.LatestVersion {
-		violations := detail.LicenseBreakdown["copyleft"] + detail.LicenseBreakdown["unapproved"]
-		unknown := detail.LicenseBreakdown["unknown"]
-		return &projectBadgeStats{
-			CriticalVulns: detail.CriticalVulns,
-			HighVulns:     detail.HighVulns,
-			MediumVulns:   detail.MediumVulns,
-			LowVulns:      detail.LowVulns,
-			Violations:    violations,
-			Unknown:       unknown,
-		}, nil
-	}
-
-	// Specific historical version requested: find the matching SBOM ID.
-	sbomsResp, err := chClient.QueryProjectSBOMs(ctx, name, 1, 100)
-	if err != nil {
-		return nil, err
-	}
 	var targetSBOMID string
-	for _, s := range sbomsResp.Data {
-		if s.DocumentVersion == version {
-			targetSBOMID = s.SBOMID
-			break
+
+	if version == "" {
+		detail, err := chClient.QueryProjectDetail(ctx, name)
+		if err != nil {
+			return nil, err
 		}
+		targetSBOMID = detail.LatestSBOMID
+	} else {
+		id, err := chClient.QueryProjectSBOMIDByVersion(ctx, name, version)
+		if err != nil {
+			return nil, err
+		}
+		targetSBOMID = id
 	}
+
 	if targetSBOMID == "" {
 		return nil, clickhouse.ErrSBOMNotFound
 	}
 
-	sbomDetail, err := chClient.QuerySBOMDetail(ctx, targetSBOMID)
+	// Count unsuppressed vulnerabilities using the scope-aware VEX join.
+	vulns, err := chClient.QuerySBOMVulnerabilities(ctx, targetSBOMID, "")
 	if err != nil {
 		return nil, err
 	}
+	var crit, high, med, low uint64
+	for _, v := range vulns {
+		if v.VEXStatus == "not_affected" {
+			continue
+		}
+		switch strings.ToLower(v.Severity) {
+		case "critical":
+			crit++
+		case "high":
+			high++
+		case "medium":
+			med++
+		case "low":
+			low++
+		}
+	}
 
+	// License compliance: count non-compliant packages (excluding approved exemptions).
 	licItems, err := chClient.QuerySBOMLicenses(ctx, targetSBOMID)
 	if err != nil {
 		return nil, err
@@ -253,18 +273,73 @@ func resolveProjectStats(ctx context.Context, chClient *clickhouse.Client, name,
 	for _, lic := range licItems {
 		switch strings.ToLower(lic.Category) {
 		case "copyleft", "unapproved":
-			violations += uint64(lic.PackageCount)
+			violations += uint64(len(lic.Packages))
 		case "unknown":
 			unknown += uint64(lic.PackageCount)
 		}
 	}
 
 	return &projectBadgeStats{
-		CriticalVulns: sbomDetail.CriticalVulns,
-		HighVulns:     sbomDetail.HighVulns,
-		MediumVulns:   sbomDetail.MediumVulns,
-		LowVulns:      sbomDetail.LowVulns,
+		CriticalVulns: crit,
+		HighVulns:     high,
+		MediumVulns:   med,
+		LowVulns:      low,
 		Violations:    violations,
 		Unknown:       unknown,
 	}, nil
+}
+
+func handleProjectBadge(
+	cfg *config.Config,
+	chClient *clickhouse.Client,
+	cache *badgeCache,
+	kind string,
+	badgeData func(cfg *config.Config, stats *projectBadgeStats) (label, value, color string),
+) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		name := sanitizeProjectName(r.PathValue("name"))
+		if name == "" {
+			writeError(w, http.StatusBadRequest, "Invalid project name")
+			return
+		}
+		version := strings.TrimSpace(r.URL.Query().Get("version"))
+		cacheKey := fmt.Sprintf("%s:%s:%s", kind, name, version)
+		if svg, found, notFound := cache.Get(cacheKey); found {
+			if notFound {
+				writeError(w, http.StatusNotFound, "Project not found")
+				return
+			}
+			w.Header().Set("Content-Type", "image/svg+xml")
+			w.Header().Set("Cache-Control", "max-age=3600")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(svg)
+			return
+		}
+
+		stats, err := resolveProjectStats(r.Context(), chClient, name, version)
+		if err != nil {
+			if errors.Is(err, clickhouse.ErrSBOMNotFound) {
+				cache.SetNotFound(cacheKey)
+				writeError(w, http.StatusNotFound, "Project not found")
+				return
+			}
+			log.Printf("ERROR: project badge stats for %s (%s): %v", sanitizeLogParam(name), kind, err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch project badge")
+			return
+		}
+
+		label, val, color := badgeData(cfg, stats)
+		svg, err := renderShieldBadge(label, val, color)
+		if err != nil {
+			log.Printf("ERROR: render %s badge for %s: %v", kind, sanitizeLogParam(name), err)
+			writeError(w, http.StatusInternalServerError, "Failed to render badge")
+			return
+		}
+		cache.Set(cacheKey, svg)
+
+		w.Header().Set("Content-Type", "image/svg+xml")
+		w.Header().Set("Cache-Control", "max-age=3600")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(svg)
+	}
 }

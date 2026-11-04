@@ -150,6 +150,10 @@ func TestQueriesExecute(t *testing.T) {
 		// for an unknown name, which isEmptyResult accepts.
 		{"QueryProjectDetail", func() error { _, err := c.QueryProjectDetail(ctx, "no-such-project"); return err }},
 		{"QueryProjectSBOMs", func() error { _, err := c.QueryProjectSBOMs(ctx, "no-such-project", 1, 10); return err }},
+		{"QueryProjectSBOMIDByVersion", func() error {
+			_, err := c.QueryProjectSBOMIDByVersion(ctx, "no-such-project", "1.0.0")
+			return err
+		}},
 		{"QueryProjectVulnerabilities", func() error { _, err := c.QueryProjectVulnerabilities(ctx, "no-such-project", ""); return err }},
 		{"QueryProjectPackages", func() error { _, err := c.QueryProjectPackages(ctx, "no-such-project", 1, 10, ""); return err }},
 		{"QueryProjectPackages/search", func() error { _, err := c.QueryProjectPackages(ctx, "no-such-project", 1, 10, "curl"); return err }},

@@ -258,7 +258,7 @@ func Load() (*Config, error) {
 		ServiceToken:          getEnv("SERVICE_TOKEN", ""),
 		APIKeys:               parseAPIKeys(getEnv("API_KEYS", "")),
 		BadgesPublic:          getEnvBool("BADGES_PUBLIC", false),
-		BrandName:             resolveBrandName(getEnv("BRAND_NAME", ""), getEnv("UI_CONFIG", "")),
+		BrandName:             getEnv("BRAND_NAME", "BOMHort"),
 		MaxUploadSizeMB:       getEnvInt("MAX_UPLOAD_SIZE_MB", 50),
 
 		OriginalStoreBackend:  strings.ToLower(getEnv("ORIGINAL_STORE_BACKEND", OriginalStoreAuto)),
@@ -598,35 +598,4 @@ func (c *Config) S3BucketNames() string {
 		}
 	}
 	return strings.Join(names, ", ")
-}
-
-// resolveBrandName determines the brand label for badges.
-// Env var BRAND_NAME wins, then ui-config.json (from UI_CONFIG or standard paths),
-// falling back to "BOMHort".
-func resolveBrandName(envBrand, uiConfigPath string) string {
-	if b := strings.TrimSpace(envBrand); b != "" {
-		return b
-	}
-	candidates := []string{
-		uiConfigPath,
-		"./ui/public/ui-config.json",
-		"../ui/public/ui-config.json",
-		"/usr/share/nginx/html/ui-config.json",
-		"/data/config/ui-config.json",
-	}
-	for _, p := range candidates {
-		if p == "" {
-			continue
-		}
-		data, err := os.ReadFile(p)
-		if err == nil {
-			var parsed struct {
-				BrandName string `json:"brandName"`
-			}
-			if err := json.Unmarshal(data, &parsed); err == nil && strings.TrimSpace(parsed.BrandName) != "" {
-				return strings.TrimSpace(parsed.BrandName)
-			}
-		}
-	}
-	return "BOMHort"
 }

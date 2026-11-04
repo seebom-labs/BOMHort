@@ -2,7 +2,10 @@ package clickhouse
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/seebom-labs/bomhort/backend/pkg/dto"
@@ -151,6 +154,29 @@ func (c *Client) QueryProjectDetail(ctx context.Context, name string) (*dto.Proj
 // component.
 func (c *Client) QueryProjectSBOMs(ctx context.Context, name string, page, pageSize uint64) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
 	return c.QuerySBOMs(ctx, page, pageSize, "", name)
+}
+
+// QueryProjectSBOMIDByVersion returns the most recently ingested SBOM ID for a specific
+// project and document_version, or ErrSBOMNotFound when none matches.
+func (c *Client) QueryProjectSBOMIDByVersion(ctx context.Context, name, version string) (string, error) {
+	var sbomID string
+	err := c.Conn.QueryRow(ctx, fmt.Sprintf(`
+		SELECT toString(s.sbom_id)
+		FROM %s AS s
+		WHERE s.project_name = ? AND s.document_version = ?
+		ORDER BY s.ingested_at DESC
+		LIMIT 1
+	`, projectSBOMs), name, version).Scan(&sbomID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) || strings.Contains(err.Error(), "no rows in result set") {
+			return "", ErrSBOMNotFound
+		}
+		return "", fmt.Errorf("failed to find sbom for project %q version %q: %w", name, version, err)
+	}
+	if sbomID == "" {
+		return "", ErrSBOMNotFound
+	}
+	return sbomID, nil
 }
 
 // QueryProjectVulnerabilities returns one row per distinct (vuln_id, purl)

@@ -282,6 +282,30 @@ describe('ProjectDetailComponent', () => {
     expect(imgs?.length).toBe(2);
     expect(imgs?.[0].getAttribute('src')).toBe(component.vulnBadgeUrl);
     expect(imgs?.[1].getAttribute('src')).toBe(component.licenseBadgeUrl);
+
+    const hint = card?.querySelector('.badges-hint');
+    expect(hint?.textContent).toContain('(needs BADGES_PUBLIC=true when auth is on)');
+
+    // Clipboard success
+    let writeTextPromise = Promise.resolve();
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: vi.fn().mockImplementation(() => writeTextPromise),
+      },
+    });
+    component.copyBadgesMarkdown();
+    await writeTextPromise;
+    expect(component.copyState).toBe('copied');
+    expect(component.copiedBadges).toBe(true);
+
+    // Clipboard failure
+    const rejectPromise = Promise.reject(new Error('Permission denied'));
+    navigator.clipboard.writeText = vi.fn().mockReturnValue(rejectPromise);
+    component.copyBadgesMarkdown();
+    try { await rejectPromise; } catch {}
+    await Promise.resolve();
+    expect(component.copyState).toBe('failed');
+    expect(component.copiedBadges).toBe(false);
   });
 });
 
