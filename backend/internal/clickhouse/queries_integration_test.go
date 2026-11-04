@@ -122,7 +122,7 @@ func TestQueriesExecute(t *testing.T) {
 		}},
 		{"packageScopesFor", func() error { _, err := c.packageScopesFor(ctx, map[string][]string{someID: {"x"}}); return err }},
 		{"violationScopesFor", func() error { _, err := c.violationScopesFor(ctx, []string{someID}); return err }},
-		{"QueryVulnerabilities", func() error { _, err := c.QueryVulnerabilities(ctx, 1, 10, ""); return err }},
+		{"QueryVulnerabilities", func() error { _, err := c.QueryVulnerabilities(ctx, 1, 10, "", VulnFilter{}); return err }},
 		{"QueryVEXStatements", func() error { _, err := c.QueryVEXStatements(ctx, 1, 10); return err }},
 		// Package-wide aggregations: read sbom_packages alone (see packageProjectKey).
 		{"QueryDependencyStats", func() error { _, err := c.QueryDependencyStats(ctx, 10); return err }},

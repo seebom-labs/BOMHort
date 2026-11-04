@@ -274,6 +274,50 @@ func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, 
 // the same rows. The ORDER BY ends in the row's identity: without the
 // tie-breakers, findings with equal severity and discovered_at could swap
 // places between two LIMIT/OFFSET pages and appear twice or not at all.
+// VulnFilter narrows the vulnerability listing to the SBOMs of an ownership
+// slice (#459). Values within one field are ORed, fields are ANDed; an empty
+// field does not filter. Ownership is read from sboms, not from the finding
+// row, so cluster, namespace, project and tags follow the same identity rule
+// as the project and fleet views.
+type VulnFilter struct {
+	Clusters, Namespaces, Projects, Tags []string
+	// ParentMembers is ?parent= resolved to its projects by the caller;
+	// parents are computed in Go, not stored.
+	ParentMembers []string
+}
+
+// vulnWhere combines the scope and ownership predicates into a WHERE clause
+// over vulnerabilities, with its placeholder args.
+func vulnWhere(scope string, f VulnFilter) (string, []any) {
+	var preds, owner []string
+	var args []any
+	if pred := depthPredicate(scope, "dependency_depth"); pred != "" {
+		preds = append(preds, pred)
+	}
+	for _, c := range []struct {
+		vals []string
+		pred string
+	}{
+		{f.Clusters, "s.cluster IN (?)"},
+		{f.Namespaces, "s.namespace IN (?)"},
+		{f.Projects, "s.project_name IN (?)"},
+		{f.ParentMembers, "s.project_name IN (?)"},
+		{f.Tags, "hasAny(s.tags, ?)"},
+	} {
+		if len(c.vals) > 0 {
+			owner = append(owner, c.pred)
+			args = append(args, c.vals)
+		}
+	}
+	if len(owner) > 0 {
+		preds = append(preds, "sbom_id IN (SELECT s.sbom_id FROM "+projectSBOMs+" AS s WHERE "+strings.Join(owner, " AND ")+")")
+	}
+	if len(preds) == 0 {
+		return "", nil
+	}
+	return " WHERE " + strings.Join(preds, " AND "), args
+}
+
 func vulnerabilityListSQL(scopeWhere string) string {
 	return `
 		SELECT
@@ -336,12 +380,9 @@ type VulnerabilityCursor struct {
 // pagination and returns a cursor over it. The query is sent before this
 // returns, so a failing query is reported here — before a caller has
 // written anything to its client.
-func (c *Client) StreamVulnerabilities(ctx context.Context, scope string) (*VulnerabilityCursor, error) {
-	scopeWhere := ""
-	if pred := depthPredicate(scope, "dependency_depth"); pred != "" {
-		scopeWhere = " WHERE " + pred
-	}
-	rows, err := c.Conn.Query(ctx, vulnerabilityListSQL(scopeWhere))
+func (c *Client) StreamVulnerabilities(ctx context.Context, scope string, f VulnFilter) (*VulnerabilityCursor, error) {
+	where, args := vulnWhere(scope, f)
+	rows, err := c.Conn.Query(ctx, vulnerabilityListSQL(where), args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query vulnerabilities: %w", err)
 	}
@@ -385,28 +426,26 @@ func (cur *VulnerabilityCursor) Close() error { return cur.rows.Close() }
 // naming a product with no subcomponents ('*') covers every component of it.
 //
 // scope ("" or a depgraph scope label) restricts the listing to findings
-// whose package is pulled in that way (direct, transitive, …).
-func (c *Client) QueryVulnerabilities(ctx context.Context, page, pageSize uint64, scope string) (*dto.PaginatedResponse[dto.VulnerabilityListItem], error) {
+// whose package is pulled in that way (direct, transitive, …); f restricts
+// it to an ownership slice (#459).
+func (c *Client) QueryVulnerabilities(ctx context.Context, page, pageSize uint64, scope string, f VulnFilter) (*dto.PaginatedResponse[dto.VulnerabilityListItem], error) {
 	if page == 0 {
 		page = 1
 	}
 	offset := (page - 1) * pageSize
 
-	scopeWhere := ""
-	if pred := depthPredicate(scope, "dependency_depth"); pred != "" {
-		scopeWhere = " WHERE " + pred
-	}
+	scopeWhere, args := vulnWhere(scope, f)
 
 	var total uint64
 	if err := c.Conn.QueryRow(ctx, `
 		SELECT count() FROM (SELECT * FROM vulnerabilities FINAL)`+scopeWhere+`
-	`).Scan(&total); err != nil {
+	`, args...).Scan(&total); err != nil {
 		return nil, fmt.Errorf("failed to count vulnerabilities: %w", err)
 	}
 
 	rows, err := c.Conn.Query(ctx, vulnerabilityListSQL(scopeWhere)+`
 		LIMIT ? OFFSET ?
-	`, pageSize, offset)
+	`, append(args, pageSize, offset)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query vulnerabilities: %w", err)
 	}

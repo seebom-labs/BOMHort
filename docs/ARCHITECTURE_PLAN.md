@@ -30,7 +30,7 @@ bomhort/
 │   ├── cmd/
 │   │   ├── ingestion-watcher/main.go   # K8s CronJob
 │   │   ├── parsing-worker/main.go      # SBOM + VEX processor
-│   │   ├── api-gateway/main.go         # REST API (37 endpoints)
+│   │   ├── api-gateway/main.go         # REST API (39 endpoints)
 │   │   ├── cve-refresher/main.go       # Background CVE Refresh CronJob
 │   │   └── mcp-server/                 # Read-only MCP tool surface (#399)
 │   │       ├── main.go                 #   transports: stdio (default) | http
@@ -232,7 +232,7 @@ S3 project grouping continues to use the source path. See the
 | GET | `/api/v1/sboms/{id}/vulnerabilities` | All vulns for an SBOM with VEX status |
 | GET | `/api/v1/sboms/{id}/licenses` | License breakdown per SBOM (with package list per license) |
 | GET | `/api/v1/sboms/{id}/dependencies` | Dependency tree as array reconstruction |
-| GET | `/api/v1/vulnerabilities?page=&page_size=` | Paginated vuln list (every finding, VEX status attached) |
+| GET | `/api/v1/vulnerabilities?page=&page_size=&cluster=&namespace=&project=&parent=&tag=` | Paginated vuln list (every finding, VEX status attached); comma-separated ownership filters, OR within, AND across (#459) |
 | GET | `/api/v1/vulnerabilities/{id}/affected-projects` | All projects affected by a CVE (direct + transitive) |
 | GET | `/api/v1/reports/vulnerabilities?format=csv&scope=` | CSV export of the vulnerability listing, streamed (#266) |
 | GET | `/api/v1/licenses/compliance` | Aggregated license overview |
@@ -251,9 +251,11 @@ S3 project grouping continues to use the source path. See the
 | GET | `/api/v1/clusters` | List all clusters with summary stats (SBOM count, packages, vulns) |
 | GET | `/api/v1/clusters/{name}/stats` | Per-cluster dashboard statistics |
 | GET | `/api/v1/clusters/{name}/sboms?page=&page_size=` | Paginated SBOM list for a specific cluster |
+| GET | `/api/v1/clusters/{name}/vulnerabilities` | Vuln list pinned to one cluster (#459) |
 | GET | `/api/v1/namespaces?cluster=` | List all namespaces with summary stats (optionally scoped to one cluster) |
 | GET | `/api/v1/namespaces/{name}/stats?cluster=` | Per-namespace dashboard statistics (+ clusters the namespace spans) |
 | GET | `/api/v1/namespaces/{name}/sboms?cluster=&page=&page_size=` | Paginated SBOM list for a specific namespace |
+| GET | `/api/v1/namespaces/{name}/vulnerabilities?cluster=` | Vuln list pinned to one namespace (#459) |
 | GET | `/api/v1/fleet` | Full `cluster → namespace → project` tree in one response (drives the UI Fleet view) |
 
 ## 4. ClickHouse Schema (15 Migrations)

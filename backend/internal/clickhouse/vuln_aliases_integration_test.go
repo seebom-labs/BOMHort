@@ -104,7 +104,7 @@ func TestFindingsCarryCVEAndAliases(t *testing.T) {
 		t.Errorf("project findings = %+v, want cve_id %s aliases %v", projectVulns, f.cveID, wantAliases)
 	}
 
-	all, err := c.QueryVulnerabilities(ctx, 1, 500, "")
+	all, err := c.QueryVulnerabilities(ctx, 1, 500, "", VulnFilter{})
 	if err != nil {
 		t.Fatalf("QueryVulnerabilities: %v", err)
 	}

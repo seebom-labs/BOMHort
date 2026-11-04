@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
 	"github.com/seebom-labs/bomhort/backend/pkg/dto"
 )
 
@@ -36,7 +37,7 @@ var fixedNow = func() time.Time { return time.Date(2026, 10, 14, 23, 30, 0, 0, t
 func runReport(t *testing.T, url string, rows *fakeVulnRows, streamErr error) (*httptest.ResponseRecorder, string) {
 	t.Helper()
 	var gotScope string
-	h := vulnerabilityReportHandler(func(_ context.Context, scope string) (vulnerabilityRows, error) {
+	h := vulnerabilityReportHandler(noParents, func(_ context.Context, scope string, _ clickhouse.VulnFilter) (vulnerabilityRows, error) {
 		gotScope = scope
 		if streamErr != nil {
 			return nil, streamErr
@@ -119,7 +120,7 @@ func TestVulnerabilityReportRejectsBadParams(t *testing.T) {
 		"/api/v1/reports/vulnerabilities?format=csv&scope=indirect",
 	} {
 		called := false
-		h := vulnerabilityReportHandler(func(context.Context, string) (vulnerabilityRows, error) {
+		h := vulnerabilityReportHandler(noParents, func(context.Context, string, clickhouse.VulnFilter) (vulnerabilityRows, error) {
 			called = true
 			return &fakeVulnRows{}, nil
 		}, fixedNow)

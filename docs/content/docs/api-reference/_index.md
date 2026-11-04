@@ -731,6 +731,13 @@ Paginated list of all discovered vulnerabilities across all SBOMs. Each item car
 | `page` | uint64 | 1 | Page number |
 | `page_size` | uint64 | 50 | Items per page (max 500) |
 | `scope` | string | all | Only `root`, `direct`, `transitive` or `unknown` findings (see [Dependency scope](#dependency-scope)) |
+| `cluster` | string | — | Only findings of SBOMs in these clusters |
+| `namespace` | string | — | Only findings of SBOMs in these namespaces |
+| `project` | string | — | Only findings of these projects (the project name `GET /api/v1/projects` lists) |
+| `parent` | string | — | Only findings of the projects grouped under these parents (`GET /api/v1/projects?group_by=parent`), the parent itself included |
+| `tag` | string | — | Only findings of SBOMs carrying any of these tags |
+
+The ownership filters (#459) take comma-separated values: values within one parameter are ORed, parameters are ANDed (`?cluster=prod-eu,prod-us&tag=sandbox` = SBOMs in either cluster that carry `sandbox`). Ownership is read from the SBOM, so it matches the project and fleet views. A value longer than 200 characters is a `400`.
 
 **Response:** `200 OK` — `PaginatedResponse<VulnerabilityListItem>`
 
@@ -806,6 +813,13 @@ Every finding of [`GET /api/v1/vulnerabilities`](#get-apiv1vulnerabilities) as a
 |-----------|------|----------|-------------|
 | `format` | string | ✅ | `csv`. The only format today; anything else is a `400`. |
 | `scope` | string | — | Only `root`, `direct`, `transitive` or `unknown` findings (see [Dependency scope](#dependency-scope)) |
+| `cluster` | string | — | Only findings of SBOMs in these clusters |
+| `namespace` | string | — | Only findings of SBOMs in these namespaces |
+| `project` | string | — | Only findings of these projects (the project name `GET /api/v1/projects` lists) |
+| `parent` | string | — | Only findings of the projects grouped under these parents (`GET /api/v1/projects?group_by=parent`), the parent itself included |
+| `tag` | string | — | Only findings of SBOMs carrying any of these tags |
+
+The ownership filters work as on the JSON listing.
 
 A legacy `vex_filter` parameter is ignored, as on the JSON listing.
 
@@ -1571,6 +1585,10 @@ Per-cluster dashboard statistics including severity breakdown and license distri
 - `400 Bad Request` — cluster name empty or exceeds 200 characters
 - `404 Not Found` — no SBOMs exist for this cluster
 
+### `GET /api/v1/clusters/{name}/vulnerabilities`
+
+[`GET /api/v1/vulnerabilities`](#get-apiv1vulnerabilities) with `cluster` set to `{name}` (#459). Takes the same parameters; `page`, `page_size`, `scope` and the other ownership filters narrow it further. An unknown cluster returns an empty page, not a `404`.
+
 ### `GET /api/v1/clusters/{name}/sboms`
 
 Paginated list of SBOMs for a specific cluster.
@@ -1699,6 +1717,10 @@ clusters the namespace spans.
 **Error Responses:**
 - `400 Bad Request` — namespace name empty or either value exceeds 200 characters
 - `404 Not Found` — no SBOMs exist for this namespace (in this scope)
+
+### `GET /api/v1/namespaces/{name}/vulnerabilities`
+
+[`GET /api/v1/vulnerabilities`](#get-apiv1vulnerabilities) with `namespace` set to `{name}` (#459). Add `?cluster=` to scope it to the namespace of one cluster; without it the namespace is aggregated across the fleet. Takes the same parameters as the listing. An unknown namespace returns an empty page.
 
 ### `GET /api/v1/namespaces/{name}/sboms`
 
