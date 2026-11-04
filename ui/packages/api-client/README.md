@@ -8,6 +8,10 @@ import { BomhortApiClient } from '@bomhort/api-client';
 
 const api = new BomhortApiClient({ baseUrl: 'https://bomhort.example.com/api/v1', apiKey: '…' });
 const { data, total } = await api.getVulnerabilities(1, 50, 'direct');
+
+// Ownership filters (OwnerFilter): cluster, namespace, project, parent, tag — comma-separated, empty values dropped.
+const prod = await api.getDashboardStats({ cluster: 'prod-eu' });
+const hit = await api.getAffectedProjectsByCVE('CVE-2024-45338', { namespace: 'payments' });
 ```
 
 Method names, parameters and defaults mirror the Angular `ApiService` in `ui/src/app/core/api.service.ts`;

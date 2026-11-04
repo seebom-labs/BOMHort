@@ -71,6 +71,20 @@ func registerTools(s *mcp.Server, c *apiclient.Client) {
 	}, toolListVulnerabilities(c))
 
 	mcp.AddTool(s, &mcp.Tool{
+		Name:        "get_dashboard_stats",
+		Title:       "Get dashboard statistics",
+		Description: "Instance-wide totals: SBOMs, packages, findings by severity and dependency scope, VEX-suppressed findings and the license breakdown. Optionally narrowed to clusters, namespaces, projects, parents or tags.",
+		Annotations: readOnly("Get dashboard statistics"),
+	}, toolDashboardStats(c))
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "get_affected_projects",
+		Title:       "Get projects affected by a vulnerability",
+		Description: "Which SBOMs ship a package affected by one vulnerability, with cluster, namespace, package version, severity, VEX status and dependency_scope. The id may be any alias (CVE, GHSA, GO-, PYSEC-). Optionally narrowed by the ownership filters.",
+		Annotations: readOnly("Get affected projects"),
+	}, toolAffectedProjects(c))
+
+	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_sbom",
 		Title:       "Get an SBOM",
 		Description: "Get one SBOM document by its id: metadata, package count and severity breakdown, optionally with its vulnerability findings.",
@@ -292,6 +306,59 @@ func toolListVulnerabilities(c *apiclient.Client) mcp.ToolHandlerFor[listVulnera
 			Page:            page,
 			PageSize:        pageSize,
 		}, nil
+	}
+}
+
+// ── get_dashboard_stats / get_affected_projects ───────────────────────────
+
+type ownerInput struct {
+	Cluster   string `json:"cluster,omitempty" jsonschema:"keep SBOMs in these clusters (comma-separated)"`
+	Namespace string `json:"namespace,omitempty" jsonschema:"keep SBOMs in these namespaces (comma-separated)"`
+	Project   string `json:"project,omitempty" jsonschema:"keep SBOMs of these projects (comma-separated)"`
+	Parent    string `json:"parent,omitempty" jsonschema:"keep the projects grouped under these parents (comma-separated)"`
+	Tag       string `json:"tag,omitempty" jsonschema:"keep SBOMs carrying any of these tags (comma-separated)"`
+}
+
+func (o ownerInput) query() map[string]string {
+	return map[string]string{"cluster": o.Cluster, "namespace": o.Namespace, "project": o.Project, "parent": o.Parent, "tag": o.Tag}
+}
+
+type dashboardStatsOutput struct {
+	Stats dto.DashboardStats `json:"stats"`
+}
+
+func toolDashboardStats(c *apiclient.Client) mcp.ToolHandlerFor[ownerInput, dashboardStatsOutput] {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, in ownerInput) (*mcp.CallToolResult, dashboardStatsOutput, error) {
+		st, err := c.DashboardStats(ctx, in.query())
+		if err != nil {
+			return nil, dashboardStatsOutput{}, toolError(err)
+		}
+		st.LicenseBreakdown = nonNilMap(st.LicenseBreakdown)
+		return nil, dashboardStatsOutput{Stats: *st}, nil
+	}
+}
+
+type affectedProjectsInput struct {
+	VulnID string `json:"vuln_id" jsonschema:"the vulnerability id or any alias, e.g. CVE-2024-45338 or GHSA-w32m-9786-jp63"`
+	ownerInput
+}
+
+type affectedProjectsOutput struct {
+	VulnID   string                `json:"vuln_id"`
+	Affected []dto.AffectedProject `json:"affected"`
+}
+
+func toolAffectedProjects(c *apiclient.Client) mcp.ToolHandlerFor[affectedProjectsInput, affectedProjectsOutput] {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, in affectedProjectsInput) (*mcp.CallToolResult, affectedProjectsOutput, error) {
+		id := strings.TrimSpace(in.VulnID)
+		if id == "" {
+			return nil, affectedProjectsOutput{}, errors.New("vuln_id is required")
+		}
+		rows, err := c.AffectedProjects(ctx, id, in.query())
+		if err != nil {
+			return nil, affectedProjectsOutput{}, toolError(err)
+		}
+		return nil, affectedProjectsOutput{VulnID: id, Affected: nonNil(rows)}, nil
 	}
 }
 

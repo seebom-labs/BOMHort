@@ -5,7 +5,7 @@ import { provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 import { vi } from 'vitest';
 import { ApiService } from '../../core/api.service';
-import { DashboardStats } from '../../core/api.models';
+import { ClusterListItem, DashboardStats } from '../../core/api.models';
 import { DashboardComponent } from './dashboard.component';
 
 describe('DashboardComponent', () => {
@@ -46,5 +46,18 @@ describe('DashboardComponent', () => {
     expect(segments.map((x) => x.label)).toEqual(['Permissive', 'Copyleft', 'Not Approved', 'Exempted', 'Unknown']);
     expect(segments.find((x) => x.label === 'Not Approved')?.value).toBe(3);
     expect(segments.find((x) => x.label === 'Unknown')?.value).toBe(4);
+  });
+
+  it('filters the stats by the selected cluster', () => {
+    const api = TestBed.inject(ApiService);
+    vi.spyOn(api, 'getClusters').mockReturnValue(of([{ name: '' }, { name: 'prod-eu' }] as unknown as ClusterListItem[]));
+    const stats = vi.spyOn(api, 'getDashboardStats').mockReturnValue(of({ license_breakdown: {} } as unknown as DashboardStats));
+    const fixture = TestBed.createComponent(DashboardComponent);
+    fixture.detectChanges();
+    const select = fixture.nativeElement.querySelector('.cluster-filter select') as HTMLSelectElement;
+    expect([...select.options].map((o) => o.value)).toEqual(['', 'prod-eu']);
+    select.value = 'prod-eu';
+    select.dispatchEvent(new Event('change'));
+    expect(stats).toHaveBeenLastCalledWith({ cluster: 'prod-eu' });
   });
 });

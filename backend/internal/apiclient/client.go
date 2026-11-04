@@ -254,17 +254,41 @@ func (c *Client) ListProjectVulnerabilities(ctx context.Context, name, scope str
 // ownership filters (cluster, namespace, project, parent, tag; #459), each
 // comma-separated; empty values are not sent.
 func (c *Client) ListVulnerabilities(ctx context.Context, page, pageSize uint64, scope string, owner map[string]string) (*dto.PaginatedResponse[dto.VulnerabilityListItem], error) {
-	q := scopeQuery(pageQuery(page, pageSize), scope)
-	for k, v := range owner {
-		if v != "" {
-			q.Set(k, v)
-		}
-	}
+	q := ownerQuery(scopeQuery(pageQuery(page, pageSize), scope), owner)
 	var out dto.PaginatedResponse[dto.VulnerabilityListItem]
 	if err := c.get(ctx, "/api/v1/vulnerabilities", q, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
+}
+
+// DashboardStats returns GET /api/v1/stats/dashboard, narrowed by the
+// ownership filters in owner (see ListVulnerabilities).
+func (c *Client) DashboardStats(ctx context.Context, owner map[string]string) (*dto.DashboardStats, error) {
+	var out dto.DashboardStats
+	if err := c.get(ctx, "/api/v1/stats/dashboard", ownerQuery(url.Values{}, owner), &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// AffectedProjects returns GET /api/v1/vulnerabilities/{id}/affected-projects,
+// narrowed by the ownership filters in owner. id may be any alias.
+func (c *Client) AffectedProjects(ctx context.Context, id string, owner map[string]string) ([]dto.AffectedProject, error) {
+	var out []dto.AffectedProject
+	if err := c.get(ctx, "/api/v1/vulnerabilities/"+url.PathEscape(id)+"/affected-projects", ownerQuery(url.Values{}, owner), &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func ownerQuery(q url.Values, owner map[string]string) url.Values {
+	for k, v := range owner {
+		if v != "" {
+			q.Set(k, v)
+		}
+	}
+	return q
 }
 
 // SearchPackages returns GET /api/v1/packages/search.

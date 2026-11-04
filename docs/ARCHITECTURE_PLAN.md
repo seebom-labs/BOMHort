@@ -34,7 +34,7 @@ bomhort/
 │   │   ├── cve-refresher/main.go       # Background CVE Refresh CronJob
 │   │   └── mcp-server/                 # Read-only MCP tool surface (#399)
 │   │       ├── main.go                 #   transports: stdio (default) | http
-│   │       ├── tools.go                #   the five read-only tools
+│   │       ├── tools.go                #   the seven read-only tools
 │   │       └── http.go                 #   bearer + Origin allow-list guard
 │   ├── internal/
 │   │   ├── spdx/              # SPDX JSON streaming parser
@@ -563,7 +563,7 @@ Moved to Section 10 for comprehensive coverage including exemptions and visual r
 2. **It exercises the contract 1.0 freezes.** #398 exists because the UI could paper over wrong aggregates with grouping logic in Angular. An agent calling `get_project` cannot — and that is exactly the property that makes an external consumer worth having *before* the freeze, not after.
 3. **It holds no credentials.** The Deployment mounts neither the release ConfigMap nor its Secret; a Helm test asserts this, so the claim cannot rot.
 
-**The five tools** — `list_projects`, `get_project`, `search_packages`, `list_vulnerabilities`, `get_sbom` — are annotated read-only, idempotent and closed-world. There are no write tools in 1.0, and BOMHort never calls a language model itself: the server is a transport, automated reasoning lives in the VEXViper sidecar (#338).
+**The seven tools** — `list_projects`, `get_project`, `search_packages`, `list_vulnerabilities`, `get_affected_projects`, `get_dashboard_stats`, `get_sbom` — are annotated read-only, idempotent and closed-world. There are no write tools in 1.0, and BOMHort never calls a language model itself: the server is a transport, automated reasoning lives in the VEXViper sidecar (#338).
 
 **Transports:**
 
