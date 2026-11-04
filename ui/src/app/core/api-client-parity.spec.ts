@@ -9,15 +9,15 @@ import { BomhortApiClient } from '@bomhort/api-client';
 // consumer. This test proves every method issues the identical request so
 // a component ported to another framework hits the same endpoints.
 const calls: Record<string, unknown[]> = {
-  getDashboardStats: [],
+  getDashboardStats: [{ cluster: 'prod-eu', namespace: '' }],
   getSboms: [2, 25, 'gin', 'payment-api'],
   getSbomDetail: ['id-1'],
   getSbomDependencies: ['id-1'],
   getSbomVulnerabilities: ['id-1', 'direct'],
   getSbomVex: ['id-1'],
   getSbomLicenses: ['id-1'],
-  getVulnerabilities: [3, 10, 'transitive'],
-  getAffectedProjectsByCVE: ['CVE-2024-1'],
+  getVulnerabilities: [3, 10, 'transitive', { cluster: 'prod-eu,prod-us', tag: 'sandbox' }],
+  getAffectedProjectsByCVE: ['CVE-2024-1', { namespace: 'payments' }],
   getLicenseCompliance: ['GPL-3.0-only'],
   getLicenseSources: [],
   getProjectsWithLicenseViolations: [],

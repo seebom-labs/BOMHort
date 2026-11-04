@@ -2,6 +2,7 @@ import { Inject, Injectable, InjectionToken, Optional } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
+  OwnerFilter,
   DashboardStats,
   PaginatedResponse,
   SBOMListItem,
@@ -38,6 +39,15 @@ import {
 /** Base URL of the REST API; the app uses the nginx proxy at `/api/v1`, embedded elements point it elsewhere. */
 export const API_BASE_URL = new InjectionToken<string>('API_BASE_URL');
 
+/** Ownership filters (#459) as query params; empty values are omitted. */
+function ownerParams(owner: OwnerFilter): HttpParams {
+  let params = new HttpParams();
+  for (const [k, v] of Object.entries(owner)) {
+    if (v) params = params.set(k, v);
+  }
+  return params;
+}
+
 @Injectable({
   providedIn: 'root',
 })
@@ -51,8 +61,8 @@ export class ApiService {
     this.baseUrl = (baseUrl ?? '/api/v1').replace(/\/$/, '');
   }
 
-  getDashboardStats(): Observable<DashboardStats> {
-    return this.http.get<DashboardStats>(`${this.baseUrl}/stats/dashboard`);
+  getDashboardStats(owner: OwnerFilter = {}): Observable<DashboardStats> {
+    return this.http.get<DashboardStats>(`${this.baseUrl}/stats/dashboard`, { params: ownerParams(owner) });
   }
 
   /**
@@ -104,16 +114,16 @@ export class ApiService {
    * URL of the CSV export of the vulnerability listing (#266): the same rows
    * as getVulnerabilities, streamed by the gateway as a file download.
    */
-  vulnerabilityReportUrl(scope = ''): string {
-    let params = new HttpParams().set('format', 'csv');
+  vulnerabilityReportUrl(scope = '', owner: OwnerFilter = {}): string {
+    let params = ownerParams(owner).set('format', 'csv');
     if (scope) {
       params = params.set('scope', scope);
     }
     return `${this.baseUrl}/reports/vulnerabilities?${params.toString()}`;
   }
 
-  getVulnerabilities(page = 1, pageSize = 50, scope = ''): Observable<PaginatedResponse<VulnerabilityListItem>> {
-    let params = new HttpParams()
+  getVulnerabilities(page = 1, pageSize = 50, scope = '', owner: OwnerFilter = {}): Observable<PaginatedResponse<VulnerabilityListItem>> {
+    let params = ownerParams(owner)
       .set('page', page.toString())
       .set('page_size', pageSize.toString());
     if (scope) {
@@ -125,8 +135,8 @@ export class ApiService {
     );
   }
 
-  getAffectedProjectsByCVE(vulnId: string): Observable<AffectedProject[]> {
-    return this.http.get<AffectedProject[]>(`${this.baseUrl}/vulnerabilities/${vulnId}/affected-projects`);
+  getAffectedProjectsByCVE(vulnId: string, owner: OwnerFilter = {}): Observable<AffectedProject[]> {
+    return this.http.get<AffectedProject[]>(`${this.baseUrl}/vulnerabilities/${vulnId}/affected-projects`, { params: ownerParams(owner) });
   }
 
   /** Without `license` the items carry no affected_sboms; pass one id to get them. */

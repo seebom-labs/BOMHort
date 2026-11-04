@@ -194,7 +194,7 @@ Readiness probe. Pings ClickHouse to verify database connectivity. Returns `503 
 
 ### `GET /api/v1/stats/dashboard`
 
-Aggregated platform statistics for the dashboard view.
+Aggregated platform statistics for the dashboard view. Accepts the [ownership filters](#get-apiv1vulnerabilities) (`cluster`, `namespace`, `project`, `parent`, `tag`, #459); every count is then limited to the matching SBOMs.
 
 **Response:** `200 OK`
 ```json
@@ -775,6 +775,8 @@ All projects affected by a specific vulnerability, including transitive dependen
 |-----------|------|-------------|
 | `id` | string | Vulnerability ID or any alias (CVE, GHSA, GO-*, PYSEC-*, etc.) |
 
+The [ownership filters](#get-apiv1vulnerabilities) (`cluster`, `namespace`, `project`, `parent`, `tag`, #459) narrow the result to matching SBOMs.
+
 **Response:** `200 OK`
 ```json
 [
@@ -782,6 +784,8 @@ All projects affected by a specific vulnerability, including transitive dependen
     "sbom_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     "source_file": "etcd-v3.5.12.spdx.json",
     "document_name": "etcd-v3.5.12",
+    "cluster": "prod-eu",
+    "namespace": "kube-system",
     "purl": "pkg:golang/golang.org/x/net@v0.21.0",
     "package_name": "golang.org/x/net",
     "version": "v0.21.0",

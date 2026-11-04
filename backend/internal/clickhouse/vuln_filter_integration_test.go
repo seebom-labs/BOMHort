@@ -61,3 +61,34 @@ func TestVulnerabilityOwnershipFilter(t *testing.T) {
 		})
 	}
 }
+
+// TestAffectedProjectsAndDashboardOwnership covers parts 3 and 4 of #459:
+// affected-project rows carry the SBOM's cluster and namespace and honour the
+// filter, and a filtered dashboard counts only the matching SBOMs.
+func TestAffectedProjectsAndDashboardOwnership(t *testing.T) {
+	c := testClient(t)
+	a := insertAliasFixture(t, c)
+	b := insertAliasFixture(t, c)
+	ctx := context.Background()
+
+	rows, err := c.QueryAffectedProjectsByCVE(ctx, a.goID, VulnFilter{})
+	if err != nil {
+		t.Fatalf("QueryAffectedProjectsByCVE: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Cluster != a.cluster || rows[0].Namespace != a.namespace {
+		t.Fatalf("rows = %+v, want cluster %s namespace %s", rows, a.cluster, a.namespace)
+	}
+	if rows, err := c.QueryAffectedProjectsByCVE(ctx, a.goID, VulnFilter{Clusters: []string{b.cluster}}); err != nil || len(rows) != 0 {
+		t.Fatalf("other cluster: rows = %+v, err %v", rows, err)
+	}
+
+	stats, err := c.QueryDashboardStats(ctx, VulnFilter{Clusters: []string{a.cluster, b.cluster}})
+	if err != nil {
+		t.Fatalf("QueryDashboardStats: %v", err)
+	}
+	// Each fixture: one SBOM, one package, one HIGH finding suppressed by VEX.
+	if stats.TotalSBOMs != 2 || stats.TotalPackages != 2 || stats.TotalVulnerabilities != 2 ||
+		stats.HighVulns != 2 || stats.SuppressedByVEX != 2 || stats.EffectiveVulnerabilities != 0 {
+		t.Fatalf("filtered dashboard = %+v", stats)
+	}
+}

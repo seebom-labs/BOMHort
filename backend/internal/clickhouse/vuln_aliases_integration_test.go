@@ -134,7 +134,7 @@ func TestAffectedProjectsByAnyAlias(t *testing.T) {
 	ctx := context.Background()
 
 	for _, id := range []string{f.goID, f.cveID, f.ghsaID} {
-		projects, err := c.QueryAffectedProjectsByCVE(ctx, id)
+		projects, err := c.QueryAffectedProjectsByCVE(ctx, id, VulnFilter{})
 		if err != nil {
 			t.Fatalf("QueryAffectedProjectsByCVE(%s): %v", id, err)
 		}
@@ -146,7 +146,7 @@ func TestAffectedProjectsByAnyAlias(t *testing.T) {
 			t.Errorf("lookup by %s: vex_status = %q, want not_affected", id, projects[0].VEXStatus)
 		}
 	}
-	none, err := c.QueryAffectedProjectsByCVE(ctx, "CVE-2099-0000001")
+	none, err := c.QueryAffectedProjectsByCVE(ctx, "CVE-2099-0000001", VulnFilter{})
 	if err != nil || len(none) != 0 {
 		t.Errorf("unknown id: got %+v, %v", none, err)
 	}

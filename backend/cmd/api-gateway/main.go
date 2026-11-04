@@ -152,9 +152,20 @@ func main() {
 	// 503 otherwise so K8s removes the pod from Service endpoints.
 	mux.HandleFunc("GET /readyz", readyzHandler(chClient))
 
+	// Parent grouping (internal/projectgroup): resolved over all projects at
+	// query time, cached briefly, re-read when the mapping file changes.
+	parents := newParentResolver(chClient.QueryProjectSignals, cfg.ProjectGroupsFile)
+	vulnFilter := newVulnFilter(parents.Assignments)
+
 	// Dashboard stats.
+	// The ownership filters of /vulnerabilities (#459) scope every count.
 	mux.HandleFunc("GET /api/v1/stats/dashboard", func(w http.ResponseWriter, r *http.Request) {
-		stats, err := chClient.QueryDashboardStats(r.Context())
+		f, status, msg := vulnFilter(r)
+		if status != 0 {
+			writeError(w, status, msg)
+			return
+		}
+		stats, err := chClient.QueryDashboardStats(r.Context(), f)
 		if err != nil {
 			log.Printf("ERROR: dashboard stats: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch dashboard stats")
@@ -181,11 +192,6 @@ func main() {
 		}
 		writeJSON(w, http.StatusOK, resp)
 	})
-
-	// Parent grouping (internal/projectgroup): resolved over all projects at
-	// query time, cached briefly, re-read when the mapping file changes.
-	parents := newParentResolver(chClient.QueryProjectSignals, cfg.ProjectGroupsFile)
-	vulnFilter := newVulnFilter(parents.Assignments)
 
 	// List vulnerabilities with pagination. Every finding is returned with its
 	// VEX status attached; there is no "effective only" filter (a suppressed
@@ -521,7 +527,12 @@ func main() {
 			writeError(w, http.StatusBadRequest, "Invalid vulnerability ID")
 			return
 		}
-		projects, err := chClient.QueryAffectedProjectsByCVE(r.Context(), vulnID)
+		f, status, msg := vulnFilter(r)
+		if status != 0 {
+			writeError(w, status, msg)
+			return
+		}
+		projects, err := chClient.QueryAffectedProjectsByCVE(r.Context(), vulnID, f)
 		if err != nil {
 			log.Printf("ERROR: affected projects for %s: %v", sanitizeLogParam(vulnID), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch affected projects")

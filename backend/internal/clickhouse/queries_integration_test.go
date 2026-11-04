@@ -100,7 +100,7 @@ func TestQueriesExecute(t *testing.T) {
 		name string
 		run  func() error
 	}{
-		{"QueryDashboardStats", func() error { _, err := c.QueryDashboardStats(ctx); return err }},
+		{"QueryDashboardStats", func() error { _, err := c.QueryDashboardStats(ctx, VulnFilter{}); return err }},
 		{"QuerySBOMs", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "", ""); return err }},
 		{"QuerySBOMs/search", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "test", ""); return err }},
 		{"QuerySBOMs/project", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "", "payment-api"); return err }},
@@ -130,7 +130,7 @@ func TestQueriesExecute(t *testing.T) {
 		{"QueryVersionSkew/search", func() error { _, err := c.QueryVersionSkew(ctx, 1, 10, "yaml"); return err }},
 		{"QueryDependencySearch", func() error { _, err := c.QueryDependencySearch(ctx, "yaml", 1, 10); return err }},
 		{"QueryPackageDetail", func() error { _, err := c.QueryPackageDetail(ctx, "gopkg.in/yaml.v3", 1, 10); return err }},
-		{"QueryAffectedProjectsByCVE", func() error { _, err := c.QueryAffectedProjectsByCVE(ctx, "CVE-2024-45338"); return err }},
+		{"QueryAffectedProjectsByCVE", func() error { _, err := c.QueryAffectedProjectsByCVE(ctx, "CVE-2024-45338", VulnFilter{}); return err }},
 		{"QueryGlobalSearch", func() error { _, err := c.QueryGlobalSearch(ctx, "yaml", 5); return err }},
 		{"QueryClusters", func() error { _, err := c.QueryClusters(ctx); return err }},
 		{"QueryClusterSBOMs", func() error { _, err := c.QueryClusterSBOMs(ctx, "test", 1, 10); return err }},

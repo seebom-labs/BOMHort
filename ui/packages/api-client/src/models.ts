@@ -261,6 +261,9 @@ export interface AffectedProject {
   sbom_id: string;
   source_file: string;
   document_name: string;
+  /** Ownership of the SBOM (#459); '' when the instance has none. */
+  cluster: string;
+  namespace: string;
   purl: string;
   package_name: string;
   version: string;
@@ -564,6 +567,19 @@ export interface FleetCluster {
   sbom_count: number;
   vuln_count: number;
   namespaces: FleetNamespace[];
+}
+
+/**
+ * Ownership filters of the vulnerability listing, its CSV export, the
+ * dashboard and affected-projects (#459). Each value may be comma-separated:
+ * OR within one field, AND across fields.
+ */
+export interface OwnerFilter {
+  cluster?: string;
+  namespace?: string;
+  project?: string;
+  parent?: string;
+  tag?: string;
 }
 
 export interface ClusterListItem {

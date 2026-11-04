@@ -12,29 +12,33 @@ import (
 )
 
 // QueryDashboardStats fetches aggregated dashboard statistics.
-func (c *Client) QueryDashboardStats(ctx context.Context) (*dto.DashboardStats, error) {
+func (c *Client) QueryDashboardStats(ctx context.Context, f VulnFilter) (*dto.DashboardStats, error) {
+	// Every count below is restricted to the SBOMs matching f (#459); a zero
+	// filter adds no WHERE, so the unscoped dashboard is unchanged.
+	w, args := ownerWhere(f, false)
+	vw, vargs := ownerWhere(f, true)
 	stats := &dto.DashboardStats{
 		LicenseBreakdown: make(map[string]uint64),
 	}
 
 	// Total SBOMs
-	if err := c.Conn.QueryRow(ctx, "SELECT count() FROM sboms FINAL").Scan(&stats.TotalSBOMs); err != nil {
+	if err := c.Conn.QueryRow(ctx, "SELECT count() FROM sboms FINAL"+w, args...).Scan(&stats.TotalSBOMs); err != nil {
 		return nil, fmt.Errorf("failed to query total sboms: %w", err)
 	}
 
 	// Total Packages (sum of array lengths)
 	if err := c.Conn.QueryRow(ctx,
-		"SELECT sum(length(package_names)) FROM sbom_packages FINAL").Scan(&stats.TotalPackages); err != nil {
+		"SELECT sum(length(package_names)) FROM sbom_packages FINAL"+w, args...).Scan(&stats.TotalPackages); err != nil {
 		return nil, fmt.Errorf("failed to query total packages: %w", err)
 	}
 
 	// Vulnerability counts by severity
-	if err := c.Conn.QueryRow(ctx, "SELECT count() FROM vulnerabilities FINAL").Scan(&stats.TotalVulnerabilities); err != nil {
+	if err := c.Conn.QueryRow(ctx, "SELECT count() FROM vulnerabilities FINAL"+w, args...).Scan(&stats.TotalVulnerabilities); err != nil {
 		return nil, fmt.Errorf("failed to query total vulnerabilities: %w", err)
 	}
 
 	rows, err := c.Conn.Query(ctx,
-		"SELECT severity, "+scopeExpr("dependency_depth")+" AS scope, count() FROM vulnerabilities FINAL GROUP BY severity, scope")
+		"SELECT severity, "+scopeExpr("dependency_depth")+" AS scope, count() FROM vulnerabilities FINAL"+w+" GROUP BY severity, scope", args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query severity breakdown: %w", err)
 	}
@@ -45,7 +49,7 @@ func (c *Client) QueryDashboardStats(ctx context.Context) (*dto.DashboardStats, 
 
 	// License breakdown
 	licRows, err := c.Conn.Query(ctx,
-		"SELECT category, sum(package_count) AS cnt FROM license_compliance FINAL GROUP BY category")
+		"SELECT category, sum(package_count) AS cnt FROM license_compliance FINAL"+w+" GROUP BY category", args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query license breakdown: %w", err)
 	}
@@ -62,7 +66,7 @@ func (c *Client) QueryDashboardStats(ctx context.Context) (*dto.DashboardStats, 
 
 	// Count exempted packages (packages covered by blanket or per-package exceptions).
 	if err := c.Conn.QueryRow(ctx,
-		"SELECT sum(length(exempted_packages)) FROM license_compliance FINAL").Scan(&stats.ExemptedPackages); err != nil {
+		"SELECT sum(length(exempted_packages)) FROM license_compliance FINAL"+w, args...).Scan(&stats.ExemptedPackages); err != nil {
 		return nil, fmt.Errorf("failed to count exempted packages: %w", err)
 	}
 
@@ -75,7 +79,7 @@ func (c *Client) QueryDashboardStats(ctx context.Context) (*dto.DashboardStats, 
 
 	// VEX: count suppressed vulnerabilities (not_affected) and total statements.
 	if err := c.Conn.QueryRow(ctx,
-		"SELECT count() FROM vex_statements FINAL").Scan(&stats.TotalVEXStatements); err != nil {
+		"SELECT count() FROM vex_statements FINAL"+vw, vargs...).Scan(&stats.TotalVEXStatements); err != nil {
 		return nil, fmt.Errorf("failed to count vex statements: %w", err)
 	}
 
@@ -111,7 +115,7 @@ func (c *Client) QueryDashboardStats(ctx context.Context) (*dto.DashboardStats, 
 			FROM (
 				SELECT sbom_id, vuln_id, purl,
 					arrayJoin(arrayConcat([vuln_id], aliases)) AS match_id
-				FROM vulnerabilities FINAL
+				FROM vulnerabilities FINAL`+w+`
 			) AS v
 			INNER JOIN (
 				SELECT sbom_id, vuln_id, product_purl, status, vex_timestamp
@@ -123,7 +127,7 @@ func (c *Client) QueryDashboardStats(ctx context.Context) (*dto.DashboardStats, 
 			GROUP BY v.sbom_id, v.vuln_id, v.purl
 		)
 		WHERE winning_status = 'not_affected'
-	`).Scan(&suppressedByVEX); err != nil {
+	`, args...).Scan(&suppressedByVEX); err != nil {
 		return nil, fmt.Errorf("failed to count vex-suppressed vulnerabilities: %w", err)
 	}
 
@@ -286,14 +290,12 @@ type VulnFilter struct {
 	ParentMembers []string
 }
 
-// vulnWhere combines the scope and ownership predicates into a WHERE clause
-// over vulnerabilities, with its placeholder args.
-func vulnWhere(scope string, f VulnFilter) (string, []any) {
-	var preds, owner []string
+// ownerPredicate restricts sbom_id to the SBOMs matching f, or returns ""
+// when f filters nothing. asString is for vex_statements, which stores
+// sbom_id as String.
+func ownerPredicate(f VulnFilter, asString bool) (string, []any) {
+	var owner []string
 	var args []any
-	if pred := depthPredicate(scope, "dependency_depth"); pred != "" {
-		preds = append(preds, pred)
-	}
 	for _, c := range []struct {
 		vals []string
 		pred string
@@ -309,8 +311,35 @@ func vulnWhere(scope string, f VulnFilter) (string, []any) {
 			args = append(args, c.vals)
 		}
 	}
-	if len(owner) > 0 {
-		preds = append(preds, "sbom_id IN (SELECT s.sbom_id FROM "+projectSBOMs+" AS s WHERE "+strings.Join(owner, " AND ")+")")
+	if len(owner) == 0 {
+		return "", nil
+	}
+	id := "s.sbom_id"
+	if asString {
+		id = "toString(s.sbom_id)"
+	}
+	return "sbom_id IN (SELECT " + id + " FROM " + projectSBOMs + " AS s WHERE " + strings.Join(owner, " AND ") + ")", args
+}
+
+// ownerWhere is ownerPredicate as a WHERE clause ("" when unfiltered).
+func ownerWhere(f VulnFilter, asString bool) (string, []any) {
+	pred, args := ownerPredicate(f, asString)
+	if pred == "" {
+		return "", nil
+	}
+	return " WHERE " + pred, args
+}
+
+// vulnWhere combines the scope and ownership predicates into a WHERE clause
+// over vulnerabilities, with its placeholder args.
+func vulnWhere(scope string, f VulnFilter) (string, []any) {
+	var preds []string
+	if pred := depthPredicate(scope, "dependency_depth"); pred != "" {
+		preds = append(preds, pred)
+	}
+	owner, args := ownerPredicate(f, false)
+	if owner != "" {
+		preds = append(preds, owner)
 	}
 	if len(preds) == 0 {
 		return "", nil
