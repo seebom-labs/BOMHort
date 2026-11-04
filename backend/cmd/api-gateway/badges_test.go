@@ -1,17 +1,10 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"os"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/google/uuid"
-	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
-	"github.com/seebom-labs/bomhort/backend/internal/config"
 )
 
 func TestRenderShieldBadge(t *testing.T) {
@@ -168,137 +161,5 @@ func TestRenderShieldBadgeEscapesXSS(t *testing.T) {
 	}
 	if !strings.Contains(svg, "&lt;script&gt;") {
 		t.Errorf("expected escaped XML entities in SVG: %s", svg)
-	}
-}
-
-func testClickHouseClient(t *testing.T) *clickhouse.Client {
-	t.Helper()
-	host := os.Getenv("CLICKHOUSE_HOST")
-	if host == "" {
-		t.Skip("CLICKHOUSE_HOST not set — skipping ClickHouse integration test")
-	}
-	port := os.Getenv("CLICKHOUSE_PORT")
-	if port == "" {
-		port = "9000"
-	}
-	portNum := 9000
-	if p, err := strconv.Atoi(port); err == nil {
-		portNum = p
-	}
-	db := os.Getenv("CLICKHOUSE_DATABASE")
-	if db == "" {
-		db = "bomhort"
-	}
-	cfg := &config.Config{
-		ClickHouseHost:     host,
-		ClickHousePort:     portNum,
-		ClickHouseUser:     "default",
-		ClickHousePassword: os.Getenv("CLICKHOUSE_PASSWORD"),
-		ClickHouseDatabase: db,
-	}
-	c, err := clickhouse.NewClient(cfg)
-	if err != nil {
-		t.Fatalf("clickhouse.NewClient: %v", err)
-	}
-	return c
-}
-
-// TestResolveProjectStats verifies that default project badges inspect only the latest
-// version (so a CVE resolved in a prior version does not taint the badge), and that approved
-// license exemptions are excluded from violations so an exempted package evaluates to compliant.
-func TestResolveProjectStats(t *testing.T) {
-	c := testClickHouseClient(t)
-	ctx := context.Background()
-
-	suffix := uuid.New().String()[:8]
-	projectName := "badge-test-" + suffix
-	sbomV1 := uuid.New().String()
-	sbomV2 := uuid.New().String()
-
-	now := time.Now().UTC().Truncate(time.Second)
-	hash := func(seed string) string {
-		s := seed + suffix
-		for len(s) < 64 {
-			s += "0"
-		}
-		return s[:64]
-	}
-
-	// Insert v1 (older, has a critical CVE)
-	if err := c.Conn.Exec(ctx, `
-		INSERT INTO sboms (ingested_at, sbom_id, source_file, spdx_version, document_name,
-			document_namespace, sha256_hash, creation_date, creator_tools,
-			cluster, namespace, project, source_repo, source_ref, document_version, tags)
-		VALUES (?, ?, ?, 'SPDX-2.3', ?, '', ?, ?, [], '', '', ?, '', '', '1.0.0', [])`,
-		now.Add(-2*time.Hour), sbomV1, "fixtures/"+projectName+"/1.0.0.spdx.json", projectName+" 1.0.0",
-		hash(sbomV1), now.Add(-2*time.Hour), projectName,
-	); err != nil {
-		t.Fatalf("insert sbom v1: %v", err)
-	}
-
-	if err := c.Conn.Exec(ctx, `
-		INSERT INTO vulnerabilities (discovered_at, sbom_id, source_file, purl, vuln_id,
-			severity, summary, affected_versions, fixed_version, osv_json, aliases,
-			cluster, namespace, project)
-		VALUES (?, ?, '', 'pkg:generic/lib@1.0.0', 'CVE-2024-TEST-V1',
-			'CRITICAL', 'fixture', [], '', '{}', [], '', '', '')`,
-		now.Add(-2*time.Hour), sbomV1,
-	); err != nil {
-		t.Fatalf("insert vuln v1: %v", err)
-	}
-
-	// Insert v2 (newer/latest, zero CVEs, 1 copyleft package with approved exemption)
-	if err := c.Conn.Exec(ctx, `
-		INSERT INTO sboms (ingested_at, sbom_id, source_file, spdx_version, document_name,
-			document_namespace, sha256_hash, creation_date, creator_tools,
-			cluster, namespace, project, source_repo, source_ref, document_version, tags)
-		VALUES (?, ?, ?, 'SPDX-2.3', ?, '', ?, ?, [], '', '', ?, '', '', '2.0.0', [])`,
-		now.Add(-1*time.Hour), sbomV2, "fixtures/"+projectName+"/2.0.0.spdx.json", projectName+" 2.0.0",
-		hash(sbomV2), now.Add(-1*time.Hour), projectName,
-	); err != nil {
-		t.Fatalf("insert sbom v2: %v", err)
-	}
-
-	if err := c.Conn.Exec(ctx, `
-		INSERT INTO license_compliance (checked_at, sbom_id, source_file, license_id, category,
-			package_count, non_compliant_packages, exempted_packages, exemption_reason,
-			cluster, namespace, project)
-		VALUES (?, ?, '', 'GPL-3.0-only', 'copyleft', 1, [], ['pkg:generic/exempted-tool@1.0'], 'approved tool', '', '', '')`,
-		now.Add(-1*time.Hour), sbomV2,
-	); err != nil {
-		t.Fatalf("insert license_compliance v2: %v", err)
-	}
-
-	t.Cleanup(func() {
-		ids := []string{sbomV1, sbomV2}
-		for _, table := range []string{"sboms", "vulnerabilities", "license_compliance"} {
-			_ = c.Conn.Exec(ctx, fmt.Sprintf("ALTER TABLE %s DELETE WHERE sbom_id IN (?) SETTINGS mutations_sync = 1", table), ids)
-		}
-	})
-
-	// 1. Resolve stats for the default (latest) version: must yield 0 vulns and compliant
-	latestStats, err := resolveProjectStats(ctx, c, projectName, "")
-	if err != nil {
-		t.Fatalf("resolveProjectStats (latest): %v", err)
-	}
-	if latestStats.CriticalVulns != 0 || latestStats.HighVulns != 0 || latestStats.MediumVulns != 0 || latestStats.LowVulns != 0 {
-		t.Errorf("expected 0 vulnerabilities on latest version, got C=%d H=%d M=%d L=%d",
-			latestStats.CriticalVulns, latestStats.HighVulns, latestStats.MediumVulns, latestStats.LowVulns)
-	}
-	if latestStats.Violations != 0 {
-		t.Errorf("expected 0 license violations (exempted package), got %d", latestStats.Violations)
-	}
-	val, color := licenseBadgeData(latestStats.Violations, latestStats.Unknown)
-	if val != "compliant" || color != "#44cc11" {
-		t.Errorf("expected license badge compliant/#44cc11, got %s/%s", val, color)
-	}
-
-	// 2. Resolve stats for version 1.0.0: must reflect the historical critical CVE
-	v1Stats, err := resolveProjectStats(ctx, c, projectName, "1.0.0")
-	if err != nil {
-		t.Fatalf("resolveProjectStats (v1): %v", err)
-	}
-	if v1Stats.CriticalVulns != 1 {
-		t.Errorf("expected 1 critical vuln for version 1.0.0, got %d", v1Stats.CriticalVulns)
 	}
 }

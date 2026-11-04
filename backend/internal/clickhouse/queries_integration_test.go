@@ -154,6 +154,10 @@ func TestQueriesExecute(t *testing.T) {
 			_, err := c.QueryProjectSBOMIDByVersion(ctx, "no-such-project", "1.0.0")
 			return err
 		}},
+		{"QueryProjectBadgeStats", func() error {
+			_, err := c.QueryProjectBadgeStats(ctx, "no-such-project", "")
+			return err
+		}},
 		{"QueryProjectVulnerabilities", func() error { _, err := c.QueryProjectVulnerabilities(ctx, "no-such-project", ""); return err }},
 		{"QueryProjectPackages", func() error { _, err := c.QueryProjectPackages(ctx, "no-such-project", 1, 10, ""); return err }},
 		{"QueryProjectPackages/search", func() error { _, err := c.QueryProjectPackages(ctx, "no-such-project", 1, 10, "curl"); return err }},

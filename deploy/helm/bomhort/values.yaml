@@ -429,6 +429,10 @@ apiGateway:
   # browser does not supply its own — so the secret never leaves the cluster.
   auth:
     enabled: false
+    # Deliberately exempt the two project status badge endpoints
+    # (/api/v1/badges/projects/{name}/vulnerabilities.svg and licenses.svg) from
+    # authentication so they can be embedded in public repository READMEs.
+    badgesPublic: false
     # Inline secrets (created via the chart's Secret). Override via --set
     # for ad-hoc use; prefer existingSecret for production deployments.
     serviceToken: ""

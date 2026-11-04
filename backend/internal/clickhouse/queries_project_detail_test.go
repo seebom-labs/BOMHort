@@ -401,3 +401,124 @@ func TestProjectRowsUsePrimaryKey(t *testing.T) {
 		})
 	}
 }
+
+// TestProjectBadgeStatsSeeded verifies project badge stats resolution:
+// 1. Default (version="") resolves latest SBOM, ignoring resolved vulnerabilities from older versions.
+// 2. Fully exempted copyleft packages (present in sbom_packages, with non_compliant_packages=[])
+//    correctly evaluate to 0 violations.
+// 3. Explicit version lookup resolves historical version stats.
+func TestProjectBadgeStatsSeeded(t *testing.T) {
+	c := testClient(t)
+	ctx := context.Background()
+
+	suffix := uuid.New().String()[:8]
+	projectName := "badge-seeded-" + suffix
+	sbomV1 := uuid.New().String()
+	sbomV2 := uuid.New().String()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	hash := func(seed string) string {
+		s := seed + suffix
+		for len(s) < 64 {
+			s += "0"
+		}
+		return s[:64]
+	}
+
+	// Insert v1 (older, 1 critical CVE)
+	if err := c.Conn.Exec(ctx, `
+		INSERT INTO sboms (ingested_at, sbom_id, source_file, spdx_version, document_name,
+			document_namespace, sha256_hash, creation_date, creator_tools,
+			cluster, namespace, project, source_repo, source_ref, document_version, tags)
+		VALUES (?, ?, ?, 'SPDX-2.3', ?, '', ?, ?, [], '', '', ?, '', '', '1.0.0', [])`,
+		now.Add(-2*time.Hour), sbomV1, "fixtures/"+projectName+"/1.0.0.spdx.json", projectName+" 1.0.0",
+		hash(sbomV1), now.Add(-2*time.Hour), projectName,
+	); err != nil {
+		t.Fatalf("insert sbom v1: %v", err)
+	}
+
+	if err := c.Conn.Exec(ctx, `
+		INSERT INTO sbom_packages (ingested_at, sbom_id, source_file, package_spdx_ids,
+			package_names, package_versions, package_purls, package_licenses,
+			rel_source_indices, rel_target_indices, rel_types, cluster, namespace, project)
+		VALUES (?, ?, '', ['SPDXRef-1'], ['oldlib'], ['1.0'], ['pkg:generic/oldlib@1.0'], ['MIT'],
+			[], [], [], '', '', '')`,
+		now.Add(-2*time.Hour), sbomV1,
+	); err != nil {
+		t.Fatalf("insert packages v1: %v", err)
+	}
+
+	if err := c.Conn.Exec(ctx, `
+		INSERT INTO vulnerabilities (discovered_at, sbom_id, source_file, purl, vuln_id,
+			severity, summary, affected_versions, fixed_version, osv_json, aliases,
+			cluster, namespace, project)
+		VALUES (?, ?, '', 'pkg:generic/oldlib@1.0', 'CVE-2024-V1-CRIT',
+			'CRITICAL', 'fixture', [], '', '{}', [], '', '', '')`,
+		now.Add(-2*time.Hour), sbomV1,
+	); err != nil {
+		t.Fatalf("insert vuln v1: %v", err)
+	}
+
+	// Insert v2 (latest, zero CVEs, 1 copyleft package in sbom_packages that is fully exempted)
+	if err := c.Conn.Exec(ctx, `
+		INSERT INTO sboms (ingested_at, sbom_id, source_file, spdx_version, document_name,
+			document_namespace, sha256_hash, creation_date, creator_tools,
+			cluster, namespace, project, source_repo, source_ref, document_version, tags)
+		VALUES (?, ?, ?, 'SPDX-2.3', ?, '', ?, ?, [], '', '', ?, '', '', '2.0.0', [])`,
+		now.Add(-1*time.Hour), sbomV2, "fixtures/"+projectName+"/2.0.0.spdx.json", projectName+" 2.0.0",
+		hash(sbomV2), now.Add(-1*time.Hour), projectName,
+	); err != nil {
+		t.Fatalf("insert sbom v2: %v", err)
+	}
+
+	// Crucial: add sbom_packages row with GPL-3.0-only to reproduce the step-2 refill case
+	if err := c.Conn.Exec(ctx, `
+		INSERT INTO sbom_packages (ingested_at, sbom_id, source_file, package_spdx_ids,
+			package_names, package_versions, package_purls, package_licenses,
+			rel_source_indices, rel_target_indices, rel_types, cluster, namespace, project)
+		VALUES (?, ?, '', ['SPDXRef-2'], ['exempted-tool'], ['1.0'], ['pkg:generic/exempted-tool@1.0'], ['GPL-3.0-only'],
+			[], [], [], '', '', '')`,
+		now.Add(-1*time.Hour), sbomV2,
+	); err != nil {
+		t.Fatalf("insert packages v2: %v", err)
+	}
+
+	if err := c.Conn.Exec(ctx, `
+		INSERT INTO license_compliance (checked_at, sbom_id, source_file, license_id, category,
+			package_count, non_compliant_packages, exempted_packages, exemption_reason,
+			cluster, namespace, project)
+		VALUES (?, ?, '', 'GPL-3.0-only', 'copyleft', 1, [], ['pkg:generic/exempted-tool@1.0'], 'approved tool', '', '', '')`,
+		now.Add(-1*time.Hour), sbomV2,
+	); err != nil {
+		t.Fatalf("insert license_compliance v2: %v", err)
+	}
+
+	t.Cleanup(func() {
+		ids := []string{sbomV1, sbomV2}
+		for _, table := range []string{"sboms", "sbom_packages", "vulnerabilities", "license_compliance"} {
+			_ = c.Conn.Exec(ctx, fmt.Sprintf("ALTER TABLE %s DELETE WHERE sbom_id IN (?) SETTINGS mutations_sync = 1", table), ids)
+		}
+	})
+
+	// 1. Latest version (default): 0 vulns, 0 violations
+	latestStats, err := c.QueryProjectBadgeStats(ctx, projectName, "")
+	if err != nil {
+		t.Fatalf("QueryProjectBadgeStats (latest): %v", err)
+	}
+	if latestStats.CriticalVulns != 0 || latestStats.HighVulns != 0 || latestStats.MediumVulns != 0 || latestStats.LowVulns != 0 {
+		t.Errorf("expected 0 vulnerabilities on latest version, got C=%d H=%d M=%d L=%d",
+			latestStats.CriticalVulns, latestStats.HighVulns, latestStats.MediumVulns, latestStats.LowVulns)
+	}
+	if latestStats.Violations != 0 {
+		t.Errorf("expected 0 license violations for fully exempted package, got %d", latestStats.Violations)
+	}
+
+	// 2. Historical version (1.0.0): 1 critical vuln
+	v1Stats, err := c.QueryProjectBadgeStats(ctx, projectName, "1.0.0")
+	if err != nil {
+		t.Fatalf("QueryProjectBadgeStats (v1): %v", err)
+	}
+	if v1Stats.CriticalVulns != 1 {
+		t.Errorf("expected 1 critical vuln for version 1.0.0, got %d", v1Stats.CriticalVulns)
+	}
+}

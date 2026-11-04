@@ -179,6 +179,79 @@ func (c *Client) QueryProjectSBOMIDByVersion(ctx context.Context, name, version 
 	return sbomID, nil
 }
 
+// QueryProjectBadgeStats resolves the vulnerability and license stats for a project.
+// If version is empty, it evaluates the latest SBOM. Unsuppressed vulnerabilities
+// (accounting for VEX) and active license violations (excluding approved exemptions)
+// are counted.
+func (c *Client) QueryProjectBadgeStats(ctx context.Context, name, version string) (*dto.ProjectBadgeStats, error) {
+	var targetSBOMID string
+
+	if version == "" {
+		detail, err := c.QueryProjectDetail(ctx, name)
+		if err != nil {
+			return nil, err
+		}
+		targetSBOMID = detail.LatestSBOMID
+	} else {
+		id, err := c.QueryProjectSBOMIDByVersion(ctx, name, version)
+		if err != nil {
+			return nil, err
+		}
+		targetSBOMID = id
+	}
+
+	if targetSBOMID == "" {
+		return nil, ErrSBOMNotFound
+	}
+
+	// Count unsuppressed vulnerabilities using the scope-aware VEX join.
+	vulns, err := c.QuerySBOMVulnerabilities(ctx, targetSBOMID, "")
+	if err != nil {
+		return nil, err
+	}
+	var crit, high, med, low uint64
+	for _, v := range vulns {
+		if v.VEXStatus == "not_affected" {
+			continue
+		}
+		switch strings.ToLower(v.Severity) {
+		case "critical":
+			crit++
+		case "high":
+			high++
+		case "medium":
+			med++
+		case "low":
+			low++
+		}
+	}
+
+	// License compliance: count non-compliant packages directly from license_compliance.
+	// This counts length(non_compliant_packages) directly rather than querying the package list,
+	// ensuring fully exempted copyleft/unapproved packages (where non_compliant_packages is empty)
+	// correctly evaluate to 0 violations.
+	var violations, unknown uint64
+	err = c.Conn.QueryRow(ctx, `
+		SELECT
+			toUInt64(sumIf(length(non_compliant_packages), category IN ('copyleft', 'unapproved'))),
+			toUInt64(sumIf(package_count, category = 'unknown'))
+		FROM license_compliance FINAL
+		WHERE sbom_id = ?
+	`, targetSBOMID).Scan(&violations, &unknown)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query license stats for sbom %s: %w", targetSBOMID, err)
+	}
+
+	return &dto.ProjectBadgeStats{
+		CriticalVulns: crit,
+		HighVulns:     high,
+		MediumVulns:   med,
+		LowVulns:      low,
+		Violations:    violations,
+		Unknown:       unknown,
+	}, nil
+}
+
 // QueryProjectVulnerabilities returns one row per distinct (vuln_id, purl)
 // across every SBOM of the project, with the effective VEX statement.
 //

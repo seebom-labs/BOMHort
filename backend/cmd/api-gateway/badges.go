@@ -15,6 +15,7 @@ import (
 
 	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
 	"github.com/seebom-labs/bomhort/backend/internal/config"
+	"github.com/seebom-labs/bomhort/backend/pkg/dto"
 )
 
 const maxBadgeCacheEntries = 10000
@@ -208,85 +209,9 @@ func licenseBadgeData(violations, unknown uint64) (string, string) {
 	return "compliant", "#44cc11" // Green
 }
 
-type projectBadgeStats struct {
-	CriticalVulns uint64
-	HighVulns     uint64
-	MediumVulns   uint64
-	LowVulns      uint64
-	Violations    uint64
-	Unknown       uint64
-}
-
 // resolveProjectStats fetches the vulnerability and license stats for a project.
-// If version is empty, it resolves the latest SBOM ID for the project.
-// Both paths evaluate unsuppressed vulnerabilities (accounting for VEX) and
-// active license violations (excluding approved exemptions).
-func resolveProjectStats(ctx context.Context, chClient *clickhouse.Client, name, version string) (*projectBadgeStats, error) {
-	var targetSBOMID string
-
-	if version == "" {
-		detail, err := chClient.QueryProjectDetail(ctx, name)
-		if err != nil {
-			return nil, err
-		}
-		targetSBOMID = detail.LatestSBOMID
-	} else {
-		id, err := chClient.QueryProjectSBOMIDByVersion(ctx, name, version)
-		if err != nil {
-			return nil, err
-		}
-		targetSBOMID = id
-	}
-
-	if targetSBOMID == "" {
-		return nil, clickhouse.ErrSBOMNotFound
-	}
-
-	// Count unsuppressed vulnerabilities using the scope-aware VEX join.
-	vulns, err := chClient.QuerySBOMVulnerabilities(ctx, targetSBOMID, "")
-	if err != nil {
-		return nil, err
-	}
-	var crit, high, med, low uint64
-	for _, v := range vulns {
-		if v.VEXStatus == "not_affected" {
-			continue
-		}
-		switch strings.ToLower(v.Severity) {
-		case "critical":
-			crit++
-		case "high":
-			high++
-		case "medium":
-			med++
-		case "low":
-			low++
-		}
-	}
-
-	// License compliance: count non-compliant packages (excluding approved exemptions).
-	licItems, err := chClient.QuerySBOMLicenses(ctx, targetSBOMID)
-	if err != nil {
-		return nil, err
-	}
-	var violations, unknown uint64
-	for _, lic := range licItems {
-		switch strings.ToLower(lic.Category) {
-		case "copyleft", "unapproved":
-			violations += uint64(len(lic.Packages))
-		case "unknown":
-			unknown += uint64(lic.PackageCount)
-		}
-	}
-
-	return &projectBadgeStats{
-		CriticalVulns: crit,
-		HighVulns:     high,
-		MediumVulns:   med,
-		LowVulns:      low,
-		Violations:    violations,
-		Unknown:       unknown,
-	}, nil
+func resolveProjectStats(ctx context.Context, chClient *clickhouse.Client, name, version string) (*dto.ProjectBadgeStats, error) {
+	return chClient.QueryProjectBadgeStats(ctx, name, version)
 }
 
 func handleProjectBadge(
@@ -294,7 +219,7 @@ func handleProjectBadge(
 	chClient *clickhouse.Client,
 	cache *badgeCache,
 	kind string,
-	badgeData func(cfg *config.Config, stats *projectBadgeStats) (label, value, color string),
+	badgeData func(cfg *config.Config, stats *dto.ProjectBadgeStats) (label, value, color string),
 ) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		name := sanitizeProjectName(r.PathValue("name"))

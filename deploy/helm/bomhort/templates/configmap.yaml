@@ -30,6 +30,7 @@ data:
   {{- $brand = .Values.ui.siteConfig.content.brandName }}
   {{- end }}
   BRAND_NAME: {{ $brand | quote }}
+  BADGES_PUBLIC: {{ .Values.apiGateway.auth.badgesPublic | default false | quote }}
   API_PORT: {{ .Values.apiGateway.port | quote }}
   WORKER_BATCH_SIZE: {{ .Values.parsingWorker.batchSize | quote }}
   SKIP_OSV: {{ .Values.parsingWorker.skipOSV | quote }}

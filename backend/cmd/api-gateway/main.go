@@ -34,6 +34,7 @@ import (
 	"github.com/seebom-labs/bomhort/backend/internal/sourcerepo"
 	tagpkg "github.com/seebom-labs/bomhort/backend/internal/tags"
 	"github.com/seebom-labs/bomhort/backend/internal/vex"
+	"github.com/seebom-labs/bomhort/backend/pkg/dto"
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
 
@@ -533,7 +534,7 @@ func main() {
 
 	mux.HandleFunc("GET /api/v1/badges/projects/{name}/vulnerabilities.svg", handleProjectBadge(
 		cfg, chClient, badgeCache, "vuln",
-		func(cfg *config.Config, stats *projectBadgeStats) (string, string, string) {
+		func(cfg *config.Config, stats *dto.ProjectBadgeStats) (string, string, string) {
 			label := cfg.BrandName
 			if label == "" {
 				label = "BOMHort"
@@ -546,7 +547,7 @@ func main() {
 
 	mux.HandleFunc("GET /api/v1/badges/projects/{name}/licenses.svg", handleProjectBadge(
 		cfg, chClient, badgeCache, "lic",
-		func(cfg *config.Config, stats *projectBadgeStats) (string, string, string) {
+		func(cfg *config.Config, stats *dto.ProjectBadgeStats) (string, string, string) {
 			val, color := licenseBadgeData(stats.Violations, stats.Unknown)
 			return "licenses", val, color
 		},
