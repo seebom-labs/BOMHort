@@ -194,7 +194,7 @@ Readiness probe. Pings ClickHouse to verify database connectivity. Returns `503 
 
 ### `GET /api/v1/stats/dashboard`
 
-Aggregated platform statistics for the dashboard view. Accepts the [ownership filters](#get-apiv1vulnerabilities) (`cluster`, `namespace`, `project`, `parent`, `tag`, #459); every count is then limited to the matching SBOMs.
+Aggregated platform statistics for the dashboard view. Accepts the [ownership filters](#get-apiv1vulnerabilities) (`cluster`, `namespace`, `project`, `parent`, `tag`, #459); every count is then limited to the matching SBOMs, except `new_vulns_since_refresh` and `archived_repos_count`, which are always instance-wide.
 
 **Response:** `200 OK`
 ```json

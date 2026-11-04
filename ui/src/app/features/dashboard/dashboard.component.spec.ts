@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { vi } from 'vitest';
 import { ApiService } from '../../core/api.service';
 import { ClusterListItem, DashboardStats } from '../../core/api.models';
@@ -59,5 +59,18 @@ describe('DashboardComponent', () => {
     select.value = 'prod-eu';
     select.dispatchEvent(new Event('change'));
     expect(stats).toHaveBeenLastCalledWith({ cluster: 'prod-eu' });
+  });
+
+  it('drops a stale stats response when the cluster changes', () => {
+    const api = TestBed.inject(ApiService);
+    const slow = new Subject<DashboardStats>();
+    vi.spyOn(api, 'getDashboardStats')
+      .mockReturnValueOnce(slow)
+      .mockReturnValue(of({ total_sboms: 2, license_breakdown: {} } as unknown as DashboardStats));
+    const fixture = TestBed.createComponent(DashboardComponent);
+    fixture.detectChanges();
+    fixture.componentInstance.setCluster('prod-eu');
+    slow.next({ total_sboms: 99, license_breakdown: {} } as unknown as DashboardStats);
+    expect(fixture.componentInstance.stats?.total_sboms).toBe(2);
   });
 });

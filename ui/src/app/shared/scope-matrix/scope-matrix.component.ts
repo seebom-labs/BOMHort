@@ -42,7 +42,7 @@ const SCOPES: DependencyScope[] = ['direct', 'transitive', 'unknown', 'root'];
             <tr class="sev-low"><th>Low</th><td>{{ r.counts.low | number }}</td></tr>
           </tbody>
         </table>
-        <a *ngIf="vulnLink" class="scope-link" [routerLink]="vulnLink" [queryParams]="{ scope: r.scope }">List →</a>
+        <a *ngIf="vulnLink" class="scope-link" [routerLink]="vulnLink" [queryParams]="{ ...linkParams, scope: r.scope }">List →</a>
       </div>
     </div>
     <ng-template #empty><p class="scope-empty">No vulnerabilities.</p></ng-template>
@@ -64,6 +64,8 @@ const SCOPES: DependencyScope[] = ['direct', 'transitive', 'unknown', 'root'];
 export class ScopeMatrixComponent implements OnChanges {
   @Input() breakdown: ScopeBreakdown | undefined;
   @Input() vulnLink: string | unknown[] | undefined;
+  /** Extra query params for the row links, e.g. the dashboard's cluster. */
+  @Input() linkParams: Record<string, string> = {};
 
   rows: ScopeRow[] = [];
 
