@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -449,5 +450,29 @@ func TestPaginate(t *testing.T) {
 				t.Fatalf("paginate(page=%d,size=%d) = %v, want %v", tc.page, tc.size, got, tc.want)
 			}
 		}
+	}
+}
+
+func TestListVulnerabilitiesOwnerFilters(t *testing.T) {
+	var got url.Values
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/vulnerabilities", func(w http.ResponseWriter, r *http.Request) {
+		got = r.URL.Query()
+		_, _ = w.Write([]byte(`{"data":[],"total":0,"page":1,"page_size":25}`))
+	})
+	cs := newSession(t, mux)
+
+	var out listVulnerabilitiesOutput
+	decodeOutput(t, call(t, cs, "list_vulnerabilities", map[string]any{"cluster": "prod-eu,prod-us", "tag": "sandbox"}), &out)
+	if got.Get("cluster") != "prod-eu,prod-us" || got.Get("tag") != "sandbox" || got.Has("namespace") || got.Has("parent") {
+		t.Errorf("query = %v", got)
+	}
+
+	got = nil
+	if res := call(t, cs, "list_vulnerabilities", map[string]any{"project": "p", "cluster": "c"}); !res.IsError {
+		t.Error("project + cluster accepted, want tool error")
+	}
+	if got != nil {
+		t.Errorf("rejected call reached the API: %v", got)
 	}
 }

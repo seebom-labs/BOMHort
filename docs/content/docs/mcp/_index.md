@@ -34,7 +34,7 @@ that reached around the contract would not exercise it.
 | `list_projects` | "What does this instance know about?" | `GET /api/v1/projects` |
 | `get_project` | "What is the state of *payment-service*?" | `GET /api/v1/projects/{name}` (+ `/sboms`) |
 | `search_packages` | "Who ships log4j-core, and in which versions?" | `GET /api/v1/packages/search` |
-| `list_vulnerabilities` | "What is open, instance-wide or per project?" | `GET /api/v1/vulnerabilities`, `GET /api/v1/projects/{name}/vulnerabilities` |
+| `list_vulnerabilities` | "What is open, instance-wide or per project? Per cluster, namespace, parent or tag?" | `GET /api/v1/vulnerabilities`, `GET /api/v1/projects/{name}/vulnerabilities` |
 | `get_sbom` | "What is in this document?" | `GET /api/v1/sboms/{id}/detail` (+ `/vulnerabilities`) |
 
 All five are annotated `readOnlyHint`, `idempotentHint` and closed-world, so a

@@ -17,6 +17,7 @@ import (
 
 type aliasFixture struct {
 	sbomID, project, goID, cveID, ghsaID string
+	cluster, namespace, tag              string
 }
 
 func insertAliasFixture(t *testing.T, c *Client) aliasFixture {
@@ -29,6 +30,11 @@ func insertAliasFixture(t *testing.T, c *Client) aliasFixture {
 		goID:    fmt.Sprintf("GO-2099-%d", n),
 		cveID:   fmt.Sprintf("CVE-2099-%d", n),
 		ghsaID:  fmt.Sprintf("GHSA-fx%d-test", n),
+		// Ownership on the SBOM only: the finding row stays empty, as on
+		// refresher-written rows, so filters must read it from sboms.
+		cluster:   fmt.Sprintf("fx-cl-%d", n),
+		namespace: fmt.Sprintf("fx-ns-%d", n),
+		tag:       fmt.Sprintf("fx-tag-%d", n),
 	}
 	now := time.Now().UTC().Truncate(time.Second)
 	purl := fmt.Sprintf("pkg:golang/example.com/fx%d@v1.0.0", n)
@@ -43,8 +49,8 @@ func insertAliasFixture(t *testing.T, c *Client) aliasFixture {
 		INSERT INTO sboms (ingested_at, sbom_id, source_file, spdx_version, document_name,
 			document_namespace, sha256_hash, creation_date, creator_tools,
 			cluster, namespace, project, source_repo, source_ref, document_version, tags)
-		VALUES (?, ?, ?, 'SPDX-2.3', ?, '', ?, ?, [], '', '', ?, '', '', '1.0.0', [])`,
-		now, f.sbomID, "fixtures/"+f.project+".spdx.json", f.project, hash, now, f.project)
+		VALUES (?, ?, ?, 'SPDX-2.3', ?, '', ?, ?, [], ?, ?, ?, '', '', '1.0.0', [?])`,
+		now, f.sbomID, "fixtures/"+f.project+".spdx.json", f.project, hash, now, f.cluster, f.namespace, f.project, f.tag)
 	exec("packages", `
 		INSERT INTO sbom_packages (ingested_at, sbom_id, source_file, package_spdx_ids,
 			package_names, package_versions, package_purls, package_licenses,

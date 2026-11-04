@@ -1587,7 +1587,7 @@ Per-cluster dashboard statistics including severity breakdown and license distri
 
 ### `GET /api/v1/clusters/{name}/vulnerabilities`
 
-[`GET /api/v1/vulnerabilities`](#get-apiv1vulnerabilities) with `cluster` set to `{name}` (#459). Takes the same parameters; `page`, `page_size`, `scope` and the other ownership filters narrow it further. An unknown cluster returns an empty page, not a `404`.
+[`GET /api/v1/vulnerabilities`](#get-apiv1vulnerabilities) with `cluster` set to `{name}` (#459). Takes the same parameters; `page`, `page_size`, `scope` and the other ownership filters narrow it further. `?cluster=` on this route is a `400` (the path already names the cluster). An unknown cluster returns an empty page, not a `404`.
 
 ### `GET /api/v1/clusters/{name}/sboms`
 

@@ -79,6 +79,7 @@ func newVulnFilter(assignments func(context.Context) (map[string]projectgroup.As
 		if len(parents) > 0 {
 			a, err := assignments(r.Context())
 			if err != nil {
+				log.Printf("ERROR: resolve parents: %v", err)
 				return f, http.StatusInternalServerError, "Failed to resolve parents"
 			}
 			f.ParentMembers = parentMembers(parents, a)
@@ -125,6 +126,11 @@ func pathOwner(kind string, dst func(*clickhouse.VulnFilter) *[]string) func(*ht
 		name := r.PathValue("name")
 		if name == "" || len(name) > maxOwnerNameLen {
 			return "Invalid " + kind + " name"
+		}
+		// The path names the one value; a second one in ?kind= would either
+		// be ignored or empty the result, both surprising.
+		if r.URL.Query().Has(kind) {
+			return "Set the " + kind + " in the path, not in ?" + kind + "="
 		}
 		*dst(f) = []string{name}
 		return ""

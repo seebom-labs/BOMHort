@@ -208,11 +208,15 @@ func toolSearchPackages(c *apiclient.Client) mcp.ToolHandlerFor[searchPackagesIn
 // ── list_vulnerabilities ───────────────────────────────────────────────────
 
 type listVulnerabilitiesInput struct {
-	Project  string `json:"project,omitempty" jsonschema:"scope the findings to one project; omit for the whole instance"`
-	Severity string `json:"severity,omitempty" jsonschema:"keep only findings of this severity: CRITICAL, HIGH, MEDIUM, LOW or UNKNOWN"`
-	Scope    string `json:"scope,omitempty" jsonschema:"keep only findings in packages of this dependency scope: root, direct, transitive or unknown (unknown = the SBOM carries no dependency graph)"`
-	Page     uint64 `json:"page,omitempty" jsonschema:"1-based page number (default 1)"`
-	PageSize uint64 `json:"page_size,omitempty" jsonschema:"rows per page (default 25, max 500)"`
+	Project   string `json:"project,omitempty" jsonschema:"scope the findings to one project; omit for the whole instance"`
+	Severity  string `json:"severity,omitempty" jsonschema:"keep only findings of this severity: CRITICAL, HIGH, MEDIUM, LOW or UNKNOWN"`
+	Scope     string `json:"scope,omitempty" jsonschema:"keep only findings in packages of this dependency scope: root, direct, transitive or unknown (unknown = the SBOM carries no dependency graph)"`
+	Cluster   string `json:"cluster,omitempty" jsonschema:"instance-wide only: keep findings of SBOMs in these clusters (comma-separated)"`
+	Namespace string `json:"namespace,omitempty" jsonschema:"instance-wide only: keep findings of SBOMs in these namespaces (comma-separated)"`
+	Parent    string `json:"parent,omitempty" jsonschema:"instance-wide only: keep findings of the projects grouped under these parents (comma-separated)"`
+	Tag       string `json:"tag,omitempty" jsonschema:"instance-wide only: keep findings of SBOMs carrying any of these tags (comma-separated)"`
+	Page      uint64 `json:"page,omitempty" jsonschema:"1-based page number (default 1)"`
+	PageSize  uint64 `json:"page_size,omitempty" jsonschema:"rows per page (default 25, max 500)"`
 }
 
 type listVulnerabilitiesOutput struct {
@@ -239,6 +243,10 @@ func toolListVulnerabilities(c *apiclient.Client) mcp.ToolHandlerFor[listVulnera
 		}
 
 		project := strings.TrimSpace(in.Project)
+		owner := map[string]string{"cluster": in.Cluster, "namespace": in.Namespace, "parent": in.Parent, "tag": in.Tag}
+		if project != "" && in.Cluster+in.Namespace+in.Parent+in.Tag != "" {
+			return nil, listVulnerabilitiesOutput{}, errors.New("cluster, namespace, parent and tag filter the instance-wide listing; omit project to use them")
+		}
 		if project == "" {
 			// Instance-wide: the API paginates, and a severity filter would
 			// then mean "filter this page", which reads as a lie. Reject it
@@ -246,7 +254,7 @@ func toolListVulnerabilities(c *apiclient.Client) mcp.ToolHandlerFor[listVulnera
 			if severity != "" {
 				return nil, listVulnerabilitiesOutput{}, errors.New("severity filtering requires a project; the instance-wide listing is paginated server-side")
 			}
-			resp, err := c.ListVulnerabilities(ctx, page, pageSize, scope)
+			resp, err := c.ListVulnerabilities(ctx, page, pageSize, scope, owner)
 			if err != nil {
 				return nil, listVulnerabilitiesOutput{}, toolError(err)
 			}

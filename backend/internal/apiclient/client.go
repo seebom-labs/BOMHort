@@ -250,10 +250,18 @@ func (c *Client) ListProjectVulnerabilities(ctx context.Context, name, scope str
 
 // ListVulnerabilities returns one page of the instance-wide
 // GET /api/v1/vulnerabilities. scope narrows to one dependency scope
-// (root, direct, transitive, unknown); "" means all.
-func (c *Client) ListVulnerabilities(ctx context.Context, page, pageSize uint64, scope string) (*dto.PaginatedResponse[dto.VulnerabilityListItem], error) {
+// (root, direct, transitive, unknown); "" means all. owner holds the
+// ownership filters (cluster, namespace, project, parent, tag; #459), each
+// comma-separated; empty values are not sent.
+func (c *Client) ListVulnerabilities(ctx context.Context, page, pageSize uint64, scope string, owner map[string]string) (*dto.PaginatedResponse[dto.VulnerabilityListItem], error) {
+	q := scopeQuery(pageQuery(page, pageSize), scope)
+	for k, v := range owner {
+		if v != "" {
+			q.Set(k, v)
+		}
+	}
 	var out dto.PaginatedResponse[dto.VulnerabilityListItem]
-	if err := c.get(ctx, "/api/v1/vulnerabilities", scopeQuery(pageQuery(page, pageSize), scope), &out); err != nil {
+	if err := c.get(ctx, "/api/v1/vulnerabilities", q, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
