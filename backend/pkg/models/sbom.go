@@ -24,6 +24,9 @@ type SBOM struct {
 	// DocumentNamespace above, which is the SPDX document's URI identifier.
 	Namespace string `json:"namespace,omitempty"`
 	Project   string `json:"project,omitempty"`
+	// Origin (#455) records how the SBOM was produced: cluster-scan, ci,
+	// registry, vendor, manual. '' = unassigned/legacy.
+	Origin string `json:"origin,omitempty"`
 	// SourceRepo/SourceRef (#332) name where the product's source lives:
 	// a normalised https repository URL and the commit/tag/branch the SBOM
 	// was generated from. Extracted from the document at parse time
@@ -86,6 +89,7 @@ type SBOMPackages struct {
 	Cluster       string   `json:"cluster,omitempty"`
 	Namespace     string   `json:"namespace,omitempty"`
 	Project       string   `json:"project,omitempty"`
+	Origin        string   `json:"origin,omitempty"`
 	// RootIndices marks the package(s) the SBOM DESCRIBES – the product itself,
 	// not a dependency. Kept in the arrays (index 0 is the dependency-tree root)
 	// but excluded from license compliance. Not persisted to ClickHouse.
@@ -117,7 +121,6 @@ type Vulnerability struct {
 	// DependencyDepth is the smallest depth of the affected PURL in the SBOM
 	// (see SBOMPackages.PackageDepths); depgraph.Unknown when not derivable.
 	DependencyDepth uint16 `json:"dependency_depth"`
-
 	// AdvisorySource is "osv" for a finding osv.dev reported, else the name
 	// of the ADVISORY_SOURCES feed that decided it.
 	AdvisorySource string `json:"advisory_source,omitempty"`
@@ -132,6 +135,7 @@ type Vulnerability struct {
 	Cluster   string `json:"cluster,omitempty"`
 	Namespace string `json:"namespace,omitempty"`
 	Project   string `json:"project,omitempty"`
+	Origin    string `json:"origin,omitempty"`
 
 	// Reachability evidence (#535): reachable, not_reachable, or unknown.
 	Reachability   string    `json:"reachability,omitempty"`
@@ -161,6 +165,7 @@ type LicenseCompliance struct {
 	Cluster              string    `json:"cluster,omitempty"`
 	Namespace            string    `json:"namespace,omitempty"`
 	Project              string    `json:"project,omitempty"`
+	Origin               string    `json:"origin,omitempty"`
 }
 
 // IngestionJob represents a job in the ClickHouse-based queue.
@@ -178,6 +183,7 @@ type IngestionJob struct {
 	Cluster      string     `json:"cluster,omitempty"`
 	Namespace    string     `json:"namespace,omitempty"`
 	Project      string     `json:"project,omitempty"`
+	Origin       string     `json:"origin,omitempty"`
 	// SourceRepo/SourceRef (#332) carry an explicit X-Source-Repo /
 	// X-Source-Ref upload override from the gateway to the parsing worker.
 	// Empty for watcher-enqueued jobs — the worker then keeps whatever the
@@ -212,6 +218,7 @@ type StoredDocument struct {
 	Cluster         string    `json:"cluster,omitempty"`
 	Namespace       string    `json:"namespace,omitempty"`
 	Project         string    `json:"project,omitempty"`
+	Origin          string    `json:"origin,omitempty"`
 	SourceFile      string    `json:"source_file"`
 	StorageBackend  string    `json:"storage_backend"` // s3 | fs
 	StorageRef      string    `json:"storage_ref"`     // s3://bucket/key or fs://relative/path
@@ -291,6 +298,7 @@ type VEXStatement struct {
 	Cluster     string `json:"cluster,omitempty"`
 	Namespace   string `json:"namespace,omitempty"`
 	Project     string `json:"project,omitempty"`
+	Origin      string `json:"origin,omitempty"`
 }
 
 // VEX status constants (OpenVEX spec).

@@ -16,7 +16,7 @@ func (c *Client) InsertSBOM(ctx context.Context, sbom *models.SBOM) error {
 		`INSERT INTO sboms (
 			ingested_at, sbom_id, source_file, spdx_version,
 			document_name, document_namespace, sha256_hash,
-			creation_date, creator_tools, cluster, namespace, project,
+			creation_date, creator_tools, cluster, namespace, project, origin,
 			source_repo, source_ref, document_version, tags,
 			parent, root_purl, supplier,
 			quality_score, quality_flags
@@ -43,6 +43,7 @@ func (c *Client) InsertSBOM(ctx context.Context, sbom *models.SBOM) error {
 		sbom.Cluster,
 		sbom.Namespace,
 		sbom.Project,
+		sbom.Origin,
 		sbom.SourceRepo,
 		sbom.SourceRef,
 		sbom.DocumentVersion,
@@ -68,7 +69,7 @@ func (c *Client) InsertSBOMPackages(ctx context.Context, pkg *models.SBOMPackage
 			package_purls, package_licenses, package_license_sources,
 			rel_source_indices, rel_target_indices, rel_types,
 			package_depths,
-			cluster, namespace, project
+			cluster, namespace, project, origin
 		)`)
 	if err != nil {
 		return fmt.Errorf("failed to prepare sbom_packages batch: %w", err)
@@ -91,6 +92,7 @@ func (c *Client) InsertSBOMPackages(ctx context.Context, pkg *models.SBOMPackage
 		pkg.Cluster,
 		pkg.Namespace,
 		pkg.Project,
+		pkg.Origin,
 	); err != nil {
 		return fmt.Errorf("failed to append sbom_packages: %w", err)
 	}
@@ -130,7 +132,7 @@ func (c *Client) InsertVulnerabilities(ctx context.Context, vulns []models.Vulne
 			severity, summary, affected_versions, fixed_version, osv_json, aliases,
 			dependency_depth,
 			advisory_source, advisory_status, component_location,
-			cluster, namespace, project,
+			cluster, namespace, project, origin,
 			reachability, evidence_source, evidence_ref, evidence_at
 		)`)
 	if err != nil {
@@ -165,6 +167,7 @@ func (c *Client) InsertVulnerabilities(ctx context.Context, vulns []models.Vulne
 			v.Cluster,
 			v.Namespace,
 			v.Project,
+			v.Origin,
 			reachability,
 			v.EvidenceSource,
 			v.EvidenceRef,
@@ -188,7 +191,7 @@ func (c *Client) InsertLicenseCompliance(ctx context.Context, items []models.Lic
 			checked_at, sbom_id, source_file, license_id,
 			category, package_count, non_compliant_packages,
 			exempted_packages, exemption_reason,
-			cluster, namespace, project
+			cluster, namespace, project, origin
 		)`)
 	if err != nil {
 		return fmt.Errorf("failed to prepare license_compliance batch: %w", err)
@@ -213,6 +216,7 @@ func (c *Client) InsertLicenseCompliance(ctx context.Context, items []models.Lic
 			item.Cluster,
 			item.Namespace,
 			item.Project,
+			item.Origin,
 		); err != nil {
 			return fmt.Errorf("failed to append license_compliance: %w", err)
 		}
@@ -233,7 +237,7 @@ func (c *Client) InsertVEXStatements(ctx context.Context, stmts []models.VEXStat
 			product_ref, product_purl, vuln_id, status, justification,
 			impact_statement, action_statement, vex_timestamp,
 			author, role, tooling, status_notes,
-			cluster, namespace, project
+			cluster, namespace, project, origin
 		)`)
 	if err != nil {
 		return fmt.Errorf("failed to prepare vex_statements batch: %w", err)
@@ -261,6 +265,7 @@ func (c *Client) InsertVEXStatements(ctx context.Context, stmts []models.VEXStat
 			s.Cluster,
 			s.Namespace,
 			s.Project,
+			s.Origin,
 		); err != nil {
 			return fmt.Errorf("failed to append vex_statement: %w", err)
 		}

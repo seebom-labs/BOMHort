@@ -102,10 +102,12 @@ func TestQueriesExecute(t *testing.T) {
 	}{
 		{"QueryDashboardStats", func() error { _, err := c.QueryDashboardStats(ctx, VulnFilter{}); return err }},
 		{"QueryQualityStats", func() error { _, err := c.QueryQualityStats(ctx); return err }},
-		{"QuerySBOMs", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "", "", 0); return err }},
-		{"QuerySBOMs/search", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "test", "", 0); return err }},
-		{"QuerySBOMs/project", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "", "payment-api", 0); return err }},
-		{"QuerySBOMs/project+search", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "v1", "payment-api", 0); return err }},
+		{"QueryOrigins", func() error { _, err := c.QueryOrigins(ctx); return err }},
+		{"QuerySBOMs", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "", "", "", 0); return err }},
+		{"QuerySBOMs/search", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "test", "", "", 0); return err }},
+		{"QuerySBOMs/project", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "", "payment-api", "", 0); return err }},
+		{"QuerySBOMs/project+search", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "v1", "payment-api", "", 0); return err }},
+		{"QuerySBOMs/origin", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "", "", "ci", 0); return err }},
 		{"QuerySBOMDetail", func() error { _, err := c.QuerySBOMDetail(ctx, someID); return err }},
 		{"QuerySBOMVulnerabilities", func() error { _, err := c.QuerySBOMVulnerabilities(ctx, someID, "", ""); return err }},
 		{"QuerySBOMLicenses", func() error { _, err := c.QuerySBOMLicenses(ctx, someID); return err }},
@@ -124,6 +126,7 @@ func TestQueriesExecute(t *testing.T) {
 		{"packageScopesFor", func() error { _, err := c.packageScopesFor(ctx, map[string][]string{someID: {"x"}}); return err }},
 		{"violationScopesFor", func() error { _, err := c.violationScopesFor(ctx, []string{someID}); return err }},
 		{"QueryVulnerabilities", func() error { _, err := c.QueryVulnerabilities(ctx, 1, 10, "", VulnFilter{}); return err }},
+		{"QueryVulnerabilities/origin", func() error { _, err := c.QueryVulnerabilities(ctx, 1, 10, "", VulnFilter{Origin: "ci"}); return err }},
 		{"QueryVEXStatements", func() error { _, err := c.QueryVEXStatements(ctx, 1, 10); return err }},
 		// Package-wide aggregations: read sbom_packages alone (see packageProjectKey).
 		{"QueryDependencyStats", func() error { _, err := c.QueryDependencyStats(ctx, 10); return err }},
@@ -134,14 +137,15 @@ func TestQueriesExecute(t *testing.T) {
 		{"QueryAffectedProjectsByCVE", func() error { _, err := c.QueryAffectedProjectsByCVE(ctx, "CVE-2024-45338", VulnFilter{}); return err }},
 		{"QueryGlobalSearch", func() error { _, err := c.QueryGlobalSearch(ctx, "yaml", 5); return err }},
 		{"QueryClusters", func() error { _, err := c.QueryClusters(ctx); return err }},
-		{"QueryClusterSBOMs", func() error { _, err := c.QueryClusterSBOMs(ctx, "test", 1, 10); return err }},
+		{"QueryClusterSBOMs", func() error { _, err := c.QueryClusterSBOMs(ctx, "test", 1, 10, ""); return err }},
 		{"QueryNamespaces", func() error { _, err := c.QueryNamespaces(ctx, ""); return err }},
 		{"QueryNamespaces/cluster", func() error { _, err := c.QueryNamespaces(ctx, "prod-eu"); return err }},
 		{"QueryNamespaceStats", func() error { _, err := c.QueryNamespaceStats(ctx, "payments", ""); return err }},
-		{"QueryNamespaceSBOMs", func() error { _, err := c.QueryNamespaceSBOMs(ctx, "payments", "", 1, 10); return err }},
-		{"QueryFleetTree", func() error { _, err := c.QueryFleetTree(ctx); return err }},
-		{"QueryProjects", func() error { _, err := c.QueryProjects(ctx, 1, 10, "", ""); return err }},
-		{"QueryProjects/tag", func() error { _, err := c.QueryProjects(ctx, 1, 10, "", "sandbox"); return err }},
+		{"QueryNamespaceSBOMs", func() error { _, err := c.QueryNamespaceSBOMs(ctx, "payments", "", "", 1, 10); return err }},
+		{"QueryFleetTree", func() error { _, err := c.QueryFleetTree(ctx, ""); return err }},
+		{"QueryProjects", func() error { _, err := c.QueryProjects(ctx, 1, 10, "", "", ""); return err }},
+		{"QueryProjects/tag", func() error { _, err := c.QueryProjects(ctx, 1, 10, "", "sandbox", ""); return err }},
+		{"QueryProjects/origin", func() error { _, err := c.QueryProjects(ctx, 1, 10, "", "", "ci"); return err }},
 		{"QueryTags", func() error { _, err := c.QueryTags(ctx); return err }},
 		// Parent grouping (internal/projectgroup).
 		{"QueryProjectSignals", func() error { _, err := c.QueryProjectSignals(ctx); return err }},
@@ -224,7 +228,7 @@ func TestSBOMVulnerabilitiesVEXJoin(t *testing.T) {
 // The endpoint returned 500 for every request; no unit test executed it.
 func TestClusterSBOMsQuery(t *testing.T) {
 	c := testClient(t)
-	if _, err := c.QueryClusterSBOMs(context.Background(), "any-cluster", 1, 10); err != nil {
+	if _, err := c.QueryClusterSBOMs(context.Background(), "any-cluster", 1, 10, ""); err != nil {
 		t.Fatalf("cluster SBOM listing broken: %v", err)
 	}
 }

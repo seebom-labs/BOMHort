@@ -158,3 +158,38 @@ func TestQueryOverride(t *testing.T) {
 		})
 	}
 }
+
+func TestUploadHandler_OriginQueryParam(t *testing.T) {
+	cfg := ownershipUploadConfig(t)
+	cfg.Origin = "manual"
+	store := &fakeUploadStore{}
+	h := localUploadHandler(cfg, store)
+
+	// Valid origin overrides default
+	resp := postSBOM(t, h, "/api/v1/sboms/upload?origin=ci")
+	if resp["origin"] != "ci" {
+		t.Errorf("response origin = %q, want ci", resp["origin"])
+	}
+	if len(store.enqueuedJobs) != 1 || store.enqueuedJobs[0].Origin != "ci" {
+		t.Errorf("job origin = %q, want ci", store.enqueuedJobs[0].Origin)
+	}
+
+	// Absent origin uses default
+	store.enqueuedJobs = nil
+	respDefault := postSBOM(t, h, "/api/v1/sboms/upload")
+	if respDefault["origin"] != "manual" {
+		t.Errorf("response origin = %q, want manual (default)", respDefault["origin"])
+	}
+	if len(store.enqueuedJobs) != 1 || store.enqueuedJobs[0].Origin != "manual" {
+		t.Errorf("job origin = %q, want manual", store.enqueuedJobs[0].Origin)
+	}
+
+	// Invalid origin returns 400
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/sboms/upload?origin=unsupported", bytes.NewReader([]byte(`{"spdxVersion":"SPDX-2.3"}`)))
+	req.Header.Set("X-Filename", "app.spdx.json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for invalid origin, got %d", rec.Code)
+	}
+}

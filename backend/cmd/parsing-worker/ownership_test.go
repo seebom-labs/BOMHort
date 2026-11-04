@@ -8,7 +8,7 @@ import (
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
 
-// testJob is a job carrying all three ownership dimensions, so a test can tell
+// testJob is a job carrying all four ownership dimensions, so a test can tell
 // "copied correctly" apart from "left at the zero value".
 func testJob() models.IngestionJob {
 	return models.IngestionJob{
@@ -16,10 +16,11 @@ func testJob() models.IngestionJob {
 		Cluster:   "prod-eu",
 		Namespace: "payments",
 		Project:   "payment-service",
+		Origin:    "cluster-scan",
 	}
 }
 
-func assertOwnership(t *testing.T, what, cluster, namespace, project string) {
+func assertOwnership(t *testing.T, what, cluster, namespace, project, origin string) {
 	t.Helper()
 	if cluster != "prod-eu" {
 		t.Errorf("%s: cluster = %q, want prod-eu", what, cluster)
@@ -30,11 +31,14 @@ func assertOwnership(t *testing.T, what, cluster, namespace, project string) {
 	if project != "payment-service" {
 		t.Errorf("%s: project = %q, want payment-service", what, project)
 	}
+	if origin != "cluster-scan" {
+		t.Errorf("%s: origin = %q, want cluster-scan", what, origin)
+	}
 }
 
 func TestOwnershipOf(t *testing.T) {
 	own := ownershipOf(testJob())
-	assertOwnership(t, "ownershipOf", own.cluster, own.namespace, own.project)
+	assertOwnership(t, "ownershipOf", own.cluster, own.namespace, own.project, own.origin)
 }
 
 func TestOwnershipAppliesToEveryRowType(t *testing.T) {
@@ -43,37 +47,37 @@ func TestOwnershipAppliesToEveryRowType(t *testing.T) {
 	t.Run("SBOM", func(t *testing.T) {
 		var m models.SBOM
 		own.applySBOM(&m)
-		assertOwnership(t, "SBOM", m.Cluster, m.Namespace, m.Project)
+		assertOwnership(t, "SBOM", m.Cluster, m.Namespace, m.Project, m.Origin)
 	})
 
 	t.Run("SBOMPackages", func(t *testing.T) {
 		var m models.SBOMPackages
 		own.applyPackages(&m)
-		assertOwnership(t, "SBOMPackages", m.Cluster, m.Namespace, m.Project)
+		assertOwnership(t, "SBOMPackages", m.Cluster, m.Namespace, m.Project, m.Origin)
 	})
 
 	t.Run("Vulnerability", func(t *testing.T) {
 		var m models.Vulnerability
 		own.applyVulnerability(&m)
-		assertOwnership(t, "Vulnerability", m.Cluster, m.Namespace, m.Project)
+		assertOwnership(t, "Vulnerability", m.Cluster, m.Namespace, m.Project, m.Origin)
 	})
 
 	t.Run("LicenseCompliance", func(t *testing.T) {
 		var m models.LicenseCompliance
 		own.applyLicenseCompliance(&m)
-		assertOwnership(t, "LicenseCompliance", m.Cluster, m.Namespace, m.Project)
+		assertOwnership(t, "LicenseCompliance", m.Cluster, m.Namespace, m.Project, m.Origin)
 	})
 
 	t.Run("StoredDocument", func(t *testing.T) {
 		var m models.StoredDocument
 		own.applyStoredDocument(&m)
-		assertOwnership(t, "StoredDocument", m.Cluster, m.Namespace, m.Project)
+		assertOwnership(t, "StoredDocument", m.Cluster, m.Namespace, m.Project, m.Origin)
 	})
 
 	t.Run("VEXStatement", func(t *testing.T) {
 		var m models.VEXStatement
 		own.applyVEXStatement(&m)
-		assertOwnership(t, "VEXStatement", m.Cluster, m.Namespace, m.Project)
+		assertOwnership(t, "VEXStatement", m.Cluster, m.Namespace, m.Project, m.Origin)
 	})
 }
 
@@ -91,7 +95,7 @@ func TestOwnershipAppliesToAllVEXStatements(t *testing.T) {
 	own.applyVEXStatements(stmts)
 
 	for i, s := range stmts {
-		assertOwnership(t, "statement "+s.VulnID, s.Cluster, s.Namespace, s.Project)
+		assertOwnership(t, "statement "+s.VulnID, s.Cluster, s.Namespace, s.Project, s.Origin)
 		if stmts[i].VulnID == "" {
 			t.Errorf("statement %d: stamping must not clobber other fields", i)
 		}
@@ -109,11 +113,11 @@ func TestOwnershipAppliesToEmptyVEXSlice(t *testing.T) {
 func TestOwnershipEmptyJobClearsFields(t *testing.T) {
 	own := ownershipOf(models.IngestionJob{})
 
-	m := models.SBOM{Cluster: "stale", Namespace: "stale", Project: "stale"}
+	m := models.SBOM{Cluster: "stale", Namespace: "stale", Project: "stale", Origin: "stale"}
 	own.applySBOM(&m)
 
-	if m.Cluster != "" || m.Namespace != "" || m.Project != "" {
-		t.Errorf("empty job left stale values: (%q, %q, %q)", m.Cluster, m.Namespace, m.Project)
+	if m.Cluster != "" || m.Namespace != "" || m.Project != "" || m.Origin != "" {
+		t.Errorf("empty job left stale values: (%q, %q, %q, %q)", m.Cluster, m.Namespace, m.Project, m.Origin)
 	}
 }
 

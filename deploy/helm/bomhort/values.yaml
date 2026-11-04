@@ -25,16 +25,18 @@ github:
 #   cluster   - where is it deployed?        e.g. prod-eu          (1-50)
 #   namespace - which tenant/team boundary?  e.g. payments         (10-500)
 #   project   - what is it / who owns it?    e.g. payment-service  (50-5000)
+#   origin    - how was it produced? (#455)  cluster-scan | ci | registry | vendor | manual
 #
 # Precedence, highest first:
-#   1. per-object: ?cluster=/?namespace=/?project= on POST /api/v1/sboms/upload
-#   2. per-bucket: "cluster"/"namespace"/"project" inside an s3.buckets entry
+#   1. per-object: ?cluster=/?namespace=/?project=/?origin= on POST /api/v1/sboms/upload
+#   2. per-bucket: "cluster"/"namespace"/"project"/"origin" inside an s3.buckets entry
 #   3. these instance-wide defaults
 #   4. pathLayout derivation (fills only what the above left empty)
 ownership:
   cluster: ""
   namespace: ""
   project: ""
+  origin: ""
   # Default parent (product) for every ingested SBOM (PARENT). Usually left
   # empty: per-bucket "parent", the "parent" pathLayout token, ?parent= on
   # upload and the automatic grouping are the normal sources. See
