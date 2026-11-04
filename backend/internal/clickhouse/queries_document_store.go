@@ -19,7 +19,7 @@ var ErrDocumentNotStored = errors.New("no stored original for sbom")
 func (c *Client) InsertStoredDocument(ctx context.Context, doc *models.StoredDocument) error {
 	batch, err := c.Conn.PrepareBatch(ctx,
 		`INSERT INTO document_store (
-			stored_at, sbom_id, cluster, namespace, project, source_file,
+			stored_at, sbom_id, cluster, namespace, project, origin, source_file,
 			storage_backend, storage_ref, sha256_hash, size_bytes, content_type,
 			content_encoding, stored_size_bytes
 		)`)
@@ -33,6 +33,7 @@ func (c *Client) InsertStoredDocument(ctx context.Context, doc *models.StoredDoc
 		doc.Cluster,
 		doc.Namespace,
 		doc.Project,
+		doc.Origin,
 		doc.SourceFile,
 		doc.StorageBackend,
 		doc.StorageRef,
@@ -52,7 +53,7 @@ func (c *Client) InsertStoredDocument(ctx context.Context, doc *models.StoredDoc
 // SBOM, or ErrDocumentNotStored when none exists.
 func (c *Client) QueryStoredDocument(ctx context.Context, sbomID string) (*models.StoredDocument, error) {
 	rows, err := c.Conn.Query(ctx, `
-		SELECT stored_at, sbom_id, cluster, namespace, project, source_file,
+		SELECT stored_at, sbom_id, cluster, namespace, project, origin, source_file,
 		       storage_backend, storage_ref, sha256_hash, size_bytes, content_type,
 		       content_encoding, stored_size_bytes
 		FROM document_store FINAL
@@ -78,6 +79,7 @@ func (c *Client) QueryStoredDocument(ctx context.Context, sbomID string) (*model
 		&doc.Cluster,
 		&doc.Namespace,
 		&doc.Project,
+		&doc.Origin,
 		&doc.SourceFile,
 		&doc.StorageBackend,
 		&doc.StorageRef,

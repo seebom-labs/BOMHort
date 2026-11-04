@@ -120,9 +120,25 @@ describe('ProjectListComponent', () => {
 
     const req = httpMock.expectOne((r) => r.url.includes('/api/v1/projects'));
     expect(req.request.params.has('tag')).toBe(false);
+    expect(req.request.params.has('origin')).toBe(false);
 
     req.flush({ data: [], total: 0, page: 1, page_size: 100 });
     flushTags();
+  });
+
+  it('should filter by origin and reflect in URL', async () => {
+    const { harness, component } = await open();
+    flushProjects();
+    flushTags();
+
+    component.selectOrigin('ci');
+    await harness.fixture.whenStable();
+
+    const req = httpMock.expectOne((r) =>
+      r.url.includes('/api/v1/projects') && r.params.get('origin') === 'ci'
+    );
+    expect(req.request.params.get('page')).toBe('1');
+    req.flush({ data: [], total: 0, page: 1, page_size: 100 });
   });
 
   it('should filter by tag and reset paging', async () => {

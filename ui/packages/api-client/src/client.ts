@@ -16,6 +16,7 @@ import type {
   LicenseSourceItem,
   NamespaceListItem,
   NamespaceStats,
+  OriginItem,
   PackageDetailResponse,
   PaginatedResponse,
   ProjectDetail,
@@ -115,8 +116,9 @@ export class BomhortApiClient {
     return this.get('/stats/quality', signal);
   }
 
-  getSboms(page = 1, pageSize = 50, search = '', project = '', minQuality = 0, signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>> {
-    return this.get(`/sboms${query({ page, page_size: pageSize, search, project, min_quality: minQuality > 0 ? minQuality : undefined })}`, signal);
+  getSboms(page = 1, pageSize = 50, search = '', project = '', origin = '', minQuality = 0, signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>> {
+    return this.get(`/sboms${query({ page, page_size: pageSize, search, project, origin, min_quality: minQuality > 0 ? minQuality : undefined })}`, signal);
+  }
   }
 
   getSbomDetail(sbomId: string, signal?: AbortSignal): Promise<SBOMDetail> {
@@ -208,8 +210,8 @@ export class BomhortApiClient {
     return this.get(`/packages/detail${query({ name, page, page_size: pageSize })}`, signal);
   }
 
-  getProjects(page = 1, pageSize = 50, search = '', tag = '', signal?: AbortSignal): Promise<PaginatedResponse<ProjectListItem>> {
-    return this.get(`/projects${query({ page, page_size: pageSize, search, tag })}`, signal);
+  getProjects(page = 1, pageSize = 50, search = '', tag = '', origin = '', signal?: AbortSignal): Promise<PaginatedResponse<ProjectListItem>> {
+    return this.get(`/projects${query({ page, page_size: pageSize, search, tag, origin })}`, signal);
   }
 
   getProjectGroups(page = 1, pageSize = 50, search = '', tag = '', signal?: AbortSignal): Promise<PaginatedResponse<ProjectGroupItem>> {
@@ -218,6 +220,10 @@ export class BomhortApiClient {
 
   getTags(signal?: AbortSignal): Promise<TagListItem[]> {
     return this.get('/tags', signal);
+  }
+
+  getOrigins(signal?: AbortSignal): Promise<OriginItem[]> {
+    return this.get('/origins', signal);
   }
 
   getProjectDetail(name: string, signal?: AbortSignal): Promise<ProjectDetail> {
@@ -240,8 +246,8 @@ export class BomhortApiClient {
     return this.get(`/search${query({ q, limit })}`, signal);
   }
 
-  getFleet(signal?: AbortSignal): Promise<FleetCluster[]> {
-    return this.get('/fleet', signal);
+  getFleet(origin = '', signal?: AbortSignal): Promise<FleetCluster[]> {
+    return this.get(`/fleet${query({ origin })}`, signal);
   }
 
   getClusters(signal?: AbortSignal): Promise<ClusterListItem[]> {
@@ -252,8 +258,8 @@ export class BomhortApiClient {
     return this.get(`/clusters/${encodeURIComponent(cluster)}/stats`, signal);
   }
 
-  getClusterSboms(cluster: string, page = 1, pageSize = 50, signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>> {
-    return this.get(`/clusters/${encodeURIComponent(cluster)}/sboms${query({ page, page_size: pageSize })}`, signal);
+  getClusterSboms(cluster: string, page = 1, pageSize = 50, origin = '', signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>> {
+    return this.get(`/clusters/${encodeURIComponent(cluster)}/sboms${query({ page, page_size: pageSize, origin })}`, signal);
   }
 
   getNamespaces(cluster = '', signal?: AbortSignal): Promise<NamespaceListItem[]> {
@@ -264,7 +270,7 @@ export class BomhortApiClient {
     return this.get(`/namespaces/${encodeURIComponent(namespace)}/stats${query({ cluster })}`, signal);
   }
 
-  getNamespaceSboms(namespace: string, cluster = '', page = 1, pageSize = 50, signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>> {
-    return this.get(`/namespaces/${encodeURIComponent(namespace)}/sboms${query({ cluster, page, page_size: pageSize })}`, signal);
+  getNamespaceSboms(namespace: string, cluster = '', page = 1, pageSize = 50, origin = '', signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>> {
+    return this.get(`/namespaces/${encodeURIComponent(namespace)}/sboms${query({ cluster, page, page_size: pageSize, origin })}`, signal);
   }
 }
