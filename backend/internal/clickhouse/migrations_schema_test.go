@@ -177,11 +177,11 @@ func TestMigrationsParseIntoASchema(t *testing.T) {
 	// Sanity: the core tables must exist with a few known columns, otherwise a
 	// silently broken parser would make every other test in this file vacuous.
 	want := map[string][]string{
-		"sboms":              {"sbom_id", "source_file", "document_name", "cluster", "namespace", "project", "image_ref", "image_digest"},
+		"sboms":              {"sbom_id", "source_file", "document_name", "cluster", "namespace", "project", "origin", "image_ref", "image_digest"},
 		"sbom_packages":      {"sbom_id", "package_purls", "cluster", "namespace", "project", "image_digest"},
 		"vulnerabilities":    {"sbom_id", "vuln_id", "purl", "cluster", "namespace", "project", "image_digest"},
 		"license_compliance": {"sbom_id", "license_id", "exempted_packages", "cluster", "namespace", "project"},
-		"ingestion_queue":    {"job_id", "status", "cluster", "namespace", "project", "image_ref", "image_digest"},
+		"ingestion_queue":    {"job_id", "status", "cluster", "namespace", "project", "origin", "image_ref", "image_digest"},
 		"vex_statements":     {"vuln_id", "product_purl", "cluster", "namespace", "project"},
 		"document_store":     {"sbom_id", "storage_ref", "content_encoding", "cluster", "namespace", "project"},
 	}
@@ -200,9 +200,9 @@ func TestMigrationsParseIntoASchema(t *testing.T) {
 	}
 }
 
-// Every table that carries per-SBOM data must carry all three ownership
+// Every table that carries per-SBOM data must carry all four ownership
 // dimensions. A new table added without them would silently be invisible to
-// cluster/namespace/project filtering — and back-filling it is only possible
+// cluster/namespace/project/origin filtering — and back-filling it is only possible
 // by re-ingesting.
 func TestOwnershipColumnsOnAllDataTables(t *testing.T) {
 	schema := schemaFromMigrations(t)
@@ -218,7 +218,7 @@ func TestOwnershipColumnsOnAllDataTables(t *testing.T) {
 			t.Errorf("table %s not found in the migrations", table)
 			continue
 		}
-		for _, dim := range []string{"cluster", "namespace", "project"} {
+		for _, dim := range []string{"cluster", "namespace", "project", "origin"} {
 			if !cols[dim] {
 				t.Errorf("table %s is missing the %q ownership column", table, dim)
 			}
@@ -330,7 +330,7 @@ func TestInsertsPersistOwnershipColumns(t *testing.T) {
 			for _, c := range stmt {
 				have[c] = true
 			}
-			for _, dim := range []string{"cluster", "namespace", "project"} {
+			for _, dim := range []string{"cluster", "namespace", "project", "origin"} {
 				if !have[dim] {
 					t.Errorf("INSERT INTO %s (statement #%d) does not write the %q column",
 						table, i+1, dim)

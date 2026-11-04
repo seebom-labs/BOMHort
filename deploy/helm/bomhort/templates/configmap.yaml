@@ -17,6 +17,7 @@ data:
   PROJECT: {{ .project | default "" | quote }}
   ORIGIN: {{ .origin | default "" | quote }}
   PARENT: {{ .parent | default "" | quote }}
+  ORIGIN: {{ .origin | default "" | quote }}
   INGEST_PATH_LAYOUT: {{ .pathLayout | default "" | quote }}
   {{- end }}
   {{- /*

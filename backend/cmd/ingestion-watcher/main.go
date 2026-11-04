@@ -30,6 +30,7 @@ type ownership struct {
 	cluster   string
 	namespace string
 	project   string
+	origin    string
 	// prefix is the bucket's configured key prefix. The layout is defined
 	// relative to the ingestion root, so the prefix must be stripped from
 	// an object key before matching -- otherwise a bucket configured with
@@ -50,8 +51,8 @@ type ownership struct {
 // derivation on top of the configured values. Dimensions are either/or
 // (explicit config wins); tags are additive, so path-derived labels join the
 // configured ones rather than replacing them.
-func (o ownership) resolve(key string) (cluster, namespace, project, parent string, tags []string) {
-	cluster, namespace, project, parent, tags = o.cluster, o.namespace, o.project, o.parent, o.tags
+func (o ownership) resolve(key string) (cluster, namespace, project, origin, parent string, tags []string) {
+	cluster, namespace, project, origin, parent, tags = o.cluster, o.namespace, o.project, o.origin, o.parent, o.tags
 	if !o.layout.Enabled() {
 		return
 	}
@@ -209,6 +210,7 @@ func ingestLocalFiles(ctx context.Context, cfg *config.Config, chClient *clickho
 			Cluster:    cluster,
 			Namespace:  namespace,
 			Project:    project,
+			Origin:     cfg.Origin,
 			Tags:       fileTags,
 			Parent:     parent,
 			Origin:     cfg.Origin,
@@ -267,6 +269,7 @@ func ingestS3Buckets(ctx context.Context, cfg *config.Config, chClient *clickhou
 			cluster:   firstNonEmpty(b.Cluster, cfg.ClusterName),
 			namespace: firstNonEmpty(b.Namespace, cfg.Namespace),
 			project:   firstNonEmpty(b.Project, cfg.Project),
+			origin:    firstNonEmpty(b.Origin, cfg.Origin),
 			parent:    firstNonEmpty(strings.TrimSpace(b.Parent), cfg.Parent),
 			origin:    firstNonEmpty(b.Origin, cfg.Origin),
 			prefix:    b.Prefix,
@@ -326,7 +329,7 @@ func ingestS3Buckets(ctx context.Context, cfg *config.Config, chClient *clickhou
 			jobType = models.JobTypeVEX
 		}
 
-		cluster, namespace, project, parent, objTags := bucketOwner[obj.Bucket].resolve(obj.Key)
+		cluster, namespace, project, origin, parent, objTags := bucketOwner[obj.Bucket].resolve(obj.Key)
 
 		// SourceFile stores the s3:// URI so the worker knows where to fetch.
 		batch = append(batch, models.IngestionJob{
@@ -339,6 +342,7 @@ func ingestS3Buckets(ctx context.Context, cfg *config.Config, chClient *clickhou
 			Cluster:    cluster,
 			Namespace:  namespace,
 			Project:    project,
+			Origin:     origin,
 			Tags:       objTags,
 			Parent:     parent,
 			Origin:     bucketOwner[obj.Bucket].origin,

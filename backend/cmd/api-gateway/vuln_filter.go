@@ -76,6 +76,11 @@ func newVulnFilter(assignments func(context.Context) (map[string]projectgroup.As
 			*p.dst = vals
 		}
 		f.Tags = tagpkg.Parse(q.Get("tag"))
+		originVal, ok := parseOrigin(q.Get("origin"))
+		if !ok {
+			return f, http.StatusBadRequest, "Invalid origin (expected cluster-scan, ci, registry, vendor, manual)"
+		}
+		f.Origin = originVal
 		if len(parents) > 0 {
 			a, err := assignments(r.Context())
 			if err != nil {

@@ -36,6 +36,7 @@ import {
   NamespaceListItem,
   NamespaceStats,
   QualityStatsResponse,
+  OriginItem,
 } from './api.models';
 
 /** Base URL of the REST API; the app uses the nginx proxy at `/api/v1`, embedded elements point it elsewhere. */
@@ -76,7 +77,7 @@ export class ApiService {
    * `project` (#398) is the exact project identity and scopes the list to
    * one project's versions. They compose. `minQuality` filters by minimum quality score (#537).
    */
-  getSboms(page = 1, pageSize = 50, search = '', project = '', minQuality = 0): Observable<PaginatedResponse<SBOMListItem>> {
+  getSboms(page = 1, pageSize = 50, search = '', project = '', origin = '', minQuality = 0): Observable<PaginatedResponse<SBOMListItem>> {
     let params = new HttpParams()
       .set('page', page.toString())
       .set('page_size', pageSize.toString());
@@ -85,6 +86,9 @@ export class ApiService {
     }
     if (project) {
       params = params.set('project', project);
+    }
+    if (origin) {
+      params = params.set('origin', origin);
     }
     if (minQuality > 0) {
       params = params.set('min_quality', minQuality.toString());
@@ -148,10 +152,7 @@ export class ApiService {
     if (reachability) {
       params = params.set('reachability', reachability);
     }
-    return this.http.get<PaginatedResponse<VulnerabilityListItem>>(
-      `${this.baseUrl}/vulnerabilities`,
-      { params }
-    );
+    return this.http.get<PaginatedResponse<VulnerabilityListItem>>(`${this.baseUrl}/vulnerabilities`, { params });
   }
 
   uploadEvidence(sbomId: string, evidenceJson: string | object, ref = ''): Observable<ReachabilitySummary> {
@@ -249,7 +250,7 @@ export class ApiService {
     return `${this.baseUrl}/sboms/${sbomId}/download`;
   }
 
-  getProjects(page = 1, pageSize = 50, search = '', tag = ''): Observable<PaginatedResponse<ProjectListItem>> {
+  getProjects(page = 1, pageSize = 50, search = '', tag = '', origin = ''): Observable<PaginatedResponse<ProjectListItem>> {
     let params = new HttpParams()
       .set('page', page.toString())
       .set('page_size', pageSize.toString());
@@ -260,6 +261,9 @@ export class ApiService {
     // response shape is unchanged and paging still counts projects.
     if (tag) {
       params = params.set('tag', tag);
+    }
+    if (origin) {
+      params = params.set('origin', origin);
     }
     return this.http.get<PaginatedResponse<ProjectListItem>>(`${this.baseUrl}/projects`, { params });
   }
@@ -290,6 +294,13 @@ export class ApiService {
    */
   getTags(): Observable<TagListItem[]> {
     return this.http.get<TagListItem[]>(`${this.baseUrl}/tags`);
+  }
+
+  /**
+   * Origin values in use on this instance (#455).
+   */
+  getOrigins(): Observable<OriginItem[]> {
+    return this.http.get<OriginItem[]>(`${this.baseUrl}/origins`);
   }
 
   // ── Project read model (#398) ──
@@ -341,8 +352,12 @@ export class ApiService {
   // ── Ownership dimensions (#131 cluster, #138 namespace, #57 project) ──
 
   /** Full cluster → namespace → project tree in one request. */
-  getFleet(): Observable<FleetCluster[]> {
-    return this.http.get<FleetCluster[]>(`${this.baseUrl}/fleet`);
+  getFleet(origin = ''): Observable<FleetCluster[]> {
+    let params = new HttpParams();
+    if (origin) {
+      params = params.set('origin', origin);
+    }
+    return this.http.get<FleetCluster[]>(`${this.baseUrl}/fleet`, { params });
   }
 
   getClusters(): Observable<ClusterListItem[]> {
@@ -353,10 +368,13 @@ export class ApiService {
     return this.http.get<ClusterStats>(`${this.baseUrl}/clusters/${encodeURIComponent(cluster)}/stats`);
   }
 
-  getClusterSboms(cluster: string, page = 1, pageSize = 50): Observable<PaginatedResponse<SBOMListItem>> {
-    const params = new HttpParams()
+  getClusterSboms(cluster: string, page = 1, pageSize = 50, origin = ''): Observable<PaginatedResponse<SBOMListItem>> {
+    let params = new HttpParams()
       .set('page', page.toString())
       .set('page_size', pageSize.toString());
+    if (origin) {
+      params = params.set('origin', origin);
+    }
     return this.http.get<PaginatedResponse<SBOMListItem>>(
       `${this.baseUrl}/clusters/${encodeURIComponent(cluster)}/sboms`, { params });
   }
@@ -384,13 +402,16 @@ export class ApiService {
   }
 
   getNamespaceSboms(
-    namespace: string, cluster = '', page = 1, pageSize = 50,
+    namespace: string, cluster = '', page = 1, pageSize = 50, origin = '',
   ): Observable<PaginatedResponse<SBOMListItem>> {
     let params = new HttpParams()
       .set('page', page.toString())
       .set('page_size', pageSize.toString());
     if (cluster) {
       params = params.set('cluster', cluster);
+    }
+    if (origin) {
+      params = params.set('origin', origin);
     }
     return this.http.get<PaginatedResponse<SBOMListItem>>(
       `${this.baseUrl}/namespaces/${encodeURIComponent(namespace)}/sboms`, { params });
