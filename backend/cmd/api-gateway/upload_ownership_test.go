@@ -174,6 +174,16 @@ func TestUploadHandler_OriginQueryParam(t *testing.T) {
 		t.Errorf("job origin = %q, want ci", store.enqueuedJobs[0].Origin)
 	}
 
+	// Origin with surrounding whitespace is normalized before storage
+	store.enqueuedJobs = nil
+	respWhitespace := postSBOM(t, h, "/api/v1/sboms/upload?origin=%20%20ci%20%20")
+	if respWhitespace["origin"] != "ci" {
+		t.Errorf("response origin = %q, want ci", respWhitespace["origin"])
+	}
+	if len(store.enqueuedJobs) != 1 || store.enqueuedJobs[0].Origin != "ci" {
+		t.Errorf("job origin = %q, want ci", store.enqueuedJobs[0].Origin)
+	}
+
 	// Absent origin uses default
 	store.enqueuedJobs = nil
 	respDefault := postSBOM(t, h, "/api/v1/sboms/upload")

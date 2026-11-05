@@ -185,7 +185,6 @@ type IngestionJob struct {
 	Cluster      string     `json:"cluster,omitempty"`
 	Namespace    string     `json:"namespace,omitempty"`
 	Project      string     `json:"project,omitempty"`
-	Origin       string     `json:"origin,omitempty"`
 	// SourceRepo/SourceRef (#332) carry an explicit X-Source-Repo /
 	// X-Source-Ref upload override from the gateway to the parsing worker.
 	// Empty for watcher-enqueued jobs — the worker then keeps whatever the

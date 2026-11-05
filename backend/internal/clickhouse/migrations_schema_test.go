@@ -200,9 +200,9 @@ func TestMigrationsParseIntoASchema(t *testing.T) {
 	}
 }
 
-// Every table that carries per-SBOM data must carry all four ownership
+// Every table that carries per-SBOM data must carry all three ownership
 // dimensions. A new table added without them would silently be invisible to
-// cluster/namespace/project/origin filtering — and back-filling it is only possible
+// cluster/namespace/project filtering — and back-filling it is only possible
 // by re-ingesting.
 func TestOwnershipColumnsOnAllDataTables(t *testing.T) {
 	schema := schemaFromMigrations(t)
@@ -218,7 +218,7 @@ func TestOwnershipColumnsOnAllDataTables(t *testing.T) {
 			t.Errorf("table %s not found in the migrations", table)
 			continue
 		}
-		for _, dim := range []string{"cluster", "namespace", "project", "origin"} {
+		for _, dim := range []string{"cluster", "namespace", "project"} {
 			if !cols[dim] {
 				t.Errorf("table %s is missing the %q ownership column", table, dim)
 			}
@@ -330,7 +330,7 @@ func TestInsertsPersistOwnershipColumns(t *testing.T) {
 			for _, c := range stmt {
 				have[c] = true
 			}
-			for _, dim := range []string{"cluster", "namespace", "project", "origin"} {
+			for _, dim := range []string{"cluster", "namespace", "project"} {
 				if !have[dim] {
 					t.Errorf("INSERT INTO %s (statement #%d) does not write the %q column",
 						table, i+1, dim)

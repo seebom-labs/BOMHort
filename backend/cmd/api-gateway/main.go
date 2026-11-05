@@ -299,13 +299,8 @@ func main() {
 			}
 			return cur, nil
 		},
-		now,
+		time.Now,
 	))
-			if err != nil {
-				return nil, err
-			}
-			return cur, nil
-		}, time.Now))
 
 	// License compliance overview.
 	// ?license=<id> returns that one license with its affected_sboms; the
@@ -531,7 +526,7 @@ func main() {
 		}
 
 		if groupBy == "parent" {
-			resp, err := chClient.QueryProjectGroups(r.Context(), assignments, page, pageSize, search, tag)
+			resp, err := chClient.QueryProjectGroups(r.Context(), assignments, page, pageSize, search, tag, originVal)
 			if err != nil {
 				log.Printf("ERROR: list project groups: %v", err)
 				writeError(w, http.StatusInternalServerError, "Failed to fetch project groups")
@@ -1199,11 +1194,11 @@ func parseScope(raw string) (string, bool) {
 // parseOrigin validates the optional ?origin= filter (#455). "" means no
 // filter; anything outside the origin vocabulary is rejected.
 func parseOrigin(raw string) (string, bool) {
-	raw = origin.Normalize(raw)
+	raw = originpkg.Normalize(raw)
 	if raw == "" {
 		return "", true
 	}
-	if !origin.IsValid(raw) {
+	if !originpkg.IsValid(raw) {
 		return "", false
 	}
 	return raw, true
