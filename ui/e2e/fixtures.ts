@@ -28,7 +28,9 @@ export { expect };
 
 export async function api<T>(page: Page, path: string): Promise<T> {
   const res = await page.request.get(`/api/v1${path}`);
-  expect(res.ok(), `GET /api/v1${path}`).toBeTruthy();
+  if (!res.ok()) {
+    expect(res.ok(), `GET /api/v1${path} → ${res.status()} ${(await res.text()).slice(0, 500)}`).toBeTruthy();
+  }
   return (await res.json()) as T;
 }
 
