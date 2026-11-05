@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -33,6 +34,7 @@ import (
 	"github.com/seebom-labs/bomhort/backend/internal/sourcerepo"
 	tagpkg "github.com/seebom-labs/bomhort/backend/internal/tags"
 	"github.com/seebom-labs/bomhort/backend/internal/vex"
+	"github.com/seebom-labs/bomhort/backend/pkg/dto"
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
 
@@ -520,6 +522,32 @@ func main() {
 		writeJSON(w, http.StatusOK, resp)
 	})
 
+	// Project README status badges.
+	// First-party Shields-style flat SVGs cached in-process for 1 hour with max-age=3600.
+	// Non-existent projects/versions are cached for 2 minutes (negative caching) to mitigate DoS floods.
+	badgeCache := newBadgeCache(1*time.Hour, 2*time.Minute)
+
+	mux.HandleFunc("GET /api/v1/badges/projects/{name}/vulnerabilities.svg", handleProjectBadge(
+		cfg, chClient, badgeCache, "vuln",
+		func(cfg *config.Config, stats *dto.ProjectBadgeStats) (string, string, string) {
+			label := cfg.BrandName
+			if label == "" {
+				label = "BOMHort"
+			}
+			val := fmt.Sprintf("%d C · %d H · %d M · %d L", stats.CriticalVulns, stats.HighVulns, stats.MediumVulns, stats.LowVulns)
+			color := vulnBadgeColor(stats.CriticalVulns, stats.HighVulns, stats.MediumVulns, stats.LowVulns)
+			return label, val, color
+		},
+	))
+
+	mux.HandleFunc("GET /api/v1/badges/projects/{name}/licenses.svg", handleProjectBadge(
+		cfg, chClient, badgeCache, "lic",
+		func(cfg *config.Config, stats *dto.ProjectBadgeStats) (string, string, string) {
+			val, color := licenseBadgeData(stats.Violations, stats.Unknown)
+			return "licenses", val, color
+		},
+	))
+
 	// Projects affected by a specific CVE (including transitive dependencies).
 	mux.HandleFunc("GET /api/v1/vulnerabilities/{id}/affected-projects", func(w http.ResponseWriter, r *http.Request) {
 		vulnID := r.PathValue("id")
@@ -888,7 +916,7 @@ func main() {
 	handler := securityHeadersMiddleware(
 		rateLimitMiddleware(
 			corsMiddleware(cfg.CORSAllowedOrigins,
-				authMiddleware(cfg.AuthEnabled, cfg.ServiceToken, cfg.APIKeys, mux),
+				authMiddleware(cfg.AuthEnabled, cfg.BadgesPublic, cfg.ServiceToken, cfg.APIKeys, mux),
 			),
 		),
 	)
@@ -1188,6 +1216,30 @@ var authPublicPaths = map[string]struct{}{
 	"/readyz":  {},
 }
 
+// isBadgePath checks if a request path strictly matches the public badge endpoints:
+//
+//	/api/v1/badges/projects/{name}/vulnerabilities.svg
+//	/api/v1/badges/projects/{name}/licenses.svg
+//
+// It checks the suffix after the prefix so project names containing slashes
+// (e.g. org/repo or encoded org%2Frepo) match correctly.
+func isBadgePath(path string) bool {
+	const prefix = "/api/v1/badges/projects/"
+	if !strings.HasPrefix(path, prefix) {
+		return false
+	}
+	sub := path[len(prefix):]
+	if strings.HasSuffix(sub, "/vulnerabilities.svg") {
+		name := strings.TrimSuffix(sub, "/vulnerabilities.svg")
+		return strings.Trim(name, "/") != ""
+	}
+	if strings.HasSuffix(sub, "/licenses.svg") {
+		name := strings.TrimSuffix(sub, "/licenses.svg")
+		return strings.Trim(name, "/") != ""
+	}
+	return false
+}
+
 // authMiddleware enforces authentication when enabled. Accepts any of:
 //   - Authorization: Bearer <service-token>
 //   - X-Service-Token: <service-token>
@@ -1195,7 +1247,8 @@ var authPublicPaths = map[string]struct{}{
 //
 // All comparisons use constant-time equality to prevent timing attacks.
 // When AUTH_ENABLED=false, this middleware is a no-op pass-through.
-func authMiddleware(enabled bool, serviceToken string, apiKeys []string, next http.Handler) http.Handler {
+// When badgesPublic=true, GET requests matching exact badge paths bypass authentication.
+func authMiddleware(enabled bool, badgesPublic bool, serviceToken string, apiKeys []string, next http.Handler) http.Handler {
 	if !enabled {
 		return next
 	}
@@ -1210,6 +1263,11 @@ func authMiddleware(enabled bool, serviceToken string, apiKeys []string, next ht
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Public paths bypass auth (health probes).
 		if _, ok := authPublicPaths[r.URL.Path]; ok {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// Badges bypass auth when BADGES_PUBLIC=true for GET requests on badge paths.
+		if badgesPublic && r.Method == http.MethodGet && isBadgePath(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}

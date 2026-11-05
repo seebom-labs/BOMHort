@@ -155,6 +155,8 @@ type Config struct {
 	AuthEnabled  bool     // Enable auth middleware (default false)
 	ServiceToken string   // Shared secret for upstream proxy/gateway integrations
 	APIKeys      []string // Pre-shared API keys for direct API consumers (CI/CD, scripts)
+	BadgesPublic bool     // Opt out /api/v1/badges/* from auth when AUTH_ENABLED=true
+	BrandName    string   // Brand label for badges, resolved from ui-config.json or BRAND_NAME
 
 	// Push-model upload (#135)
 	MaxUploadSizeMB int // Max accepted body size for POST /api/v1/sboms/upload, in MB (default 50)
@@ -255,6 +257,8 @@ func Load() (*Config, error) {
 		AuthEnabled:           getEnvBool("AUTH_ENABLED", false),
 		ServiceToken:          getEnv("SERVICE_TOKEN", ""),
 		APIKeys:               parseAPIKeys(getEnv("API_KEYS", "")),
+		BadgesPublic:          getEnvBool("BADGES_PUBLIC", false),
+		BrandName:             getEnv("BRAND_NAME", "BOMHort"),
 		MaxUploadSizeMB:       getEnvInt("MAX_UPLOAD_SIZE_MB", 50),
 
 		OriginalStoreBackend:  strings.ToLower(getEnv("ORIGINAL_STORE_BACKEND", OriginalStoreAuto)),

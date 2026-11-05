@@ -233,6 +233,17 @@ type SBOMDetail struct {
 	ScopeBreakdown map[string]SeverityCounts `json:"scope_breakdown,omitempty"`
 }
 
+// ProjectBadgeStats holds the vulnerability counts and license compliance stats
+// used to render project README badges.
+type ProjectBadgeStats struct {
+	CriticalVulns uint64 `json:"critical_vulns"`
+	HighVulns     uint64 `json:"high_vulns"`
+	MediumVulns   uint64 `json:"medium_vulns"`
+	LowVulns      uint64 `json:"low_vulns"`
+	Violations    uint64 `json:"violations"`
+	Unknown       uint64 `json:"unknown"`
+}
+
 // SBOMLicenseBreakdownItem is a per-SBOM license summary.
 type SBOMLicenseBreakdownItem struct {
 	LicenseID        string   `json:"license_id"`
