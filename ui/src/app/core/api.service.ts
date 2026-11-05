@@ -77,7 +77,18 @@ export class ApiService {
    * `project` (#398) is the exact project identity and scopes the list to
    * one project's versions. They compose. `minQuality` filters by minimum quality score (#537).
    */
-  getSboms(page = 1, pageSize = 50, search = '', project = '', origin = '', minQuality = 0): Observable<PaginatedResponse<SBOMListItem>> {
+  getSboms(page?: number, pageSize?: number, search?: string, project?: string, minQuality?: number): Observable<PaginatedResponse<SBOMListItem>>;
+  getSboms(page?: number, pageSize?: number, search?: string, project?: string, origin?: string, minQuality?: number): Observable<PaginatedResponse<SBOMListItem>>;
+  getSboms(
+    page = 1,
+    pageSize = 50,
+    search = '',
+    project = '',
+    originOrMinQuality: string | number = '',
+    maybeMinQuality = 0,
+  ): Observable<PaginatedResponse<SBOMListItem>> {
+    const origin = typeof originOrMinQuality === 'string' ? originOrMinQuality : '';
+    const minQuality = typeof originOrMinQuality === 'number' ? originOrMinQuality : maybeMinQuality;
     let params = new HttpParams()
       .set('page', page.toString())
       .set('page_size', pageSize.toString());
@@ -154,7 +165,6 @@ export class ApiService {
     }
     return this.http.get<PaginatedResponse<VulnerabilityListItem>>(`${this.baseUrl}/vulnerabilities`, { params });
   }
-
   uploadEvidence(sbomId: string, evidenceJson: string | object, ref = ''): Observable<ReachabilitySummary> {
     const body = typeof evidenceJson === 'string' ? evidenceJson : JSON.stringify(evidenceJson);
     let params = new HttpParams();
@@ -272,7 +282,7 @@ export class ApiService {
    * Projects grouped by their resolved parent (product), paged by group.
    * search matches the group or any member; tag restricts the members.
    */
-  getProjectGroups(page = 1, pageSize = 50, search = '', tag = ''): Observable<PaginatedResponse<ProjectGroupItem>> {
+  getProjectGroups(page = 1, pageSize = 50, search = '', tag = '', origin = ''): Observable<PaginatedResponse<ProjectGroupItem>> {
     let params = new HttpParams()
       .set('group_by', 'parent')
       .set('page', page.toString())
@@ -282,6 +292,9 @@ export class ApiService {
     }
     if (tag) {
       params = params.set('tag', tag);
+    }
+    if (origin) {
+      params = params.set('origin', origin);
     }
     return this.http.get<PaginatedResponse<ProjectGroupItem>>(`${this.baseUrl}/projects`, { params });
   }

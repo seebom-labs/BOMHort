@@ -226,13 +226,8 @@ func main() {
 			}
 			return cur, nil
 		},
-		now,
+		time.Now,
 	))
-			if err != nil {
-				return nil, err
-			}
-			return cur, nil
-		}, time.Now))
 
 	// License compliance overview.
 	// ?license=<id> returns that one license with its affected_sboms; the
@@ -458,7 +453,7 @@ func main() {
 		}
 
 		if groupBy == "parent" {
-			resp, err := chClient.QueryProjectGroups(r.Context(), assignments, page, pageSize, search, tag)
+			resp, err := chClient.QueryProjectGroups(r.Context(), assignments, page, pageSize, search, tag, originVal)
 			if err != nil {
 				log.Printf("ERROR: list project groups: %v", err)
 				writeError(w, http.StatusInternalServerError, "Failed to fetch project groups")
@@ -1763,7 +1758,7 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 		cluster := queryOverride(r, "cluster", cfg.ClusterName)
 		namespace := queryOverride(r, "namespace", cfg.Namespace)
 		project := queryOverride(r, "project", cfg.Project)
-		originVal := queryOverride(r, "origin", cfg.Origin)
+		originVal := origin.Normalize(queryOverride(r, "origin", cfg.Origin))
 		if originVal != "" && !origin.IsValid(originVal) {
 			writeError(w, http.StatusBadRequest, "Invalid origin (expected cluster-scan, ci, registry, vendor, manual)")
 			return

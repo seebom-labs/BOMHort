@@ -121,7 +121,7 @@ func TestProjectGroupsResolveAndDeduplicate(t *testing.T) {
 	}
 
 	// Searching for the child finds its group.
-	resp, err := c.QueryProjectGroups(ctx, assignments, 1, 10, f.child, "")
+	resp, err := c.QueryProjectGroups(ctx, assignments, 1, 10, f.child, "", "")
 	if err != nil {
 		t.Fatalf("QueryProjectGroups: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestProjectGroupsResolveAndDeduplicate(t *testing.T) {
 	}
 
 	// The orphan is a group of one.
-	resp, err = c.QueryProjectGroups(ctx, assignments, 1, 10, f.orphan, "")
+	resp, err = c.QueryProjectGroups(ctx, assignments, 1, 10, f.orphan, "", "")
 	if err != nil {
 		t.Fatalf("QueryProjectGroups(orphan): %v", err)
 	}

@@ -180,7 +180,6 @@ func (c *Client) QueryDashboardStats(ctx context.Context, f VulnFilter) (*dto.Da
 			}
 		}
 	}
-	}
 
 	return stats, nil
 }

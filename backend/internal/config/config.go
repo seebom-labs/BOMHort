@@ -416,12 +416,13 @@ func Load() (*Config, error) {
 	cfg.S3Buckets = deduplicateBuckets(cfg.S3Buckets)
 
 	// Per-bucket layouts and origins are validated here for the same fail-fast reason.
-	for _, b := range cfg.S3Buckets {
-		if _, err := ingestpath.ParseLayout(b.PathLayout); err != nil {
-			return nil, fmt.Errorf("invalid pathLayout for bucket %q: %w", b.Name, err)
+	for i := range cfg.S3Buckets {
+		if _, err := ingestpath.ParseLayout(cfg.S3Buckets[i].PathLayout); err != nil {
+			return nil, fmt.Errorf("invalid pathLayout for bucket %q: %w", cfg.S3Buckets[i].Name, err)
 		}
-		if err := origin.Validate(b.Origin); err != nil {
-			return nil, fmt.Errorf("invalid origin for bucket %q: %w", b.Name, err)
+		cfg.S3Buckets[i].Origin = origin.Normalize(cfg.S3Buckets[i].Origin)
+		if err := origin.Validate(cfg.S3Buckets[i].Origin); err != nil {
+			return nil, fmt.Errorf("invalid origin for bucket %q: %w", cfg.S3Buckets[i].Name, err)
 		}
 	}
 
