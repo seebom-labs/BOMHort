@@ -85,6 +85,7 @@ type Config struct {
 	// API Gateway
 	APIPort            int
 	CORSAllowedOrigins string // Comma-separated allowed origins (default "*" for dev)
+	RateLimitMax       int    // Requests per IP per 10s window; 0 disables the limiter
 
 	// Worker
 	WorkerID        string
@@ -232,6 +233,7 @@ func Load() (*Config, error) {
 		SBOMDir:               getEnv("SBOM_DIR", "./sboms"),
 		APIPort:               getEnvInt("API_PORT", 8080),
 		CORSAllowedOrigins:    getEnv("CORS_ALLOWED_ORIGINS", "*"),
+		RateLimitMax:          getEnvInt("RATE_LIMIT_MAX", 100),
 		WorkerID:              getEnv("WORKER_ID", ""),
 		WorkerBatchSize:       getEnvInt("WORKER_BATCH_SIZE", 10),
 		SkipOSV:               getEnvBool("SKIP_OSV", false),

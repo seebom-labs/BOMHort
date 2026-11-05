@@ -52,6 +52,8 @@ services:
       CLICKHOUSE_MAX_MEMORY_USAGE: ${CLICKHOUSE_MAX_MEMORY_USAGE:-0}
       CLICKHOUSE_MAX_THREADS: ${CLICKHOUSE_MAX_THREADS:-0}
       API_PORT: "8080"
+      # Requests per client IP per 10s; 0 disables (CI e2e only).
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-100}
       SBOM_DIR: /data/sboms
       # Ownership dimensions (#131 cluster, #138 namespace, #57 project).
       # All default to "" (unassigned). INGEST_PATH_LAYOUT opts into deriving

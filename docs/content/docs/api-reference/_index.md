@@ -147,7 +147,7 @@ All errors return:
 
 ### Rate Limiting
 
-- **100 requests per 10 seconds** per source IP
+- **100 requests per 10 seconds** per source IP (`RATE_LIMIT_MAX`, `0` disables it — only for tests)
 - Returns `429 Too Many Requests` when exceeded
 - No `Retry-After` header (client should implement exponential backoff)
 - The source IP is `X-Real-IP` if set, else the **last** `X-Forwarded-For` entry, else the TCP peer. The bundled nginx sets both from the connecting address; a different proxy in front of the gateway must do the same, otherwise clients share one bucket (or, if the proxy forwards client-supplied headers unchanged, can spoof their own).

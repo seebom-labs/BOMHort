@@ -35,7 +35,7 @@ func TestClientIP(t *testing.T) {
 
 // Spoofing the first X-Forwarded-For entry must not open a fresh rate-limit bucket.
 func TestRateLimitIgnoresSpoofedForwardedFor(t *testing.T) {
-	h := rateLimitMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	h := rateLimitMiddleware(100, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	var last int
 	for i := 0; i < 101; i++ {
 		r := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -47,5 +47,16 @@ func TestRateLimitIgnoresSpoofedForwardedFor(t *testing.T) {
 	}
 	if last != http.StatusTooManyRequests {
 		t.Fatalf("request 101 got %d, want 429", last)
+	}
+}
+
+func TestRateLimitDisabledAtZero(t *testing.T) {
+	h := rateLimitMiddleware(0, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	for i := 0; i < 200; i++ {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("request %d got %d, want 200", i+1, w.Code)
+		}
 	}
 }

@@ -173,6 +173,8 @@ jobs:
         env:
           # License resolution asks GitHub; unauthenticated it parks jobs on the rate limit and the queue never drains.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Playwright runs every test from one IP and exceeds the production limit of 100 req/10s.
+          RATE_LIMIT_MAX: "0"
         run: |
           # The vulnerability pages need real OSV findings; .env.example disables them.
           sed 's/^SKIP_OSV=true/SKIP_OSV=false/' .env.example > .env

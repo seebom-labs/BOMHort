@@ -914,7 +914,7 @@ func main() {
 	// Order (outermost first): security headers → rate limit → CORS → auth → mux.
 	// Auth sits closest to the mux so 401s still get CORS + security headers.
 	handler := securityHeadersMiddleware(
-		rateLimitMiddleware(
+		rateLimitMiddleware(cfg.RateLimitMax,
 			corsMiddleware(cfg.CORSAllowedOrigins,
 				authMiddleware(cfg.AuthEnabled, cfg.BadgesPublic, cfg.ServiceToken, cfg.APIKeys, mux),
 			),
@@ -1153,8 +1153,11 @@ func corsMiddleware(allowedOrigins string, next http.Handler) http.Handler {
 }
 
 // rateLimitMiddleware implements a simple per-IP sliding-window rate limiter.
-// Allows 100 requests per 10 seconds per IP.
-func rateLimitMiddleware(next http.Handler) http.Handler {
+// Allows maxRequests per 10 seconds per IP; maxRequests <= 0 disables it.
+func rateLimitMiddleware(maxRequests int, next http.Handler) http.Handler {
+	if maxRequests <= 0 {
+		return next
+	}
 	type visitor struct {
 		count    int
 		windowAt time.Time
@@ -1164,10 +1167,7 @@ func rateLimitMiddleware(next http.Handler) http.Handler {
 		visitors = make(map[string]*visitor)
 	)
 
-	const (
-		maxRequests = 100
-		window      = 10 * time.Second
-	)
+	const window = 10 * time.Second
 
 	// Background cleanup every 60 seconds to prevent memory leak.
 	go func() {
