@@ -68,6 +68,10 @@ export function query(params: Params): string {
   return s ? `?${s}` : '';
 }
 
+function isSignal(val: unknown): val is AbortSignal {
+  return typeof val === 'object' && val !== null && 'aborted' in val;
+}
+
 /**
  * Framework-free, read-only client for the BOMHort REST API. One method per
  * endpoint, same names and defaults as the Angular `ApiService`, so a
@@ -93,11 +97,26 @@ export class BomhortApiClient {
     return (await res.json()) as T;
   }
 
-  getDashboardStats(owner: OwnerFilter = {}, signal?: AbortSignal): Promise<DashboardStats> {
+  getDashboardStats(signal?: AbortSignal): Promise<DashboardStats>;
+  getDashboardStats(owner?: OwnerFilter, signal?: AbortSignal): Promise<DashboardStats>;
+  getDashboardStats(ownerOrSignal?: OwnerFilter | AbortSignal, maybeSignal?: AbortSignal): Promise<DashboardStats> {
+    const owner = isSignal(ownerOrSignal) ? {} : (ownerOrSignal ?? {});
+    const signal = isSignal(ownerOrSignal) ? ownerOrSignal : maybeSignal;
     return this.get(`/stats/dashboard${query({ ...owner })}`, signal);
   }
 
-  getSboms(page = 1, pageSize = 50, search = '', project = '', origin = '', signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>> {
+  getSboms(page?: number, pageSize?: number, search?: string, project?: string, signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>>;
+  getSboms(page?: number, pageSize?: number, search?: string, project?: string, origin?: string, signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>>;
+  getSboms(
+    page = 1,
+    pageSize = 50,
+    search = '',
+    project = '',
+    originOrSignal?: string | AbortSignal,
+    maybeSignal?: AbortSignal,
+  ): Promise<PaginatedResponse<SBOMListItem>> {
+    const origin = typeof originOrSignal === 'string' ? originOrSignal : '';
+    const signal = isSignal(originOrSignal) ? originOrSignal : maybeSignal;
     return this.get(`/sboms${query({ page, page_size: pageSize, search, project, origin })}`, signal);
   }
 
@@ -129,12 +148,33 @@ export class BomhortApiClient {
     return `${this.baseUrl}/reports/vulnerabilities${query({ format: 'csv', scope, ...owner })}`;
   }
 
-  getVulnerabilities(page = 1, pageSize = 50, scope = '', owner: OwnerFilter = {}, signal?: AbortSignal): Promise<PaginatedResponse<VulnerabilityListItem>> {
+  getVulnerabilities(page?: number, pageSize?: number, scope?: string, signal?: AbortSignal): Promise<PaginatedResponse<VulnerabilityListItem>>;
+  getVulnerabilities(page?: number, pageSize?: number, scope?: string, origin?: string, signal?: AbortSignal): Promise<PaginatedResponse<VulnerabilityListItem>>;
+  getVulnerabilities(page?: number, pageSize?: number, scope?: string, owner?: OwnerFilter, signal?: AbortSignal): Promise<PaginatedResponse<VulnerabilityListItem>>;
+  getVulnerabilities(
+    page = 1,
+    pageSize = 50,
+    scope = '',
+    ownerOrOriginOrSignal?: OwnerFilter | string | AbortSignal,
+    maybeSignal?: AbortSignal,
+  ): Promise<PaginatedResponse<VulnerabilityListItem>> {
+    let owner: OwnerFilter = {};
+    let signal: AbortSignal | undefined = maybeSignal;
+    if (isSignal(ownerOrOriginOrSignal)) {
+      signal = ownerOrOriginOrSignal;
+    } else if (typeof ownerOrOriginOrSignal === 'string') {
+      owner = { origin: ownerOrOriginOrSignal };
+    } else if (ownerOrOriginOrSignal && typeof ownerOrOriginOrSignal === 'object') {
+      owner = ownerOrOriginOrSignal;
+    }
     return this.get(`/vulnerabilities${query({ page, page_size: pageSize, scope, ...owner })}`, signal);
   }
-  }
 
-  getAffectedProjectsByCVE(vulnId: string, owner: OwnerFilter = {}, signal?: AbortSignal): Promise<AffectedProject[]> {
+  getAffectedProjectsByCVE(vulnId: string, signal?: AbortSignal): Promise<AffectedProject[]>;
+  getAffectedProjectsByCVE(vulnId: string, owner?: OwnerFilter, signal?: AbortSignal): Promise<AffectedProject[]>;
+  getAffectedProjectsByCVE(vulnId: string, ownerOrSignal?: OwnerFilter | AbortSignal, maybeSignal?: AbortSignal): Promise<AffectedProject[]> {
+    const owner = isSignal(ownerOrSignal) ? {} : (ownerOrSignal ?? {});
+    const signal = isSignal(ownerOrSignal) ? ownerOrSignal : maybeSignal;
     return this.get(`/vulnerabilities/${vulnId}/affected-projects${query({ ...owner })}`, signal);
   }
 
@@ -186,12 +226,34 @@ export class BomhortApiClient {
     return this.get(`/packages/detail${query({ name, page, page_size: pageSize })}`, signal);
   }
 
-  getProjects(page = 1, pageSize = 50, search = '', tag = '', origin = '', signal?: AbortSignal): Promise<PaginatedResponse<ProjectListItem>> {
+  getProjects(page?: number, pageSize?: number, search?: string, tag?: string, signal?: AbortSignal): Promise<PaginatedResponse<ProjectListItem>>;
+  getProjects(page?: number, pageSize?: number, search?: string, tag?: string, origin?: string, signal?: AbortSignal): Promise<PaginatedResponse<ProjectListItem>>;
+  getProjects(
+    page = 1,
+    pageSize = 50,
+    search = '',
+    tag = '',
+    originOrSignal?: string | AbortSignal,
+    maybeSignal?: AbortSignal,
+  ): Promise<PaginatedResponse<ProjectListItem>> {
+    const origin = typeof originOrSignal === 'string' ? originOrSignal : '';
+    const signal = isSignal(originOrSignal) ? originOrSignal : maybeSignal;
     return this.get(`/projects${query({ page, page_size: pageSize, search, tag, origin })}`, signal);
   }
 
-  getProjectGroups(page = 1, pageSize = 50, search = '', tag = '', signal?: AbortSignal): Promise<PaginatedResponse<ProjectGroupItem>> {
-    return this.get(`/projects${query({ group_by: 'parent', page, page_size: pageSize, search, tag })}`, signal);
+  getProjectGroups(page?: number, pageSize?: number, search?: string, tag?: string, signal?: AbortSignal): Promise<PaginatedResponse<ProjectGroupItem>>;
+  getProjectGroups(page?: number, pageSize?: number, search?: string, tag?: string, origin?: string, signal?: AbortSignal): Promise<PaginatedResponse<ProjectGroupItem>>;
+  getProjectGroups(
+    page = 1,
+    pageSize = 50,
+    search = '',
+    tag = '',
+    originOrSignal?: string | AbortSignal,
+    maybeSignal?: AbortSignal,
+  ): Promise<PaginatedResponse<ProjectGroupItem>> {
+    const origin = typeof originOrSignal === 'string' ? originOrSignal : '';
+    const signal = isSignal(originOrSignal) ? originOrSignal : maybeSignal;
+    return this.get(`/projects${query({ group_by: 'parent', page, page_size: pageSize, search, tag, origin })}`, signal);
   }
 
   getTags(signal?: AbortSignal): Promise<TagListItem[]> {
@@ -222,7 +284,11 @@ export class BomhortApiClient {
     return this.get(`/search${query({ q, limit })}`, signal);
   }
 
-  getFleet(origin = '', signal?: AbortSignal): Promise<FleetCluster[]> {
+  getFleet(signal?: AbortSignal): Promise<FleetCluster[]>;
+  getFleet(origin?: string, signal?: AbortSignal): Promise<FleetCluster[]>;
+  getFleet(originOrSignal?: string | AbortSignal, maybeSignal?: AbortSignal): Promise<FleetCluster[]> {
+    const origin = typeof originOrSignal === 'string' ? originOrSignal : '';
+    const signal = isSignal(originOrSignal) ? originOrSignal : maybeSignal;
     return this.get(`/fleet${query({ origin })}`, signal);
   }
 
@@ -234,7 +300,17 @@ export class BomhortApiClient {
     return this.get(`/clusters/${encodeURIComponent(cluster)}/stats`, signal);
   }
 
-  getClusterSboms(cluster: string, page = 1, pageSize = 50, origin = '', signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>> {
+  getClusterSboms(cluster: string, page?: number, pageSize?: number, signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>>;
+  getClusterSboms(cluster: string, page?: number, pageSize?: number, origin?: string, signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>>;
+  getClusterSboms(
+    cluster: string,
+    page = 1,
+    pageSize = 50,
+    originOrSignal?: string | AbortSignal,
+    maybeSignal?: AbortSignal,
+  ): Promise<PaginatedResponse<SBOMListItem>> {
+    const origin = typeof originOrSignal === 'string' ? originOrSignal : '';
+    const signal = isSignal(originOrSignal) ? originOrSignal : maybeSignal;
     return this.get(`/clusters/${encodeURIComponent(cluster)}/sboms${query({ page, page_size: pageSize, origin })}`, signal);
   }
 
@@ -246,7 +322,18 @@ export class BomhortApiClient {
     return this.get(`/namespaces/${encodeURIComponent(namespace)}/stats${query({ cluster })}`, signal);
   }
 
-  getNamespaceSboms(namespace: string, cluster = '', page = 1, pageSize = 50, origin = '', signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>> {
+  getNamespaceSboms(namespace: string, cluster?: string, page?: number, pageSize?: number, signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>>;
+  getNamespaceSboms(namespace: string, cluster?: string, page?: number, pageSize?: number, origin?: string, signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>>;
+  getNamespaceSboms(
+    namespace: string,
+    cluster = '',
+    page = 1,
+    pageSize = 50,
+    originOrSignal?: string | AbortSignal,
+    maybeSignal?: AbortSignal,
+  ): Promise<PaginatedResponse<SBOMListItem>> {
+    const origin = typeof originOrSignal === 'string' ? originOrSignal : '';
+    const signal = isSignal(originOrSignal) ? originOrSignal : maybeSignal;
     return this.get(`/namespaces/${encodeURIComponent(namespace)}/sboms${query({ cluster, page, page_size: pageSize, origin })}`, signal);
   }
 }
