@@ -27,17 +27,19 @@ holds no ClickHouse credentials. Everything it can tell an agent is something
 first external consumer of the API contract that 1.0 freezes, and a consumer
 that reached around the contract would not exercise it.
 
-## The five tools
+## The seven tools
 
 | Tool | Answers | Backed by |
 |------|---------|-----------|
 | `list_projects` | "What does this instance know about?" | `GET /api/v1/projects` |
 | `get_project` | "What is the state of *payment-service*?" | `GET /api/v1/projects/{name}` (+ `/sboms`) |
 | `search_packages` | "Who ships log4j-core, and in which versions?" | `GET /api/v1/packages/search` |
-| `list_vulnerabilities` | "What is open, instance-wide or per project?" | `GET /api/v1/vulnerabilities`, `GET /api/v1/projects/{name}/vulnerabilities` |
+| `list_vulnerabilities` | "What is open, instance-wide or per project? Per cluster, namespace, parent or tag?" | `GET /api/v1/vulnerabilities`, `GET /api/v1/projects/{name}/vulnerabilities` |
+| `get_affected_projects` | "Which SBOMs ship CVE-2024-45338, in which cluster and namespace?" | `GET /api/v1/vulnerabilities/{id}/affected-projects` |
+| `get_dashboard_stats` | "How many critical findings are open in *prod-eu*?" | `GET /api/v1/stats/dashboard` |
 | `get_sbom` | "What is in this document?" | `GET /api/v1/sboms/{id}/detail` (+ `/vulnerabilities`) |
 
-All five are annotated `readOnlyHint`, `idempotentHint` and closed-world, so a
+All seven are annotated `readOnlyHint`, `idempotentHint` and closed-world, so a
 client can call them without asking the user to confirm each one.
 
 Two semantics are stated in the server's `instructions` because a model cannot
@@ -67,6 +69,11 @@ the API filters it server-side on both endpoints, so the total stays honest.
 Every returned finding carries `dependency_scope` and `dependency_depth`, which
 lets an agent answer "which of these CVEs are in libraries we depend on
 directly?" without reconstructing the dependency tree.
+
+`get_dashboard_stats` and `get_affected_projects` take the ownership filters
+`cluster`, `namespace`, `project`, `parent` and `tag` (comma-separated, #459),
+passed straight through to the API. Neither pages: the dashboard is one object,
+and affected projects are one row per affected SBOM.
 
 ## Running it on a laptop (stdio)
 

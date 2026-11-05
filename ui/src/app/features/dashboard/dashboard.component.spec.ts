@@ -2,10 +2,10 @@ import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { vi } from 'vitest';
 import { ApiService } from '../../core/api.service';
-import { DashboardStats } from '../../core/api.models';
+import { ClusterListItem, DashboardStats } from '../../core/api.models';
 import { DashboardComponent } from './dashboard.component';
 
 describe('DashboardComponent', () => {
@@ -46,5 +46,31 @@ describe('DashboardComponent', () => {
     expect(segments.map((x) => x.label)).toEqual(['Permissive', 'Copyleft', 'Not Approved', 'Exempted', 'Unknown']);
     expect(segments.find((x) => x.label === 'Not Approved')?.value).toBe(3);
     expect(segments.find((x) => x.label === 'Unknown')?.value).toBe(4);
+  });
+
+  it('filters the stats by the selected cluster', () => {
+    const api = TestBed.inject(ApiService);
+    vi.spyOn(api, 'getClusters').mockReturnValue(of([{ name: '' }, { name: 'prod-eu' }] as unknown as ClusterListItem[]));
+    const stats = vi.spyOn(api, 'getDashboardStats').mockReturnValue(of({ license_breakdown: {} } as unknown as DashboardStats));
+    const fixture = TestBed.createComponent(DashboardComponent);
+    fixture.detectChanges();
+    const select = fixture.nativeElement.querySelector('.cluster-filter select') as HTMLSelectElement;
+    expect([...select.options].map((o) => o.value)).toEqual(['', 'prod-eu']);
+    select.value = 'prod-eu';
+    select.dispatchEvent(new Event('change'));
+    expect(stats).toHaveBeenLastCalledWith({ cluster: 'prod-eu' });
+  });
+
+  it('drops a stale stats response when the cluster changes', () => {
+    const api = TestBed.inject(ApiService);
+    const slow = new Subject<DashboardStats>();
+    vi.spyOn(api, 'getDashboardStats')
+      .mockReturnValueOnce(slow)
+      .mockReturnValue(of({ total_sboms: 2, license_breakdown: {} } as unknown as DashboardStats));
+    const fixture = TestBed.createComponent(DashboardComponent);
+    fixture.detectChanges();
+    fixture.componentInstance.setCluster('prod-eu');
+    slow.next({ total_sboms: 99, license_breakdown: {} } as unknown as DashboardStats);
+    expect(fixture.componentInstance.stats?.total_sboms).toBe(2);
   });
 });

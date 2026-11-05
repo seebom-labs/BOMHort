@@ -1,6 +1,7 @@
 import { Component, OnInit, ChangeDetectionStrategy, ChangeDetectorRef, SecurityContext } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterModule } from '@angular/router';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { Subscription } from 'rxjs';
 import { DomSanitizer } from '@angular/platform-browser';
 import { ApiService } from '../../core/api.service';
 import { DashboardStats } from '../../core/api.models';
@@ -19,6 +20,17 @@ import { ScopeMatrixComponent } from '../../shared/scope-matrix/scope-matrix.com
       <header class="dash-header">
         <h1>{{ dashTitle }}</h1>
         <p class="subtitle">{{ dashSubtitle }}</p>
+        @if (clusters.length > 0) {
+          <label class="cluster-filter">
+            <span>Cluster</span>
+            <select (change)="setCluster($any($event.target).value)" aria-label="Cluster filter">
+              <option value="" [selected]="cluster === ''">All clusters</option>
+              @for (c of clusters; track c) {
+                <option [value]="c" [selected]="c === cluster">{{ c }}</option>
+              }
+            </select>
+          </label>
+        }
       </header>
 
       <section class="description-banner">
@@ -84,7 +96,7 @@ import { ScopeMatrixComponent } from '../../shared/scope-matrix/scope-matrix.com
         <div class="charts-row">
           <div class="chart-card wide">
             <h3>Vulnerabilities by Dependency Scope</h3>
-            <app-scope-matrix [breakdown]="stats.scope_breakdown" vulnLink="/vulnerabilities" />
+            <app-scope-matrix [breakdown]="stats.scope_breakdown" vulnLink="/vulnerabilities" [linkParams]="cluster ? { cluster } : {}" />
           </div>
         </div>
 
@@ -148,6 +160,8 @@ import { ScopeMatrixComponent } from '../../shared/scope-matrix/scope-matrix.com
     .dash-header { margin-bottom: 24px; }
     .dash-header h1 { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.02em; color: var(--text); }
     .subtitle { margin-top: 2px; color: var(--text-secondary); font-size: 0.8rem; }
+    .cluster-filter { display: inline-flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 0.75rem; color: var(--text-secondary); }
+    .cluster-filter select { font-size: 0.78rem; padding: 4px 8px; border: 1px solid var(--border); border-radius: 2px; background: var(--surface); color: var(--text); }
 
     .description-banner {
       background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
@@ -255,6 +269,11 @@ export class DashboardComponent implements OnInit {
   severityBars: BarItem[] = [];
   licenseBars: BarItem[] = [];
 
+  /** Named clusters; empty hides the selector (no deployment semantics). */
+  clusters: string[] = [];
+  cluster = '';
+  private request: Subscription | null = null;
+
   dashTitle = '';
   dashSubtitle = '';
   dashDescription = '';
@@ -265,6 +284,8 @@ export class DashboardComponent implements OnInit {
     private readonly cdr: ChangeDetectorRef,
     private readonly siteConfig: SiteConfigService,
     private readonly sanitizer: DomSanitizer,
+    private readonly route: ActivatedRoute,
+    private readonly router: Router,
   ) {}
 
   ngOnInit(): void {
@@ -276,6 +297,20 @@ export class DashboardComponent implements OnInit {
     this.dashDescription = this.sanitizer.sanitize(SecurityContext.HTML, dc.description) ?? '';
     this.dashDisclaimer = this.sanitizer.sanitize(SecurityContext.HTML, dc.disclaimer) ?? '';
 
+    this.cluster = this.route.snapshot.queryParamMap.get('cluster') ?? '';
+    this.api.getClusters().subscribe({
+      next: (clusters) => {
+        this.clusters = clusters.map((c) => c.name).filter((n) => n !== '');
+        this.cdr.markForCheck();
+      },
+      error: () => {}, // the selector is optional; the stats still load
+    });
+    this.loadData();
+  }
+
+  setCluster(cluster: string): void {
+    this.cluster = cluster;
+    void this.router.navigate([], { queryParams: { cluster: cluster || null }, queryParamsHandling: 'merge', replaceUrl: true });
     this.loadData();
   }
 
@@ -284,7 +319,9 @@ export class DashboardComponent implements OnInit {
     this.stats = null;
     this.cdr.markForCheck();
 
-    this.api.getDashboardStats().subscribe({
+    // A slow unfiltered answer must not overwrite the selected cluster's.
+    this.request?.unsubscribe();
+    this.request = this.api.getDashboardStats({ cluster: this.cluster }).subscribe({
       next: (data) => {
         this.stats = data;
         this.buildCharts(data);

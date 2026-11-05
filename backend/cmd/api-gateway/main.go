@@ -154,9 +154,20 @@ func main() {
 	// 503 otherwise so K8s removes the pod from Service endpoints.
 	mux.HandleFunc("GET /readyz", readyzHandler(chClient))
 
+	// Parent grouping (internal/projectgroup): resolved over all projects at
+	// query time, cached briefly, re-read when the mapping file changes.
+	parents := newParentResolver(chClient.QueryProjectSignals, cfg.ProjectGroupsFile)
+	vulnFilter := newVulnFilter(parents.Assignments)
+
 	// Dashboard stats.
+	// The ownership filters of /vulnerabilities (#459) scope every count.
 	mux.HandleFunc("GET /api/v1/stats/dashboard", func(w http.ResponseWriter, r *http.Request) {
-		stats, err := chClient.QueryDashboardStats(r.Context())
+		f, status, msg := vulnFilter(r)
+		if status != 0 {
+			writeError(w, status, msg)
+			return
+		}
+		stats, err := chClient.QueryDashboardStats(r.Context(), f)
 		if err != nil {
 			log.Printf("ERROR: dashboard stats: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch dashboard stats")
@@ -191,28 +202,16 @@ func main() {
 	//
 	// ?scope=direct|transitive|root|unknown keeps only findings whose package
 	// is pulled in that way (migration 025).
-	mux.HandleFunc("GET /api/v1/vulnerabilities", func(w http.ResponseWriter, r *http.Request) {
-		page := parseUint64(r.URL.Query().Get("page"), 1)
-		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
-		scope, ok := parseScope(r.URL.Query().Get("scope"))
-		if !ok {
-			writeError(w, http.StatusBadRequest, "Invalid scope (expected direct, transitive, root or unknown)")
-			return
-		}
-
-		resp, err := chClient.QueryVulnerabilities(r.Context(), page, pageSize, scope)
-		if err != nil {
-			log.Printf("ERROR: list vulnerabilities: %v", err)
-			writeError(w, http.StatusInternalServerError, "Failed to fetch vulnerabilities")
-			return
-		}
-		writeJSON(w, http.StatusOK, resp)
-	})
+	//
+	// ?cluster=, ?namespace=, ?project=, ?parent= and ?tag= narrow it to an
+	// ownership slice (#459), see vuln_filter.go.
+	mux.HandleFunc("GET /api/v1/vulnerabilities", vulnListHandler(chClient, vulnFilter, nil))
 
 	// CSV export of the same listing (#266); streamed, see report_csv.go.
 	mux.HandleFunc("GET /api/v1/reports/vulnerabilities", vulnerabilityReportHandler(
-		func(ctx context.Context, scope string) (vulnerabilityRows, error) {
-			cur, err := chClient.StreamVulnerabilities(ctx, scope)
+		vulnFilter,
+		func(ctx context.Context, scope string, f clickhouse.VulnFilter) (vulnerabilityRows, error) {
+			cur, err := chClient.StreamVulnerabilities(ctx, scope, f)
 			if err != nil {
 				return nil, err
 			}
@@ -365,10 +364,6 @@ func main() {
 		}
 		writeJSON(w, http.StatusOK, violations)
 	})
-
-	// Parent grouping (internal/projectgroup): resolved over all projects at
-	// query time, cached briefly, re-read when the mapping file changes.
-	parents := newParentResolver(chClient.QueryProjectSignals, cfg.ProjectGroupsFile)
 
 	// Project list view – groups SBOMs by project with aggregated stats.
 	// ?group_by=parent returns parents with their member projects instead
@@ -560,7 +555,12 @@ func main() {
 			writeError(w, http.StatusBadRequest, "Invalid vulnerability ID")
 			return
 		}
-		projects, err := chClient.QueryAffectedProjectsByCVE(r.Context(), vulnID)
+		f, status, msg := vulnFilter(r)
+		if status != 0 {
+			writeError(w, status, msg)
+			return
+		}
+		projects, err := chClient.QueryAffectedProjectsByCVE(r.Context(), vulnID, f)
 		if err != nil {
 			log.Printf("ERROR: affected projects for %s: %v", sanitizeLogParam(vulnID), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch affected projects")
@@ -719,6 +719,10 @@ func main() {
 		writeJSON(w, http.StatusOK, stats)
 	})
 
+	// Cluster findings (#459): /vulnerabilities pinned to one cluster.
+	mux.HandleFunc("GET /api/v1/clusters/{name}/vulnerabilities", vulnListHandler(chClient, vulnFilter,
+		pathOwner("cluster", func(f *clickhouse.VulnFilter) *[]string { return &f.Clusters })))
+
 	// Cluster SBOMs (paginated).
 	mux.HandleFunc("GET /api/v1/clusters/{name}/sboms", func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
@@ -778,6 +782,11 @@ func main() {
 		}
 		writeJSON(w, http.StatusOK, stats)
 	})
+
+	// Namespace findings (#459): /vulnerabilities pinned to one namespace;
+	// ?cluster= narrows it to the namespace of one cluster.
+	mux.HandleFunc("GET /api/v1/namespaces/{name}/vulnerabilities", vulnListHandler(chClient, vulnFilter,
+		pathOwner("namespace", func(f *clickhouse.VulnFilter) *[]string { return &f.Namespaces })))
 
 	// Namespace SBOMs (paginated).
 	mux.HandleFunc("GET /api/v1/namespaces/{name}/sboms", func(w http.ResponseWriter, r *http.Request) {

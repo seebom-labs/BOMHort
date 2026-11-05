@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
 	"github.com/seebom-labs/bomhort/backend/pkg/dto"
 )
 
@@ -32,7 +33,7 @@ type vulnerabilityRows interface {
 	Close() error
 }
 
-type vulnerabilityStreamFunc func(ctx context.Context, scope string) (vulnerabilityRows, error)
+type vulnerabilityStreamFunc func(ctx context.Context, scope string, f clickhouse.VulnFilter) (vulnerabilityRows, error)
 
 // reportFormats are the accepted ?format= values. A whitelist so a future
 // "pdf" is an addition, not a rework, and anything else is a clear 400.
@@ -82,7 +83,7 @@ func csvSafe(s string) string {
 // they are pushed to the client.
 const csvFlushEvery = 500
 
-func vulnerabilityReportHandler(stream vulnerabilityStreamFunc, now func() time.Time) http.HandlerFunc {
+func vulnerabilityReportHandler(filter vulnFilterFunc, stream vulnerabilityStreamFunc, now func() time.Time) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		format := q.Get("format")
@@ -96,7 +97,13 @@ func vulnerabilityReportHandler(stream vulnerabilityStreamFunc, now func() time.
 			return
 		}
 
-		rows, err := stream(r.Context(), scope)
+		f, status, msg := filter(r)
+		if status != 0 {
+			writeError(w, status, msg)
+			return
+		}
+
+		rows, err := stream(r.Context(), scope, f)
 		if err != nil {
 			log.Printf("ERROR: vulnerability report: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to export vulnerabilities")

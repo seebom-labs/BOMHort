@@ -300,7 +300,9 @@ func (c *Client) QuerySBOMDetail(ctx context.Context, sbomID string) (*dto.SBOMD
 // QueryAffectedProjectsByCVE finds all SBOMs affected by a specific vulnerability.
 // This checks both direct and transitive dependencies by looking up the PURL in
 // the sbom_packages arrays.
-func (c *Client) QueryAffectedProjectsByCVE(ctx context.Context, vulnID string) ([]dto.AffectedProject, error) {
+//
+// f restricts the rows to the SBOMs of an ownership slice (#459).
+func (c *Client) QueryAffectedProjectsByCVE(ctx context.Context, vulnID string, f VulnFilter) ([]dto.AffectedProject, error) {
 	// Any name of the flaw works (#412): the findings may be stored as
 	// GO-2024-3333 while the caller asks for CVE-2024-45338.
 	storedIDs, err := c.resolveVulnIDs(ctx, vulnID)
@@ -400,11 +402,17 @@ func (c *Client) QueryAffectedProjectsByCVE(ctx context.Context, vulnID string) 
 	// SBOMs to pick one element each took longer than the query.
 	// Depth: minimum over every occurrence of the PURL, 65535 (unknown) for
 	// a position beyond package_depths — the rule of depgraph.MinDepthForPURL.
+	ownerWhere, ownerArgs := ownerPredicate(f, false)
+	if ownerWhere != "" {
+		ownerWhere = " WHERE p." + ownerWhere
+	}
 	rows, err := c.Conn.Query(ctx, `
 		SELECT
 			p.sbom_id,
 			p.source_file,
 			ifNull(s.document_name, p.source_file) AS document_name,
+			ifNull(s.cluster, '') AS cluster,
+			ifNull(s.namespace, '') AS namespace,
 			hit,
 			indexOf(p.package_purls, hit) AS idx,
 			arrayElement(p.package_names, idx) AS name,
@@ -413,8 +421,8 @@ func (c *Client) QueryAffectedProjectsByCVE(ctx context.Context, vulnID string) 
 				arrayFilter((i, x) -> x = hit, arrayEnumerate(p.package_purls), p.package_purls))) AS depth
 		FROM sbom_packages AS p
 		ARRAY JOIN arrayFilter(x -> x IN (?), p.package_purls) AS hit
-		LEFT JOIN (SELECT sbom_id, document_name FROM sboms) AS s ON s.sbom_id = p.sbom_id
-	`, purls)
+		LEFT JOIN (SELECT sbom_id, document_name, cluster, namespace FROM sboms) AS s ON s.sbom_id = p.sbom_id
+	`+ownerWhere, append([]any{purls}, ownerArgs...)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query projects for %s: %w", vulnID, err)
 	}
@@ -423,10 +431,10 @@ func (c *Client) QueryAffectedProjectsByCVE(ctx context.Context, vulnID string) 
 	var items []dto.AffectedProject
 	seen := map[vexKey]bool{}
 	for rows.Next() {
-		var sbomID, sourceFile, documentName, hit, pkgName, version string
+		var sbomID, sourceFile, documentName, cluster, namespace, hit, pkgName, version string
 		var idx uint64
 		var depthRaw uint16
-		if err := rows.Scan(&sbomID, &sourceFile, &documentName, &hit, &idx, &pkgName, &version, &depthRaw); err != nil {
+		if err := rows.Scan(&sbomID, &sourceFile, &documentName, &cluster, &namespace, &hit, &idx, &pkgName, &version, &depthRaw); err != nil {
 			return nil, fmt.Errorf("failed to scan project row: %w", err)
 		}
 		// No FINAL above: skip a duplicate pre-merge row.
@@ -442,6 +450,8 @@ func (c *Client) QueryAffectedProjectsByCVE(ctx context.Context, vulnID string) 
 			SBOMID:          sbomID,
 			SourceFile:      sourceFile,
 			DocumentName:    documentName,
+			Cluster:         cluster,
+			Namespace:       namespace,
 			PURL:            hit,
 			PackageName:     pkgName,
 			Version:         version,

@@ -169,7 +169,9 @@ const instructions = `BOMHort is an SBOM and supply-chain governance platform.
 
 Use list_projects to discover what this instance knows about, get_project for
 one project as a unit, search_packages to find who ships a component,
-list_vulnerabilities for findings and get_sbom for a single document.
+list_vulnerabilities for findings, get_affected_projects for the blast radius
+of one vulnerability, get_dashboard_stats for instance totals and get_sbom for
+a single document.
 
 Two things to keep in mind when reporting numbers:
 

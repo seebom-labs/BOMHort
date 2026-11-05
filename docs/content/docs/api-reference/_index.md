@@ -194,7 +194,7 @@ Readiness probe. Pings ClickHouse to verify database connectivity. Returns `503 
 
 ### `GET /api/v1/stats/dashboard`
 
-Aggregated platform statistics for the dashboard view.
+Aggregated platform statistics for the dashboard view. Accepts the [ownership filters](#get-apiv1vulnerabilities) (`cluster`, `namespace`, `project`, `parent`, `tag`, #459); every count is then limited to the matching SBOMs, except `new_vulns_since_refresh` and `archived_repos_count`, which are always instance-wide.
 
 **Response:** `200 OK`
 ```json
@@ -731,6 +731,13 @@ Paginated list of all discovered vulnerabilities across all SBOMs. Each item car
 | `page` | uint64 | 1 | Page number |
 | `page_size` | uint64 | 50 | Items per page (max 500) |
 | `scope` | string | all | Only `root`, `direct`, `transitive` or `unknown` findings (see [Dependency scope](#dependency-scope)) |
+| `cluster` | string | — | Only findings of SBOMs in these clusters |
+| `namespace` | string | — | Only findings of SBOMs in these namespaces |
+| `project` | string | — | Only findings of these projects (the project name `GET /api/v1/projects` lists) |
+| `parent` | string | — | Only findings of the projects grouped under these parents (`GET /api/v1/projects?group_by=parent`), the parent itself included |
+| `tag` | string | — | Only findings of SBOMs carrying any of these tags |
+
+The ownership filters (#459) take comma-separated values: values within one parameter are ORed, parameters are ANDed (`?cluster=prod-eu,prod-us&tag=sandbox` = SBOMs in either cluster that carry `sandbox`). Ownership is read from the SBOM, so it matches the project and fleet views. A value longer than 200 characters is a `400`.
 
 **Response:** `200 OK` — `PaginatedResponse<VulnerabilityListItem>`
 
@@ -768,6 +775,8 @@ All projects affected by a specific vulnerability, including transitive dependen
 |-----------|------|-------------|
 | `id` | string | Vulnerability ID or any alias (CVE, GHSA, GO-*, PYSEC-*, etc.) |
 
+The [ownership filters](#get-apiv1vulnerabilities) (`cluster`, `namespace`, `project`, `parent`, `tag`, #459) narrow the result to matching SBOMs.
+
 **Response:** `200 OK`
 ```json
 [
@@ -775,6 +784,8 @@ All projects affected by a specific vulnerability, including transitive dependen
     "sbom_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     "source_file": "etcd-v3.5.12.spdx.json",
     "document_name": "etcd-v3.5.12",
+    "cluster": "prod-eu",
+    "namespace": "kube-system",
     "purl": "pkg:golang/golang.org/x/net@v0.21.0",
     "package_name": "golang.org/x/net",
     "version": "v0.21.0",
@@ -806,6 +817,13 @@ Every finding of [`GET /api/v1/vulnerabilities`](#get-apiv1vulnerabilities) as a
 |-----------|------|----------|-------------|
 | `format` | string | ✅ | `csv`. The only format today; anything else is a `400`. |
 | `scope` | string | — | Only `root`, `direct`, `transitive` or `unknown` findings (see [Dependency scope](#dependency-scope)) |
+| `cluster` | string | — | Only findings of SBOMs in these clusters |
+| `namespace` | string | — | Only findings of SBOMs in these namespaces |
+| `project` | string | — | Only findings of these projects (the project name `GET /api/v1/projects` lists) |
+| `parent` | string | — | Only findings of the projects grouped under these parents (`GET /api/v1/projects?group_by=parent`), the parent itself included |
+| `tag` | string | — | Only findings of SBOMs carrying any of these tags |
+
+The ownership filters work as on the JSON listing.
 
 A legacy `vex_filter` parameter is ignored, as on the JSON listing.
 
@@ -1126,7 +1144,7 @@ Optional query parameter:
 
 **Response:** `200 OK`, `Content-Type: image/svg+xml`
 
-> **Note on Authentication (`BADGES_PUBLIC`):**  
+> **Note on Authentication (`BADGES_PUBLIC`):**
 > When `AUTH_ENABLED=true` on the API Gateway, badges require an API key or bearer token like all other REST endpoints. Setting `BADGES_PUBLIC=true` deliberately exempts these two badge endpoints from authentication to enable embedding them in public READMEs. This is an intentional public disclosure of aggregate counts only; no package details or document names beyond the project name in the URL are exposed.
 
 ---
@@ -1596,6 +1614,10 @@ Per-cluster dashboard statistics including severity breakdown and license distri
 - `400 Bad Request` — cluster name empty or exceeds 200 characters
 - `404 Not Found` — no SBOMs exist for this cluster
 
+### `GET /api/v1/clusters/{name}/vulnerabilities`
+
+[`GET /api/v1/vulnerabilities`](#get-apiv1vulnerabilities) with `cluster` set to `{name}` (#459). Takes the same parameters; `page`, `page_size`, `scope` and the other ownership filters narrow it further. `?cluster=` on this route is a `400` (the path already names the cluster). An unknown cluster returns an empty page, not a `404`.
+
 ### `GET /api/v1/clusters/{name}/sboms`
 
 Paginated list of SBOMs for a specific cluster.
@@ -1725,6 +1747,10 @@ clusters the namespace spans.
 - `400 Bad Request` — namespace name empty or either value exceeds 200 characters
 - `404 Not Found` — no SBOMs exist for this namespace (in this scope)
 
+### `GET /api/v1/namespaces/{name}/vulnerabilities`
+
+[`GET /api/v1/vulnerabilities`](#get-apiv1vulnerabilities) with `namespace` set to `{name}` (#459). Add `?cluster=` to scope it to the namespace of one cluster; without it the namespace is aggregated across the fleet. Takes the same parameters as the listing. An unknown namespace returns an empty page.
+
 ### `GET /api/v1/namespaces/{name}/sboms`
 
 Paginated list of SBOMs in a namespace.
@@ -1851,4 +1877,3 @@ curl -s "http://localhost:8080/api/v1/packages/search?q=crypto" | jq .
       exit 1
     fi
 ```
-

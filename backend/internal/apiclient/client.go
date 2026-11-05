@@ -250,13 +250,45 @@ func (c *Client) ListProjectVulnerabilities(ctx context.Context, name, scope str
 
 // ListVulnerabilities returns one page of the instance-wide
 // GET /api/v1/vulnerabilities. scope narrows to one dependency scope
-// (root, direct, transitive, unknown); "" means all.
-func (c *Client) ListVulnerabilities(ctx context.Context, page, pageSize uint64, scope string) (*dto.PaginatedResponse[dto.VulnerabilityListItem], error) {
+// (root, direct, transitive, unknown); "" means all. owner holds the
+// ownership filters (cluster, namespace, project, parent, tag; #459), each
+// comma-separated; empty values are not sent.
+func (c *Client) ListVulnerabilities(ctx context.Context, page, pageSize uint64, scope string, owner map[string]string) (*dto.PaginatedResponse[dto.VulnerabilityListItem], error) {
+	q := ownerQuery(scopeQuery(pageQuery(page, pageSize), scope), owner)
 	var out dto.PaginatedResponse[dto.VulnerabilityListItem]
-	if err := c.get(ctx, "/api/v1/vulnerabilities", scopeQuery(pageQuery(page, pageSize), scope), &out); err != nil {
+	if err := c.get(ctx, "/api/v1/vulnerabilities", q, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
+}
+
+// DashboardStats returns GET /api/v1/stats/dashboard, narrowed by the
+// ownership filters in owner (see ListVulnerabilities).
+func (c *Client) DashboardStats(ctx context.Context, owner map[string]string) (*dto.DashboardStats, error) {
+	var out dto.DashboardStats
+	if err := c.get(ctx, "/api/v1/stats/dashboard", ownerQuery(url.Values{}, owner), &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// AffectedProjects returns GET /api/v1/vulnerabilities/{id}/affected-projects,
+// narrowed by the ownership filters in owner. id may be any alias.
+func (c *Client) AffectedProjects(ctx context.Context, id string, owner map[string]string) ([]dto.AffectedProject, error) {
+	var out []dto.AffectedProject
+	if err := c.get(ctx, "/api/v1/vulnerabilities/"+url.PathEscape(id)+"/affected-projects", ownerQuery(url.Values{}, owner), &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func ownerQuery(q url.Values, owner map[string]string) url.Values {
+	for k, v := range owner {
+		if v != "" {
+			q.Set(k, v)
+		}
+	}
+	return q
 }
 
 // SearchPackages returns GET /api/v1/packages/search.

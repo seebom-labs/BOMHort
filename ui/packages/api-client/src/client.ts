@@ -1,4 +1,5 @@
 import type {
+  OwnerFilter,
   AffectedProject,
   ArchivedPackageInfo,
   ArchivedRepoGroup,
@@ -91,8 +92,8 @@ export class BomhortApiClient {
     return (await res.json()) as T;
   }
 
-  getDashboardStats(signal?: AbortSignal): Promise<DashboardStats> {
-    return this.get('/stats/dashboard', signal);
+  getDashboardStats(owner: OwnerFilter = {}, signal?: AbortSignal): Promise<DashboardStats> {
+    return this.get(`/stats/dashboard${query({ ...owner })}`, signal);
   }
 
   getSboms(page = 1, pageSize = 50, search = '', project = '', signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>> {
@@ -123,16 +124,16 @@ export class BomhortApiClient {
     return `${this.baseUrl}/sboms/${sbomId}/download`;
   }
 
-  vulnerabilityReportUrl(scope = ''): string {
-    return `${this.baseUrl}/reports/vulnerabilities${query({ format: 'csv', scope })}`;
+  vulnerabilityReportUrl(scope = '', owner: OwnerFilter = {}): string {
+    return `${this.baseUrl}/reports/vulnerabilities${query({ format: 'csv', scope, ...owner })}`;
   }
 
-  getVulnerabilities(page = 1, pageSize = 50, scope = '', signal?: AbortSignal): Promise<PaginatedResponse<VulnerabilityListItem>> {
-    return this.get(`/vulnerabilities${query({ page, page_size: pageSize, scope })}`, signal);
+  getVulnerabilities(page = 1, pageSize = 50, scope = '', owner: OwnerFilter = {}, signal?: AbortSignal): Promise<PaginatedResponse<VulnerabilityListItem>> {
+    return this.get(`/vulnerabilities${query({ page, page_size: pageSize, scope, ...owner })}`, signal);
   }
 
-  getAffectedProjectsByCVE(vulnId: string, signal?: AbortSignal): Promise<AffectedProject[]> {
-    return this.get(`/vulnerabilities/${vulnId}/affected-projects`, signal);
+  getAffectedProjectsByCVE(vulnId: string, owner: OwnerFilter = {}, signal?: AbortSignal): Promise<AffectedProject[]> {
+    return this.get(`/vulnerabilities/${vulnId}/affected-projects${query({ ...owner })}`, signal);
   }
 
   getLicenseCompliance(license?: string, signal?: AbortSignal): Promise<LicenseComplianceItem[]> {

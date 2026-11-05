@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -96,18 +97,20 @@ func routes(t *testing.T, m map[string]string) http.Handler {
 	return mux
 }
 
-// The tool surface is contract: 1.0 freezes these five names and their
+// The tool surface is contract: 1.0 freezes these seven names and their
 // read-only annotations. A sixth tool, or a tool that loses ReadOnlyHint,
 // should fail here before it reaches a consumer.
 func TestToolSurfaceIsReadOnlyAndComplete(t *testing.T) {
 	cs := newSession(t, routes(t, nil))
 
 	want := map[string]bool{
-		"list_projects":        false,
-		"get_project":          false,
-		"search_packages":      false,
-		"list_vulnerabilities": false,
-		"get_sbom":             false,
+		"list_projects":         false,
+		"get_project":           false,
+		"search_packages":       false,
+		"list_vulnerabilities":  false,
+		"get_sbom":              false,
+		"get_dashboard_stats":   false,
+		"get_affected_projects": false,
 	}
 
 	for tool, err := range cs.Tools(context.Background(), nil) {
@@ -449,5 +452,64 @@ func TestPaginate(t *testing.T) {
 				t.Fatalf("paginate(page=%d,size=%d) = %v, want %v", tc.page, tc.size, got, tc.want)
 			}
 		}
+	}
+}
+
+func TestListVulnerabilitiesOwnerFilters(t *testing.T) {
+	var got url.Values
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/vulnerabilities", func(w http.ResponseWriter, r *http.Request) {
+		got = r.URL.Query()
+		_, _ = w.Write([]byte(`{"data":[],"total":0,"page":1,"page_size":25}`))
+	})
+	cs := newSession(t, mux)
+
+	var out listVulnerabilitiesOutput
+	decodeOutput(t, call(t, cs, "list_vulnerabilities", map[string]any{"cluster": "prod-eu,prod-us", "tag": "sandbox"}), &out)
+	if got.Get("cluster") != "prod-eu,prod-us" || got.Get("tag") != "sandbox" || got.Has("namespace") || got.Has("parent") {
+		t.Errorf("query = %v", got)
+	}
+
+	got = nil
+	if res := call(t, cs, "list_vulnerabilities", map[string]any{"project": "p", "cluster": "c"}); !res.IsError {
+		t.Error("project + cluster accepted, want tool error")
+	}
+	if got != nil {
+		t.Errorf("rejected call reached the API: %v", got)
+	}
+}
+
+func TestDashboardAndAffectedProjectsOwnerFilters(t *testing.T) {
+	got := map[string]url.Values{}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/stats/dashboard", func(w http.ResponseWriter, r *http.Request) {
+		got["dash"] = r.URL.Query()
+		_, _ = w.Write([]byte(`{"total_sboms":3}`))
+	})
+	mux.HandleFunc("/api/v1/vulnerabilities/CVE-2024-1/affected-projects", func(w http.ResponseWriter, r *http.Request) {
+		got["aff"] = r.URL.Query()
+		_, _ = w.Write([]byte(`[{"sbom_id":"x","cluster":"prod-eu","namespace":"apps"}]`))
+	})
+	cs := newSession(t, mux)
+
+	var dash dashboardStatsOutput
+	decodeOutput(t, call(t, cs, "get_dashboard_stats", map[string]any{"cluster": "prod-eu", "project": "p"}), &dash)
+	if q := got["dash"]; q.Get("cluster") != "prod-eu" || q.Get("project") != "p" || q.Has("tag") {
+		t.Errorf("dashboard query = %v", q)
+	}
+	if dash.Stats.TotalSBOMs != 3 || dash.Stats.LicenseBreakdown == nil {
+		t.Errorf("dashboard = %+v", dash.Stats)
+	}
+
+	var aff affectedProjectsOutput
+	decodeOutput(t, call(t, cs, "get_affected_projects", map[string]any{"vuln_id": "CVE-2024-1", "namespace": "apps"}), &aff)
+	if q := got["aff"]; q.Get("namespace") != "apps" || q.Has("cluster") {
+		t.Errorf("affected query = %v", q)
+	}
+	if len(aff.Affected) != 1 || aff.Affected[0].Cluster != "prod-eu" {
+		t.Errorf("affected = %+v", aff.Affected)
+	}
+	if res := call(t, cs, "get_affected_projects", map[string]any{}); !res.IsError {
+		t.Error("missing vuln_id accepted")
 	}
 }

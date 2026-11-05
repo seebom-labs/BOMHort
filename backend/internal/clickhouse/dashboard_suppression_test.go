@@ -23,7 +23,7 @@ import (
 // construct ever comes back.
 func TestDashboardSuppressionCountExecutes(t *testing.T) {
 	c := testClient(t)
-	stats, err := c.QueryDashboardStats(context.Background())
+	stats, err := c.QueryDashboardStats(context.Background(), VulnFilter{})
 	if err != nil {
 		t.Fatalf("dashboard stats query broken: %v", err)
 	}

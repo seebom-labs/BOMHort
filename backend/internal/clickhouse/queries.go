@@ -12,29 +12,33 @@ import (
 )
 
 // QueryDashboardStats fetches aggregated dashboard statistics.
-func (c *Client) QueryDashboardStats(ctx context.Context) (*dto.DashboardStats, error) {
+func (c *Client) QueryDashboardStats(ctx context.Context, f VulnFilter) (*dto.DashboardStats, error) {
+	// Every count below is restricted to the SBOMs matching f (#459); a zero
+	// filter adds no WHERE, so the unscoped dashboard is unchanged.
+	w, args := ownerWhere(f, false)
+	vw, vargs := ownerWhere(f, true)
 	stats := &dto.DashboardStats{
 		LicenseBreakdown: make(map[string]uint64),
 	}
 
 	// Total SBOMs
-	if err := c.Conn.QueryRow(ctx, "SELECT count() FROM sboms FINAL").Scan(&stats.TotalSBOMs); err != nil {
+	if err := c.Conn.QueryRow(ctx, "SELECT count() FROM sboms FINAL"+w, args...).Scan(&stats.TotalSBOMs); err != nil {
 		return nil, fmt.Errorf("failed to query total sboms: %w", err)
 	}
 
 	// Total Packages (sum of array lengths)
 	if err := c.Conn.QueryRow(ctx,
-		"SELECT sum(length(package_names)) FROM sbom_packages FINAL").Scan(&stats.TotalPackages); err != nil {
+		"SELECT sum(length(package_names)) FROM sbom_packages FINAL"+w, args...).Scan(&stats.TotalPackages); err != nil {
 		return nil, fmt.Errorf("failed to query total packages: %w", err)
 	}
 
 	// Vulnerability counts by severity
-	if err := c.Conn.QueryRow(ctx, "SELECT count() FROM vulnerabilities FINAL").Scan(&stats.TotalVulnerabilities); err != nil {
+	if err := c.Conn.QueryRow(ctx, "SELECT count() FROM vulnerabilities FINAL"+w, args...).Scan(&stats.TotalVulnerabilities); err != nil {
 		return nil, fmt.Errorf("failed to query total vulnerabilities: %w", err)
 	}
 
 	rows, err := c.Conn.Query(ctx,
-		"SELECT severity, "+scopeExpr("dependency_depth")+" AS scope, count() FROM vulnerabilities FINAL GROUP BY severity, scope")
+		"SELECT severity, "+scopeExpr("dependency_depth")+" AS scope, count() FROM vulnerabilities FINAL"+w+" GROUP BY severity, scope", args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query severity breakdown: %w", err)
 	}
@@ -45,7 +49,7 @@ func (c *Client) QueryDashboardStats(ctx context.Context) (*dto.DashboardStats, 
 
 	// License breakdown
 	licRows, err := c.Conn.Query(ctx,
-		"SELECT category, sum(package_count) AS cnt FROM license_compliance FINAL GROUP BY category")
+		"SELECT category, sum(package_count) AS cnt FROM license_compliance FINAL"+w+" GROUP BY category", args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query license breakdown: %w", err)
 	}
@@ -62,7 +66,7 @@ func (c *Client) QueryDashboardStats(ctx context.Context) (*dto.DashboardStats, 
 
 	// Count exempted packages (packages covered by blanket or per-package exceptions).
 	if err := c.Conn.QueryRow(ctx,
-		"SELECT sum(length(exempted_packages)) FROM license_compliance FINAL").Scan(&stats.ExemptedPackages); err != nil {
+		"SELECT sum(length(exempted_packages)) FROM license_compliance FINAL"+w, args...).Scan(&stats.ExemptedPackages); err != nil {
 		return nil, fmt.Errorf("failed to count exempted packages: %w", err)
 	}
 
@@ -75,7 +79,7 @@ func (c *Client) QueryDashboardStats(ctx context.Context) (*dto.DashboardStats, 
 
 	// VEX: count suppressed vulnerabilities (not_affected) and total statements.
 	if err := c.Conn.QueryRow(ctx,
-		"SELECT count() FROM vex_statements FINAL").Scan(&stats.TotalVEXStatements); err != nil {
+		"SELECT count() FROM vex_statements FINAL"+vw, vargs...).Scan(&stats.TotalVEXStatements); err != nil {
 		return nil, fmt.Errorf("failed to count vex statements: %w", err)
 	}
 
@@ -111,7 +115,7 @@ func (c *Client) QueryDashboardStats(ctx context.Context) (*dto.DashboardStats, 
 			FROM (
 				SELECT sbom_id, vuln_id, purl,
 					arrayJoin(arrayConcat([vuln_id], aliases)) AS match_id
-				FROM vulnerabilities FINAL
+				FROM vulnerabilities FINAL`+w+`
 			) AS v
 			INNER JOIN (
 				SELECT sbom_id, vuln_id, product_purl, status, vex_timestamp
@@ -123,7 +127,7 @@ func (c *Client) QueryDashboardStats(ctx context.Context) (*dto.DashboardStats, 
 			GROUP BY v.sbom_id, v.vuln_id, v.purl
 		)
 		WHERE winning_status = 'not_affected'
-	`).Scan(&suppressedByVEX); err != nil {
+	`, args...).Scan(&suppressedByVEX); err != nil {
 		return nil, fmt.Errorf("failed to count vex-suppressed vulnerabilities: %w", err)
 	}
 
@@ -274,6 +278,75 @@ func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, 
 // the same rows. The ORDER BY ends in the row's identity: without the
 // tie-breakers, findings with equal severity and discovered_at could swap
 // places between two LIMIT/OFFSET pages and appear twice or not at all.
+// VulnFilter narrows the vulnerability listing to the SBOMs of an ownership
+// slice (#459). Values within one field are ORed, fields are ANDed; an empty
+// field does not filter. Ownership is read from sboms, not from the finding
+// row, so cluster, namespace, project and tags follow the same identity rule
+// as the project and fleet views.
+type VulnFilter struct {
+	Clusters, Namespaces, Projects, Tags []string
+	// ParentMembers is ?parent= resolved to its projects by the caller;
+	// parents are computed in Go, not stored.
+	ParentMembers []string
+}
+
+// ownerPredicate restricts sbom_id to the SBOMs matching f, or returns ""
+// when f filters nothing. asString is for vex_statements, which stores
+// sbom_id as String.
+func ownerPredicate(f VulnFilter, asString bool) (string, []any) {
+	var owner []string
+	var args []any
+	for _, c := range []struct {
+		vals []string
+		pred string
+	}{
+		{f.Clusters, "s.cluster IN (?)"},
+		{f.Namespaces, "s.namespace IN (?)"},
+		{f.Projects, "s.project_name IN (?)"},
+		{f.ParentMembers, "s.project_name IN (?)"},
+		{f.Tags, "hasAny(s.tags, ?)"},
+	} {
+		if len(c.vals) > 0 {
+			owner = append(owner, c.pred)
+			args = append(args, c.vals)
+		}
+	}
+	if len(owner) == 0 {
+		return "", nil
+	}
+	id := "s.sbom_id"
+	if asString {
+		id = "toString(s.sbom_id)"
+	}
+	return "sbom_id IN (SELECT " + id + " FROM " + projectSBOMs + " AS s WHERE " + strings.Join(owner, " AND ") + ")", args
+}
+
+// ownerWhere is ownerPredicate as a WHERE clause ("" when unfiltered).
+func ownerWhere(f VulnFilter, asString bool) (string, []any) {
+	pred, args := ownerPredicate(f, asString)
+	if pred == "" {
+		return "", nil
+	}
+	return " WHERE " + pred, args
+}
+
+// vulnWhere combines the scope and ownership predicates into a WHERE clause
+// over vulnerabilities, with its placeholder args.
+func vulnWhere(scope string, f VulnFilter) (string, []any) {
+	var preds []string
+	if pred := depthPredicate(scope, "dependency_depth"); pred != "" {
+		preds = append(preds, pred)
+	}
+	owner, args := ownerPredicate(f, false)
+	if owner != "" {
+		preds = append(preds, owner)
+	}
+	if len(preds) == 0 {
+		return "", nil
+	}
+	return " WHERE " + strings.Join(preds, " AND "), args
+}
+
 func vulnerabilityListSQL(scopeWhere string) string {
 	return `
 		SELECT
@@ -336,12 +409,9 @@ type VulnerabilityCursor struct {
 // pagination and returns a cursor over it. The query is sent before this
 // returns, so a failing query is reported here — before a caller has
 // written anything to its client.
-func (c *Client) StreamVulnerabilities(ctx context.Context, scope string) (*VulnerabilityCursor, error) {
-	scopeWhere := ""
-	if pred := depthPredicate(scope, "dependency_depth"); pred != "" {
-		scopeWhere = " WHERE " + pred
-	}
-	rows, err := c.Conn.Query(ctx, vulnerabilityListSQL(scopeWhere))
+func (c *Client) StreamVulnerabilities(ctx context.Context, scope string, f VulnFilter) (*VulnerabilityCursor, error) {
+	where, args := vulnWhere(scope, f)
+	rows, err := c.Conn.Query(ctx, vulnerabilityListSQL(where), args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query vulnerabilities: %w", err)
 	}
@@ -385,28 +455,26 @@ func (cur *VulnerabilityCursor) Close() error { return cur.rows.Close() }
 // naming a product with no subcomponents ('*') covers every component of it.
 //
 // scope ("" or a depgraph scope label) restricts the listing to findings
-// whose package is pulled in that way (direct, transitive, …).
-func (c *Client) QueryVulnerabilities(ctx context.Context, page, pageSize uint64, scope string) (*dto.PaginatedResponse[dto.VulnerabilityListItem], error) {
+// whose package is pulled in that way (direct, transitive, …); f restricts
+// it to an ownership slice (#459).
+func (c *Client) QueryVulnerabilities(ctx context.Context, page, pageSize uint64, scope string, f VulnFilter) (*dto.PaginatedResponse[dto.VulnerabilityListItem], error) {
 	if page == 0 {
 		page = 1
 	}
 	offset := (page - 1) * pageSize
 
-	scopeWhere := ""
-	if pred := depthPredicate(scope, "dependency_depth"); pred != "" {
-		scopeWhere = " WHERE " + pred
-	}
+	scopeWhere, args := vulnWhere(scope, f)
 
 	var total uint64
 	if err := c.Conn.QueryRow(ctx, `
 		SELECT count() FROM (SELECT * FROM vulnerabilities FINAL)`+scopeWhere+`
-	`).Scan(&total); err != nil {
+	`, args...).Scan(&total); err != nil {
 		return nil, fmt.Errorf("failed to count vulnerabilities: %w", err)
 	}
 
 	rows, err := c.Conn.Query(ctx, vulnerabilityListSQL(scopeWhere)+`
 		LIMIT ? OFFSET ?
-	`, pageSize, offset)
+	`, append(args, pageSize, offset)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query vulnerabilities: %w", err)
 	}

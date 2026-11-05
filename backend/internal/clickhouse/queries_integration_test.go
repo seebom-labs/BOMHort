@@ -100,7 +100,7 @@ func TestQueriesExecute(t *testing.T) {
 		name string
 		run  func() error
 	}{
-		{"QueryDashboardStats", func() error { _, err := c.QueryDashboardStats(ctx); return err }},
+		{"QueryDashboardStats", func() error { _, err := c.QueryDashboardStats(ctx, VulnFilter{}); return err }},
 		{"QuerySBOMs", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "", ""); return err }},
 		{"QuerySBOMs/search", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "test", ""); return err }},
 		{"QuerySBOMs/project", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "", "payment-api"); return err }},
@@ -122,7 +122,7 @@ func TestQueriesExecute(t *testing.T) {
 		}},
 		{"packageScopesFor", func() error { _, err := c.packageScopesFor(ctx, map[string][]string{someID: {"x"}}); return err }},
 		{"violationScopesFor", func() error { _, err := c.violationScopesFor(ctx, []string{someID}); return err }},
-		{"QueryVulnerabilities", func() error { _, err := c.QueryVulnerabilities(ctx, 1, 10, ""); return err }},
+		{"QueryVulnerabilities", func() error { _, err := c.QueryVulnerabilities(ctx, 1, 10, "", VulnFilter{}); return err }},
 		{"QueryVEXStatements", func() error { _, err := c.QueryVEXStatements(ctx, 1, 10); return err }},
 		// Package-wide aggregations: read sbom_packages alone (see packageProjectKey).
 		{"QueryDependencyStats", func() error { _, err := c.QueryDependencyStats(ctx, 10); return err }},
@@ -130,7 +130,7 @@ func TestQueriesExecute(t *testing.T) {
 		{"QueryVersionSkew/search", func() error { _, err := c.QueryVersionSkew(ctx, 1, 10, "yaml"); return err }},
 		{"QueryDependencySearch", func() error { _, err := c.QueryDependencySearch(ctx, "yaml", 1, 10); return err }},
 		{"QueryPackageDetail", func() error { _, err := c.QueryPackageDetail(ctx, "gopkg.in/yaml.v3", 1, 10); return err }},
-		{"QueryAffectedProjectsByCVE", func() error { _, err := c.QueryAffectedProjectsByCVE(ctx, "CVE-2024-45338"); return err }},
+		{"QueryAffectedProjectsByCVE", func() error { _, err := c.QueryAffectedProjectsByCVE(ctx, "CVE-2024-45338", VulnFilter{}); return err }},
 		{"QueryGlobalSearch", func() error { _, err := c.QueryGlobalSearch(ctx, "yaml", 5); return err }},
 		{"QueryClusters", func() error { _, err := c.QueryClusters(ctx); return err }},
 		{"QueryClusterSBOMs", func() error { _, err := c.QueryClusterSBOMs(ctx, "test", 1, 10); return err }},

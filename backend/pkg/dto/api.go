@@ -296,11 +296,14 @@ type AffectedProject struct {
 	SBOMID       string `json:"sbom_id"`
 	SourceFile   string `json:"source_file"`
 	DocumentName string `json:"document_name"`
-	PURL         string `json:"purl"`
-	PackageName  string `json:"package_name"`
-	Version      string `json:"version"`
-	Severity     string `json:"severity"`
-	VEXStatus    string `json:"vex_status,omitempty"`
+	// Cluster and Namespace keep the same project in two clusters apart (#459).
+	Cluster     string `json:"cluster"`
+	Namespace   string `json:"namespace"`
+	PURL        string `json:"purl"`
+	PackageName string `json:"package_name"`
+	Version     string `json:"version"`
+	Severity    string `json:"severity"`
+	VEXStatus   string `json:"vex_status,omitempty"`
 	// IsDirect is DependencyScope == "direct"; kept for existing clients.
 	IsDirect        bool    `json:"is_direct"`
 	DependencyScope string  `json:"dependency_scope"`
