@@ -49,17 +49,18 @@ func (c *Client) UpdateSBOMSource(ctx context.Context, sbomID, sourceRepo, sourc
 // ErrSBOMNotFound signals a PATCH against an unknown sbom_id.
 var ErrSBOMNotFound = fmt.Errorf("sbom not found")
 
-// QuerySBOMSource reads the current source attribution of one SBOM, so a
-// partial PATCH can preserve whichever field the caller did not send.
-func (c *Client) QuerySBOMSource(ctx context.Context, sbomID string) (repo, ref string, err error) {
+// QuerySBOMSource reads the current source attribution and ownership of one SBOM, so a
+// partial PATCH can preserve whichever field the caller did not send, and authorization
+// can verify the target against credential scope (#332, #456).
+func (c *Client) QuerySBOMSource(ctx context.Context, sbomID string) (repo, ref, origin, cluster, namespace, project string, err error) {
 	err = c.Conn.QueryRow(ctx,
-		"SELECT source_repo, source_ref FROM sboms FINAL WHERE sbom_id = ? LIMIT 1", sbomID,
-	).Scan(&repo, &ref)
+		"SELECT source_repo, source_ref, origin, cluster, namespace, project FROM sboms FINAL WHERE sbom_id = ? LIMIT 1", sbomID,
+	).Scan(&repo, &ref, &origin, &cluster, &namespace, &project)
 	if err != nil {
 		if isNoRows(err) {
-			return "", "", ErrSBOMNotFound
+			return "", "", "", "", "", "", ErrSBOMNotFound
 		}
-		return "", "", fmt.Errorf("failed to read source for sbom %s: %w", sbomID, err)
+		return "", "", "", "", "", "", fmt.Errorf("failed to read source for sbom %s: %w", sbomID, err)
 	}
-	return repo, ref, nil
+	return repo, ref, origin, cluster, namespace, project, nil
 }

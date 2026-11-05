@@ -78,6 +78,8 @@ type SBOMListItem struct {
 	Namespace string `json:"namespace,omitempty"`
 	Project   string `json:"project,omitempty"`
 	Origin    string `json:"origin,omitempty"`
+	// UploadedBy (#456) records which named API key uploaded the document.
+	UploadedBy string `json:"uploaded_by,omitempty"`
 	// QualityScore (0-100) measures document completeness (#537).
 	QualityScore uint8 `json:"quality_score"`
 	// QualityFlags lists reasons for quality deductions (#537).
@@ -314,6 +316,8 @@ type SBOMDetail struct {
 	Namespace       string `json:"namespace,omitempty"`
 	Project         string `json:"project,omitempty"`
 	Origin          string `json:"origin,omitempty"`
+	// UploadedBy (#456) records which named API key uploaded the document.
+	UploadedBy    string `json:"uploaded_by,omitempty"`
 	CriticalVulns   uint64 `json:"critical_vulns"`
 	HighVulns       uint64 `json:"high_vulns"`
 	MediumVulns     uint64 `json:"medium_vulns"`

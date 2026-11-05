@@ -30,6 +30,14 @@ type fakeUploadStore struct {
 	enqueuedJobs  []models.IngestionJob
 	imageOwner    *clickhouse.ImageSBOMRef
 	pendingJob    *models.IngestionJob
+	targetSBOMs   map[string]*clickhouse.ImageSBOMRef
+}
+
+func (f *fakeUploadStore) FindSBOMByID(ctx context.Context, sbomID string) (*clickhouse.ImageSBOMRef, error) {
+	if f.targetSBOMs != nil {
+		return f.targetSBOMs[sbomID], nil
+	}
+	return f.imageOwner, nil
 }
 
 func (f *fakeUploadStore) FindImageByDigest(ctx context.Context, digest string) (*clickhouse.ImageSBOMRef, error) {

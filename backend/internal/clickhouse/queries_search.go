@@ -291,7 +291,7 @@ func (c *Client) QuerySBOMDetail(ctx context.Context, sbomID string) (*dto.SBOMD
 		SELECT
 			s.sbom_id, s.source_file, s.spdx_version, s.document_name, s.document_version, s.ingested_at,
 			s.source_repo, s.source_ref, s.image_ref, s.image_digest,
-			s.cluster, s.namespace, s.project, s.origin,
+			s.cluster, s.namespace, s.project, s.origin, s.uploaded_by,
 			ifNull(p.pkg_count, 0) AS package_count,
 			s.quality_score, s.quality_flags
 		FROM (SELECT * FROM sboms FINAL) AS s
@@ -305,7 +305,7 @@ func (c *Client) QuerySBOMDetail(ctx context.Context, sbomID string) (*dto.SBOMD
 		&detail.SBOMID, &detail.SourceFile, &detail.SPDXVersion,
 		&detail.DocumentName, &detail.DocumentVersion, &ingestedAt,
 		&detail.SourceRepo, &detail.SourceRef, &detail.ImageRef, &detail.ImageDigest,
-		&detail.Cluster, &detail.Namespace, &detail.Project, &detail.Origin,
+		&detail.Cluster, &detail.Namespace, &detail.Project, &detail.Origin, &detail.UploadedBy,
 		&detail.PackageCount,
 		&detail.QualityScore, &detail.QualityFlags,
 	)
