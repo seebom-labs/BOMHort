@@ -64,7 +64,8 @@ data:
         # Using a variable forces nginx to re-resolve DNS at runtime instead of only at startup.
         # When apiGateway.auth.enabled=true, the UI is authenticated via the
         # SERVICE_TOKEN injected here — the token never reaches the browser.
-        location /api/ {
+        # Uses ^~ so regex static-asset rules (like .svg) don't intercept /api/ calls.
+        location ^~ /api/ {
             set $backend "http://{{ .Release.Name }}-api-gateway.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.apiGateway.service.port }}";
             proxy_pass $backend;
             proxy_set_header Host $host;

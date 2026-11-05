@@ -66,6 +66,21 @@ class UIProxyAuthTest(unittest.TestCase):
     def test_image_template_injects_token_on_reads_only(self):
         self.assert_read_only_injection(IMAGE_TEMPLATE.read_text())
 
+    def test_badges_public_defaults_to_false(self):
+        result = subprocess.run(
+            ["helm", "template", "test", str(CHART), "--show-only", "templates/configmap.yaml"],
+            cwd=ROOT, text=True, capture_output=True, check=True,
+        )
+        self.assertIn('BADGES_PUBLIC: "false"', result.stdout)
+
+    def test_badges_public_can_be_enabled(self):
+        result = subprocess.run(
+            ["helm", "template", "test", str(CHART), "--show-only", "templates/configmap.yaml",
+             "--set", "apiGateway.auth.badgesPublic=true"],
+            cwd=ROOT, text=True, capture_output=True, check=True,
+        )
+        self.assertIn('BADGES_PUBLIC: "true"', result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
