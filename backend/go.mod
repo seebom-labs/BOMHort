@@ -4,7 +4,7 @@ go 1.26.9
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.49.0
-	github.com/goccy/go-json v0.11.2
+	github.com/goccy/go-json v0.12.0
 	github.com/google/uuid v1.6.0
 	github.com/minio/minio-go/v7 v7.4.1
 	github.com/modelcontextprotocol/go-sdk v1.8.0
