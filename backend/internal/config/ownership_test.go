@@ -155,6 +155,34 @@ func TestLoad_InvalidBucketOriginFails(t *testing.T) {
 	}
 }
 
+func TestLoad_PerBucketOriginTrimsWhitespace(t *testing.T) {
+	setEnvs(t, map[string]string{
+		"S3_BUCKETS": `[{"name":"sboms","origin":"  ci  "}]`,
+	})
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	if got := cfg.S3Buckets[0].Origin; got != "ci" {
+		t.Errorf("Bucket origin = %q, want 'ci'", got)
+	}
+}
+
+func TestLoad_OriginFromEnvTrimsWhitespace(t *testing.T) {
+	setEnvs(t, map[string]string{
+		"ORIGIN": "  cluster-scan  ",
+	})
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+	if got := cfg.Origin; got != "cluster-scan" {
+		t.Errorf("Origin = %q, want 'cluster-scan'", got)
+	}
+}
+
 func TestBucketIngestLayout(t *testing.T) {
 	setEnvs(t, map[string]string{
 		"INGEST_PATH_LAYOUT": "cluster/namespace",
