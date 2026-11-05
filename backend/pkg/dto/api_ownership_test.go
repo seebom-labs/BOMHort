@@ -18,6 +18,7 @@ func TestSBOMListItem_OwnershipFieldsSerialized(t *testing.T) {
 		Cluster:      "prod-eu",
 		Namespace:    "payments",
 		Project:      "payment-service",
+		Origin:       "cluster-scan",
 	}
 
 	b, err := json.Marshal(item)
@@ -30,6 +31,7 @@ func TestSBOMListItem_OwnershipFieldsSerialized(t *testing.T) {
 		`"cluster":"prod-eu"`,
 		`"namespace":"payments"`,
 		`"project":"payment-service"`,
+		`"origin":"cluster-scan"`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %s in %s", want, out)
@@ -49,7 +51,7 @@ func TestSBOMListItem_OwnershipFieldsOmittedWhenUnset(t *testing.T) {
 	}
 	out := string(b)
 
-	for _, unwanted := range []string{"cluster", "namespace", "project", "source_repo", "source_ref"} {
+	for _, unwanted := range []string{"cluster", "namespace", "project", "origin", "source_repo", "source_ref"} {
 		if strings.Contains(out, `"`+unwanted+`"`) {
 			t.Errorf("unset %q must be omitted, got %s", unwanted, out)
 		}

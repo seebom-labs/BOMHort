@@ -96,7 +96,6 @@ func vulnerabilityReportHandler(filter vulnFilterFunc, stream vulnerabilityStrea
 			writeError(w, http.StatusBadRequest, "Invalid scope (expected direct, transitive, root or unknown)")
 			return
 		}
-
 		f, status, msg := filter(r)
 		if status != 0 {
 			writeError(w, status, msg)

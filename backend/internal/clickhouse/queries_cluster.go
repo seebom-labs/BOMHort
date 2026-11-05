@@ -140,7 +140,7 @@ func (c *Client) QueryClusterStats(ctx context.Context, cluster string) (*dto.Cl
 }
 
 // QueryClusterSBOMs returns a paginated list of SBOMs for a specific cluster.
-func (c *Client) QueryClusterSBOMs(ctx context.Context, cluster string, page, pageSize uint64) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
+func (c *Client) QueryClusterSBOMs(ctx context.Context, cluster string, page, pageSize uint64, origin string) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
 	if page == 0 {
 		page = 1
 	}
@@ -149,7 +149,7 @@ func (c *Client) QueryClusterSBOMs(ctx context.Context, cluster string, page, pa
 	// Total count for this cluster.
 	var total uint64
 	if err := c.Conn.QueryRow(ctx,
-		"SELECT count() FROM sboms FINAL WHERE cluster = ?", cluster).Scan(&total); err != nil {
+		"SELECT count() FROM sboms FINAL WHERE cluster = ? AND (? = '' OR origin = ?)", cluster, origin, origin).Scan(&total); err != nil {
 		return nil, fmt.Errorf("failed to count cluster sboms: %w", err)
 	}
 
@@ -166,7 +166,8 @@ func (c *Client) QueryClusterSBOMs(ctx context.Context, cluster string, page, pa
 			s.source_ref,
 			s.cluster,
 			s.namespace,
-			s.project
+			s.project,
+			s.origin
 		FROM (SELECT * FROM sboms FINAL) AS s
 		LEFT JOIN (
 			SELECT sbom_id, sum(length(package_names)) AS pkg_count
@@ -180,10 +181,10 @@ func (c *Client) QueryClusterSBOMs(ctx context.Context, cluster string, page, pa
 			WHERE cluster = ?
 			GROUP BY sbom_id
 		) v ON s.sbom_id = v.sbom_id
-		WHERE s.cluster = ?
+		WHERE s.cluster = ? AND (? = '' OR s.origin = ?)
 		ORDER BY s.ingested_at DESC
 		LIMIT ? OFFSET ?
-	`, cluster, cluster, cluster, pageSize, offset)
+	`, cluster, cluster, cluster, origin, origin, pageSize, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query cluster sboms: %w", err)
 	}
@@ -196,7 +197,7 @@ func (c *Client) QueryClusterSBOMs(ctx context.Context, cluster string, page, pa
 		if err := rows.Scan(&item.SBOMID, &item.SourceFile, &item.SPDXVersion,
 			&item.DocumentName, &item.PackageCount, &item.VulnCount, &ingestedAt,
 			&item.SourceRepo, &item.SourceRef,
-			&item.Cluster, &item.Namespace, &item.Project); err != nil {
+			&item.Cluster, &item.Namespace, &item.Project, &item.Origin); err != nil {
 			return nil, fmt.Errorf("failed to scan cluster sbom row: %w", err)
 		}
 		item.IngestedAt = ingestedAt.Format(time.RFC3339)

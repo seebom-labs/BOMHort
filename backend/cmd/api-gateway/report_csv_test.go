@@ -118,6 +118,7 @@ func TestVulnerabilityReportRejectsBadParams(t *testing.T) {
 		"/api/v1/reports/vulnerabilities?format=pdf",
 		"/api/v1/reports/vulnerabilities?format=CSV",
 		"/api/v1/reports/vulnerabilities?format=csv&scope=indirect",
+		"/api/v1/reports/vulnerabilities?format=csv&origin=invalid",
 	} {
 		called := false
 		h := vulnerabilityReportHandler(noParents, func(context.Context, string, clickhouse.VulnFilter) (vulnerabilityRows, error) {

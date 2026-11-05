@@ -28,6 +28,7 @@ import (
 	"github.com/seebom-labs/bomhort/backend/internal/depgraph"
 	"github.com/seebom-labs/bomhort/backend/internal/docstore"
 	"github.com/seebom-labs/bomhort/backend/internal/license"
+	"github.com/seebom-labs/bomhort/backend/internal/origin"
 	"github.com/seebom-labs/bomhort/backend/internal/repo"
 	"github.com/seebom-labs/bomhort/backend/internal/rulesource"
 	s3client "github.com/seebom-labs/bomhort/backend/internal/s3"
@@ -185,8 +186,13 @@ func main() {
 		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
 		search := sanitizeSearchTerm(r.URL.Query().Get("search"))
 		project := sanitizeProjectName(r.URL.Query().Get("project"))
+		originVal, ok := parseOrigin(r.URL.Query().Get("origin"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Invalid origin (expected cluster-scan, ci, registry, vendor, manual)")
+			return
+		}
 
-		resp, err := chClient.QuerySBOMs(r.Context(), page, pageSize, search, project)
+		resp, err := chClient.QuerySBOMs(r.Context(), page, pageSize, search, project, originVal)
 		if err != nil {
 			log.Printf("ERROR: list sboms: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch SBOMs")
@@ -203,8 +209,8 @@ func main() {
 	// ?scope=direct|transitive|root|unknown keeps only findings whose package
 	// is pulled in that way (migration 025).
 	//
-	// ?cluster=, ?namespace=, ?project=, ?parent= and ?tag= narrow it to an
-	// ownership slice (#459), see vuln_filter.go.
+	// ?cluster=, ?namespace=, ?project=, ?parent=, ?tag= and ?origin= narrow it to an
+	// ownership/origin slice (#459, #455), see vuln_filter.go.
 	mux.HandleFunc("GET /api/v1/vulnerabilities", vulnListHandler(chClient, vulnFilter, nil))
 
 	// CSV export of the same listing (#266); streamed, see report_csv.go.
@@ -216,7 +222,9 @@ func main() {
 				return nil, err
 			}
 			return cur, nil
-		}, time.Now))
+		},
+		time.Now,
+	))
 
 	// License compliance overview.
 	// ?license=<id> returns that one license with its affected_sboms; the
@@ -395,8 +403,14 @@ func main() {
 			}
 		}
 
+		originVal, ok := parseOrigin(r.URL.Query().Get("origin"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Invalid origin (expected cluster-scan, ci, registry, vendor, manual)")
+			return
+		}
+
 		if groupBy == "parent" {
-			resp, err := chClient.QueryProjectGroups(r.Context(), assignments, page, pageSize, search, tag)
+			resp, err := chClient.QueryProjectGroups(r.Context(), assignments, page, pageSize, search, tag, originVal)
 			if err != nil {
 				log.Printf("ERROR: list project groups: %v", err)
 				writeError(w, http.StatusInternalServerError, "Failed to fetch project groups")
@@ -406,7 +420,7 @@ func main() {
 			return
 		}
 
-		resp, err := chClient.QueryProjects(r.Context(), page, pageSize, search, tag)
+		resp, err := chClient.QueryProjects(r.Context(), page, pageSize, search, tag, originVal)
 		if err != nil {
 			log.Printf("ERROR: list projects: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch projects")
@@ -423,6 +437,18 @@ func main() {
 		if err != nil {
 			log.Printf("ERROR: list tags: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch tags")
+			return
+		}
+		writeJSON(w, http.StatusOK, items)
+	})
+
+	// Origin values in use, with their reach (#455). Lets the UI render the
+	// origin filters and chips data-driven.
+	mux.HandleFunc("GET /api/v1/origins", func(w http.ResponseWriter, r *http.Request) {
+		items, err := chClient.QueryOrigins(r.Context())
+		if err != nil {
+			log.Printf("ERROR: list origins: %v", err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch origins")
 			return
 		}
 		writeJSON(w, http.StatusOK, items)
@@ -730,9 +756,14 @@ func main() {
 			writeError(w, http.StatusBadRequest, "Invalid cluster name")
 			return
 		}
+		originVal, ok := parseOrigin(r.URL.Query().Get("origin"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Invalid origin (expected cluster-scan, ci, registry, vendor, manual)")
+			return
+		}
 		page := parseUint64(r.URL.Query().Get("page"), 1)
 		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
-		resp, err := chClient.QueryClusterSBOMs(r.Context(), name, page, pageSize)
+		resp, err := chClient.QueryClusterSBOMs(r.Context(), name, page, pageSize, originVal)
 		if err != nil {
 			log.Printf("ERROR: cluster sboms for %s: %v", sanitizeLogParam(name), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch cluster SBOMs")
@@ -796,9 +827,14 @@ func main() {
 			writeError(w, http.StatusBadRequest, "Invalid namespace name")
 			return
 		}
+		originVal, ok := parseOrigin(r.URL.Query().Get("origin"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Invalid origin (expected cluster-scan, ci, registry, vendor, manual)")
+			return
+		}
 		page := parseUint64(r.URL.Query().Get("page"), 1)
 		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
-		resp, err := chClient.QueryNamespaceSBOMs(r.Context(), name, cluster, page, pageSize)
+		resp, err := chClient.QueryNamespaceSBOMs(r.Context(), name, cluster, originVal, page, pageSize)
 		if err != nil {
 			log.Printf("ERROR: namespace sboms for %s: %v", sanitizeLogParam(name), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch namespace SBOMs")
@@ -811,7 +847,12 @@ func main() {
 	// The whole cluster → namespace → project hierarchy in one response, so
 	// the UI can render the ownership tree without an N+1 of per-cluster calls.
 	mux.HandleFunc("GET /api/v1/fleet", func(w http.ResponseWriter, r *http.Request) {
-		tree, err := chClient.QueryFleetTree(r.Context())
+		originVal, ok := parseOrigin(r.URL.Query().Get("origin"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Invalid origin (expected cluster-scan, ci, registry, vendor, manual)")
+			return
+		}
+		tree, err := chClient.QueryFleetTree(r.Context(), originVal)
 		if err != nil {
 			log.Printf("ERROR: fleet tree: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch fleet tree")
@@ -1006,6 +1047,19 @@ func parseScope(raw string) (string, bool) {
 		return "", true
 	}
 	if !depgraph.IsValidScope(raw) {
+		return "", false
+	}
+	return raw, true
+}
+
+// parseOrigin validates the optional ?origin= filter (#455). "" means no
+// filter; anything outside the origin vocabulary is rejected.
+func parseOrigin(raw string) (string, bool) {
+	raw = origin.Normalize(raw)
+	if raw == "" {
+		return "", true
+	}
+	if !origin.IsValid(raw) {
 		return "", false
 	}
 	return raw, true
@@ -1640,6 +1694,11 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 		cluster := queryOverride(r, "cluster", cfg.ClusterName)
 		namespace := queryOverride(r, "namespace", cfg.Namespace)
 		project := queryOverride(r, "project", cfg.Project)
+		originVal := origin.Normalize(queryOverride(r, "origin", cfg.Origin))
+		if originVal != "" && !origin.IsValid(originVal) {
+			writeError(w, http.StatusBadRequest, "Invalid origin (expected cluster-scan, ci, registry, vendor, manual)")
+			return
+		}
 		// ?parent= names the product this upload belongs to explicitly; it
 		// outranks the mapping file and the automatic grouping signals.
 		parent := queryOverride(r, "parent", cfg.Parent)
@@ -1738,6 +1797,7 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			Cluster:      cluster,
 			Namespace:    namespace,
 			Project:      project,
+			Origin:       originVal,
 			SourceRepo:   sourceRepoHdr,
 			SourceRef:    sourceRefHdr,
 			TargetSBOMID: targetSBOMID,
@@ -1785,6 +1845,7 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			"cluster":     cluster,
 			"namespace":   namespace,
 			"project":     project,
+			"origin":      originVal,
 			"parent":      parent,
 		})
 	}

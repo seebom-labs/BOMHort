@@ -109,13 +109,14 @@ func groupName(project string, assignments map[string]projectgroup.Assignment, h
 
 // QueryProjectGroups lists projects grouped by their resolved parent, paged
 // by group. search matches the group name or any member name; tag restricts
-// the members to projects carrying it, like QueryProjects.
-func (c *Client) QueryProjectGroups(ctx context.Context, assignments map[string]projectgroup.Assignment, page, pageSize uint64, search, tag string) (*dto.PaginatedResponse[dto.ProjectGroupItem], error) {
+// the members to projects carrying it, like QueryProjects; origin restricts
+// members to projects carrying SBOMs produced with that origin class (#455).
+func (c *Client) QueryProjectGroups(ctx context.Context, assignments map[string]projectgroup.Assignment, page, pageSize uint64, search, tag, origin string) (*dto.PaginatedResponse[dto.ProjectGroupItem], error) {
 	if page == 0 {
 		page = 1
 	}
 
-	projects, err := c.queryAllProjectRows(ctx, tag)
+	projects, err := c.queryAllProjectRows(ctx, tag, origin)
 	if err != nil {
 		return nil, err
 	}
@@ -252,14 +253,22 @@ func buildGroup(name string, isProject bool, members []dto.ProjectListItem, assi
 }
 
 // queryAllProjectRows returns every project (optionally restricted to those
-// carrying tag) with its SBOM count, newest ingest and newest SBOM id. The
+// carrying tag or origin) with its SBOM count, newest ingest and newest SBOM id. The
 // same aggregation as QueryProjects, without paging.
-func (c *Client) queryAllProjectRows(ctx context.Context, tag string) ([]dto.ProjectListItem, error) {
-	tagWhere := ""
+func (c *Client) queryAllProjectRows(ctx context.Context, tag, origin string) ([]dto.ProjectListItem, error) {
+	var rowConds []string
 	var args []interface{}
 	if tag != "" {
-		tagWhere = "WHERE has(s.tags, ?)"
+		rowConds = append(rowConds, "has(s.tags, ?)")
 		args = append(args, tag)
+	}
+	if origin != "" {
+		rowConds = append(rowConds, "s.origin = ?")
+		args = append(args, origin)
+	}
+	rowWhere := ""
+	if len(rowConds) > 0 {
+		rowWhere = "WHERE " + strings.Join(rowConds, " AND ")
 	}
 	rows, err := c.Conn.Query(ctx, fmt.Sprintf(`
 		SELECT
@@ -274,12 +283,13 @@ func (c *Client) queryAllProjectRows(ctx context.Context, tag string) ([]dto.Pro
 				s.ingested_at,
 				s.document_version,
 				s.tags,
+				s.origin,
 				%s AS project_name
 			FROM (SELECT * FROM sboms FINAL) AS s
 			%s
 		) AS s
 		GROUP BY project_name
-	`, projectKeyExpr, tagWhere), args...)
+	`, projectKeyExpr, rowWhere), args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query projects for grouping: %w", err)
 	}
