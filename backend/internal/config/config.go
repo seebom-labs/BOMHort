@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/seebom-labs/bomhort/backend/internal/apikey"
 	"github.com/seebom-labs/bomhort/backend/internal/ingestpath"
 	"github.com/seebom-labs/bomhort/backend/internal/tags"
 )
@@ -153,11 +154,12 @@ type Config struct {
 	IngestPathLayout string
 
 	// API Authentication (opt-in, all empty by default)
-	AuthEnabled  bool     // Enable auth middleware (default false)
-	ServiceToken string   // Shared secret for upstream proxy/gateway integrations
-	APIKeys      []string // Pre-shared API keys for direct API consumers (CI/CD, scripts)
-	BadgesPublic bool     // Opt out /api/v1/badges/* from auth when AUTH_ENABLED=true
-	BrandName    string   // Brand label for badges, resolved from ui-config.json or BRAND_NAME
+	AuthEnabled  bool         // Enable auth middleware (default false)
+	ServiceToken string       // Shared secret for upstream proxy/gateway integrations
+	APIKeys      []string     // Pre-shared API keys for direct API consumers (CI/CD, scripts)
+	NamedAPIKeys []apikey.Key // Named, scoped API keys (#456) from API_KEYS_JSON
+	BadgesPublic bool         // Opt out /api/v1/badges/* from auth when AUTH_ENABLED=true
+	BrandName    string       // Brand label for badges, resolved from ui-config.json or BRAND_NAME
 
 	// Push-model upload (#135)
 	MaxUploadSizeMB int // Max accepted body size for POST /api/v1/sboms/upload, in MB (default 50)
@@ -288,14 +290,24 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid MCP_TRANSPORT %q (want stdio|http)", cfg.MCPTransport)
 	}
 
+	namedKeys, err := apikey.ParseKeysJSON(getEnv("API_KEYS_JSON", ""))
+	if err != nil {
+		return nil, fmt.Errorf("invalid API_KEYS_JSON: %w", err)
+	}
+	cfg.NamedAPIKeys = namedKeys
+
 	// The release ships one secret for every component, so an operator who set
 	// SERVICE_TOKEN/API_KEYS for the gateway should not have to repeat them
 	// under a second name just to let the MCP server through its own auth.
 	if cfg.MCPServiceToken == "" {
 		cfg.MCPServiceToken = cfg.ServiceToken
 	}
-	if cfg.MCPAPIKey == "" && len(cfg.APIKeys) > 0 {
-		cfg.MCPAPIKey = cfg.APIKeys[0]
+	if cfg.MCPAPIKey == "" {
+		if len(cfg.APIKeys) > 0 {
+			cfg.MCPAPIKey = cfg.APIKeys[0]
+		} else if len(cfg.NamedAPIKeys) > 0 {
+			cfg.MCPAPIKey = cfg.NamedAPIKeys[0].Secret
+		}
 	}
 
 	switch cfg.OriginalStoreBackend {

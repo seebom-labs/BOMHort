@@ -52,6 +52,9 @@ type SBOM struct {
 	// to resolve a parent for products without a repository URL.
 	RootPURL string `json:"root_purl,omitempty"`
 	Supplier string `json:"supplier,omitempty"`
+	// UploadedBy (#456) records which named API key uploaded the document.
+	// '' = unassigned/legacy or uploaded via service token / flat key.
+	UploadedBy string `json:"uploaded_by,omitempty"`
 }
 
 // SBOMPackages stores the full dependency tree of an SBOM as parallel arrays.
@@ -166,6 +169,8 @@ type IngestionJob struct {
 	// RetryAfter keeps a newly enqueued job unclaimable until then. Zero
 	// means immediately.
 	RetryAfter time.Time `json:"retry_after,omitempty"`
+	// UploadedBy (#456) carries credential attribution from uploadHandler to the worker.
+	UploadedBy string `json:"uploaded_by,omitempty"`
 	// Version is the created_at of the job's latest queue row. Every new
 	// status row is written strictly after it, so ReplacingMergeTree and
 	// argMax never see a tie or an older transition as the latest state.

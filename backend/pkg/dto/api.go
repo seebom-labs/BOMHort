@@ -69,6 +69,8 @@ type SBOMListItem struct {
 	Cluster   string `json:"cluster,omitempty"`
 	Namespace string `json:"namespace,omitempty"`
 	Project   string `json:"project,omitempty"`
+	// UploadedBy (#456) records which named API key uploaded the document.
+	UploadedBy string `json:"uploaded_by,omitempty"`
 }
 
 // PaginatedResponse wraps any list response with pagination metadata.
@@ -225,10 +227,12 @@ type SBOMDetail struct {
 	IngestedAt      string `json:"ingested_at"`
 	SourceRepo      string `json:"source_repo,omitempty"`
 	SourceRef       string `json:"source_ref,omitempty"`
-	CriticalVulns   uint64 `json:"critical_vulns"`
-	HighVulns       uint64 `json:"high_vulns"`
-	MediumVulns     uint64 `json:"medium_vulns"`
-	LowVulns        uint64 `json:"low_vulns"`
+	// UploadedBy (#456) records which named API key uploaded the document.
+	UploadedBy    string `json:"uploaded_by,omitempty"`
+	CriticalVulns uint64 `json:"critical_vulns"`
+	HighVulns     uint64 `json:"high_vulns"`
+	MediumVulns   uint64 `json:"medium_vulns"`
+	LowVulns      uint64 `json:"low_vulns"`
 	// ScopeBreakdown splits the same findings by dependency scope.
 	ScopeBreakdown map[string]SeverityCounts `json:"scope_breakdown,omitempty"`
 }

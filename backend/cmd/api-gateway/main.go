@@ -23,6 +23,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/seebom-labs/bomhort/backend/internal/apikey"
 	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
 	"github.com/seebom-labs/bomhort/backend/internal/config"
 	"github.com/seebom-labs/bomhort/backend/internal/depgraph"
@@ -916,7 +917,7 @@ func main() {
 	handler := securityHeadersMiddleware(
 		rateLimitMiddleware(cfg.RateLimitMax,
 			corsMiddleware(cfg.CORSAllowedOrigins,
-				authMiddleware(cfg.AuthEnabled, cfg.BadgesPublic, cfg.ServiceToken, cfg.APIKeys, mux),
+				authMiddleware(cfg.AuthEnabled, cfg.BadgesPublic, cfg.ServiceToken, cfg.APIKeys, cfg.NamedAPIKeys, mux),
 			),
 		),
 	)
@@ -926,6 +927,13 @@ func main() {
 		modes := []string{}
 		if cfg.ServiceToken != "" {
 			modes = append(modes, "service-token")
+		}
+		if len(cfg.NamedAPIKeys) > 0 {
+			keyNames := make([]string, len(cfg.NamedAPIKeys))
+			for i, k := range cfg.NamedAPIKeys {
+				keyNames[i] = k.Name
+			}
+			modes = append(modes, "named-api-keys("+strings.Join(keyNames, ", ")+")")
 		}
 		if len(cfg.APIKeys) > 0 {
 			modes = append(modes, "api-keys("+strconv.Itoa(len(cfg.APIKeys))+")")
@@ -1248,7 +1256,7 @@ func isBadgePath(path string) bool {
 // All comparisons use constant-time equality to prevent timing attacks.
 // When AUTH_ENABLED=false, this middleware is a no-op pass-through.
 // When badgesPublic=true, GET requests matching exact badge paths bypass authentication.
-func authMiddleware(enabled bool, badgesPublic bool, serviceToken string, apiKeys []string, next http.Handler) http.Handler {
+func authMiddleware(enabled bool, badgesPublic bool, serviceToken string, apiKeys []string, namedKeys []apikey.Key, next http.Handler) http.Handler {
 	if !enabled {
 		return next
 	}
@@ -1258,6 +1266,10 @@ func authMiddleware(enabled bool, badgesPublic bool, serviceToken string, apiKey
 	apiKeyBytes := make([][]byte, len(apiKeys))
 	for i, k := range apiKeys {
 		apiKeyBytes[i] = []byte(k)
+	}
+	namedKeyBytes := make([][]byte, len(namedKeys))
+	for i, k := range namedKeys {
+		namedKeyBytes[i] = []byte(k.Secret)
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1299,6 +1311,15 @@ func authMiddleware(enabled bool, badgesPublic bool, serviceToken string, apiKey
 		if len(serviceTokenBytes) > 0 && subtle.ConstantTimeCompare(presented, serviceTokenBytes) == 1 {
 			next.ServeHTTP(w, r)
 			return
+		}
+
+		// Named API keys check (constant-time over each configured key secret).
+		for i, k := range namedKeyBytes {
+			if subtle.ConstantTimeCompare(presented, k) == 1 {
+				ctx := apikey.WithKey(r.Context(), &namedKeys[i])
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
 		}
 
 		// API key check (constant-time over each configured key).
@@ -1632,14 +1653,47 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			}
 		}
 
+		// Retrieve authenticated key if present (#456).
+		authKey := apikey.FromContext(r.Context())
+
 		// Ownership dimensions: query params override this instance's configured
-		// defaults. Deliberately query params rather than headers, matching the
-		// existing ?cluster= contract (#131) -- a pushing CI job names where the
-		// artifact belongs, the server cannot infer it for an uploaded body the
-		// way the watcher can from an object key.
-		cluster := queryOverride(r, "cluster", cfg.ClusterName)
-		namespace := queryOverride(r, "namespace", cfg.Namespace)
-		project := queryOverride(r, "project", cfg.Project)
+		// defaults. If a key is scoped to a single dimension (e.g. origins: ["ci"]),
+		// that scoped value becomes the default for uploads using that key (#456).
+		defaultCluster := cfg.ClusterName
+		defaultNamespace := cfg.Namespace
+		defaultProject := cfg.Project
+		defaultOrigin := ""
+
+		if authKey != nil {
+			if d := authKey.Scope.DefaultCluster(); d != "" {
+				defaultCluster = d
+			}
+			if d := authKey.Scope.DefaultNamespace(); d != "" {
+				defaultNamespace = d
+			}
+			if d := authKey.Scope.DefaultProject(); d != "" {
+				defaultProject = d
+			}
+			if d := authKey.Scope.DefaultOrigin(); d != "" {
+				defaultOrigin = d
+			}
+		}
+
+		cluster := queryOverride(r, "cluster", defaultCluster)
+		namespace := queryOverride(r, "namespace", defaultNamespace)
+		project := queryOverride(r, "project", defaultProject)
+		originVal := queryOverride(r, "origin", defaultOrigin)
+
+		// Validate scope restrictions for named API keys (#456).
+		var uploadedBy string
+		if authKey != nil {
+			uploadedBy = authKey.Name
+			if err := authKey.Scope.CheckUpload(authKey.Name, originVal, cluster, namespace, project); err != nil {
+				log.Printf("AUTH: upload forbidden for key %q from %s: %v", authKey.Name, clientIP(r), err)
+				writeError(w, http.StatusForbidden, err.Error())
+				return
+			}
+		}
 		// ?parent= names the product this upload belongs to explicitly; it
 		// outranks the mapping file and the automatic grouping signals.
 		parent := queryOverride(r, "parent", cfg.Parent)
@@ -1743,6 +1797,7 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			TargetSBOMID: targetSBOMID,
 			Tags:         uploadTags,
 			Parent:       parent,
+			UploadedBy:   uploadedBy,
 		}
 		// Single-row insert, deliberately: the API contract returns job_id
 		// synchronously, so the row has to be durable before we respond — there
@@ -1777,7 +1832,7 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			sanitizeLogParam(cluster), sanitizeLogParam(namespace), sanitizeLogParam(project),
 			sanitizeLogParam(sourceFile))
 
-		writeJSON(w, http.StatusAccepted, map[string]string{
+		resp := map[string]string{
 			"status":      "pending",
 			"job_id":      job.JobID.String(),
 			"sha256_hash": hash,
@@ -1786,7 +1841,11 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			"namespace":   namespace,
 			"project":     project,
 			"parent":      parent,
-		})
+		}
+		if uploadedBy != "" {
+			resp["uploaded_by"] = uploadedBy
+		}
+		writeJSON(w, http.StatusAccepted, resp)
 	}
 }
 

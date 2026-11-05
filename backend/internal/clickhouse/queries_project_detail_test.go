@@ -403,10 +403,10 @@ func TestProjectRowsUsePrimaryKey(t *testing.T) {
 }
 
 // TestProjectBadgeStatsSeeded verifies project badge stats resolution:
-// 1. Default (version="") resolves latest SBOM, ignoring resolved vulnerabilities from older versions.
-// 2. Fully exempted copyleft packages (present in sbom_packages, with non_compliant_packages=[])
-//    correctly evaluate to 0 violations.
-// 3. Explicit version lookup resolves historical version stats.
+//  1. Default (version="") resolves latest SBOM, ignoring resolved vulnerabilities from older versions.
+//  2. Fully exempted copyleft packages (present in sbom_packages, with non_compliant_packages=[])
+//     correctly evaluate to 0 violations.
+//  3. Explicit version lookup resolves historical version stats.
 func TestProjectBadgeStatsSeeded(t *testing.T) {
 	c := testClient(t)
 	ctx := context.Background()

@@ -108,6 +108,17 @@ spec:
                   key: API_KEYS
                   {{- end }}
                   optional: true
+            - name: API_KEYS_JSON
+              valueFrom:
+                secretKeyRef:
+                  {{- if .Values.apiGateway.auth.existingSecret.enabled }}
+                  name: {{ .Values.apiGateway.auth.existingSecret.secretName }}
+                  key: {{ .Values.apiGateway.auth.existingSecret.apiKeysJsonKey | default "API_KEYS_JSON" }}
+                  {{- else }}
+                  name: {{ .Release.Name }}-api-auth
+                  key: API_KEYS_JSON
+                  {{- end }}
+                  optional: true
             {{- end }}
             {{- if .Values.apiGateway.maxUploadSizeMB }}
             - name: MAX_UPLOAD_SIZE_MB

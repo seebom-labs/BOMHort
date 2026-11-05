@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -385,6 +386,48 @@ func TestLoad_Auth_EmptyAPIKeysString(t *testing.T) {
 	}
 	if cfg.APIKeys != nil {
 		t.Errorf("expected nil APIKeys for whitespace-only input, got %v", cfg.APIKeys)
+	}
+}
+
+func TestLoad_Auth_NamedAPIKeysJSON(t *testing.T) {
+	t.Setenv("AUTH_ENABLED", "true")
+	t.Setenv("API_KEYS_JSON", `[
+		{
+			"name": "ci-upload",
+			"secret": "ci-secret",
+			"scope": {
+				"origins": ["ci"],
+				"clusters": ["prod-cluster"]
+			}
+		}
+	]`)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if len(cfg.NamedAPIKeys) != 1 {
+		t.Fatalf("expected 1 named API key, got %d", len(cfg.NamedAPIKeys))
+	}
+	if cfg.NamedAPIKeys[0].Name != "ci-upload" {
+		t.Errorf("expected name 'ci-upload', got %q", cfg.NamedAPIKeys[0].Name)
+	}
+	if cfg.NamedAPIKeys[0].Secret != "ci-secret" {
+		t.Errorf("expected secret 'ci-secret', got %q", cfg.NamedAPIKeys[0].Secret)
+	}
+	if cfg.NamedAPIKeys[0].Scope.DefaultOrigin() != "ci" {
+		t.Errorf("expected default origin 'ci', got %q", cfg.NamedAPIKeys[0].Scope.DefaultOrigin())
+	}
+}
+
+func TestLoad_Auth_InvalidAPIKeysJSON(t *testing.T) {
+	t.Setenv("AUTH_ENABLED", "true")
+	t.Setenv("API_KEYS_JSON", `[{"name": "k1", "secret": ""}]`)
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for empty secret, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid API_KEYS_JSON") {
+		t.Errorf("unexpected error: %v", err)
 	}
 }
 
