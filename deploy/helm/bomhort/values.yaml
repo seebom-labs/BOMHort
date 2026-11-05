@@ -436,16 +436,25 @@ apiGateway:
     # Inline secrets (created via the chart's Secret). Override via --set
     # for ad-hoc use; prefer existingSecret for production deployments.
     serviceToken: ""
-    apiKeys: ""    # comma-separated list, e.g. "ci-key,monitoring-key"
+    # API keys for authentication. Can be:
+    # 1. A comma-separated string for legacy flat keys: "ci-key,monitoring-key"
+    # 2. An array of named, scoped keys (#456):
+    #    - name: "ci-builder"
+    #      secret: "super-secret"
+    #      scope:
+    #        origins: ["ci"]
+    #        clusters: ["prod-cluster"]
+    apiKeys: ""
     # Reference a pre-existing Kubernetes Secret instead of generating one.
     # The Secret must contain the keys named below (SERVICE_TOKEN / API_KEYS
-    # by default). Same pattern as clickhouse.userPasswordSecret /
+    # / API_KEYS_JSON by default). Same pattern as clickhouse.userPasswordSecret /
     # s3.credentialsSecret / github.tokenSecret.
     existingSecret:
       enabled: false
       secretName: ""
       serviceTokenKey: "SERVICE_TOKEN"
       apiKeysKey: "API_KEYS"
+      apiKeysJsonKey: "API_KEYS_JSON"
 
 # Ingress (optional – exposes the API Gateway and/or UI externally)
 # Works with any Ingress controller (Envoy Gateway, Contour, AWS ALB, etc.)

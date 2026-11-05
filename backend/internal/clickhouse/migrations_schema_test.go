@@ -177,11 +177,11 @@ func TestMigrationsParseIntoASchema(t *testing.T) {
 	// Sanity: the core tables must exist with a few known columns, otherwise a
 	// silently broken parser would make every other test in this file vacuous.
 	want := map[string][]string{
-		"sboms":              {"sbom_id", "source_file", "document_name", "cluster", "namespace", "project"},
+		"sboms":              {"sbom_id", "source_file", "document_name", "cluster", "namespace", "project", "uploaded_by"},
 		"sbom_packages":      {"sbom_id", "package_purls", "cluster", "namespace", "project"},
 		"vulnerabilities":    {"sbom_id", "vuln_id", "purl", "cluster", "namespace", "project"},
 		"license_compliance": {"sbom_id", "license_id", "exempted_packages", "cluster", "namespace", "project"},
-		"ingestion_queue":    {"job_id", "status", "cluster", "namespace", "project"},
+		"ingestion_queue":    {"job_id", "status", "cluster", "namespace", "project", "uploaded_by"},
 		"vex_statements":     {"vuln_id", "product_purl", "cluster", "namespace", "project"},
 		"document_store":     {"sbom_id", "storage_ref", "content_encoding", "cluster", "namespace", "project"},
 	}

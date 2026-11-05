@@ -40,12 +40,17 @@ curl -H "X-Service-Token: <service-token>" \
   https://api.bomhort.example.com/api/v1/stats/dashboard
 ```
 
-**API Keys** — multiple pre-shared keys for direct API consumers (CI/CD pipelines, scripts):
+**API Keys** — pre-shared keys for direct API consumers (CI/CD pipelines, scripts). Can be configured as a flat list (`API_KEYS`) or as **named, scoped API keys** (`API_KEYS_JSON` or Helm `apiGateway.auth.apiKeys[]`):
 
 ```bash
 curl -H "X-API-Key: <api-key>" \
   https://api.bomhort.example.com/api/v1/stats/dashboard
 ```
+
+When using named, scoped API keys (#456), each credential has a name and an optional scope restricting allowed `origins`, `clusters`, `namespaces`, or `projects`. On upload (`POST /api/v1/sboms/upload`):
+- If an upload parameter is omitted and the key's scope defines a single allowed value (e.g. `origins: ["ci"]`), that value is automatically applied as the default.
+- If an upload parameter violates the key's scope restrictions, the request is rejected with `403 Forbidden` naming the credential (`credential "ci-key" is not permitted for origin "manual"`). Secrets are never leaked in error responses or startup logs.
+- The key's name is recorded in `uploaded_by` for full attribution.
 
 ### Public endpoints (always accessible)
 
@@ -334,11 +339,12 @@ This endpoint refuses every request with `403 Forbidden` unless `AUTH_ENABLED=tr
 | `cluster` | string | Overrides this instance's configured `CLUSTER_NAME` for the resulting ingestion job. |
 | `namespace` | string | Overrides the configured `NAMESPACE` (#138). The deployment namespace the artifact belongs to, e.g. `payments`. |
 | `project` | string | Overrides the configured `PROJECT` (#57), e.g. `payment-service`. |
+| `origin` | string | Origin dimension (#455): `cluster-scan`, `ci`, `registry`, `vendor`, `manual`. Overrides the default origin. |
 | `parent` | string | Overrides the configured `PARENT`: the parent (product) this SBOM's project belongs to. Outranks the mapping file and the automatic grouping ([Project groups](#project-groups)). |
 | `tags` | string | Comma-separated grouping labels (#357), e.g. `sandbox-applications,platform`. **Merged** with the instance-wide `TAGS` rather than overriding them — a CI job adding a grouping does not contradict a configured one. Normalised (trimmed, lowercased, deduplicated, max 32 × 64 chars). |
 | `sbom_id` | — | **VEX uploads only** (#350): scopes every statement in the document to this SBOM. Must be a valid SBOM UUID; rejected with `400` on SBOM uploads or malformed values. Without it, the worker resolves the statement's OpenVEX product `@id` against `sboms` (`source_repo`, `document_namespace`, `document_name`); if nothing matches the statement is stored **unscoped** and suppresses nothing — until a later ingest of the product's SBOM lets the **VEX rescue** pass (migration `020`) re-resolve and scope it. |
 
-The ownership parameters are optional and independent. A parameter that is absent **or blank** inherits the instance default — `?namespace=` and omitting it entirely mean the same thing, so a client cannot accidentally blank out a configured value. Values are trimmed.
+The ownership parameters are optional and independent. A parameter that is absent **or blank** inherits the instance default (or the key's single scoped value if uploaded with a scoped API key) — `?namespace=` and omitting it entirely mean the same thing, so a client cannot accidentally blank out a configured value. Values are trimmed.
 
 `tags` is the one exception to that override model: because groupings are many-to-many, upload tags are added to the configured ones instead of replacing them. `project` and `tags` also answer different questions — `project` names *what the artifact is*, `tags` say *what kind of thing it is* — so tagging an upload never collapses it into the tag. See [Fleet Views]({{< relref "/docs/ownership" >}}).
 
@@ -354,7 +360,9 @@ Unlike the bucket/directory ingestion path, the server cannot infer these from a
   "job_type": "sbom",
   "cluster": "production",
   "namespace": "payments",
-  "project": "payment-service"
+  "project": "payment-service",
+  "origin": "ci",
+  "uploaded_by": "ci-pipeline"
 }
 ```
 
