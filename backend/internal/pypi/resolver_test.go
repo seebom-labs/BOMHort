@@ -110,3 +110,28 @@ func TestResolve(t *testing.T) {
 		t.Errorf("expected cache hits, got %d extra calls", calls-before)
 	}
 }
+
+func TestTransientFailureIsRetried(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte(`{"info":{"license":"MIT"}}`))
+	}))
+	defer srv.Close()
+
+	r := NewResolverWithBaseURL(srv.URL)
+	ctx := context.Background()
+	if got := r.Resolve(ctx, "pkg:pypi/flaky@1.0.0"); got != "" {
+		t.Fatalf("503: got %q, want empty", got)
+	}
+	if _, found := r.LoadValue("flaky@1.0.0"); found {
+		t.Fatal("503 must not be cached")
+	}
+	if got := r.Resolve(ctx, "pkg:pypi/flaky@1.0.0"); got != "MIT" {
+		t.Errorf("retry: got %q, want MIT", got)
+	}
+}

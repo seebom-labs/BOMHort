@@ -184,3 +184,28 @@ func TestResolve_NoRepoResolver(t *testing.T) {
 		t.Errorf("without repo resolver expected empty, got %q", got)
 	}
 }
+
+func TestTransientFailureIsRetried(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte(`{"catalogEntry":{"licenseExpression":"MIT"}}`))
+	}))
+	defer srv.Close()
+
+	r := NewResolverWithBase(srv.URL, nil)
+	ctx := context.Background()
+	if got := r.Resolve(ctx, "pkg:nuget/Flaky@1.0.0"); got != "" {
+		t.Fatalf("503: got %q, want empty", got)
+	}
+	if _, found := r.LoadValue("flaky@1.0.0"); found {
+		t.Fatal("503 must not be cached")
+	}
+	if got := r.Resolve(ctx, "pkg:nuget/Flaky@1.0.0"); got != "MIT" {
+		t.Errorf("retry: got %q, want MIT", got)
+	}
+}
