@@ -40,6 +40,22 @@ inputs:
     description: 'Source git commit SHA, tag, or ref'
     required: false
     default: ${{ github.sha }}
+  wait:
+    description: 'Wait for the ingestion job to complete (required for sarif and fail-on)'
+    required: false
+    default: 'false'
+  wait-timeout:
+    description: 'Maximum time in seconds to wait for ingestion to complete'
+    required: false
+    default: '300'
+  fail-on:
+    description: 'Fail if vulnerabilities meet or exceed severity (none, low, medium, high, critical)'
+    required: false
+    default: 'none'
+  sarif:
+    description: 'File path to download SARIF 2.1.0 report'
+    required: false
+    default: ''
 
 outputs:
   status:
@@ -51,6 +67,15 @@ outputs:
   sha256-hash:
     description: 'SHA-256 digest of the uploaded SBOM'
     value: ${{ steps.upload.outputs.sha256-hash }}
+  sbom-id:
+    description: 'SBOM UUID in BOMHort'
+    value: ${{ steps.upload.outputs.sbom-id }}
+  vulnerabilities:
+    description: 'JSON summary of vulnerability counts by severity'
+    value: ${{ steps.upload.outputs.vulnerabilities }}
+  url:
+    description: 'Deep link to the SBOM detail in BOMHort'
+    value: ${{ steps.upload.outputs.url }}
 
 runs:
   using: 'composite'
@@ -69,5 +94,9 @@ runs:
         INPUT_TAGS: ${{ inputs.tags }}
         INPUT_SOURCE_REPO: ${{ inputs.source-repo }}
         INPUT_SOURCE_REF: ${{ inputs.source-ref }}
+        INPUT_WAIT: ${{ inputs.wait }}
+        INPUT_WAIT_TIMEOUT: ${{ inputs.wait-timeout }}
+        INPUT_FAIL_ON: ${{ inputs.fail-on }}
+        INPUT_SARIF: ${{ inputs.sarif }}
       run: |
         "${{ github.action_path }}/upload.sh"
