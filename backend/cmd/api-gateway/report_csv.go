@@ -37,7 +37,7 @@ type vulnerabilityStreamFunc func(ctx context.Context, scope string, f clickhous
 
 // reportFormats are the accepted ?format= values. A whitelist so a future
 // "pdf" is an addition, not a rework, and anything else is a clear 400.
-var reportFormats = map[string]bool{"csv": true}
+var reportFormats = map[string]bool{"csv": true, "sarif": true}
 
 // vulnerabilityCSVHeader: cve_id first — the id an auditor's questionnaire
 // asks for (#412) — then OSV's id and every other alias.
@@ -88,7 +88,7 @@ func vulnerabilityReportHandler(filter vulnFilterFunc, stream vulnerabilityStrea
 		q := r.URL.Query()
 		format := q.Get("format")
 		if !reportFormats[format] {
-			writeError(w, http.StatusBadRequest, "Invalid format (expected csv)")
+			writeError(w, http.StatusBadRequest, "Invalid format (expected csv or sarif)")
 			return
 		}
 		scope, ok := parseScope(q.Get("scope"))
@@ -110,6 +110,24 @@ func vulnerabilityReportHandler(filter vulnFilterFunc, stream vulnerabilityStrea
 			return
 		}
 		defer rows.Close()
+
+		if format == "sarif" {
+			filename := "bomhort-vulnerabilities-" + now().UTC().Format("2006-01-02") + ".sarif"
+			w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+			w.Header().Set("Cache-Control", "no-store")
+
+			var items []dto.VulnerabilityListItem
+			for rows.Next() {
+				items = append(items, rows.Item())
+			}
+			if err := rows.Err(); err != nil {
+				log.Printf("ERROR: vulnerability report: %v", err)
+				writeError(w, http.StatusInternalServerError, "Failed to export vulnerabilities")
+				return
+			}
+			writeSARIF(w, http.StatusOK, items)
+			return
+		}
 
 		filename := "bomhort-vulnerabilities-" + now().UTC().Format("2006-01-02") + ".csv"
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
