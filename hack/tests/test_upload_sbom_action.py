@@ -12,6 +12,12 @@ class MockBOMHortHandler(http.server.BaseHTTPRequestHandler):
     last_request = {}
     request_count = 0
     responses_before_success = 0
+    detail_responses_before_success = 0
+    mock_critical_vulns = 0
+    mock_high_vulns = 0
+    mock_medium_vulns = 0
+    mock_low_vulns = 0
+    sarif_download_requested = False
     return_duplicate = False
     return_newline_status = False
     return_workflow_command_error = False
@@ -19,6 +25,77 @@ class MockBOMHortHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         # Silence HTTP logs in test output
         pass
+
+    def do_GET(self):
+        MockBOMHortHandler.request_count += 1
+        MockBOMHortHandler.last_request = {
+            "path": self.path,
+            "headers": dict(self.headers),
+        }
+
+        # Check auth
+        auth = self.headers.get("Authorization", "")
+        api_key = self.headers.get("X-API-Key", "")
+        if not auth.startswith("Bearer ") and not api_key:
+            self.send_response(403)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"error": "Forbidden"}')
+            return
+
+        if "/vulnerabilities?format=sarif" in self.path:
+            MockBOMHortHandler.sarif_download_requested = True
+            self.send_response(200)
+            self.send_header("Content-Type", "application/sarif+json")
+            self.end_headers()
+            sarif = {
+                "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/cos02/schemas/sarif-schema-2.1.0.json",
+                "version": "2.1.0",
+                "runs": [
+                    {
+                        "tool": {"driver": {"name": "BOMHort", "version": "1.0.0"}},
+                        "results": [],
+                    }
+                ],
+            }
+            self.wfile.write(json.dumps(sarif).encode("utf-8"))
+            return
+
+        if "/detail" in self.path:
+            if MockBOMHortHandler.detail_responses_before_success > 0:
+                MockBOMHortHandler.detail_responses_before_success -= 1
+                self.send_response(404)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"error": "SBOM not found"}')
+                return
+
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            total_vulns = (
+                MockBOMHortHandler.mock_critical_vulns
+                + MockBOMHortHandler.mock_high_vulns
+                + MockBOMHortHandler.mock_medium_vulns
+                + MockBOMHortHandler.mock_low_vulns
+            )
+            detail = {
+                "sbom_id": "ee586207-a68c-505a-8dfb-1dc50feb38b8",
+                "source_file": "pushed/test.spdx.json",
+                "spdx_version": "SPDX-2.3",
+                "document_name": "test-doc",
+                "package_count": 42,
+                "vuln_count": total_vulns,
+                "critical_vulns": MockBOMHortHandler.mock_critical_vulns,
+                "high_vulns": MockBOMHortHandler.mock_high_vulns,
+                "medium_vulns": MockBOMHortHandler.mock_medium_vulns,
+                "low_vulns": MockBOMHortHandler.mock_low_vulns,
+            }
+            self.wfile.write(json.dumps(detail).encode("utf-8"))
+            return
+
+        self.send_response(404)
+        self.end_headers()
 
     def do_POST(self):
         MockBOMHortHandler.request_count += 1
@@ -116,6 +193,12 @@ class TestUploadSBOMAction(unittest.TestCase):
         MockBOMHortHandler.last_request = {}
         MockBOMHortHandler.request_count = 0
         MockBOMHortHandler.responses_before_success = 0
+        MockBOMHortHandler.detail_responses_before_success = 0
+        MockBOMHortHandler.mock_critical_vulns = 0
+        MockBOMHortHandler.mock_high_vulns = 0
+        MockBOMHortHandler.mock_medium_vulns = 0
+        MockBOMHortHandler.mock_low_vulns = 0
+        MockBOMHortHandler.sarif_download_requested = False
         MockBOMHortHandler.return_duplicate = False
         MockBOMHortHandler.return_newline_status = False
         MockBOMHortHandler.return_workflow_command_error = False
@@ -123,8 +206,15 @@ class TestUploadSBOMAction(unittest.TestCase):
     def run_script(self, env_vars):
         repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
         script_path = os.path.join(repo_root, ".github", "actions", "upload-sbom", "upload.sh")
-        # BASH can point to Git Bash on Windows; Linux CI uses the default bash.
-        bash = os.environ.get("BASH", "bash")
+        if os.name == "nt":
+            script_path = os.path.relpath(script_path, repo_root).replace("\\", "/")
+        bash = os.environ.get("BASH")
+        if not bash and os.name == "nt":
+            git_bash = r"C:\Program Files\Git\bin\bash.exe"
+            if os.path.exists(git_bash):
+                bash = git_bash
+        if not bash:
+            bash = "bash"
         full_env = os.environ.copy()
         full_env.update(env_vars)
         return subprocess.run(
@@ -340,6 +430,174 @@ class TestUploadSBOMAction(unittest.TestCase):
             self.assertNotIn("secret-token", res.stderr)
         finally:
             os.remove(temp_path)
+
+    def test_wait_and_outputs_success(self):
+        with tempfile.TemporaryDirectory(prefix="sbom action ") as directory:
+            temp_path = os.path.join(directory, "app.spdx.json")
+            output_file = os.path.join(directory, "github_output.txt")
+            with open(temp_path, "wb") as f:
+                f.write(b'{"spdxVersion": "SPDX-2.3"}')
+
+            MockBOMHortHandler.detail_responses_before_success = 1
+            MockBOMHortHandler.mock_critical_vulns = 0
+            MockBOMHortHandler.mock_high_vulns = 1
+            MockBOMHortHandler.mock_medium_vulns = 2
+            MockBOMHortHandler.mock_low_vulns = 0
+
+            res = self.run_script({
+                "INPUT_URL": f"http://127.0.0.1:{self.port}",
+                "INPUT_TOKEN": "secret-token",
+                "INPUT_SBOM": temp_path,
+                "INPUT_WAIT": "true",
+                "INPUT_WAIT_TIMEOUT": "5",
+                "POLL_INTERVAL": "0.1",
+                "GITHUB_OUTPUT": output_file,
+            })
+            self.assertEqual(res.returncode, 0, f"Script failed: {res.stderr}\n{res.stdout}")
+            self.assertIn("Waiting for SBOM", res.stdout)
+            self.assertIn("SBOM ee586207-a68c-505a-8dfb-1dc50feb38b8 processed", res.stdout)
+
+            with open(output_file, "r") as out_f:
+                out_content = out_f.read()
+            self.assertIn("sbom-id=ee586207-a68c-505a-8dfb-1dc50feb38b8", out_content)
+            self.assertIn(f"url=http://127.0.0.1:{self.port}/sboms/ee586207-a68c-505a-8dfb-1dc50feb38b8", out_content)
+            self.assertIn('vulnerabilities={"critical":0,"high":1,"medium":2,"low":0}', out_content)
+
+    def test_wait_timeout_fails(self):
+        with tempfile.NamedTemporaryFile(suffix=".spdx.json", delete=False) as f:
+            f.write(b'{"spdxVersion": "SPDX-2.3"}')
+            temp_path = f.name
+        try:
+            MockBOMHortHandler.detail_responses_before_success = 999
+            res = self.run_script({
+                "INPUT_URL": f"http://127.0.0.1:{self.port}",
+                "INPUT_TOKEN": "secret-token",
+                "INPUT_SBOM": temp_path,
+                "INPUT_WAIT": "true",
+                "INPUT_WAIT_TIMEOUT": "1",
+                "POLL_INTERVAL": "0.1",
+            })
+            self.assertNotEqual(res.returncode, 0)
+            self.assertIn("Timed out after 1s waiting for SBOM", res.stderr)
+        finally:
+            os.remove(temp_path)
+
+    def test_sarif_download_success(self):
+        with tempfile.TemporaryDirectory(prefix="sbom action ") as directory:
+            temp_path = os.path.join(directory, "app.spdx.json")
+            sarif_file = os.path.join(directory, "reports", "output.sarif")
+            with open(temp_path, "wb") as f:
+                f.write(b'{"spdxVersion": "SPDX-2.3"}')
+
+            res = self.run_script({
+                "INPUT_URL": f"http://127.0.0.1:{self.port}",
+                "INPUT_TOKEN": "secret-token",
+                "INPUT_SBOM": temp_path,
+                "INPUT_SARIF": sarif_file,
+                "POLL_INTERVAL": "0.1",
+            })
+            self.assertEqual(res.returncode, 0, f"Script failed: {res.stderr}\n{res.stdout}")
+            self.assertTrue(os.path.exists(sarif_file))
+            with open(sarif_file, "r") as f:
+                content = f.read()
+            self.assertIn('"version": "2.1.0"', content)
+            self.assertTrue(MockBOMHortHandler.sarif_download_requested)
+
+    def test_fail_on_threshold_exceeded(self):
+        with tempfile.NamedTemporaryFile(suffix=".spdx.json", delete=False) as f:
+            f.write(b'{"spdxVersion": "SPDX-2.3"}')
+            temp_path = f.name
+        try:
+            MockBOMHortHandler.mock_high_vulns = 1
+            res = self.run_script({
+                "INPUT_URL": f"http://127.0.0.1:{self.port}",
+                "INPUT_TOKEN": "secret-token",
+                "INPUT_SBOM": temp_path,
+                "INPUT_FAIL_ON": "high",
+                "POLL_INTERVAL": "0.1",
+            })
+            self.assertNotEqual(res.returncode, 0)
+            self.assertIn("Vulnerability threshold exceeded (fail-on=high)", res.stderr)
+        finally:
+            os.remove(temp_path)
+
+    def test_fail_on_threshold_passed(self):
+        with tempfile.NamedTemporaryFile(suffix=".spdx.json", delete=False) as f:
+            f.write(b'{"spdxVersion": "SPDX-2.3"}')
+            temp_path = f.name
+        try:
+            MockBOMHortHandler.mock_critical_vulns = 0
+            MockBOMHortHandler.mock_high_vulns = 0
+            MockBOMHortHandler.mock_medium_vulns = 2
+            res = self.run_script({
+                "INPUT_URL": f"http://127.0.0.1:{self.port}",
+                "INPUT_TOKEN": "secret-token",
+                "INPUT_SBOM": temp_path,
+                "INPUT_FAIL_ON": "high",
+                "POLL_INTERVAL": "0.1",
+            })
+            self.assertEqual(res.returncode, 0, f"Script failed: {res.stderr}\n{res.stdout}")
+            self.assertIn("Vulnerability policy passed: threshold 'high' not exceeded", res.stdout)
+        finally:
+            os.remove(temp_path)
+
+    def test_invalid_fail_on_value(self):
+        with tempfile.NamedTemporaryFile(suffix=".spdx.json", delete=False) as f:
+            f.write(b'{"spdxVersion": "SPDX-2.3"}')
+            temp_path = f.name
+        try:
+            res = self.run_script({
+                "INPUT_URL": f"http://127.0.0.1:{self.port}",
+                "INPUT_TOKEN": "secret-token",
+                "INPUT_SBOM": temp_path,
+                "INPUT_FAIL_ON": "supercritical",
+            })
+            self.assertNotEqual(res.returncode, 0)
+            self.assertIn("Input 'fail-on' must be one of: none, low, medium, high, critical", res.stderr)
+        finally:
+            os.remove(temp_path)
+
+    def test_invalid_wait_timeout(self):
+        with tempfile.NamedTemporaryFile(suffix=".spdx.json", delete=False) as f:
+            f.write(b'{"spdxVersion": "SPDX-2.3"}')
+            temp_path = f.name
+        try:
+            res = self.run_script({
+                "INPUT_URL": f"http://127.0.0.1:{self.port}",
+                "INPUT_TOKEN": "secret-token",
+                "INPUT_SBOM": temp_path,
+                "INPUT_WAIT_TIMEOUT": "invalid",
+            })
+            self.assertNotEqual(res.returncode, 0)
+            self.assertIn("Input 'wait-timeout' must be a positive integer", res.stderr)
+        finally:
+            os.remove(temp_path)
+
+    def test_duplicate_upload_with_wait(self):
+        with tempfile.TemporaryDirectory(prefix="sbom action ") as directory:
+            temp_path = os.path.join(directory, "app.spdx.json")
+            output_file = os.path.join(directory, "github_output.txt")
+            with open(temp_path, "wb") as f:
+                f.write(b'{"spdxVersion": "SPDX-2.3"}')
+
+            MockBOMHortHandler.return_duplicate = True
+            MockBOMHortHandler.mock_critical_vulns = 0
+            MockBOMHortHandler.mock_high_vulns = 0
+
+            res = self.run_script({
+                "INPUT_URL": f"http://127.0.0.1:{self.port}",
+                "INPUT_TOKEN": "secret-token",
+                "INPUT_SBOM": temp_path,
+                "INPUT_WAIT": "true",
+                "POLL_INTERVAL": "0.1",
+                "GITHUB_OUTPUT": output_file,
+            })
+            self.assertEqual(res.returncode, 0, f"Script failed: {res.stderr}\n{res.stdout}")
+            with open(output_file, "r") as out_f:
+                out_content = out_f.read()
+            self.assertIn("status=duplicate", out_content)
+            self.assertIn("sbom-id=ee586207-a68c-505a-8dfb-1dc50feb38b8", out_content)
+            self.assertIn('vulnerabilities={"critical":0,"high":0,"medium":0,"low":0}', out_content)
 
 
 if __name__ == "__main__":
