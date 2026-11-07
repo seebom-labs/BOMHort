@@ -17,12 +17,11 @@ import (
 	"github.com/seebom-labs/bomhort/backend/internal/claimlock"
 	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
 	"github.com/seebom-labs/bomhort/backend/internal/config"
-	"github.com/seebom-labs/bomhort/backend/internal/depgraph"
 	"github.com/seebom-labs/bomhort/backend/internal/docstore"
+	"github.com/seebom-labs/bomhort/backend/internal/evaluate"
 	gh "github.com/seebom-labs/bomhort/backend/internal/github"
 	"github.com/seebom-labs/bomhort/backend/internal/license"
 	"github.com/seebom-labs/bomhort/backend/internal/osv"
-	"github.com/seebom-labs/bomhort/backend/internal/osvutil"
 	"github.com/seebom-labs/bomhort/backend/internal/rulesource"
 	s3client "github.com/seebom-labs/bomhort/backend/internal/s3"
 	"github.com/seebom-labs/bomhort/backend/internal/sbom"
@@ -385,33 +384,13 @@ func processVEXJob(ctx context.Context, chClient *clickhouse.Client, openFile fu
 // excludeIndices returns copies of the parallel names/licenses slices without the
 // entries at the given indices. With no indices to skip, the inputs are returned as-is.
 func excludeIndices(names, licenses []string, skip []uint32) ([]string, []string) {
-	if len(skip) == 0 {
-		return names, licenses
-	}
-	skipSet := make(map[uint32]bool, len(skip))
-	for _, i := range skip {
-		skipSet[i] = true
-	}
-	outNames := make([]string, 0, len(names))
-	outLics := make([]string, 0, len(licenses))
-	for i := range names {
-		if skipSet[uint32(i)] {
-			continue
-		}
-		outNames = append(outNames, names[i])
-		if i < len(licenses) {
-			outLics = append(outLics, licenses[i])
-		} else {
-			outLics = append(outLics, "")
-		}
-	}
-	return outNames, outLics
+	return evaluate.ExcludeIndices(names, licenses, skip)
 }
 
 func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, exceptions func() *license.ExceptionIndex, ghResolver *gh.Resolver, registryResolvers []registryResolver, openFile func() (io.ReadCloser, error), originals docstore.Store, job models.IngestionJob) error {
 
-	// 1. Read the whole document once. The bytes are needed twice — for the
-	// parser and for the Tier-2 original capture (#256) — and sbom.Parse reads
+	// 1. Read the whole document once. The bytes are needed twice - for the
+	// parser and for the Tier-2 original capture (#256) - and sbom.Parse reads
 	// everything into memory anyway.
 	rc, err := openFile()
 	if err != nil {
@@ -448,10 +427,8 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 		}
 	}
 
-	// 2.–2d. Resolve unknown licenses (GitHub, then package registries),
-	// normalise free-text spellings and record each package's license source
-	// BEFORE inserting into ClickHouse, so sbom_packages.package_licenses holds
-	// the resolved values. See resolvePackageLicenses.
+	// 2. Evaluate the SBOM in-memory (resolve unknown licenses, OSV findings,
+	// license compliance).
 	var ghLookup githubLookup
 	archived := 0
 	if ghResolver != nil {
@@ -469,8 +446,17 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 			return meta.SPDXID, nil
 		}
 	}
-	sources, resolvedBy, err := resolvePackageLicenses(ctx, ghLookup, registryResolvers,
-		result.Packages.PackagePURLs, result.Packages.PackageLicenses, result.Packages.RootIndices)
+
+	evalResult, err := evaluate.EvaluateParsed(ctx, result, evaluate.Options{
+		SourceFile:        job.SourceFile,
+		SHA256Hash:        job.SHA256Hash,
+		SkipOSV:           cfg.SkipOSV,
+		OSVClient:         osvClient,
+		GitHubLookup:      ghLookup,
+		RegistryResolvers: toEvaluateResolvers(registryResolvers),
+		Exceptions:        exceptions,
+		MaxPURLs:          0, // worker is unbounded
+	})
 	if err != nil {
 		if errors.Is(err, gh.ErrRateLimited) {
 			// Not a failure of this SBOM: GitHub will answer later. Put the
@@ -480,14 +466,14 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 		}
 		return err
 	}
-	result.Packages.PackageLicenseSources = sources
-	for name, n := range resolvedBy {
+
+	for name, n := range evalResult.ResolvedBy {
 		if n > 0 {
 			log.Printf("  Resolved %d unknown licenses via %s", n, name)
 		}
 	}
 	if archived > 0 {
-		log.Printf("  ⚠️  Found %d packages using ARCHIVED GitHub repos", archived)
+		log.Printf("  WARNING: Found %d packages using ARCHIVED GitHub repos", archived)
 	}
 	if ghResolver != nil {
 		if entries := ghResolver.CacheEntries(); len(entries) > 0 {
@@ -506,148 +492,38 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 	// SBOMExists guard (#482). The child tables are ReplacingMergeTree keyed
 	// by sbom_id, so the retry's rows supersede the partial ones.
 	own := ownershipOf(job)
-	own.applySBOM(&result.SBOM)
-	applySourceOverride(&result.SBOM, job)
+	own.applySBOM(&evalResult.SBOM)
+	applySourceOverride(&evalResult.SBOM, job)
 
 	// 4. Insert package arrays (with resolved licenses).
-	own.applyPackages(&result.Packages)
-	if err := chClient.InsertSBOMPackages(ctx, &result.Packages); err != nil {
+	own.applyPackages(&evalResult.Packages)
+	if err := chClient.InsertSBOMPackages(ctx, &evalResult.Packages); err != nil {
 		return err
 	}
 
-	// 5. OSV batch query for vulnerabilities (skippable for fast ingestion).
-	if cfg.SkipOSV {
-		log.Printf("  SKIP_OSV=true, skipping vulnerability scan for %s (%d PURLs)", job.SourceFile, len(result.Packages.PackagePURLs))
-	} else {
-		// Filter out empty PURLs first.
-		var purls []string
-		purlToIndex := make(map[string]int) // track which PURL maps to which query index
-		for _, purl := range result.Packages.PackagePURLs {
-			if purl != "" {
-				purlToIndex[purl] = len(purls)
-				purls = append(purls, purl)
-			}
+	// 5. Insert vulnerabilities.
+	if len(evalResult.Vulnerabilities) > 0 {
+		for i := range evalResult.Vulnerabilities {
+			own.applyVulnerability(&evalResult.Vulnerabilities[i])
 		}
-
-		var vulns []models.Vulnerability
-		if len(purls) > 0 {
-			// Collect vuln IDs from batch queries, then hydrate with full details.
-			type vulnPURL struct {
-				id   string
-				purl string
-			}
-			var discovered []vulnPURL
-
-			// Chunk PURLs into batches of 1000 (OSV API limit).
-			const chunkSize = 1000
-			for i := 0; i < len(purls); i += chunkSize {
-				end := i + chunkSize
-				if end > len(purls) {
-					end = len(purls)
-				}
-				chunk := purls[i:end]
-
-				osvResp, err := osvClient.QueryBatch(ctx, chunk)
-				if err != nil {
-					log.Printf("  WARNING: OSV query failed for chunk %d-%d: %v", i, end, err)
-					continue
-				}
-
-				for j, qr := range osvResp.Results {
-					if len(qr.Vulns) == 0 {
-						continue
-					}
-					purl := chunk[j]
-					for _, v := range qr.Vulns {
-						discovered = append(discovered, vulnPURL{id: v.ID, purl: purl})
-					}
-				}
-			}
-
-			if len(discovered) > 0 {
-				// Collect unique vuln IDs and hydrate with full details.
-				uniqueIDs := make([]string, 0)
-				seen := make(map[string]struct{})
-				for _, d := range discovered {
-					if _, ok := seen[d.id]; !ok {
-						seen[d.id] = struct{}{}
-						uniqueIDs = append(uniqueIDs, d.id)
-					}
-				}
-
-				hydrated, err := osvClient.HydrateVulns(ctx, uniqueIDs)
-				if err != nil {
-					log.Printf("  WARNING: Hydration failed: %v", err)
-				}
-
-				// Un-hydrated IDs are skipped, not stubbed: the daily
-				// cve-refresher inserts them once OSV answers (#485).
-				var skipped []string
-				for _, d := range discovered {
-					h, ok := hydrated[d.id]
-					if !ok {
-						skipped = append(skipped, d.id)
-						continue
-					}
-					v := osvutil.BuildVulnerability(*h, result.SBOM.SBOMID, job.SourceFile, d.purl,
-						depgraph.MinDepthForPURL(result.Packages.PackagePURLs, result.Packages.PackageDepths, d.purl))
-					own.applyVulnerability(&v)
-					vulns = append(vulns, v)
-				}
-				if len(skipped) > 0 {
-					log.Printf("  WARNING: %d findings skipped (hydration failed), e.g. %v; cve-refresher will add them",
-						len(skipped), skipped[:min(5, len(skipped))])
-				}
-			}
-
-			if len(vulns) > 0 {
-				log.Printf("  Found %d vulnerabilities in %s", len(vulns), job.SourceFile)
-				if err := chClient.InsertVulnerabilities(ctx, vulns); err != nil {
-					return err
-				}
-			}
+		log.Printf("  Found %d vulnerabilities in %s", len(evalResult.Vulnerabilities), job.SourceFile)
+		if err := chClient.InsertVulnerabilities(ctx, evalResult.Vulnerabilities); err != nil {
+			return err
 		}
 	}
 
-	// 6. License compliance check (uses the already-resolved licenses).
-	// The described root (the product itself) and the project's own workspace
-	// packages are not dependencies and must not show up in the license
-	// breakdown, e.g. as NOASSERTION findings.
-	licNames, licLicenses := excludeIndices(result.Packages.PackageNames, result.Packages.PackageLicenses, licenseCheckSkips(result.Packages.RootIndices, result.Packages.PackagePURLs))
-	// Read the rules here, not at job start: a long job must not store
-	// results against rules that a recheck has already moved past.
-	licResults := license.CheckWithExceptions(licNames, licLicenses, exceptions(), result.SBOM.DocumentName)
-	if len(licResults) > 0 {
-		licModels := make([]models.LicenseCompliance, len(licResults))
-		for i, lr := range licResults {
-			nonCompliant := lr.NonCompliantPackages
-			if nonCompliant == nil {
-				nonCompliant = []string{}
-			}
-			exempted := lr.ExemptedPackages
-			if exempted == nil {
-				exempted = []string{}
-			}
-			licModels[i] = models.LicenseCompliance{
-				CheckedAt:            time.Now(),
-				SBOMID:               result.SBOM.SBOMID,
-				SourceFile:           job.SourceFile,
-				LicenseID:            lr.LicenseID,
-				Category:             string(lr.Category),
-				PackageCount:         lr.PackageCount,
-				NonCompliantPackages: nonCompliant,
-				ExemptedPackages:     exempted,
-				ExemptionReason:      lr.ExemptionReason,
-			}
-			own.applyLicenseCompliance(&licModels[i])
+	// 6. Insert license compliance.
+	if len(evalResult.LicenseModels) > 0 {
+		for i := range evalResult.LicenseModels {
+			own.applyLicenseCompliance(&evalResult.LicenseModels[i])
 		}
-		if err := chClient.InsertLicenseCompliance(ctx, licModels); err != nil {
+		if err := chClient.InsertLicenseCompliance(ctx, evalResult.LicenseModels); err != nil {
 			return err
 		}
 	}
 
 	// 6b. Commit marker: the SBOM becomes visible.
-	if err := chClient.InsertSBOM(ctx, &result.SBOM); err != nil {
+	if err := chClient.InsertSBOM(ctx, &evalResult.SBOM); err != nil {
 		return err
 	}
 

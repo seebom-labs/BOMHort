@@ -8,7 +8,7 @@ description: >
 ---
 
 {{% alert title="Mostly Read-Only API" color="info" %}}
-The BOMHort API is primarily **read-only** (GET endpoints). One write endpoint exists — [`POST /api/v1/sboms/upload`](#post-apiv1sbomsupload) for push-model CI/CD ingestion — and it is disabled unless `AUTH_ENABLED=true`, regardless of the global auth default.
+The BOMHort API is primarily **read-only** (GET endpoints). Two operational POST endpoints exist: [`POST /api/v1/sboms/upload`](#post-apiv1sbomsupload) for push-model CI/CD ingestion and [`POST /api/v1/scan`](#post-apiv1scan) for stateless pull-request gating. Both are disabled unless `AUTH_ENABLED=true`, regardless of the global auth default.
 {{% /alert %}}
 
 {{% alert title="Asking these questions from an AI agent" color="info" %}}
@@ -402,6 +402,126 @@ curl -X POST http://localhost:8080/api/v1/sboms/upload \
   -H "X-Source-Repo: https://github.com/example-org/example-app" \
   -H "X-Source-Ref: ${GIT_COMMIT}" \
   --data-binary @my-service.spdx.json
+```
+
+---
+
+### `POST /api/v1/scan`
+
+Statelessly evaluate an SBOM document against the OSV vulnerability database and the active license compliance policy without writing anything to the database or enqueueing background ingestion jobs. Designed for pull-request gating and CI/CD policy validation before merging code or pushing artifacts.
+
+Unlike `/api/v1/sboms/upload`, this endpoint:
+- Does not persist the SBOM, its packages, or its findings to ClickHouse (no rows added to `sboms`, `sbom_packages`, `vulnerabilities`, `license_compliance`, or `ingestion_queue`).
+- Does not store the raw document in the document store.
+- Evaluates synchronously in memory and returns immediate results.
+- Best-effort updates shared license caches in ClickHouse (GitHub and package registries) when ClickHouse is connected, accelerating subsequent scans.
+
+{{% alert title="Requires authentication" color="warning" %}}
+Like the upload endpoint, `/api/v1/scan` refuses requests with `403 Forbidden` unless `AUTH_ENABLED=true` on the API Gateway.
+{{% /alert %}}
+
+**Headers:**
+
+| Header | Required | Description |
+|--------|----------|-------------|
+| `X-Filename` | Optional | Original filename (e.g. `my-app.spdx.json`). Used for logging and context. Defaults to `sbom.json` if omitted. |
+| `Authorization` / `X-Service-Token` / `X-API-Key` | Required | Authentication credential (see [Authentication](#authentication)). |
+
+**Body:** Raw SBOM JSON content (SPDX 2.2/2.3 or CycloneDX 1.4-1.6, plain or in-toto attestation envelope). The maximum payload size is governed by `MAX_UPLOAD_SIZE_MB` (default 50 MB); oversized payloads return `413 Request Entity Too Large`.
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `fail_on` | string | none | Comma-separated list of failure triggers: `critical`, `high`, `medium`, `low`, `license`. If any matching vulnerability severity or license violation is found, `policy_result` evaluates to `"fail"`. When omitted or empty, `policy_result` is always `"pass"`. |
+
+**Operational Bounds:**
+
+| Environment Variable | Helm Value | Default | Description |
+|----------------------|------------|---------|-------------|
+| `SCAN_TIMEOUT` | `apiGateway.scanTimeout` | `60` | Execution timeout in seconds. Returns `504 Gateway Timeout` if exceeded. |
+| `SCAN_MAX_PURLS` | `apiGateway.scanMaxPurls` | `2000` | Maximum distinct PURLs permitted per SBOM. Returns `413 Request Entity Too Large` if exceeded to prevent resource exhaustion. |
+
+**Response (200 OK):**
+
+```json
+{
+  "policy_result": "fail",
+  "policy_reason": "Found 1 high severity vulnerability; found 1 license violation",
+  "summary": {
+    "package_count": 42,
+    "vuln_count": 2,
+    "critical_count": 0,
+    "high_count": 1,
+    "medium_count": 1,
+    "low_count": 0,
+    "license_violations": 1,
+    "unresolved_licenses": 0
+  },
+  "vulnerabilities": [
+    {
+      "vuln_id": "GHSA-1234-5678-90ab",
+      "cve_id": "CVE-2024-9999",
+      "severity": "HIGH",
+      "purl": "pkg:npm/foo@1.0.0",
+      "summary": "Example vulnerability",
+      "fixed_version": "1.0.1",
+      "dependency_scope": "direct",
+      "dependency_depth": 1
+    }
+  ],
+  "license_compliance": [
+    {
+      "package_name": "bar",
+      "package_version": "2.0.0",
+      "license": "GPL-3.0-only",
+      "status": "non-compliant",
+      "reason": "Restricted license without approved exception"
+    }
+  ]
+}
+```
+
+**Errors:**
+- `400` - Non-JSON body, malformed JSON, trailing data after the JSON document, invalid `fail_on` level, or unparseable SBOM format.
+- `401` - Missing or invalid authentication token when `AUTH_ENABLED=true`.
+- `403` - `AUTH_ENABLED=false` on the API Gateway.
+- `413` - Payload exceeds `MAX_UPLOAD_SIZE_MB` or distinct PURL count exceeds `SCAN_MAX_PURLS`.
+- `429` - GitHub API rate limit reached during upstream license resolution.
+- `504` - Scan evaluation exceeded `SCAN_TIMEOUT`.
+
+**CI Gating Recipe:**
+
+Fail a pull request when an SBOM introduces critical or high vulnerabilities, or license compliance violations:
+
+```bash
+# Generate SBOM (example with Syft)
+syft packages dir:. -o spdx-json=sbom.spdx.json
+
+# Scan against BOMHort API Gateway with policy failure triggers
+RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://bomhort.example.com/api/v1/scan?fail_on=critical,high,license" \
+  -H "X-API-Key: ${BOMHORT_API_KEY}" \
+  -H "X-Filename: sbom.spdx.json" \
+  --data-binary @sbom.spdx.json)
+
+HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
+BODY=$(echo "$RESPONSE" | sed '$d')
+
+if [ "$HTTP_STATUS" -ne 200 ]; then
+  echo "Scan failed with HTTP status ${HTTP_STATUS}: ${BODY}"
+  exit 1
+fi
+
+POLICY_RESULT=$(echo "$BODY" | jq -r '.policy_result')
+POLICY_REASON=$(echo "$BODY" | jq -r '.policy_reason')
+
+if [ "$POLICY_RESULT" = "fail" ]; then
+  echo "::error::BOMHort Policy Check Failed: ${POLICY_REASON}"
+  echo "$BODY" | jq '.summary'
+  exit 1
+fi
+
+echo "BOMHort Policy Check Passed!"
 ```
 
 ---
@@ -1817,7 +1937,7 @@ Configured via `CORS_ALLOWED_ORIGINS` environment variable.
 
 - Default: `*` (development)
 - Production: Set to your frontend domain(s)
-- Allowed methods: `GET`, `OPTIONS` on every endpoint; `POST` is additionally advertised only on [`/api/v1/sboms/upload`](#post-apiv1sbomsupload)
+- Allowed methods: `GET`, `OPTIONS` on every endpoint; `POST` is additionally advertised on [`/api/v1/sboms/upload`](#post-apiv1sbomsupload) and [`/api/v1/scan`](#post-apiv1scan)
 - Allowed headers: `Content-Type`, `Authorization`, `X-Service-Token`, `X-API-Key`, `X-Filename`
 
 ---

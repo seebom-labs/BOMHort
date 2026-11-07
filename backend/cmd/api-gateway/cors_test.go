@@ -16,6 +16,7 @@ func TestCorsMiddleware_AllowMethods_ScopedToUploadRoute(t *testing.T) {
 		{"/api/v1/sboms", "GET, OPTIONS"},
 		{"/api/v1/stats/dashboard", "GET, OPTIONS"},
 		{uploadPath, "GET, POST, OPTIONS"},
+		{scanPath, "GET, POST, OPTIONS"},
 	}
 
 	for _, tc := range tests {
