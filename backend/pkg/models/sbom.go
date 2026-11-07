@@ -77,9 +77,12 @@ type SBOMPackages struct {
 	// parse time by internal/sbom; the UI and the findings tables read it to
 	// tell direct from transitive dependencies.
 	PackageDepths []uint16 `json:"package_depths"`
-	Cluster       string   `json:"cluster,omitempty"`
-	Namespace     string   `json:"namespace,omitempty"`
-	Project       string   `json:"project,omitempty"`
+	// LookalikeOf is parallel to PackageNames: legitimate packages this
+	// package may be a look-alike / typosquat of, resolved via deps.dev.
+	LookalikeOf []string `json:"lookalike_of,omitempty"`
+	Cluster     string   `json:"cluster,omitempty"`
+	Namespace   string   `json:"namespace,omitempty"`
+	Project     string   `json:"project,omitempty"`
 	// RootIndices marks the package(s) the SBOM DESCRIBES – the product itself,
 	// not a dependency. Kept in the arrays (index 0 is the dependency-tree root)
 	// but excluded from license compliance. Not persisted to ClickHouse.
@@ -90,6 +93,13 @@ type SBOMPackages struct {
 	// depth-1 seeds for the depth walk. Not persisted to ClickHouse.
 	DirectIndices []uint32 `json:"-"`
 }
+
+const (
+	// FindingKindVulnerability marks standard security vulnerabilities.
+	FindingKindVulnerability = "vulnerability"
+	// FindingKindMalicious marks intentionally compromised or malicious packages (OpenSSF MAL-*).
+	FindingKindMalicious = "malicious"
+)
 
 // Vulnerability represents a single vulnerability discovered via the OSV API.
 type Vulnerability struct {
@@ -111,9 +121,12 @@ type Vulnerability struct {
 	// DependencyDepth is the smallest depth of the affected PURL in the SBOM
 	// (see SBOMPackages.PackageDepths); depgraph.Unknown when not derivable.
 	DependencyDepth uint16 `json:"dependency_depth"`
-	Cluster         string `json:"cluster,omitempty"`
-	Namespace       string `json:"namespace,omitempty"`
-	Project         string `json:"project,omitempty"`
+	// FindingKind distinguishes normal software vulnerabilities ("vulnerability")
+	// from intentionally compromised or malicious packages ("malicious", e.g. MAL-*).
+	FindingKind string `json:"finding_kind,omitempty"`
+	Cluster     string `json:"cluster,omitempty"`
+	Namespace   string `json:"namespace,omitempty"`
+	Project     string `json:"project,omitempty"`
 }
 
 // LicenseCompliance represents the compliance status for a license within an SBOM.

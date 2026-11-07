@@ -114,6 +114,18 @@ describe('PackageSearch Models', () => {
     expect(detail.projects).toHaveLength(20);
   });
 
+  it('should support lookalike_of in detail response', () => {
+    const detail: PackageDetailResponse = {
+      package_name: 'lodasj',
+      total_projects: 1,
+      page: 1,
+      page_size: 50,
+      projects: [],
+      lookalike_of: ['lodash'],
+    };
+    expect(detail.lookalike_of).toEqual(['lodash']);
+  });
+
   it('should encode package names with slashes for URL routing', () => {
     const packageName = 'golang.org/x/net';
     const encoded = encodeURIComponent(packageName);

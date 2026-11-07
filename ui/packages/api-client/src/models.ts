@@ -19,6 +19,7 @@ export interface DashboardStats {
   high_vulns: number;
   medium_vulns: number;
   low_vulns: number;
+  compromised_packages?: number;
   scope_breakdown?: ScopeBreakdown;
   license_breakdown: Record<string, number>;
   exempted_packages: number;
@@ -82,6 +83,7 @@ export interface SBOMListItem {
 
 export interface VulnerabilityListItem {
   vuln_id: string;
+  finding_kind?: string;
   /** CVE of the finding when one exists (#412): vuln_id itself or a CVE alias. */
   cve_id?: string;
   /** Other OSV ids of the same flaw (GHSA <-> CVE <-> GO-…), sorted (#412). */
@@ -135,6 +137,7 @@ export interface DependencyNode {
   children: number[];
   dependency_scope: DependencyScope;
   dependency_depth?: number;
+  lookalike_of?: string[];
 }
 
 export interface LicenseSourceItem {
@@ -367,6 +370,7 @@ export interface PackageDetailResponse {
   projects: DependencySearchProject[];
   page: number;
   page_size: number;
+  lookalike_of?: string[];
 }
 
 export interface ProjectListItem {
@@ -479,6 +483,7 @@ export interface ProjectPackageItem {
   sbom_count: number;
   /** Distinct vulnerability ids known against it within the project. */
   vuln_count: number;
+  lookalike_of?: string[];
 }
 
 /**
@@ -580,6 +585,7 @@ export interface OwnerFilter {
   project?: string;
   parent?: string;
   tag?: string;
+  kind?: string;
 }
 
 export interface ClusterListItem {

@@ -46,6 +46,9 @@ type DashboardStats struct {
 	LastCVERefresh       string                    `json:"last_cve_refresh,omitempty"`
 	NewVulnsSinceRefresh uint64                    `json:"new_vulns_since_refresh"`
 	ArchivedReposCount   uint64                    `json:"archived_repos_count"`
+	// CompromisedPackages is the count of distinct packages affected by
+	// malicious findings (finding_kind = 'malicious').
+	CompromisedPackages uint64 `json:"compromised_packages"`
 }
 
 // SBOMListItem is the response DTO for listing SBOMs.
@@ -121,6 +124,9 @@ type VulnerabilityListItem struct {
 	// SBOM where the package is nearest to the root.
 	DependencyScope string  `json:"dependency_scope"`
 	DependencyDepth *uint16 `json:"dependency_depth,omitempty"`
+	// FindingKind distinguishes normal software vulnerabilities ("vulnerability")
+	// from intentionally compromised or malicious packages ("malicious", e.g. MAL-*).
+	FindingKind string `json:"finding_kind,omitempty"`
 }
 
 // DependencyNode represents a single node in the dependency tree for the UI.
@@ -137,8 +143,9 @@ type DependencyNode struct {
 	LicenseSource string   `json:"license_source,omitempty"`
 	Children      []uint32 `json:"children"`
 	// DependencyScope / DependencyDepth: see VulnerabilityListItem.
-	DependencyScope string  `json:"dependency_scope"`
-	DependencyDepth *uint16 `json:"dependency_depth,omitempty"`
+	DependencyScope string   `json:"dependency_scope"`
+	DependencyDepth *uint16  `json:"dependency_depth,omitempty"`
+	LookalikeOf     []string `json:"lookalike_of,omitempty"`
 }
 
 // LicenseSourceItem is one row of GET /api/v1/licenses/sources: how many
@@ -382,6 +389,7 @@ type PackageDetailResponse struct {
 	Projects      []DependencySearchProject `json:"projects"`
 	Page          uint64                    `json:"page"`
 	PageSize      uint64                    `json:"page_size"`
+	LookalikeOf   []string                  `json:"lookalike_of,omitempty"`
 }
 
 // GlobalSearchPackage is a package hit in the global search response.
@@ -636,7 +644,8 @@ type ProjectPackageItem struct {
 	SBOMCount uint64 `json:"sbom_count"`
 	// VulnCount is the number of distinct vulnerability ids on this component
 	// anywhere in the project.
-	VulnCount uint64 `json:"vuln_count"`
+	VulnCount   uint64   `json:"vuln_count"`
+	LookalikeOf []string `json:"lookalike_of,omitempty"`
 }
 
 // TagListItem describes one grouping label and its reach, powering a

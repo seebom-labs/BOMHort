@@ -1,6 +1,7 @@
 package osvutil
 
 import (
+	"strings"
 	"time"
 
 	"github.com/goccy/go-json"
@@ -16,6 +17,10 @@ import (
 // deduplicated on (vuln_id, purl) forever and never repaired (#485).
 func BuildVulnerability(entry osv.VulnEntry, sbomID uuid.UUID, sourceFile, purl string, depth uint16) models.Vulnerability {
 	rawJSON, _ := json.Marshal(entry)
+	kind := models.FindingKindVulnerability
+	if strings.HasPrefix(entry.ID, "MAL-") {
+		kind = models.FindingKindMalicious
+	}
 	return models.Vulnerability{
 		DiscoveredAt:     time.Now(),
 		SBOMID:           sbomID,
@@ -29,5 +34,6 @@ func BuildVulnerability(entry osv.VulnEntry, sbomID uuid.UUID, sourceFile, purl 
 		FixedVersion:     ExtractFixedVersion(entry),
 		OSVJSON:          string(rawJSON),
 		DependencyDepth:  depth,
+		FindingKind:      kind,
 	}
 }

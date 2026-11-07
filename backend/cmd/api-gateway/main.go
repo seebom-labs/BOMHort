@@ -298,7 +298,12 @@ func main() {
 			writeError(w, http.StatusBadRequest, "Invalid scope (expected direct, transitive, root or unknown)")
 			return
 		}
-		vulns, err := chClient.QuerySBOMVulnerabilities(r.Context(), sbomID, scope)
+		kind := strings.TrimSpace(r.URL.Query().Get("kind"))
+		if kind != "" && kind != models.FindingKindVulnerability && kind != models.FindingKindMalicious {
+			writeError(w, http.StatusBadRequest, "Invalid kind (expected vulnerability or malicious)")
+			return
+		}
+		vulns, err := chClient.QuerySBOMVulnerabilities(r.Context(), sbomID, scope, kind)
 		if err != nil {
 			log.Printf("ERROR: sbom vulns for %s: %v", sanitizeLogParam(sbomID), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch SBOM vulnerabilities")
@@ -495,7 +500,12 @@ func main() {
 			writeError(w, http.StatusBadRequest, "Invalid scope (expected direct, transitive, root or unknown)")
 			return
 		}
-		items, err := chClient.QueryProjectVulnerabilities(r.Context(), name, scope)
+		kind := strings.TrimSpace(r.URL.Query().Get("kind"))
+		if kind != "" && kind != models.FindingKindVulnerability && kind != models.FindingKindMalicious {
+			writeError(w, http.StatusBadRequest, "Invalid kind (expected vulnerability or malicious)")
+			return
+		}
+		items, err := chClient.QueryProjectVulnerabilities(r.Context(), name, scope, kind)
 		if err != nil {
 			log.Printf("ERROR: project vulnerabilities for %s: %v", sanitizeLogParam(name), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch project vulnerabilities")
