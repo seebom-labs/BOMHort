@@ -13,7 +13,9 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -38,12 +40,16 @@ const (
 	anyVersion = "*"
 )
 
-// Resolver resolves package licenses via deps.dev.
+// Resolver resolves package licenses and look-alike packages via deps.dev.
 type Resolver struct {
 	baseURL    string
 	httpClient *http.Client
 	license.ResolverCache
 	limiter *ratelimit.TokenBucket
+
+	lookalikeMu    sync.RWMutex
+	lookalikeCache map[string][]string
+	newLookalikes  map[string][]string
 }
 
 // PackageVersion is the normalized deps.dev lookup key extracted from a purl.
@@ -61,9 +67,11 @@ func NewResolver() *Resolver {
 // NewResolverWithBaseURL creates a resolver against a custom deps.dev API root.
 func NewResolverWithBaseURL(baseURL string) *Resolver {
 	return &Resolver{
-		baseURL:    strings.TrimRight(baseURL, "/"),
-		httpClient: &http.Client{Timeout: 20 * time.Second},
-		limiter:    ratelimit.NewTokenBucket(defaultRate, defaultBurst),
+		baseURL:        strings.TrimRight(baseURL, "/"),
+		httpClient:     &http.Client{Timeout: 20 * time.Second},
+		limiter:        ratelimit.NewTokenBucket(defaultRate, defaultBurst),
+		lookalikeCache: make(map[string][]string),
+		newLookalikes:  make(map[string][]string),
 	}
 }
 
@@ -536,6 +544,12 @@ func ExtractPackageVersion(purl string) (PackageVersion, bool) {
 	return pv, true
 }
 
+// ExtractPackage extracts the ecosystem and package name from a purl
+// without requiring a valid version string.
+func ExtractPackage(purl string) (PackageVersion, bool) {
+	return extractPackage(purl)
+}
+
 // extractPackage is ExtractPackageVersion without the version requirement: a
 // missing or placeholder version ("unknown", "${project.version}") yields an
 // empty Version instead of a failure.
@@ -657,4 +671,128 @@ func normalizePyPIName(name string) string {
 		lastDash = false
 	}
 	return b.String()
+}
+
+// PreloadLookalikeCache populates the lookalike cache from ClickHouse.
+func (r *Resolver) PreloadLookalikeCache(entries map[string][]string) {
+	r.lookalikeMu.Lock()
+	defer r.lookalikeMu.Unlock()
+	if r.lookalikeCache == nil {
+		r.lookalikeCache = make(map[string][]string, len(entries))
+	}
+	for k, v := range entries {
+		r.lookalikeCache[k] = v
+	}
+}
+
+// LookalikeCacheEntries returns newly discovered lookalike cache entries to persist to ClickHouse.
+func (r *Resolver) LookalikeCacheEntries() map[string][]string {
+	r.lookalikeMu.Lock()
+	defer r.lookalikeMu.Unlock()
+	if len(r.newLookalikes) == 0 {
+		return nil
+	}
+	out := make(map[string][]string, len(r.newLookalikes))
+	for k, v := range r.newLookalikes {
+		out[k] = v
+	}
+	r.newLookalikes = make(map[string][]string)
+	return out
+}
+
+type similarlyNamedPackagesResponse struct {
+	PackageKey struct {
+		System string `json:"system"`
+		Name   string `json:"name"`
+	} `json:"packageKey"`
+	Packages []struct {
+		PackageKey struct {
+			System string `json:"system"`
+			Name   string `json:"name"`
+		} `json:"packageKey"`
+	} `json:"packages"`
+}
+
+// SimilarlyNamedPackages returns legitimate package names that the given package
+// might be a look-alike / typosquat of, queried from the deps.dev v3alpha API.
+// Results (including empty results) are cached in memory.
+func (r *Resolver) SimilarlyNamedPackages(ctx context.Context, system, name string) []string {
+	system = strings.ToLower(strings.TrimSpace(system))
+	name = strings.TrimSpace(name)
+	if system == "" || name == "" {
+		return nil
+	}
+	cacheKey := system + ":" + name
+
+	r.lookalikeMu.RLock()
+	if cached, ok := r.lookalikeCache[cacheKey]; ok {
+		r.lookalikeMu.RUnlock()
+		return cached
+	}
+	r.lookalikeMu.RUnlock()
+
+	if err := r.limiter.Wait(ctx); err != nil {
+		return nil
+	}
+
+	u := fmt.Sprintf("%s/%s/systems/%s/packages/%s:similarlyNamedPackages",
+		r.baseURL, batchAPIVersion, system, url.PathEscape(name))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "bomhort-lookalike-resolver")
+
+	resp, err := r.httpClient.Do(req)
+	if err != nil {
+		log.Printf("  deps.dev similarlyNamedPackages request failed for %s:%s: %v", system, name, err)
+		return nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		r.lookalikeMu.Lock()
+		r.lookalikeCache[cacheKey] = []string{}
+		r.newLookalikes[cacheKey] = []string{}
+		r.lookalikeMu.Unlock()
+		return nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+
+	var sr similarlyNamedPackagesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&sr); err != nil {
+		return nil
+	}
+
+	seen := make(map[string]bool)
+	var lookalikes []string
+	for _, p := range sr.Packages {
+		pkgName := strings.TrimSpace(p.PackageKey.Name)
+		if pkgName == "" || strings.EqualFold(pkgName, name) {
+			continue
+		}
+		if !seen[pkgName] {
+			seen[pkgName] = true
+			lookalikes = append(lookalikes, pkgName)
+		}
+	}
+	sort.Strings(lookalikes)
+	if lookalikes == nil {
+		lookalikes = []string{}
+	}
+
+	r.lookalikeMu.Lock()
+	r.lookalikeCache[cacheKey] = lookalikes
+	r.newLookalikes[cacheKey] = lookalikes
+	r.lookalikeMu.Unlock()
+
+	if len(lookalikes) > 0 {
+		log.Printf("  deps.dev lookalike detected: %s:%s -> %v", system, name, lookalikes)
+	}
+
+	return lookalikes
 }

@@ -26,4 +26,19 @@ func TestBuildVulnerability(t *testing.T) {
 	if v.Severity != ClassifySeverity(entry) || v.OSVJSON == "" {
 		t.Fatalf("derived fields missing: %+v", v)
 	}
+	if v.FindingKind != "vulnerability" {
+		t.Fatalf("expected finding_kind 'vulnerability', got %q", v.FindingKind)
+	}
+
+	malEntry := osv.VulnEntry{
+		ID:      "MAL-2024-1234",
+		Summary: "Malicious package backdoor",
+	}
+	malV := BuildVulnerability(malEntry, id, "b.json", "pkg:npm/evil@1.0.0", 1)
+	if malV.FindingKind != "malicious" {
+		t.Fatalf("expected finding_kind 'malicious', got %q", malV.FindingKind)
+	}
+	if malV.Severity != "CRITICAL" {
+		t.Fatalf("expected severity 'CRITICAL' for MAL- entry, got %q", malV.Severity)
+	}
 }

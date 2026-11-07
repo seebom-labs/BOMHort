@@ -108,8 +108,8 @@ export class BomhortApiClient {
     return this.get(`/sboms/${sbomId}/dependencies`, signal);
   }
 
-  getSbomVulnerabilities(sbomId: string, scope = '', signal?: AbortSignal): Promise<VulnerabilityListItem[]> {
-    return this.get(`/sboms/${sbomId}/vulnerabilities${query({ scope })}`, signal);
+  getSbomVulnerabilities(sbomId: string, scope = '', kind = '', signal?: AbortSignal): Promise<VulnerabilityListItem[]> {
+    return this.get(`/sboms/${sbomId}/vulnerabilities${query({ scope, kind })}`, signal);
   }
 
   getSbomVex(sbomId: string, signal?: AbortSignal): Promise<VEXStatementItem[]> {
@@ -204,8 +204,8 @@ export class BomhortApiClient {
     return this.get(`/projects/${encodeURIComponent(name)}/sboms${query({ page, page_size: pageSize })}`, signal);
   }
 
-  getProjectVulnerabilities(name: string, scope = '', signal?: AbortSignal): Promise<VulnerabilityListItem[]> {
-    return this.get(`/projects/${encodeURIComponent(name)}/vulnerabilities${query({ scope })}`, signal);
+  getProjectVulnerabilities(name: string, scope = '', kind = '', signal?: AbortSignal): Promise<VulnerabilityListItem[]> {
+    return this.get(`/projects/${encodeURIComponent(name)}/vulnerabilities${query({ scope, kind })}`, signal);
   }
 
   getProjectPackages(name: string, page = 1, pageSize = 50, search = '', signal?: AbortSignal): Promise<PaginatedResponse<ProjectPackageItem>> {

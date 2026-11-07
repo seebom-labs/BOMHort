@@ -206,6 +206,7 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
             <span class="dep-name" [title]="node.purl || node.name">
               {{ node.name }}
               <span class="archived-tag" *ngIf="isArchivedPurl(node.purl)" title="This package uses an archived GitHub repository"> ARCHIVED</span>
+              <span class="lookalike-tag" *ngIf="node.lookalikeOf?.length" [title]="'Look-alike of popular package(s): ' + node.lookalikeOf.join(', ')">look-alike: {{ node.lookalikeOf.join(', ') }}</span>
             </span>
             <span class="dep-scope"><app-scope-badge [scope]="node.scope" [depth]="node.depth"></app-scope-badge></span>
             <span class="dep-version">{{ node.version }}</span>
@@ -449,6 +450,12 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
       padding: 1px 6px; border-radius: 2px; font-size: 0.6rem; font-weight: 600;
       flex-shrink: 0;
     }
+    .lookalike-tag {
+      background: var(--severity-high-bg); color: var(--status-warning);
+      border: 1px solid var(--status-warning);
+      padding: 1px 6px; border-radius: 2px; font-size: 0.6rem; font-weight: 600;
+      flex-shrink: 0;
+    }
     .dep-version {
       color: var(--text-secondary); width: 140px; flex-shrink: 0;
       font-family: monospace; font-size: 0.78rem;
@@ -648,6 +655,7 @@ export class SbomDetailComponent implements OnInit {
         licenseTitle: licenseSourceTooltip(node.license_source),
         purl: node.purl, level, index: node.index,
         scope: node.dependency_scope, depth: node.dependency_depth,
+        lookalikeOf: node.lookalike_of,
       });
     }
     return result;
@@ -664,5 +672,6 @@ interface FlatDep {
   index: number;
   scope: DependencyScope;
   depth?: number;
+  lookalikeOf?: string[];
 }
 

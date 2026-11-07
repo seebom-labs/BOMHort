@@ -91,9 +91,11 @@ export class ApiService {
     return this.http.get<DependencyNode[]>(`${this.baseUrl}/sboms/${sbomId}/dependencies`);
   }
 
-  getSbomVulnerabilities(sbomId: string, scope = ''): Observable<VulnerabilityListItem[]> {
-    const params = scope ? new HttpParams().set('scope', scope) : undefined;
-    return this.http.get<VulnerabilityListItem[]>(`${this.baseUrl}/sboms/${sbomId}/vulnerabilities`, { params });
+  getSbomVulnerabilities(sbomId: string, scope = '', kind = ''): Observable<VulnerabilityListItem[]> {
+    let params = new HttpParams();
+    if (scope) params = params.set('scope', scope);
+    if (kind) params = params.set('kind', kind);
+    return this.http.get<VulnerabilityListItem[]>(`${this.baseUrl}/sboms/${sbomId}/vulnerabilities`, { params: params.keys().length ? params : undefined });
   }
 
   /** VEX statements affecting one SBOM (#350): scoped first, then global. */
@@ -282,10 +284,12 @@ export class ApiService {
   }
 
   /** One row per distinct (vuln_id, purl) across the project's SBOMs. */
-  getProjectVulnerabilities(name: string, scope = ''): Observable<VulnerabilityListItem[]> {
-    const params = scope ? new HttpParams().set('scope', scope) : undefined;
+  getProjectVulnerabilities(name: string, scope = '', kind = ''): Observable<VulnerabilityListItem[]> {
+    let params = new HttpParams();
+    if (scope) params = params.set('scope', scope);
+    if (kind) params = params.set('kind', kind);
     return this.http.get<VulnerabilityListItem[]>(
-      `${this.baseUrl}/projects/${encodeURIComponent(name)}/vulnerabilities`, { params });
+      `${this.baseUrl}/projects/${encodeURIComponent(name)}/vulnerabilities`, { params: params.keys().length ? params : undefined });
   }
 
   getProjectPackages(

@@ -43,12 +43,22 @@ type registryResolver struct {
 // newRegistryResolvers builds the enabled registry resolvers and preloads their
 // caches from ClickHouse. ghResolver may be nil; when present, the NuGet
 // resolver uses it to derive licenses of legacy packages from their GitHub repo.
-func newRegistryResolvers(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, ghResolver *gh.Resolver) []registryResolver {
-	out := buildRegistryResolvers(cfg, ghResolver)
+func newRegistryResolvers(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, ghResolver *gh.Resolver, ddResolvers ...*depsdev.Resolver) []registryResolver {
+	var ddResolver *depsdev.Resolver
+	if len(ddResolvers) > 0 && ddResolvers[0] != nil {
+		ddResolver = ddResolvers[0]
+	}
+	out := buildRegistryResolvers(cfg, ghResolver, ddResolver)
 	for _, rr := range out {
 		if cached, err := chClient.QueryRegistryLicenseCache(ctx, rr.name); err == nil && len(cached) > 0 {
 			rr.resolver.PreloadCache(cached)
 			log.Printf("Preloaded %d %s license cache entries", len(cached), rr.name)
+		}
+	}
+	if ddResolver != nil {
+		if cached, err := chClient.QueryLookalikeCache(ctx); err == nil && len(cached) > 0 {
+			ddResolver.PreloadLookalikeCache(cached)
+			log.Printf("Preloaded %d lookalike cache entries", len(cached))
 		}
 	}
 	return out
@@ -56,8 +66,14 @@ func newRegistryResolvers(ctx context.Context, cfg *config.Config, chClient *cli
 
 // buildRegistryResolvers returns the enabled registry resolvers in chain
 // order, without touching ClickHouse.
-func buildRegistryResolvers(cfg *config.Config, ghResolver *gh.Resolver) []registryResolver {
+func buildRegistryResolvers(cfg *config.Config, ghResolver *gh.Resolver, ddResolvers ...*depsdev.Resolver) []registryResolver {
 	var out []registryResolver
+	var ddResolver *depsdev.Resolver
+	if len(ddResolvers) > 0 && ddResolvers[0] != nil {
+		ddResolver = ddResolvers[0]
+	} else {
+		ddResolver = depsdev.NewResolver()
+	}
 
 	if !cfg.SkipNPMResolve {
 		out = append(out, registryResolver{name: "npm", resolver: npm.NewResolver()})
@@ -78,7 +94,7 @@ func buildRegistryResolvers(cfg *config.Config, ghResolver *gh.Resolver) []regis
 	}
 
 	if !cfg.SkipDepsDevResolve {
-		out = append(out, registryResolver{name: "depsdev", resolver: depsdev.NewResolver()})
+		out = append(out, registryResolver{name: "depsdev", resolver: ddResolver})
 		log.Println("deps.dev license resolver enabled (api.deps.dev)")
 	} else {
 		log.Println("deps.dev license resolver disabled (SKIP_DEPSDEV_RESOLVE=true)")

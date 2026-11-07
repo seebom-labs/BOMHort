@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/seebom-labs/bomhort/backend/internal/depgraph"
@@ -33,11 +34,18 @@ import (
 // VEX scope.
 //
 // scope ("" or a depgraph scope label) keeps only findings whose package is
-// pulled in that way.
-func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, scope string) ([]dto.VulnerabilityListItem, error) {
+// pulled in that way; kind ("" or "vulnerability" / "malicious") restricts
+// the listing by finding kind.
+func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, scope string, kind string) ([]dto.VulnerabilityListItem, error) {
 	scopeAnd := ""
 	if pred := depthPredicate(scope, "v.dependency_depth"); pred != "" {
 		scopeAnd = " AND " + pred
+	}
+	kindAnd := ""
+	args := []any{sbomID, sbomID, sbomID}
+	if kind == "vulnerability" || kind == "malicious" {
+		kindAnd = " AND v.finding_kind = ?"
+		args = append(args, kind)
 	}
 	rows, err := c.Conn.Query(ctx, `
 		SELECT
@@ -49,7 +57,8 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 			ifNull(vx.winning_timestamp, toDateTime(0)) AS vex_timestamp,
 			ifNull(vx.vex_statement_id, '') AS vex_statement_id,
 			ifNull(vx.vex_author, '') AS vex_author,
-			ifNull(vx.vex_tooling, '') AS vex_tooling
+			ifNull(vx.vex_tooling, '') AS vex_tooling,
+			v.finding_kind
 		FROM (SELECT * FROM vulnerabilities FINAL) AS v
 		LEFT JOIN (
 			SELECT
@@ -61,19 +70,20 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 				argMax(s.tooling, s.vex_timestamp) AS vex_tooling,
 				max(s.vex_timestamp) AS winning_timestamp
 			FROM (
-				SELECT DISTINCT vuln_id, purl,
+				SELECT DISTINCT vuln_id, purl, finding_kind,
 					arrayJoin(arrayConcat([vuln_id], aliases)) AS match_id
 				FROM vulnerabilities FINAL WHERE sbom_id = ?
 			) AS f
 			INNER JOIN (SELECT * FROM vex_statements FINAL WHERE sbom_id = ?) AS s
 				ON s.vuln_id = f.match_id
-			WHERE s.product_purl = f.purl OR s.product_purl = '*'
+			WHERE (f.finding_kind != 'malicious' AND (s.product_purl = f.purl OR s.product_purl = '*'))
+			   OR (f.finding_kind = 'malicious' AND s.product_purl = f.purl)
 			GROUP BY f.vuln_id, f.purl
 		) AS vx ON vx.vuln_id = v.vuln_id AND vx.purl = v.purl
-		WHERE v.sbom_id = ?`+scopeAnd+`
-		ORDER BY v.severity ASC, v.discovered_at DESC
+		WHERE v.sbom_id = ?`+scopeAnd+kindAnd+`
+		ORDER BY (v.finding_kind = 'malicious') DESC, v.severity ASC, v.discovered_at DESC
 		LIMIT 1 BY v.vuln_id, v.purl
-	`, sbomID, sbomID, sbomID)
+	`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query vulns for sbom %s: %w", sbomID, err)
 	}
@@ -91,6 +101,7 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 			&discoveredAt, &depth, &aliases, &item.VEXStatus,
 			&item.VEXJustification, &vexTimestamp, &item.VEXStatementID,
 			&item.VEXAuthor, &item.VEXTooling,
+			&item.FindingKind,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan vuln row: %w", err)
 		}
@@ -391,6 +402,9 @@ func (c *Client) QueryAffectedProjectsByCVE(ctx context.Context, vulnID string, 
 	vexStatus := func(sbomID, purl string) string {
 		if st, ok := vexByKey[vexKey{sbomID, purl}]; ok {
 			return st
+		}
+		if strings.HasPrefix(vulnID, "MAL-") {
+			return ""
 		}
 		return vexByKey[vexKey{sbomID, "*"}]
 	}
@@ -834,12 +848,21 @@ func (c *Client) QueryPackageDetail(ctx context.Context, packageName string, pag
 		return nil, err
 	}
 
+	var lookalikes []string
+	_ = c.Conn.QueryRow(ctx, `
+		SELECT lookalikes
+		FROM lookalike_cache FINAL
+		WHERE package = ?
+		LIMIT 1
+	`, packageName).Scan(&lookalikes)
+
 	return &dto.PackageDetailResponse{
 		PackageName:   packageName,
 		TotalProjects: totalProjects,
 		Projects:      projects,
 		Page:          page,
 		PageSize:      pageSize,
+		LookalikeOf:   lookalikes,
 	}, nil
 }
 
