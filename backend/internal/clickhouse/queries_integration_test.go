@@ -133,10 +133,11 @@ func TestQueriesExecute(t *testing.T) {
 			return err
 		}},
 		{"QuerySBOMDetail", func() error { _, err := c.QuerySBOMDetail(ctx, someID); return err }},
-		{"QuerySBOMVulnerabilities", func() error { _, err := c.QuerySBOMVulnerabilities(ctx, someID, "", ""); return err }},
+		{"QuerySBOMVulnerabilities", func() error { _, err := c.QuerySBOMVulnerabilities(ctx, someID, "", "", ""); return err }},
 		{"QuerySBOMLicenses", func() error { _, err := c.QuerySBOMLicenses(ctx, someID); return err }},
 		{"QuerySBOMVEXStatements", func() error { _, err := c.QuerySBOMVEXStatements(ctx, someID); return err }},
 		{"QuerySBOMDependencies", func() error { _, err := c.QuerySBOMDependencies(ctx, someID); return err }},
+		{"QueryLookalikeCache", func() error { _, err := c.QueryLookalikeCache(ctx); return err }},
 		// License provenance (#439, migration 024) and the unapproved category.
 		{"QueryLicenseCompliance", func() error { _, err := c.QueryLicenseCompliance(ctx, ""); return err }},
 		{"QueryLicenseCompliance(license)", func() error { _, err := c.QueryLicenseCompliance(ctx, "MIT"); return err }},
@@ -156,7 +157,7 @@ func TestQueriesExecute(t *testing.T) {
 		{"QueryVersionSkew", func() error { _, err := c.QueryVersionSkew(ctx, 1, 10, ""); return err }},
 		{"QueryVersionSkew/search", func() error { _, err := c.QueryVersionSkew(ctx, 1, 10, "yaml"); return err }},
 		{"QueryDependencySearch", func() error { _, err := c.QueryDependencySearch(ctx, "yaml", 1, 10); return err }},
-		{"QueryPackageDetail", func() error { _, err := c.QueryPackageDetail(ctx, "gopkg.in/yaml.v3", 1, 10); return err }},
+		{"QueryPackageDetail", func() error { _, err := c.QueryPackageDetail(ctx, "gopkg.in/yaml.v3", "", 1, 10); return err }},
 		{"QueryAffectedProjectsByCVE", func() error { _, err := c.QueryAffectedProjectsByCVE(ctx, "CVE-2024-45338", VulnFilter{}); return err }},
 		{"QueryGlobalSearch", func() error { _, err := c.QueryGlobalSearch(ctx, "yaml", 5); return err }},
 		{"QueryClusters", func() error { _, err := c.QueryClusters(ctx); return err }},
@@ -185,7 +186,7 @@ func TestQueriesExecute(t *testing.T) {
 			_, err := c.QueryProjectBadgeStats(ctx, "no-such-project", "")
 			return err
 		}},
-		{"QueryProjectVulnerabilities", func() error { _, err := c.QueryProjectVulnerabilities(ctx, "no-such-project", ""); return err }},
+		{"QueryProjectVulnerabilities", func() error { _, err := c.QueryProjectVulnerabilities(ctx, "no-such-project", "", ""); return err }},
 		{"QueryProjectPackages", func() error { _, err := c.QueryProjectPackages(ctx, "no-such-project", 1, 10, ""); return err }},
 		{"QueryProjectPackages/search", func() error { _, err := c.QueryProjectPackages(ctx, "no-such-project", 1, 10, "curl"); return err }},
 		// The archived-repo pair shipped broken three times: once semantically
@@ -239,7 +240,7 @@ func TestSBOMDetailProjectionMatchesScan(t *testing.T) {
 // "aggregate function ... is found inside another aggregate function".
 func TestSBOMVulnerabilitiesVEXJoin(t *testing.T) {
 	c := testClient(t)
-	_, err := c.QuerySBOMVulnerabilities(context.Background(), uuid.New().String(), "", "")
+	_, err := c.QuerySBOMVulnerabilities(context.Background(), uuid.New().String(), "", "", "")
 	if err != nil && !isEmptyResult(err) {
 		t.Fatalf("SBOM vulnerabilities query broken: %v", err)
 	}

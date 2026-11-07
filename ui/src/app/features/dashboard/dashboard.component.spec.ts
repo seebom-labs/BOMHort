@@ -73,4 +73,23 @@ describe('DashboardComponent', () => {
     slow.next({ total_sboms: 99, license_breakdown: {} } as unknown as DashboardStats);
     expect(fixture.componentInstance.stats?.total_sboms).toBe(2);
   });
+
+  it('renders compromised packages count in kpi tile', () => {
+    const api = TestBed.inject(ApiService);
+    vi.spyOn(api, 'getDashboardStats').mockReturnValue(of({
+      total_sboms: 1, total_packages: 10, total_vulnerabilities: 2,
+      effective_vulnerabilities: 2, suppressed_by_vex: 0,
+      critical_vulns: 1, high_vulns: 0, medium_vulns: 0, low_vulns: 0,
+      exempted_packages: 0, total_vex_statements: 0,
+      compromised_packages: 3,
+      license_breakdown: {},
+    } as unknown as DashboardStats));
+    const fixture = TestBed.createComponent(DashboardComponent);
+    fixture.detectChanges();
+    const card = Array.from(fixture.nativeElement.querySelectorAll('.kpi-card'))
+      .find((el: any) => el.textContent?.includes('Compromised Packages')) as HTMLElement;
+    expect(card).toBeTruthy();
+    expect(card.textContent).toContain('3');
+    expect(card.classList.contains('warn')).toBe(true);
+  });
 });

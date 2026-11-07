@@ -100,10 +100,11 @@ export class ApiService {
     return this.http.get<DependencyNode[]>(`${this.baseUrl}/sboms/${sbomId}/dependencies`);
   }
 
-  getSbomVulnerabilities(sbomId: string, scope = '', reachability = ''): Observable<VulnerabilityListItem[]> {
+  getSbomVulnerabilities(sbomId: string, scope = '', reachability = '', kind = ''): Observable<VulnerabilityListItem[]> {
     let params = new HttpParams();
     if (scope) params = params.set('scope', scope);
     if (reachability) params = params.set('reachability', reachability);
+    if (kind) params = params.set('kind', kind);
     return this.http.get<VulnerabilityListItem[]>(`${this.baseUrl}/sboms/${sbomId}/vulnerabilities`, {
       params: params.keys().length ? params : undefined,
     });
@@ -233,11 +234,14 @@ export class ApiService {
     return this.http.get<DependencySearchResponse>(`${this.baseUrl}/packages/search`, { params });
   }
 
-  getPackageDetail(name: string, page = 1, pageSize = 50): Observable<PackageDetailResponse> {
-    const params = new HttpParams()
+  getPackageDetail(name: string, page = 1, pageSize = 50, ecosystem = ''): Observable<PackageDetailResponse> {
+    let params = new HttpParams()
       .set('name', name)
       .set('page', page.toString())
       .set('page_size', pageSize.toString());
+    if (ecosystem) {
+      params = params.set('ecosystem', ecosystem);
+    }
     return this.http.get<PackageDetailResponse>(`${this.baseUrl}/packages/detail`, { params });
   }
 
@@ -311,10 +315,12 @@ export class ApiService {
   }
 
   /** One row per distinct (vuln_id, purl) across the project's SBOMs. */
-  getProjectVulnerabilities(name: string, scope = ''): Observable<VulnerabilityListItem[]> {
-    const params = scope ? new HttpParams().set('scope', scope) : undefined;
+  getProjectVulnerabilities(name: string, scope = '', kind = ''): Observable<VulnerabilityListItem[]> {
+    let params = new HttpParams();
+    if (scope) params = params.set('scope', scope);
+    if (kind) params = params.set('kind', kind);
     return this.http.get<VulnerabilityListItem[]>(
-      `${this.baseUrl}/projects/${encodeURIComponent(name)}/vulnerabilities`, { params });
+      `${this.baseUrl}/projects/${encodeURIComponent(name)}/vulnerabilities`, { params: params.keys().length ? params : undefined });
   }
 
   getProjectPackages(

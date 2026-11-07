@@ -35,8 +35,9 @@ import (
 //
 // scope ("" or a depgraph scope label) keeps only findings whose package is
 // pulled in that way. reachability ("" or "reachable", "not_reachable", "unknown")
-// filters by reachability evidence (#535).
-func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, scope string, reachability string) ([]dto.VulnerabilityListItem, error) {
+// filters by reachability evidence (#535). kind ("" or "vulnerability" / "malicious")
+// restricts the listing by finding kind.
+func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, scope string, reachability string, kind string) ([]dto.VulnerabilityListItem, error) {
 	scopeAnd := ""
 	if pred := depthPredicate(scope, "v.dependency_depth"); pred != "" {
 		scopeAnd = " AND " + pred
@@ -45,6 +46,11 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 	if reachability != "" {
 		scopeAnd += " AND v.reachability = ?"
 		args = append(args, reachability)
+	}
+	kindAnd := ""
+	if kind == "vulnerability" || kind == "malicious" {
+		kindAnd = " AND v.finding_kind = ?"
+		args = append(args, kind)
 	}
 	rows, err := c.Conn.Query(ctx, `
 		SELECT
@@ -58,6 +64,7 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 			ifNull(vx.vex_statement_id, '') AS vex_statement_id,
 			ifNull(vx.vex_author, '') AS vex_author,
 			ifNull(vx.vex_tooling, '') AS vex_tooling,
+			v.finding_kind,
 			ifNull(q.has_no_dep_graph, 0) AS has_no_dep_graph,
 			v.reachability, v.evidence_source, v.evidence_ref, v.evidence_at
 		FROM (SELECT * FROM vulnerabilities FINAL) AS v
@@ -75,17 +82,18 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 				argMax(s.tooling, s.vex_timestamp) AS vex_tooling,
 				max(s.vex_timestamp) AS winning_timestamp
 			FROM (
-				SELECT DISTINCT vuln_id, purl,
+				SELECT DISTINCT vuln_id, purl, finding_kind,
 					arrayJoin(arrayConcat([vuln_id], aliases)) AS match_id
 				FROM vulnerabilities FINAL WHERE sbom_id = ?
 			) AS f
 			INNER JOIN (SELECT * FROM vex_statements FINAL WHERE sbom_id = ?) AS s
 				ON s.vuln_id = f.match_id
-			WHERE s.product_purl = f.purl OR s.product_purl = '*'
+			WHERE (f.finding_kind != 'malicious' AND (s.product_purl = f.purl OR s.product_purl = '*'))
+			   OR (f.finding_kind = 'malicious' AND s.product_purl = f.purl)
 			GROUP BY f.vuln_id, f.purl
 		) AS vx ON vx.vuln_id = v.vuln_id AND vx.purl = v.purl
-		WHERE v.sbom_id = ?`+scopeAnd+`
-		ORDER BY v.severity ASC, v.discovered_at DESC
+		WHERE v.sbom_id = ?`+scopeAnd+kindAnd+`
+		ORDER BY (v.finding_kind = 'malicious') DESC, v.severity ASC, v.discovered_at DESC
 		LIMIT 1 BY v.vuln_id, v.purl
 	`, args...)
 	if err != nil {
@@ -108,7 +116,9 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 			&item.AdvisorySource, &item.AdvisoryStatus, &components,
 			&item.VEXStatus,
 			&item.VEXJustification, &vexTimestamp, &item.VEXStatementID,
-			&item.VEXAuthor, &item.VEXTooling, &hasNoDepGraph,
+			&item.VEXAuthor, &item.VEXTooling,
+			&item.FindingKind,
+			&hasNoDepGraph,
 			&item.Reachability, &item.EvidenceSource, &item.EvidenceRef, &evidenceAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan vuln row: %w", err)
@@ -363,7 +373,8 @@ func (c *Client) QueryAffectedProjectsByCVE(ctx context.Context, vulnID string, 
 	// Severity per affected PURL.
 	purlRows, err := c.Conn.Query(ctx,
 		`SELECT purl,
-			argMax(severity, multiIf(severity = 'CRITICAL', 4, severity = 'HIGH', 3, severity = 'MEDIUM', 2, severity = 'LOW', 1, 0))
+			argMax(severity, multiIf(severity = 'CRITICAL', 4, severity = 'HIGH', 3, severity = 'MEDIUM', 2, severity = 'LOW', 1, 0)),
+			argMax(finding_kind, multiIf(finding_kind = 'malicious', 1, 0))
 		FROM vulnerabilities FINAL
 		WHERE vuln_id IN (?)
 		GROUP BY purl`, storedIDs)
@@ -373,13 +384,15 @@ func (c *Client) QueryAffectedProjectsByCVE(ctx context.Context, vulnID string, 
 	defer purlRows.Close()
 
 	severityByPURL := map[string]string{}
+	kindByPURL := map[string]string{}
 	var purls []string
 	for purlRows.Next() {
-		var purl, severity string
-		if err := purlRows.Scan(&purl, &severity); err != nil {
+		var purl, severity, kind string
+		if err := purlRows.Scan(&purl, &severity, &kind); err != nil {
 			return nil, fmt.Errorf("failed to scan purl: %w", err)
 		}
 		severityByPURL[purl] = severity
+		kindByPURL[purl] = kind
 		purls = append(purls, purl)
 	}
 	if err := purlRows.Err(); err != nil {
@@ -425,6 +438,9 @@ func (c *Client) QueryAffectedProjectsByCVE(ctx context.Context, vulnID string, 
 	vexStatus := func(sbomID, purl string) string {
 		if st, ok := vexByKey[vexKey{sbomID, purl}]; ok {
 			return st
+		}
+		if kindByPURL[purl] == models.FindingKindMalicious {
+			return ""
 		}
 		return vexByKey[vexKey{sbomID, "*"}]
 	}
@@ -844,7 +860,7 @@ func (c *Client) QueryDependencySearch(ctx context.Context, query string, page, 
 }
 
 // QueryPackageDetail returns ALL projects using a specific package (paginated).
-func (c *Client) QueryPackageDetail(ctx context.Context, packageName string, page, pageSize uint64) (*dto.PackageDetailResponse, error) {
+func (c *Client) QueryPackageDetail(ctx context.Context, packageName, ecosystem string, page, pageSize uint64) (*dto.PackageDetailResponse, error) {
 	if pageSize == 0 {
 		pageSize = 50
 	}
@@ -868,12 +884,30 @@ func (c *Client) QueryPackageDetail(ctx context.Context, packageName string, pag
 		return nil, err
 	}
 
+	var lookalikes []string
+	if ecosystem != "" {
+		_ = c.Conn.QueryRow(ctx, `
+			SELECT lookalikes
+			FROM lookalike_cache FINAL
+			WHERE lower(system) = lower(?) AND package = ?
+			LIMIT 1
+		`, ecosystem, packageName).Scan(&lookalikes)
+	} else {
+		_ = c.Conn.QueryRow(ctx, `
+			SELECT lookalikes
+			FROM lookalike_cache FINAL
+			WHERE package = ?
+			LIMIT 1
+		`, packageName).Scan(&lookalikes)
+	}
+
 	return &dto.PackageDetailResponse{
 		PackageName:   packageName,
 		TotalProjects: totalProjects,
 		Projects:      projects,
 		Page:          page,
 		PageSize:      pageSize,
+		LookalikeOf:   lookalikes,
 	}, nil
 }
 

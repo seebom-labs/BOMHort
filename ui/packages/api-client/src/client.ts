@@ -127,8 +127,41 @@ export class BomhortApiClient {
     return this.get(`/sboms/${sbomId}/dependencies`, signal);
   }
 
-  getSbomVulnerabilities(sbomId: string, scope = '', reachability = '', signal?: AbortSignal): Promise<VulnerabilityListItem[]> {
-    return this.get(`/sboms/${sbomId}/vulnerabilities${query({ scope, reachability })}`, signal);
+  getSbomVulnerabilities(sbomId: string, signal?: AbortSignal): Promise<VulnerabilityListItem[]>;
+  getSbomVulnerabilities(sbomId: string, scope?: string, signal?: AbortSignal): Promise<VulnerabilityListItem[]>;
+  getSbomVulnerabilities(sbomId: string, scope?: string, reachability?: string, signal?: AbortSignal): Promise<VulnerabilityListItem[]>;
+  getSbomVulnerabilities(sbomId: string, scope?: string, reachability?: string, kind?: string, signal?: AbortSignal): Promise<VulnerabilityListItem[]>;
+  getSbomVulnerabilities(
+    sbomId: string,
+    scopeOrSignal?: string | AbortSignal,
+    reachabilityOrSignal?: string | AbortSignal,
+    kindOrSignal?: string | AbortSignal,
+    signal?: AbortSignal
+  ): Promise<VulnerabilityListItem[]> {
+    let scope = '';
+    let reachability = '';
+    let kind = '';
+    let sig: AbortSignal | undefined = signal;
+
+    if (scopeOrSignal instanceof AbortSignal) {
+      sig = scopeOrSignal;
+    } else if (typeof scopeOrSignal === 'string') {
+      scope = scopeOrSignal;
+    }
+
+    if (reachabilityOrSignal instanceof AbortSignal) {
+      sig = reachabilityOrSignal;
+    } else if (typeof reachabilityOrSignal === 'string') {
+      reachability = reachabilityOrSignal;
+    }
+
+    if (kindOrSignal instanceof AbortSignal) {
+      sig = kindOrSignal;
+    } else if (typeof kindOrSignal === 'string') {
+      kind = kindOrSignal;
+    }
+
+    return this.get(`/sboms/${sbomId}/vulnerabilities${query({ scope, reachability, kind })}`, sig);
   }
 
   getSbomVex(sbomId: string, signal?: AbortSignal): Promise<VEXStatementItem[]> {
@@ -204,8 +237,15 @@ export class BomhortApiClient {
     return this.get(`/packages/search${query({ q, page, page_size: pageSize })}`, signal);
   }
 
-  getPackageDetail(name: string, page = 1, pageSize = 50, signal?: AbortSignal): Promise<PackageDetailResponse> {
-    return this.get(`/packages/detail${query({ name, page, page_size: pageSize })}`, signal);
+  getPackageDetail(name: string, page = 1, pageSize = 50, ecosystemOrSignal?: string | AbortSignal, signal?: AbortSignal): Promise<PackageDetailResponse> {
+    let ecosystem = '';
+    let sig = signal;
+    if (ecosystemOrSignal instanceof AbortSignal) {
+      sig = ecosystemOrSignal;
+    } else if (typeof ecosystemOrSignal === 'string') {
+      ecosystem = ecosystemOrSignal;
+    }
+    return this.get(`/packages/detail${query({ name, page, page_size: pageSize, ecosystem: ecosystem || undefined })}`, sig);
   }
 
   getProjects(page = 1, pageSize = 50, search = '', tag = '', signal?: AbortSignal): Promise<PaginatedResponse<ProjectListItem>> {
@@ -228,8 +268,8 @@ export class BomhortApiClient {
     return this.get(`/projects/${encodeURIComponent(name)}/sboms${query({ page, page_size: pageSize })}`, signal);
   }
 
-  getProjectVulnerabilities(name: string, scope = '', signal?: AbortSignal): Promise<VulnerabilityListItem[]> {
-    return this.get(`/projects/${encodeURIComponent(name)}/vulnerabilities${query({ scope })}`, signal);
+  getProjectVulnerabilities(name: string, scope = '', kind = '', signal?: AbortSignal): Promise<VulnerabilityListItem[]> {
+    return this.get(`/projects/${encodeURIComponent(name)}/vulnerabilities${query({ scope, kind })}`, signal);
   }
 
   getProjectPackages(name: string, page = 1, pageSize = 50, search = '', signal?: AbortSignal): Promise<PaginatedResponse<ProjectPackageItem>> {

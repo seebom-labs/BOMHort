@@ -19,6 +19,7 @@ import (
 	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
 	"github.com/seebom-labs/bomhort/backend/internal/config"
 	"github.com/seebom-labs/bomhort/backend/internal/depgraph"
+	"github.com/seebom-labs/bomhort/backend/internal/depsdev"
 	"github.com/seebom-labs/bomhort/backend/internal/docstore"
 	"github.com/seebom-labs/bomhort/backend/internal/evidence"
 	gh "github.com/seebom-labs/bomhort/backend/internal/github"
@@ -95,7 +96,11 @@ func main() {
 
 	// Initialize package-registry license resolvers (npm, NuGet, deps.dev)
 	// for licenses that are still unknown after the GitHub pass.
-	registryResolvers := newRegistryResolvers(context.Background(), cfg, chClient, ghResolver)
+	var ddResolver *depsdev.Resolver
+	if !cfg.SkipDepsDevResolve {
+		ddResolver = depsdev.NewResolver()
+	}
+	registryResolvers := newRegistryResolvers(context.Background(), cfg, chClient, ghResolver, ddResolver)
 
 	// Initialize S3 client if S3 buckets are configured.
 	var s3c *s3client.Client
@@ -252,7 +257,7 @@ func main() {
 		// by a cancelled write is never claimed again.
 		statusCtx := context.WithoutCancel(ctx)
 		for _, job := range jobs {
-			if err := processJob(ctx, cfg, chClient, osvClient, exceptions, ghResolver, registryResolvers, s3c, originals, job); err != nil {
+			if err := processJob(ctx, cfg, chClient, osvClient, exceptions, ghResolver, registryResolvers, ddResolver, s3c, originals, job); err != nil {
 				var deferErr *deferError
 				if errors.As(err, &deferErr) {
 					log.Printf("Deferred %s until %s: %v", job.SourceFile, deferErr.until.Format(time.RFC3339), deferErr.cause)
@@ -286,7 +291,7 @@ func main() {
 	}
 }
 
-func processJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, rules *license.ExceptionsWatcher, ghResolver *gh.Resolver, registryResolvers []registryResolver, s3c *s3client.Client, originals docstore.Store, job models.IngestionJob) error {
+func processJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, rules *license.ExceptionsWatcher, ghResolver *gh.Resolver, registryResolvers []registryResolver, ddResolver *depsdev.Resolver, s3c *s3client.Client, originals docstore.Store, job models.IngestionJob) error {
 	// Determine how to open the file: S3 URI or local path.
 	openFile := func() (io.ReadCloser, error) {
 		if strings.HasPrefix(job.SourceFile, "s3://") {
@@ -316,7 +321,7 @@ func processJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Cl
 	// rules current when its results are written.
 	exceptions := func() *license.ExceptionIndex { return rules.Current().Value }
 
-	return processSBOMJob(ctx, cfg, chClient, osvClient, exceptions, ghResolver, registryResolvers, openFile, originals, job)
+	return processSBOMJob(ctx, cfg, chClient, osvClient, exceptions, ghResolver, registryResolvers, ddResolver, openFile, originals, job)
 }
 
 func processVEXJob(ctx context.Context, chClient *clickhouse.Client, openFile func() (io.ReadCloser, error), job models.IngestionJob) error {
@@ -418,7 +423,7 @@ func excludeIndices(names, licenses []string, skip []uint32) ([]string, []string
 	return outNames, outLics
 }
 
-func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, exceptions func() *license.ExceptionIndex, ghResolver *gh.Resolver, registryResolvers []registryResolver, openFile func() (io.ReadCloser, error), originals docstore.Store, job models.IngestionJob) error {
+func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, exceptions func() *license.ExceptionIndex, ghResolver *gh.Resolver, registryResolvers []registryResolver, ddResolver *depsdev.Resolver, openFile func() (io.ReadCloser, error), originals docstore.Store, job models.IngestionJob) error {
 
 	// 1. Read the whole document once. The bytes are needed twice — for the
 	// parser and for the Tier-2 original capture (#256) — and sbom.Parse reads
@@ -522,7 +527,51 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 		result.SBOM.ImageRef, result.SBOM.ImageDigest = job.ImageRef, job.ImageDigest
 	}
 
-	// 4. Insert package arrays (with resolved licenses).
+	// 4. Resolve package lookalikes (typosquatting detection) and insert package arrays.
+	// Lookups on the ingest path read only from the in-memory / preloaded cache to
+	// prevent serial network requests from delaying package insertion (#531).
+	// Uncached packages are queued for background lookup and cached for future queries.
+	lookalikes := make([]string, len(result.Packages.PackageNames))
+	if ddResolver != nil && !cfg.SkipDepsDevResolve {
+		var uncached []depsdev.PackageVersion
+		seenUncached := make(map[string]bool)
+
+		for i, purl := range result.Packages.PackagePURLs {
+			if purl == "" {
+				continue
+			}
+			pv, ok := depsdev.ExtractPackage(purl)
+			if !ok {
+				continue
+			}
+			if cached, ok := ddResolver.CachedSimilarlyNamedPackages(pv.System, pv.Name); ok {
+				if len(cached) > 0 {
+					lookalikes[i] = strings.Join(cached, ", ")
+				}
+			} else {
+				cacheKey := pv.System + ":" + pv.Name
+				if !seenUncached[cacheKey] {
+					seenUncached[cacheKey] = true
+					uncached = append(uncached, pv)
+				}
+			}
+		}
+
+		if len(uncached) > 0 {
+			go func(pkgs []depsdev.PackageVersion) {
+				bgCtx := context.Background()
+				for _, pv := range pkgs {
+					ddResolver.SimilarlyNamedPackages(bgCtx, pv.System, pv.Name)
+				}
+				if chClient != nil {
+					if entries := ddResolver.LookalikeCacheEntries(); len(entries) > 0 {
+						_ = chClient.InsertLookalikeCache(bgCtx, entries)
+					}
+				}
+			}(uncached)
+		}
+	}
+	result.Packages.LookalikeOf = lookalikes
 	own.applyPackages(&result.Packages)
 	result.Packages.ImageDigest = result.SBOM.ImageDigest
 	if err := chClient.InsertSBOMPackages(ctx, &result.Packages); err != nil {
