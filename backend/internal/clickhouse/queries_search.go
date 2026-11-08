@@ -290,7 +290,7 @@ func (c *Client) QuerySBOMDetail(ctx context.Context, sbomID string) (*dto.SBOMD
 	err := c.Conn.QueryRow(ctx, `
 		SELECT
 			s.sbom_id, s.source_file, s.spdx_version, s.document_name, s.document_version, s.ingested_at,
-			s.source_repo, s.source_ref,
+			s.source_repo, s.source_ref, s.workload_kind, s.workload_name, s.workload_uid,
 			ifNull(p.pkg_count, 0) AS package_count,
 			s.quality_score, s.quality_flags
 		FROM (SELECT * FROM sboms FINAL) AS s
@@ -303,7 +303,9 @@ func (c *Client) QuerySBOMDetail(ctx context.Context, sbomID string) (*dto.SBOMD
 	`, sbomID).Scan(
 		&detail.SBOMID, &detail.SourceFile, &detail.SPDXVersion,
 		&detail.DocumentName, &detail.DocumentVersion, &ingestedAt,
-		&detail.SourceRepo, &detail.SourceRef, &detail.PackageCount,
+		&detail.SourceRepo, &detail.SourceRef,
+		&detail.WorkloadKind, &detail.WorkloadName, &detail.WorkloadUID,
+		&detail.PackageCount,
 		&detail.QualityScore, &detail.QualityFlags,
 	)
 	if err != nil {
@@ -447,6 +449,9 @@ func (c *Client) QueryAffectedProjectsByCVE(ctx context.Context, vulnID string, 
 			ifNull(s.document_name, p.source_file) AS document_name,
 			ifNull(s.cluster, '') AS cluster,
 			ifNull(s.namespace, '') AS namespace,
+			ifNull(s.workload_kind, '') AS workload_kind,
+			ifNull(s.workload_name, '') AS workload_name,
+			ifNull(s.workload_uid, '') AS workload_uid,
 			hit,
 			indexOf(p.package_purls, hit) AS idx,
 			arrayElement(p.package_names, idx) AS name,
@@ -455,7 +460,7 @@ func (c *Client) QueryAffectedProjectsByCVE(ctx context.Context, vulnID string, 
 				arrayFilter((i, x) -> x = hit, arrayEnumerate(p.package_purls), p.package_purls))) AS depth
 		FROM sbom_packages AS p
 		ARRAY JOIN arrayFilter(x -> x IN (?), p.package_purls) AS hit
-		LEFT JOIN (SELECT sbom_id, document_name, cluster, namespace FROM sboms) AS s ON s.sbom_id = p.sbom_id
+		LEFT JOIN (SELECT sbom_id, document_name, cluster, namespace, workload_kind, workload_name, workload_uid FROM sboms) AS s ON s.sbom_id = p.sbom_id
 	`+ownerWhere, append([]any{purls}, ownerArgs...)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query projects for %s: %w", vulnID, err)
@@ -465,10 +470,10 @@ func (c *Client) QueryAffectedProjectsByCVE(ctx context.Context, vulnID string, 
 	var items []dto.AffectedProject
 	seen := map[vexKey]bool{}
 	for rows.Next() {
-		var sbomID, sourceFile, documentName, cluster, namespace, hit, pkgName, version string
+		var sbomID, sourceFile, documentName, cluster, namespace, workloadKind, workloadName, workloadUID, hit, pkgName, version string
 		var idx uint64
 		var depthRaw uint16
-		if err := rows.Scan(&sbomID, &sourceFile, &documentName, &cluster, &namespace, &hit, &idx, &pkgName, &version, &depthRaw); err != nil {
+		if err := rows.Scan(&sbomID, &sourceFile, &documentName, &cluster, &namespace, &workloadKind, &workloadName, &workloadUID, &hit, &idx, &pkgName, &version, &depthRaw); err != nil {
 			return nil, fmt.Errorf("failed to scan project row: %w", err)
 		}
 		// No FINAL above: skip a duplicate pre-merge row.
@@ -486,6 +491,9 @@ func (c *Client) QueryAffectedProjectsByCVE(ctx context.Context, vulnID string, 
 			DocumentName:    documentName,
 			Cluster:         cluster,
 			Namespace:       namespace,
+			WorkloadKind:    workloadKind,
+			WorkloadName:    workloadName,
+			WorkloadUID:     workloadUID,
 			PURL:            hit,
 			PackageName:     pkgName,
 			Version:         version,

@@ -80,6 +80,10 @@ export interface SBOMListItem {
   cluster?: string;
   namespace?: string;
   project?: string;
+  /** Workload identity (#458); omitted when unset. */
+  workload_kind?: string;
+  workload_name?: string;
+  workload_uid?: string;
   /** Quality evaluation score (0-100) and deduction flags (#537). */
   quality_score?: number;
   quality_flags?: string[];
@@ -255,6 +259,10 @@ export interface SBOMDetail {
   /** Source attribution (#332); omitted by the API when unknown. */
   source_repo?: string;
   source_ref?: string;
+  /** Workload identity (#458); omitted when unset. */
+  workload_kind?: string;
+  workload_name?: string;
+  workload_uid?: string;
   critical_vulns: number;
   high_vulns: number;
   medium_vulns: number;
@@ -328,6 +336,10 @@ export interface AffectedProject {
   /** Ownership of the SBOM (#459); '' when the instance has none. */
   cluster: string;
   namespace: string;
+  /** Workload identity (#458); omitted when unset. */
+  workload_kind?: string;
+  workload_name?: string;
+  workload_uid?: string;
   purl: string;
   package_name: string;
   version: string;

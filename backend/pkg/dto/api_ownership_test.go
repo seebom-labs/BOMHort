@@ -49,7 +49,7 @@ func TestSBOMListItem_OwnershipFieldsOmittedWhenUnset(t *testing.T) {
 	}
 	out := string(b)
 
-	for _, unwanted := range []string{"cluster", "namespace", "project", "source_repo", "source_ref"} {
+	for _, unwanted := range []string{"cluster", "namespace", "project", "source_repo", "source_ref", "workload_kind", "workload_name", "workload_uid"} {
 		if strings.Contains(out, `"`+unwanted+`"`) {
 			t.Errorf("unset %q must be omitted, got %s", unwanted, out)
 		}
@@ -58,6 +58,32 @@ func TestSBOMListItem_OwnershipFieldsOmittedWhenUnset(t *testing.T) {
 	for _, want := range []string{`"sbom_id"`, `"document_name"`, `"package_count"`, `"vuln_count"`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing required field %s in %s", want, out)
+		}
+	}
+}
+
+func TestSBOMListItem_WorkloadIdentityFields(t *testing.T) {
+	item := SBOMListItem{
+		SBOMID:       "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+		DocumentName: "payment-service",
+		WorkloadKind: "Deployment",
+		WorkloadName: "payment-service",
+		WorkloadUID:  "1234-5678-uid",
+	}
+
+	b, err := json.Marshal(item)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	out := string(b)
+
+	for _, want := range []string{
+		`"workload_kind":"Deployment"`,
+		`"workload_name":"payment-service"`,
+		`"workload_uid":"1234-5678-uid"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %s in %s", want, out)
 		}
 	}
 }

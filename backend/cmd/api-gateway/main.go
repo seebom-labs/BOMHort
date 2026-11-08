@@ -182,14 +182,29 @@ func main() {
 	// ?search= is a substring match on document name or source path. They
 	// compose, so a project page can offer a search box within the project.
 	// ?min_quality= filters for SBOMs with quality_score >= min_quality (0-100, #537).
+	// ?cluster= filters by cluster (#459).
+	// ?workload_kind=, ?workload_name= and ?workload_uid= (#458) filter by runtime workload identity.
 	mux.HandleFunc("GET /api/v1/sboms", func(w http.ResponseWriter, r *http.Request) {
 		page := parseUint64(r.URL.Query().Get("page"), 1)
 		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
 		search := sanitizeSearchTerm(r.URL.Query().Get("search"))
 		project := sanitizeProjectName(r.URL.Query().Get("project"))
+		cluster := strings.TrimSpace(r.URL.Query().Get("cluster"))
 		minQuality := parseUint8(r.URL.Query().Get("min_quality"), 0)
+		rawKind := strings.TrimSpace(r.URL.Query().Get("workload_kind"))
+		workloadKind := canonicalWorkloadKind(rawKind)
+		if rawKind != "" && workloadKind == "" {
+			writeError(w, http.StatusBadRequest, "Invalid workload kind")
+			return
+		}
+		workloadName := strings.TrimSpace(r.URL.Query().Get("workload_name"))
+		workloadUID := strings.TrimSpace(r.URL.Query().Get("workload_uid"))
+		if workloadUID != "" && !isValidUUID(workloadUID) {
+			writeError(w, http.StatusBadRequest, "Invalid workload UID")
+			return
+		}
 
-		resp, err := chClient.QuerySBOMs(r.Context(), page, pageSize, search, project, minQuality)
+		resp, err := chClient.QuerySBOMs(r.Context(), page, pageSize, search, project, cluster, workloadKind, workloadName, workloadUID, minQuality)
 		if err != nil {
 			log.Printf("ERROR: list sboms: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch SBOMs")
@@ -786,7 +801,19 @@ func main() {
 		}
 		page := parseUint64(r.URL.Query().Get("page"), 1)
 		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
-		resp, err := chClient.QueryClusterSBOMs(r.Context(), name, page, pageSize)
+		rawKind := strings.TrimSpace(r.URL.Query().Get("workload_kind"))
+		workloadKind := canonicalWorkloadKind(rawKind)
+		if rawKind != "" && workloadKind == "" {
+			writeError(w, http.StatusBadRequest, "Invalid workload kind")
+			return
+		}
+		workloadName := strings.TrimSpace(r.URL.Query().Get("workload_name"))
+		workloadUID := strings.TrimSpace(r.URL.Query().Get("workload_uid"))
+		if workloadUID != "" && !isValidUUID(workloadUID) {
+			writeError(w, http.StatusBadRequest, "Invalid workload UID")
+			return
+		}
+		resp, err := chClient.QueryClusterSBOMs(r.Context(), name, page, pageSize, workloadKind, workloadName, workloadUID)
 		if err != nil {
 			log.Printf("ERROR: cluster sboms for %s: %v", sanitizeLogParam(name), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch cluster SBOMs")
@@ -1152,6 +1179,26 @@ func isValidUUID(s string) bool {
 	return s != "" && uuidPattern.MatchString(s)
 }
 
+// recognizedWorkloadKinds maps lowercase workload kinds to their canonical Kubernetes casing (#458).
+var recognizedWorkloadKinds = map[string]string{
+	"deployment":            "Deployment",
+	"daemonset":             "DaemonSet",
+	"statefulset":           "StatefulSet",
+	"job":                   "Job",
+	"cronjob":               "CronJob",
+	"pod":                   "Pod",
+	"replicaset":            "ReplicaSet",
+	"replicationcontroller": "ReplicationController",
+	"rollout":               "Rollout",
+}
+
+func canonicalWorkloadKind(kind string) string {
+	if kind == "" {
+		return ""
+	}
+	return recognizedWorkloadKinds[strings.ToLower(strings.TrimSpace(kind))]
+}
+
 // isValidVulnID checks whether the string is a valid vulnerability identifier
 // (CVE-xxxx-xxxx, GHSA-xxxx, OSV-xxxx, etc.).
 func isValidVulnID(s string) bool {
@@ -1446,6 +1493,20 @@ func queryOverride(r *http.Request, param, fallback string) string {
 	return fallback
 }
 
+// paramOrHeader reads a parameter from the query string first, falling back to
+// the first non-empty header in headers.
+func paramOrHeader(r *http.Request, param string, headers ...string) string {
+	if v := strings.TrimSpace(r.URL.Query().Get(param)); v != "" {
+		return v
+	}
+	for _, h := range headers {
+		if v := strings.TrimSpace(r.Header.Get(h)); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 // uploadStore is the minimal surface uploadHandler needs, kept small for testing.
 type uploadStore interface {
 	HashExists(ctx context.Context, hash string) (bool, error)
@@ -1701,9 +1762,35 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 		// existing ?cluster= contract (#131) -- a pushing CI job names where the
 		// artifact belongs, the server cannot infer it for an uploaded body the
 		// way the watcher can from an object key.
+		//
+		// Workload identity (#458) identifies the running Kubernetes workload
+		// when an SBOM is uploaded by a runtime scanner walking pods.
+		// Accepted via query params or headers (query params take precedence).
+		workloadKind := paramOrHeader(r, "workload_kind", "X-Workload-Kind", "Workload-Kind")
+		workloadName := paramOrHeader(r, "workload_name", "X-Workload-Name", "Workload-Name")
+		workloadUID := paramOrHeader(r, "workload_uid", "X-Workload-UID", "X-Workload-Uid", "Workload-UID")
+
+		if workloadKind != "" {
+			canonical := canonicalWorkloadKind(workloadKind)
+			if canonical == "" {
+				writeError(w, http.StatusBadRequest, "Invalid workload kind")
+				return
+			}
+			workloadKind = canonical
+		}
+		if workloadUID != "" {
+			if !isValidUUID(workloadUID) {
+				writeError(w, http.StatusBadRequest, "Invalid workload UID")
+				return
+			}
+		}
+
 		cluster := queryOverride(r, "cluster", cfg.ClusterName)
 		namespace := queryOverride(r, "namespace", cfg.Namespace)
 		project := queryOverride(r, "project", cfg.Project)
+		if project == "" && workloadName != "" {
+			project = workloadName
+		}
 		// ?parent= names the product this upload belongs to explicitly; it
 		// outranks the mapping file and the automatic grouping signals.
 		parent := queryOverride(r, "parent", cfg.Parent)
@@ -1802,6 +1889,9 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			Cluster:      cluster,
 			Namespace:    namespace,
 			Project:      project,
+			WorkloadKind: workloadKind,
+			WorkloadName: workloadName,
+			WorkloadUID:  workloadUID,
 			SourceRepo:   sourceRepoHdr,
 			SourceRef:    sourceRefHdr,
 			TargetSBOMID: targetSBOMID,
@@ -1841,7 +1931,7 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			sanitizeLogParam(cluster), sanitizeLogParam(namespace), sanitizeLogParam(project),
 			sanitizeLogParam(sourceFile))
 
-		writeJSON(w, http.StatusAccepted, map[string]string{
+		respMap := map[string]string{
 			"status":      "pending",
 			"job_id":      job.JobID.String(),
 			"sha256_hash": hash,
@@ -1850,7 +1940,17 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			"namespace":   namespace,
 			"project":     project,
 			"parent":      parent,
-		})
+		}
+		if workloadKind != "" {
+			respMap["workload_kind"] = workloadKind
+		}
+		if workloadName != "" {
+			respMap["workload_name"] = workloadName
+		}
+		if workloadUID != "" {
+			respMap["workload_uid"] = workloadUID
+		}
+		writeJSON(w, http.StatusAccepted, respMap)
 	}
 }
 

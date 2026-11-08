@@ -70,9 +70,12 @@ type SBOMListItem struct {
 	// these, so a client could not tell which cluster/namespace/project a
 	// listed SBOM belongs to without a second request per row. All three
 	// default to '' and are omitted when unset (single-instance deployments).
-	Cluster   string `json:"cluster,omitempty"`
-	Namespace string `json:"namespace,omitempty"`
-	Project   string `json:"project,omitempty"`
+	Cluster      string `json:"cluster,omitempty"`
+	Namespace    string `json:"namespace,omitempty"`
+	Project      string `json:"project,omitempty"`
+	WorkloadKind string `json:"workload_kind,omitempty"`
+	WorkloadName string `json:"workload_name,omitempty"`
+	WorkloadUID  string `json:"workload_uid,omitempty"`
 	// QualityScore (0-100) measures document completeness (#537).
 	QualityScore uint8 `json:"quality_score"`
 	// QualityFlags lists reasons for quality deductions (#537).
@@ -273,6 +276,9 @@ type SBOMDetail struct {
 	IngestedAt      string `json:"ingested_at"`
 	SourceRepo      string `json:"source_repo,omitempty"`
 	SourceRef       string `json:"source_ref,omitempty"`
+	WorkloadKind    string `json:"workload_kind,omitempty"`
+	WorkloadName    string `json:"workload_name,omitempty"`
+	WorkloadUID     string `json:"workload_uid,omitempty"`
 	CriticalVulns   uint64 `json:"critical_vulns"`
 	HighVulns       uint64 `json:"high_vulns"`
 	MediumVulns     uint64 `json:"medium_vulns"`
@@ -365,13 +371,16 @@ type AffectedProject struct {
 	SourceFile   string `json:"source_file"`
 	DocumentName string `json:"document_name"`
 	// Cluster and Namespace keep the same project in two clusters apart (#459).
-	Cluster     string `json:"cluster"`
-	Namespace   string `json:"namespace"`
-	PURL        string `json:"purl"`
-	PackageName string `json:"package_name"`
-	Version     string `json:"version"`
-	Severity    string `json:"severity"`
-	VEXStatus   string `json:"vex_status,omitempty"`
+	Cluster      string `json:"cluster"`
+	Namespace    string `json:"namespace"`
+	WorkloadKind string `json:"workload_kind,omitempty"`
+	WorkloadName string `json:"workload_name,omitempty"`
+	WorkloadUID  string `json:"workload_uid,omitempty"`
+	PURL         string `json:"purl"`
+	PackageName  string `json:"package_name"`
+	Version      string `json:"version"`
+	Severity     string `json:"severity"`
+	VEXStatus    string `json:"vex_status,omitempty"`
 	// IsDirect is DependencyScope == "direct"; kept for existing clients.
 	IsDirect        bool    `json:"is_direct"`
 	DependencyScope string  `json:"dependency_scope"`

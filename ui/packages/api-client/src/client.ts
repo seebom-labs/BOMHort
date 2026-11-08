@@ -75,6 +75,28 @@ export function query(params: Params): string {
  * endpoint, same names and defaults as the Angular `ApiService`, so a
  * component ported to another framework needs no call-site changes.
  */
+export interface SbomListOptions {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  project?: string;
+  cluster?: string;
+  workloadKind?: string;
+  workloadName?: string;
+  workloadUID?: string;
+  minQuality?: number;
+  signal?: AbortSignal;
+}
+
+export interface ClusterSbomOptions {
+  page?: number;
+  pageSize?: number;
+  workloadKind?: string;
+  workloadName?: string;
+  workloadUID?: string;
+  signal?: AbortSignal;
+}
+
 export class BomhortApiClient {
   readonly baseUrl: string;
   private readonly headers: Record<string, string>;
@@ -115,8 +137,65 @@ export class BomhortApiClient {
     return this.get('/stats/quality', signal);
   }
 
-  getSboms(page = 1, pageSize = 50, search = '', project = '', minQuality = 0, signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>> {
-    return this.get(`/sboms${query({ page, page_size: pageSize, search, project, min_quality: minQuality > 0 ? minQuality : undefined })}`, signal);
+  getSboms(options?: SbomListOptions): Promise<PaginatedResponse<SBOMListItem>>;
+  getSboms(
+    page?: number,
+    pageSize?: number,
+    search?: string,
+    project?: string,
+    minQualityOrSignal?: number | AbortSignal,
+    signal?: AbortSignal,
+  ): Promise<PaginatedResponse<SBOMListItem>>;
+  getSboms(
+    pageOrOptions: number | SbomListOptions = 1,
+    pageSize = 50,
+    search = '',
+    project = '',
+    minQualityOrSignal?: number | AbortSignal,
+    signal?: AbortSignal,
+  ): Promise<PaginatedResponse<SBOMListItem>> {
+    let page = 1;
+    let cluster = '';
+    let workloadKind = '';
+    let workloadName = '';
+    let workloadUID = '';
+    let minQuality = 0;
+    let sig: AbortSignal | undefined = signal;
+
+    if (typeof pageOrOptions === 'object' && pageOrOptions !== null) {
+      page = pageOrOptions.page ?? 1;
+      pageSize = pageOrOptions.pageSize ?? 50;
+      search = pageOrOptions.search ?? '';
+      project = pageOrOptions.project ?? '';
+      cluster = pageOrOptions.cluster ?? '';
+      workloadKind = pageOrOptions.workloadKind ?? '';
+      workloadName = pageOrOptions.workloadName ?? '';
+      workloadUID = pageOrOptions.workloadUID ?? '';
+      minQuality = pageOrOptions.minQuality ?? 0;
+      sig = pageOrOptions.signal;
+    } else {
+      page = pageOrOptions ?? 1;
+      if (typeof minQualityOrSignal === 'number') {
+        minQuality = minQualityOrSignal;
+      } else if (minQualityOrSignal && typeof minQualityOrSignal === 'object' && 'aborted' in minQualityOrSignal) {
+        sig = minQualityOrSignal as AbortSignal;
+      }
+    }
+
+    return this.get(
+      `/sboms${query({
+        page,
+        page_size: pageSize,
+        search: search || undefined,
+        project: project || undefined,
+        cluster: cluster || undefined,
+        workload_kind: workloadKind || undefined,
+        workload_name: workloadName || undefined,
+        workload_uid: workloadUID || undefined,
+        min_quality: minQuality > 0 ? minQuality : undefined,
+      })}`,
+      sig,
+    );
   }
 
   getSbomDetail(sbomId: string, signal?: AbortSignal): Promise<SBOMDetail> {
@@ -252,8 +331,46 @@ export class BomhortApiClient {
     return this.get(`/clusters/${encodeURIComponent(cluster)}/stats`, signal);
   }
 
-  getClusterSboms(cluster: string, page = 1, pageSize = 50, signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>> {
-    return this.get(`/clusters/${encodeURIComponent(cluster)}/sboms${query({ page, page_size: pageSize })}`, signal);
+  getClusterSboms(cluster: string, options?: ClusterSbomOptions): Promise<PaginatedResponse<SBOMListItem>>;
+  getClusterSboms(
+    cluster: string,
+    page?: number,
+    pageSize?: number,
+    signal?: AbortSignal,
+  ): Promise<PaginatedResponse<SBOMListItem>>;
+  getClusterSboms(
+    cluster: string,
+    pageOrOptions: number | ClusterSbomOptions = 1,
+    pageSize = 50,
+    signal?: AbortSignal,
+  ): Promise<PaginatedResponse<SBOMListItem>> {
+    let page = 1;
+    let workloadKind = '';
+    let workloadName = '';
+    let workloadUID = '';
+    let sig = signal;
+
+    if (typeof pageOrOptions === 'object' && pageOrOptions !== null) {
+      page = pageOrOptions.page ?? 1;
+      pageSize = pageOrOptions.pageSize ?? 50;
+      workloadKind = pageOrOptions.workloadKind ?? '';
+      workloadName = pageOrOptions.workloadName ?? '';
+      workloadUID = pageOrOptions.workloadUID ?? '';
+      sig = pageOrOptions.signal;
+    } else {
+      page = pageOrOptions ?? 1;
+    }
+
+    return this.get(
+      `/clusters/${encodeURIComponent(cluster)}/sboms${query({
+        page,
+        page_size: pageSize,
+        workload_kind: workloadKind || undefined,
+        workload_name: workloadName || undefined,
+        workload_uid: workloadUID || undefined,
+      })}`,
+      sig,
+    );
   }
 
   getNamespaces(cluster = '', signal?: AbortSignal): Promise<NamespaceListItem[]> {

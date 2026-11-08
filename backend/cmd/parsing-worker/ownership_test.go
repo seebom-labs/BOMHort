@@ -160,3 +160,54 @@ func TestOwnershipDoesNotTouchSPDXDocumentNamespace(t *testing.T) {
 		t.Errorf("Namespace = %q, want payments", m.Namespace)
 	}
 }
+
+func TestOwnershipWorkloadIdentity(t *testing.T) {
+	job := models.IngestionJob{
+		Cluster:      "prod-eu",
+		Namespace:    "payments",
+		WorkloadKind: "Deployment",
+		WorkloadName: "payment-service",
+		WorkloadUID:  "k8s-uid-999",
+	}
+
+	own := ownershipOf(job)
+	// Project defaults to WorkloadName when not explicitly set
+	if own.project != "payment-service" {
+		t.Errorf("own.project = %q, want payment-service (defaulted from WorkloadName)", own.project)
+	}
+
+	var sbom models.SBOM
+	own.applySBOM(&sbom)
+	if sbom.WorkloadKind != "Deployment" {
+		t.Errorf("sbom.WorkloadKind = %q, want Deployment", sbom.WorkloadKind)
+	}
+	if sbom.WorkloadName != "payment-service" {
+		t.Errorf("sbom.WorkloadName = %q, want payment-service", sbom.WorkloadName)
+	}
+	if sbom.WorkloadUID != "k8s-uid-999" {
+		t.Errorf("sbom.WorkloadUID = %q, want k8s-uid-999", sbom.WorkloadUID)
+	}
+	if sbom.Project != "payment-service" {
+		t.Errorf("sbom.Project = %q, want payment-service", sbom.Project)
+	}
+
+	// When project is explicitly set, it is not overridden
+	jobWithProject := models.IngestionJob{
+		Project:      "custom-project",
+		WorkloadKind: "StatefulSet",
+		WorkloadName: "db-node",
+		WorkloadUID:  "k8s-uid-111",
+	}
+	ownExplicit := ownershipOf(jobWithProject)
+	if ownExplicit.project != "custom-project" {
+		t.Errorf("ownExplicit.project = %q, want custom-project", ownExplicit.project)
+	}
+	var sbomExplicit models.SBOM
+	ownExplicit.applySBOM(&sbomExplicit)
+	if sbomExplicit.Project != "custom-project" {
+		t.Errorf("sbomExplicit.Project = %q, want custom-project", sbomExplicit.Project)
+	}
+	if sbomExplicit.WorkloadName != "db-node" {
+		t.Errorf("sbomExplicit.WorkloadName = %q, want db-node", sbomExplicit.WorkloadName)
+	}
+}

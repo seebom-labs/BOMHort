@@ -80,6 +80,25 @@ describe('SbomListComponent', () => {
     expect(component.sboms[1].project).toBeUndefined();
   });
 
+  it('carries workload identity fields to the rows (#458)', () => {
+    const fixture = TestBed.createComponent(SbomListComponent);
+    const component = fixture.componentInstance;
+
+    component.sboms = [
+      {
+        sbom_id: 'a', source_file: 'a.spdx.json', spdx_version: 'SPDX-2.3',
+        document_name: 'payment-service', package_count: 10, vuln_count: 0,
+        ingested_at: '2026-09-01T12:00:00Z',
+        workload_kind: 'Deployment', workload_name: 'payment-service', workload_uid: 'uid-1',
+      },
+    ] as any;
+
+    expect(() => fixture.detectChanges()).not.toThrow();
+    expect(component.sboms[0].workload_kind).toBe('Deployment');
+    expect(component.sboms[0].workload_name).toBe('payment-service');
+    expect(component.sboms[0].workload_uid).toBe('uid-1');
+  });
+
   // ── View mode (#58) ──────────────────────────────────────────────────────
   //
   // The grouped rows themselves live in ProjectGroupListComponent and are

@@ -32,11 +32,10 @@ export type SbomViewMode = 'flat' | 'grouped';
         </span>
 
         <!--
-          #58. The toggle is hidden inside a project scope: there the list is
-          already one project's versions, so grouping it into a single row
-          would collapse the page into the thing you clicked to get here.
+          #58. The toggle is hidden inside a project or workload scope: there the list is
+          already scoped, so grouping it would collapse or return unrelated rows.
         -->
-        <div class="view-toggle" *ngIf="!projectScope" role="group" aria-label="View mode">
+        <div class="view-toggle" *ngIf="!projectScope && !workloadNameScope && !workloadUIDScope" role="group" aria-label="View mode">
           <button
             type="button"
             class="toggle-btn"
@@ -63,6 +62,12 @@ export type SbomViewMode = 'flat' | 'grouped';
       <div class="scope-banner" *ngIf="projectScope">
         Versions of
         <a [routerLink]="['/projects', projectScope]" class="scope-link">{{ projectScope }}</a>
+        <a routerLink="/sboms" class="scope-clear" title="Show all SBOMs">✕ clear</a>
+      </div>
+
+      <div class="scope-banner" *ngIf="workloadNameScope || workloadUIDScope">
+        Workload
+        <strong>{{ workloadKindScope ? workloadKindScope + '/' : '' }}{{ workloadNameScope || workloadUIDScope }}</strong>
         <a routerLink="/sboms" class="scope-clear" title="Show all SBOMs">✕ clear</a>
       </div>
 
@@ -121,6 +126,9 @@ export type SbomViewMode = 'flat' | 'grouped';
             <!-- The project badge is redundant inside a project scope. -->
             <span class="owner-badge" *ngIf="sbom.project && sbom.project !== projectScope" [title]="'Project: ' + sbom.project">
               {{ sbom.project }}
+            </span>
+            <span class="owner-badge workload-badge" *ngIf="sbom.workload_name" [title]="'Workload: ' + (sbom.workload_kind ? sbom.workload_kind + '/' : '') + sbom.workload_name">
+              {{ sbom.workload_kind ? sbom.workload_kind + '/' : '' }}{{ sbom.workload_name }}
             </span>
             <span class="packages">{{ sbom.package_count | number }} packages</span>
             <span class="vulns" [class.has-vulns]="sbom.vuln_count > 0">
@@ -239,6 +247,7 @@ export type SbomViewMode = 'flat' | 'grouped';
       max-width: 140px; overflow: hidden; text-overflow: ellipsis;
     }
     .owner-badge.cluster-badge { background: var(--status-info-bg); color: var(--accent-hover); border-color: transparent; }
+    .owner-badge.workload-badge { background: var(--status-success-bg, rgba(16, 185, 129, 0.1)); color: var(--success, #10b981); border-color: transparent; }
     .packages { color: var(--text-secondary); font-size: 0.8rem; width: 110px; }
     .vulns { font-size: 0.8rem; width: 80px; color: var(--text-secondary); }
     .has-vulns { color: var(--severity-critical); font-weight: 600; }
@@ -274,6 +283,10 @@ export class SbomListComponent implements OnInit, OnDestroy {
   projectScope = '';
   /** Minimum quality score filter (#537). 0 = all. */
   minQuality = 0;
+  /** Workload identity from ?workload_kind=, ?workload_name=, ?workload_uid= (#458); '' = unscoped. */
+  workloadKindScope = '';
+  workloadNameScope = '';
+  workloadUIDScope = '';
   /** #58. Linkable via ?view=grouped so a grouped list can be shared. */
   viewMode: SbomViewMode = 'flat';
 
@@ -309,11 +322,21 @@ export class SbomListComponent implements OnInit, OnDestroy {
       const search = params.get('search') || '';
       const minQualityRaw = parseInt(params.get('min_quality') || '0', 10);
       const minQuality = isNaN(minQualityRaw) || minQualityRaw < 0 ? 0 : minQualityRaw;
-      // A project scope is a list of that project's versions; grouping it
-      // would collapse the page into the row that was clicked to open it.
-      const view: SbomViewMode = !project && params.get('view') === 'grouped' ? 'grouped' : 'flat';
+      const workloadKind = params.get('workload_kind') || '';
+      const workloadName = params.get('workload_name') || '';
+      const workloadUID = params.get('workload_uid') || '';
+      const hasWorkloadScope = !!(workloadKind || workloadName || workloadUID);
+      // A project or workload scope is a list of that identity's versions/documents; grouping it
+      // would return unrelated projects. Disable grouped mode while a workload filter is active.
+      const view: SbomViewMode = !project && !hasWorkloadScope && params.get('view') === 'grouped' ? 'grouped' : 'flat';
 
-      const changed = project !== this.projectScope || search !== this.searchTerm || view !== this.viewMode || minQuality !== this.minQuality;
+      const changed = project !== this.projectScope ||
+        search !== this.searchTerm ||
+        view !== this.viewMode ||
+        minQuality !== this.minQuality ||
+        workloadKind !== this.workloadKindScope ||
+        workloadName !== this.workloadNameScope ||
+        workloadUID !== this.workloadUIDScope;
       if (this.loadedOnce && !changed) {
         return;
       }
@@ -324,6 +347,9 @@ export class SbomListComponent implements OnInit, OnDestroy {
       this.searchTerm = search;
       this.minQuality = minQuality;
       this.viewMode = view;
+      this.workloadKindScope = workloadKind;
+      this.workloadNameScope = workloadName;
+      this.workloadUIDScope = workloadUID;
       this.loadedOnce = true;
       this.load(search);
     });
@@ -413,7 +439,16 @@ export class SbomListComponent implements OnInit, OnDestroy {
       return;
     }
 
-    this.api.getSboms(this.page, this.pageSize, search, this.projectScope, this.minQuality).subscribe((response) => {
+    this.api.getSboms(
+      this.page,
+      this.pageSize,
+      search,
+      this.projectScope,
+      this.workloadKindScope,
+      this.workloadNameScope,
+      this.workloadUIDScope,
+      this.minQuality,
+    ).subscribe((response) => {
       this.sboms = append ? [...this.sboms, ...response.data] : response.data;
       this.total = response.total;
       this.loading = false;

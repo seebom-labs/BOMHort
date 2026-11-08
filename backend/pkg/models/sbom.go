@@ -24,6 +24,11 @@ type SBOM struct {
 	// DocumentNamespace above, which is the SPDX document's URI identifier.
 	Namespace string `json:"namespace,omitempty"`
 	Project   string `json:"project,omitempty"`
+	// Workload identity (#458) identifies the running Kubernetes workload
+	// when the SBOM was produced by a runtime pod scanner.
+	WorkloadKind string `json:"workload_kind,omitempty"`
+	WorkloadName string `json:"workload_name,omitempty"`
+	WorkloadUID  string `json:"workload_uid,omitempty"`
 	// SourceRepo/SourceRef (#332) name where the product's source lives:
 	// a normalised https repository URL and the commit/tag/branch the SBOM
 	// was generated from. Extracted from the document at parse time
@@ -178,6 +183,10 @@ type IngestionJob struct {
 	Cluster      string     `json:"cluster,omitempty"`
 	Namespace    string     `json:"namespace,omitempty"`
 	Project      string     `json:"project,omitempty"`
+	// Workload identity (#458) passed from upload parameters to worker.
+	WorkloadKind string `json:"workload_kind,omitempty"`
+	WorkloadName string `json:"workload_name,omitempty"`
+	WorkloadUID  string `json:"workload_uid,omitempty"`
 	// SourceRepo/SourceRef (#332) carry an explicit X-Source-Repo /
 	// X-Source-Ref upload override from the gateway to the parsing worker.
 	// Empty for watcher-enqueued jobs — the worker then keeps whatever the
