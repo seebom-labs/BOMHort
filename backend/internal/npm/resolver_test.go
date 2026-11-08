@@ -2,8 +2,10 @@ package npm
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	json "github.com/goccy/go-json"
@@ -197,5 +199,23 @@ func TestTransientFailureIsRetried(t *testing.T) {
 	}
 	if got := r.Resolve(ctx, "pkg:npm/flaky@1.0.0"); got != "MIT" {
 		t.Errorf("retry: got %q, want MIT", got)
+	}
+}
+
+// A manifest larger than maxResponseSize is cut off and fails to decode, like
+// any other unreadable response: no license, and nothing cached.
+func TestOversizedResponseIsNotDecoded(t *testing.T) {
+	padding := strings.Repeat("x", maxResponseSize)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprintf(w, `{"license":"MIT","readme":%q}`, padding)
+	}))
+	defer srv.Close()
+
+	r := NewResolverWithRegistry(srv.URL)
+	if got := r.Resolve(context.Background(), "pkg:npm/huge@1.0.0"); got != "" {
+		t.Fatalf("Resolve() = %q, want empty for an oversized response", got)
+	}
+	if _, found := r.LoadValue("huge@1.0.0"); found {
+		t.Fatal("oversized response must not be cached")
 	}
 }

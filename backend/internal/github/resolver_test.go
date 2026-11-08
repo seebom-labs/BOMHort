@@ -2,8 +2,10 @@ package github
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -352,4 +354,32 @@ func (t *rewriteTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	}
 	newReq.Header = req.Header
 	return t.base.RoundTrip(newReq)
+}
+
+// GitHub responses larger than maxResponseSize are cut off and fail to decode
+// instead of being read into memory whole.
+func TestOversizedResponseIsNotDecoded(t *testing.T) {
+	padding := strings.Repeat("x", maxResponseSize)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/repos/test-org/huge-license/license":
+			_, _ = fmt.Fprintf(w, `{"license":{"spdx_id":"MIT"},"content":%q}`, padding)
+		case "/repos/test-org/huge-repo":
+			_, _ = fmt.Fprintf(w, `{"archived":true,"license":{"spdx_id":"MIT"},"description":%q}`, padding)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	resolver := newTestResolver()
+	resolver.apiBase = server.URL
+	ctx := context.Background()
+
+	if got := resolver.Resolve(ctx, "pkg:github/test-org/huge-license"); got != "" {
+		t.Errorf("Resolve() = %q, want empty for an oversized license response", got)
+	}
+	if meta := resolver.ResolveWithMetadata(ctx, "pkg:github/test-org/huge-repo"); meta != nil {
+		t.Errorf("ResolveWithMetadata() = %+v, want nil for an oversized repository response", meta)
+	}
 }

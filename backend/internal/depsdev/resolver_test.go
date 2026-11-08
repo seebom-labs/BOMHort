@@ -2,12 +2,15 @@ package depsdev
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestExtractPackageVersion(t *testing.T) {
@@ -297,5 +300,102 @@ func TestResolveBatch_VersionlessUsesDefaultVersion(t *testing.T) {
 	// Second call is served from the cache.
 	if got := r.Resolve(context.Background(), "pkg:pypi/requests"); got != "Apache-2.0" || packageCalls != 1 {
 		t.Fatalf("cached Resolve = %q (package calls %d)", got, packageCalls)
+	}
+}
+
+// Responses larger than maxResponseSize are cut off and fail to decode, like
+// any other unreadable response: no license, and nothing cached.
+func TestOversizedResponseIsNotDecoded(t *testing.T) {
+	padding := strings.Repeat("x", maxResponseSize)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v3/systems/npm/packages/huge-version/versions/1.0.0":
+			_, _ = fmt.Fprintf(w, `{"licenses":["MIT"],"padding":%q}`, padding)
+		case "/v3/systems/npm/packages/huge-package":
+			_, _ = fmt.Fprintf(w, `{"versions":[{"versionKey":{"version":"1.0.0"},"isDefault":true}],"padding":%q}`, padding)
+		case "/v3/systems/npm/packages/huge-package/versions/1.0.0":
+			_, _ = w.Write([]byte(`{"licenses":["MIT"]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	r := NewResolverWithBaseURL(srv.URL)
+	ctx := context.Background()
+	for _, purl := range []string{"pkg:npm/huge-version@1.0.0", "pkg:npm/huge-package"} {
+		if got := r.Resolve(ctx, purl); got != "" {
+			t.Errorf("Resolve(%s) = %q, want empty for an oversized response", purl, got)
+		}
+	}
+	if entries := r.CacheEntries(); len(entries) != 0 {
+		t.Errorf("oversized responses must not be cached, got %v", entries)
+	}
+}
+
+// An oversized batch page counts as a failed batch, so the versions are
+// looked up one by one instead.
+func TestResolveBatch_OversizedPageFallsBackToSingleLookups(t *testing.T) {
+	padding := strings.Repeat("x", maxResponseSize)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v3alpha/versionbatch":
+			_, _ = fmt.Fprintf(w, `{"responses":[{"request":{"versionKey":{"system":"NPM","name":"left-pad","version":"1.3.0"}},"version":{"licenses":["Apache-2.0"]}}],"padding":%q}`, padding)
+		case "/v3/systems/npm/packages/left-pad/versions/1.3.0":
+			_, _ = w.Write([]byte(`{"licenses":["MIT"]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	r := NewResolverWithBaseURL(srv.URL)
+	got := r.ResolveBatch(context.Background(), []string{"pkg:npm/left-pad@1.3.0"})
+	if got["pkg:npm/left-pad@1.3.0"] != "MIT" {
+		t.Fatalf("ResolveBatch() = %v, want the license from the single lookup (MIT)", got)
+	}
+}
+
+// A server whose pagination never ends must not keep the batch loop running.
+// What was answered is kept; the rest stays unresolved and uncached so it is
+// retried later.
+func TestResolveBatch_PaginationIsBounded(t *testing.T) {
+	purls := []string{"pkg:npm/a@1.0.0", "pkg:npm/b@1.0.0", "pkg:npm/c@1.0.0"}
+	tests := []struct {
+		name      string
+		token     func(page int32) string
+		wantCalls int32
+	}{
+		// Stopped as soon as the token comes back unchanged.
+		{"repeated token", func(int32) string { return "same" }, 2},
+		// A fresh token on every page: stopped after one page per version.
+		{"endless tokens", func(page int32) string { return fmt.Sprintf("page-%d", page) }, int32(len(purls))},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				page := calls.Add(1)
+				_, _ = fmt.Fprintf(w, `{"responses":[{"request":{"versionKey":{"system":"NPM","name":"a","version":"1.0.0"}},"version":{"licenses":["MIT"]}}],"nextPageToken":%q}`, tc.token(page))
+			}))
+			defer srv.Close()
+
+			// Without a bound the loop only ends when the context does.
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			r := NewResolverWithBaseURL(srv.URL)
+			got := r.ResolveBatch(ctx, purls)
+
+			if n := calls.Load(); n != tc.wantCalls {
+				t.Errorf("batch requests = %d, want %d", n, tc.wantCalls)
+			}
+			want := map[string]string{"pkg:npm/a@1.0.0": "MIT", "pkg:npm/b@1.0.0": "", "pkg:npm/c@1.0.0": ""}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("ResolveBatch() = %v, want %v", got, want)
+			}
+			if _, found := r.LoadValue("NPM:b@1.0.0"); found {
+				t.Error("a version the server never answered must not be cached")
+			}
+		})
 	}
 }

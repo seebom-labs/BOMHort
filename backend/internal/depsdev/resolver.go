@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -36,6 +37,12 @@ const (
 	// anyVersion stands in for the version in cache keys of purls that name
 	// no usable version; those resolve via the package's default version.
 	anyVersion = "*"
+
+	// maxResponseSize bounds a deps.dev response (same cap as
+	// rulesource.MaxSize). A larger body is cut off and fails to decode, so a
+	// broken or hostile endpoint cannot make the worker allocate without
+	// limit.
+	maxResponseSize = 10 << 20
 )
 
 // Resolver resolves package licenses via deps.dev.
@@ -287,7 +294,7 @@ func (r *Resolver) defaultVersion(ctx context.Context, pv PackageVersion) (versi
 		return "", ""
 	}
 	var pr packageResponse
-	if err := json.NewDecoder(resp.Body).Decode(&pr); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseSize)).Decode(&pr); err != nil {
 		return "", ""
 	}
 	for _, v := range pr.Versions {
@@ -382,7 +389,7 @@ func (r *Resolver) fetchLicense(ctx context.Context, pv PackageVersion) string {
 	}
 
 	var vr versionResponse
-	if err := json.NewDecoder(resp.Body).Decode(&vr); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseSize)).Decode(&vr); err != nil {
 		return ""
 	}
 	return vr.cacheValue()
@@ -394,8 +401,12 @@ func (r *Resolver) fetchLicenseBatch(ctx context.Context, versions []PackageVers
 		resolved[CacheKey(pv)] = ""
 	}
 
+	// Every page answers at least one request, so a batch needs at most
+	// len(versions) pages. The cap and the repeated-token check keep a broken
+	// or hostile server from paging forever; the versions it never answered
+	// stay "" and are not cached, so they are retried on a later run.
 	pageToken := ""
-	for {
+	for page := 1; page <= len(versions); page++ {
 		reqs := make([]batchVersionRequest, 0, len(versions))
 		for _, pv := range versions {
 			reqs = append(reqs, batchVersionRequest{VersionKey: versionKey{System: pv.System, Name: pv.Name, Version: pv.Version}})
@@ -421,7 +432,7 @@ func (r *Resolver) fetchLicenseBatch(ctx context.Context, versions []PackageVers
 			return nil, false
 		}
 		var br batchResponse
-		decodeErr := json.NewDecoder(resp.Body).Decode(&br)
+		decodeErr := json.NewDecoder(io.LimitReader(resp.Body, maxResponseSize)).Decode(&br)
 		_ = resp.Body.Close()
 		if resp.StatusCode != http.StatusOK || decodeErr != nil {
 			return nil, false
@@ -437,8 +448,14 @@ func (r *Resolver) fetchLicenseBatch(ctx context.Context, versions []PackageVers
 		if br.NextPageToken == "" {
 			return resolved, true
 		}
+		if br.NextPageToken == pageToken {
+			log.Printf("  deps.dev batch returned the same page token twice, stopping after %d pages", page)
+			return resolved, true
+		}
 		pageToken = br.NextPageToken
 	}
+	log.Printf("  deps.dev batch did not finish within %d pages, stopping", len(versions))
+	return resolved, true
 }
 
 // NormalizeLicenseDetails turns deps.dev's per-license details into one SPDX
