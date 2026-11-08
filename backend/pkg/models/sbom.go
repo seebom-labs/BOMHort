@@ -58,6 +58,11 @@ type SBOM struct {
 	// QualityFlags lists reasons for score deductions (e.g. no-dependency-graph,
 	// low-purl-coverage, missing-supplier).
 	QualityFlags []string `json:"quality_flags,omitempty"`
+	// ExtraFields holds the operator-declared fields found in the
+	// document, keyed by field name (internal/extrafields, EXTRA_FIELDS_FILE).
+	// Values are untrusted producer input, already length- and count-capped.
+	// nil = nothing recognised.
+	ExtraFields map[string][]string `json:"extra_fields,omitempty"`
 }
 
 // SBOMPackages stores the full dependency tree of an SBOM as parallel arrays.

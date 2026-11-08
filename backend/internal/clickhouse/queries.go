@@ -169,6 +169,14 @@ func (c *Client) QueryDashboardStats(ctx context.Context, f VulnFilter) (*dto.Da
 	return stats, nil
 }
 
+// ExtraFieldFilter narrows the SBOM listing by an extra field. Name
+// alone keeps SBOMs that carry the field at all; Name plus Value keeps SBOMs
+// where one of the field's values equals Value exactly. The zero value does
+// not filter.
+type ExtraFieldFilter struct {
+	Name, Value string
+}
+
 // QuerySBOMs fetches a paginated list of SBOMs with package and vulnerability counts.
 //
 // search, when non-empty, matches document_name or source_file (substring,
@@ -177,8 +185,9 @@ func (c *Client) QueryDashboardStats(ctx context.Context, f VulnFilter) (*dto.Da
 // rule the project listing and project page use, so "the SBOMs of
 // kubernetes" is eleven documents and not every path containing the word.
 // minQuality (#537), when > 0, restricts the list to SBOMs with quality_score >= minQuality.
+// field, when set, narrows to SBOMs carrying an extra field (see ExtraFieldFilter).
 // The filters compose.
-func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, project string, minQuality uint8) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
+func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, project string, minQuality uint8, field ExtraFieldFilter) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
 	if page == 0 {
 		page = 1
 	}
@@ -201,6 +210,14 @@ func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, 
 	if minQuality > 0 {
 		conds = append(conds, "s.quality_score >= ?")
 		whereArgs = append(whereArgs, minQuality)
+	}
+	switch {
+	case field.Name != "" && field.Value != "":
+		conds = append(conds, "has(s.extra_fields[?], ?)")
+		whereArgs = append(whereArgs, field.Name, field.Value)
+	case field.Name != "":
+		conds = append(conds, "mapContains(s.extra_fields, ?)")
+		whereArgs = append(whereArgs, field.Name)
 	}
 	whereClause := ""
 	if len(conds) > 0 {

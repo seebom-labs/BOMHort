@@ -102,10 +102,21 @@ func TestQueriesExecute(t *testing.T) {
 	}{
 		{"QueryDashboardStats", func() error { _, err := c.QueryDashboardStats(ctx, VulnFilter{}); return err }},
 		{"QueryQualityStats", func() error { _, err := c.QueryQualityStats(ctx); return err }},
-		{"QuerySBOMs", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "", "", 0); return err }},
-		{"QuerySBOMs/search", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "test", "", 0); return err }},
-		{"QuerySBOMs/project", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "", "payment-api", 0); return err }},
-		{"QuerySBOMs/project+search", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "v1", "payment-api", 0); return err }},
+		{"QuerySBOMs", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "", "", 0, ExtraFieldFilter{}); return err }},
+		{"QuerySBOMs/search", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "test", "", 0, ExtraFieldFilter{}); return err }},
+		{"QuerySBOMs/project", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "", "payment-api", 0, ExtraFieldFilter{}); return err }},
+		{"QuerySBOMs/project+search", func() error {
+			_, err := c.QuerySBOMs(ctx, 1, 10, "v1", "payment-api", 0, ExtraFieldFilter{})
+			return err
+		}},
+		{"QuerySBOMs/extra_field", func() error {
+			_, err := c.QuerySBOMs(ctx, 1, 10, "", "", 0, ExtraFieldFilter{Name: "owner_contact"})
+			return err
+		}},
+		{"QuerySBOMs/extra_field+value", func() error {
+			_, err := c.QuerySBOMs(ctx, 1, 10, "", "", 0, ExtraFieldFilter{Name: "owner_contact", Value: "team@example.com"})
+			return err
+		}},
 		{"QuerySBOMDetail", func() error { _, err := c.QuerySBOMDetail(ctx, someID); return err }},
 		{"QuerySBOMVulnerabilities", func() error { _, err := c.QuerySBOMVulnerabilities(ctx, someID, "", ""); return err }},
 		{"QuerySBOMLicenses", func() error { _, err := c.QuerySBOMLicenses(ctx, someID); return err }},

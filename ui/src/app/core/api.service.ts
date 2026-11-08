@@ -3,6 +3,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
   OwnerFilter,
+  ExtraFieldFilter,
   DashboardStats,
   PaginatedResponse,
   SBOMListItem,
@@ -74,9 +75,11 @@ export class ApiService {
   /**
    * SBOM list. `search` is a substring match on document name / source path;
    * `project` (#398) is the exact project identity and scopes the list to
-   * one project's versions. They compose. `minQuality` filters by minimum quality score (#537).
+   * one project's versions. `minQuality` filters by minimum quality score (#537).
+   * `field` narrows to SBOMs carrying an extra field, optionally with one
+   * exact value. They compose.
    */
-  getSboms(page = 1, pageSize = 50, search = '', project = '', minQuality = 0): Observable<PaginatedResponse<SBOMListItem>> {
+  getSboms(page = 1, pageSize = 50, search = '', project = '', minQuality = 0, field: ExtraFieldFilter = {}): Observable<PaginatedResponse<SBOMListItem>> {
     let params = new HttpParams()
       .set('page', page.toString())
       .set('page_size', pageSize.toString());
@@ -88,6 +91,13 @@ export class ApiService {
     }
     if (minQuality > 0) {
       params = params.set('min_quality', minQuality.toString());
+    }
+    // Narrow to SBOMs carrying an extra field (optionally one value).
+    if (field.extra_field) {
+      params = params.set('extra_field', field.extra_field);
+      if (field.extra_value) {
+        params = params.set('extra_value', field.extra_value);
+      }
     }
     return this.http.get<PaginatedResponse<SBOMListItem>>(`${this.baseUrl}/sboms`, { params });
   }

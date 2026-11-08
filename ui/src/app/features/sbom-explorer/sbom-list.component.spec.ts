@@ -1,7 +1,7 @@
 import { TestBed, ComponentFixture } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { SbomListComponent } from './sbom-list.component';
 import { ProjectGroupItem } from '../../core/api.models';
 
@@ -171,6 +171,39 @@ describe('SbomListComponent', () => {
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.querySelector('.view-toggle')).toBeFalsy();
     expect(compiled.querySelector('.scope-banner')).toBeTruthy();
+  });
+
+  it('filters the document list by an extra field from the URL', async () => {
+    await TestBed.inject(Router).navigate([], {
+      queryParams: { extra_field: 'owner_contact', extra_value: 'team@example.com', view: 'grouped' },
+    });
+    const fixture = TestBed.createComponent(SbomListComponent);
+    fixture.detectChanges();
+
+    // The filter only exists on the document listing, so ?view=grouped is ignored.
+    const req = httpMock.expectOne((r) => r.url.endsWith('/sboms'));
+    expect(req.request.params.get('extra_field')).toBe('owner_contact');
+    expect(req.request.params.get('extra_value')).toBe('team@example.com');
+    req.flush({ data: [], total: 0, page: 1, page_size: 100 });
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance;
+    expect(component.viewMode).toBe('flat');
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.querySelector('.view-toggle')).toBeFalsy();
+    expect(compiled.querySelector('.scope-banner')?.textContent).toContain('owner_contact');
+    expect(compiled.querySelector('.scope-banner')?.textContent).toContain('team@example.com');
+  });
+
+  it('ignores an extra_value without its extra_field', async () => {
+    await TestBed.inject(Router).navigate([], { queryParams: { extra_value: 'x' } });
+    const fixture = TestBed.createComponent(SbomListComponent);
+    fixture.detectChanges();
+
+    const req = httpMock.expectOne((r) => r.url.endsWith('/sboms'));
+    expect(req.request.params.has('extra_field')).toBe(false);
+    expect(req.request.params.has('extra_value')).toBe(false);
+    req.flush({ data: [], total: 0, page: 1, page_size: 100 });
   });
 
   it('drops the loaded rows when the filters change', () => {

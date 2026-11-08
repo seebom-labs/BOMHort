@@ -11,7 +11,7 @@ import { BomhortApiClient } from '@bomhort/api-client';
 const calls: Record<string, unknown[]> = {
   getDashboardStats: [{ cluster: 'prod-eu', namespace: '' }],
   getQualityStats: [],
-  getSboms: [2, 25, 'gin', 'payment-api'],
+  getSboms: [2, 25, 'gin', 'payment-api', 70, { extra_field: 'owner_contact', extra_value: 'team@example.com' }],
   getSbomDetail: ['id-1'],
   getSbomDependencies: ['id-1'],
   getSbomVulnerabilities: ['id-1', 'direct'],
@@ -49,6 +49,12 @@ const calls: Record<string, unknown[]> = {
   uploadEvidence: ['id-1', '{"config":{}}', 'ref-1'],
 };
 
+// Where the fetch client's signature differs from the service's: getSboms
+// keeps its AbortSignal in sixth position, so the extra-field filter follows it.
+const clientCalls: Record<string, unknown[]> = {
+  getSboms: [2, 25, 'gin', 'payment-api', 70, undefined, { extra_field: 'owner_contact', extra_value: 'team@example.com' }],
+};
+
 describe('ApiService ↔ @bomhort/api-client parity', () => {
   let service: ApiService;
   let http: HttpTestingController;
@@ -74,7 +80,7 @@ describe('ApiService ↔ @bomhort/api-client parity', () => {
       svc[method](...args).subscribe();
       const req = http.expectOne(() => true);
       req.flush({});
-      await cli[method](...args);
+      await cli[method](...(clientCalls[method] ?? args));
 
       // Same path and same decoded params; HttpParams leaves "/" unencoded and
       // orders keys differently, both irrelevant to the server.
@@ -85,6 +91,22 @@ describe('ApiService ↔ @bomhort/api-client parity', () => {
       http.verify();
     });
   }
+
+  it('getSboms keeps its AbortSignal in sixth position', async () => {
+    let seen: AbortSignal | null | undefined;
+    let fetched = '';
+    const client = new BomhortApiClient({
+      fetch: async (input, init) => {
+        fetched = String(input);
+        seen = init?.signal;
+        return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+      },
+    });
+    const ctl = new AbortController();
+    await client.getSboms(1, 50, '', '', 0, ctl.signal);
+    expect(seen).toBe(ctl.signal);
+    expect(new URL(fetched, 'http://h').searchParams.has('extra_field')).toBe(false);
+  });
 
   it('download and report URLs match', () => {
     const client = new BomhortApiClient();

@@ -1,5 +1,6 @@
 import type {
   OwnerFilter,
+  ExtraFieldFilter,
   AffectedProject,
   ArchivedPackageInfo,
   ArchivedRepoGroup,
@@ -115,8 +116,25 @@ export class BomhortApiClient {
     return this.get('/stats/quality', signal);
   }
 
-  getSboms(page = 1, pageSize = 50, search = '', project = '', minQuality = 0, signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>> {
-    return this.get(`/sboms${query({ page, page_size: pageSize, search, project, min_quality: minQuality > 0 ? minQuality : undefined })}`, signal);
+  /**
+   * `field` comes after `signal` so existing positional callers keep their
+   * AbortSignal in place.
+   */
+  getSboms(
+    page = 1,
+    pageSize = 50,
+    search = '',
+    project = '',
+    minQuality = 0,
+    signal?: AbortSignal,
+    field: ExtraFieldFilter = {},
+  ): Promise<PaginatedResponse<SBOMListItem>> {
+    // A value without a field name is meaningless (the API answers 400), so it is dropped like in ApiService.
+    const extra = field.extra_field ? { extra_field: field.extra_field, extra_value: field.extra_value } : {};
+    return this.get(
+      `/sboms${query({ page, page_size: pageSize, search, project, min_quality: minQuality > 0 ? minQuality : undefined, ...extra })}`,
+      signal,
+    );
   }
 
   getSbomDetail(sbomId: string, signal?: AbortSignal): Promise<SBOMDetail> {
