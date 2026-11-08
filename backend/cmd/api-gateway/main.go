@@ -195,6 +195,8 @@ func main() {
 	// ?search= is a substring match on document name or source path. They
 	// compose, so a project page can offer a search box within the project.
 	// ?min_quality= filters for SBOMs with quality_score >= min_quality (0-100, #537).
+	// ?extra_field= (+ optional ?extra_value=) narrows to SBOMs carrying an
+	// extra field, see parseExtraFieldFilter.
 	mux.HandleFunc("GET /api/v1/sboms", func(w http.ResponseWriter, r *http.Request) {
 		page := parseUint64(r.URL.Query().Get("page"), 1)
 		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
@@ -217,7 +219,13 @@ func main() {
 			return
 		}
 
-		resp, err := chClient.QuerySBOMsByImage(r.Context(), page, pageSize, search, project, originVal, minQuality, digest, imagePrefix)
+		field, msg := parseExtraFieldFilter(r.URL.Query())
+		if msg != "" {
+			writeError(w, http.StatusBadRequest, msg)
+			return
+		}
+
+		resp, err := chClient.QuerySBOMsByImage(r.Context(), page, pageSize, search, project, originVal, minQuality, digest, imagePrefix, field)
 		if err != nil {
 			log.Printf("ERROR: list sboms: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch SBOMs")

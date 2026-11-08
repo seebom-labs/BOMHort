@@ -76,7 +76,7 @@ func (s *Scanner) Scan() ([]FileInfo, error) {
 		name := strings.ToLower(info.Name())
 
 		// Skip known config files that are not SBOMs.
-		if name == "license-policy.json" || name == "license-exceptions.json" || name == "project-groups.json" {
+		if name == "license-policy.json" || name == "license-exceptions.json" || name == "project-groups.json" || name == "extra-fields.json" {
 			return nil
 		}
 

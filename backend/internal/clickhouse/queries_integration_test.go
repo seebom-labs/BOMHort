@@ -103,13 +103,19 @@ func TestQueriesExecute(t *testing.T) {
 		{"QueryDashboardStats", func() error { _, err := c.QueryDashboardStats(ctx, VulnFilter{}); return err }},
 		{"QueryQualityStats", func() error { _, err := c.QueryQualityStats(ctx); return err }},
 		{"QueryOrigins", func() error { _, err := c.QueryOrigins(ctx); return err }},
-		{"QuerySBOMs", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "", "", "", 0); return err }},
-		{"QuerySBOMs/search", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "test", "", "", 0); return err }},
-		{"QuerySBOMs/project", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "", "payment-api", "", 0); return err }},
-		{"QuerySBOMs/project+search", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "v1", "payment-api", "", 0); return err }},
-		{"QuerySBOMs/origin", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "", "", "ci", 0); return err }},
+		{"QuerySBOMs", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "", "", "", 0, ExtraFieldFilter{}); return err }},
+		{"QuerySBOMs/search", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "test", "", "", 0, ExtraFieldFilter{}); return err }},
+		{"QuerySBOMs/project", func() error {
+			_, err := c.QuerySBOMs(ctx, 1, 10, "", "payment-api", "", 0, ExtraFieldFilter{})
+			return err
+		}},
+		{"QuerySBOMs/project+search", func() error {
+			_, err := c.QuerySBOMs(ctx, 1, 10, "v1", "payment-api", "", 0, ExtraFieldFilter{})
+			return err
+		}},
+		{"QuerySBOMs/origin", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "", "", "ci", 0, ExtraFieldFilter{}); return err }},
 		{"QuerySBOMs/image filters", func() error {
-			_, err := c.QuerySBOMsByImage(ctx, 1, 10, "", "", "", 0, "sha256:"+strings.Repeat("a", 64), "ghcr.io/acme")
+			_, err := c.QuerySBOMsByImage(ctx, 1, 10, "", "", "ci", 0, "sha256:"+strings.Repeat("a", 64), "ghcr.io/acme", ExtraFieldFilter{Name: "owner_contact", Value: "team@example.com"})
 			return err
 		}},
 		{"QueryImages", func() error { _, err := c.QueryImages(ctx, 1, 10); return err }},
@@ -132,6 +138,14 @@ func TestQueriesExecute(t *testing.T) {
 		}},
 		{"ImageExists", func() error {
 			_, err := c.ImageExists(ctx, "sha256:"+strings.Repeat("a", 64))
+			return err
+		}},
+		{"QuerySBOMs/extra_field", func() error {
+			_, err := c.QuerySBOMs(ctx, 1, 10, "", "", "", 0, ExtraFieldFilter{Name: "owner_contact"})
+			return err
+		}},
+		{"QuerySBOMs/extra_field+value", func() error {
+			_, err := c.QuerySBOMs(ctx, 1, 10, "", "", "", 0, ExtraFieldFilter{Name: "owner_contact", Value: "team@example.com"})
 			return err
 		}},
 		{"QuerySBOMDetail", func() error { _, err := c.QuerySBOMDetail(ctx, someID); return err }},
