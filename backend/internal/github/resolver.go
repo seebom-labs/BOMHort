@@ -25,6 +25,12 @@ const (
 	// Authenticated: 5000 req/hour → ~1.3 req/s to be safe.
 	authenticatedRate = 1.2
 	defaultBurst      = 3
+
+	// maxResponseSize bounds a GitHub API response (same cap as
+	// rulesource.MaxSize). A larger body is cut off and fails to decode, so
+	// a broken or hostile endpoint cannot make the worker allocate without
+	// limit.
+	maxResponseSize = 10 << 20
 )
 
 // licenseResponse is the GitHub API response for /repos/{owner}/{repo}/license.
@@ -318,7 +324,7 @@ func (r *Resolver) fetchLicense(ctx context.Context, owner, repo string) (string
 	}
 
 	var lr licenseResponse
-	if err := json.NewDecoder(resp.Body).Decode(&lr); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseSize)).Decode(&lr); err != nil {
 		return "", nil
 	}
 
@@ -390,7 +396,7 @@ func (r *Resolver) fetchRepoMetadata(ctx context.Context, owner, repo string) (*
 	}
 
 	var rr repoResponse
-	if err := json.NewDecoder(resp.Body).Decode(&rr); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseSize)).Decode(&rr); err != nil {
 		return nil, nil
 	}
 

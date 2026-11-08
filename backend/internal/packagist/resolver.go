@@ -16,6 +16,7 @@ package packagist
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -39,6 +40,12 @@ const (
 	// latestMarker prefixes cached licenses that were taken from the newest
 	// stable release because Packagist does not list the requested version.
 	latestMarker = "~"
+
+	// maxResponseSize bounds a p2 file (same cap as rulesource.MaxSize). The
+	// largest real ones are about 1 MB; a larger body is cut off and fails to
+	// decode, so a broken or hostile mirror cannot make the worker allocate
+	// without limit.
+	maxResponseSize = 10 << 20
 )
 
 // Resolver resolves Composer package licenses via Packagist.
@@ -284,7 +291,7 @@ func (r *Resolver) versions(ctx context.Context, file string) ([]composerVersion
 	var body struct {
 		Packages map[string][]map[string]json.RawMessage `json:"packages"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseSize)).Decode(&body); err != nil {
 		return nil, false
 	}
 	out := Expand(body.Packages[strings.TrimSuffix(file, "~dev")])
