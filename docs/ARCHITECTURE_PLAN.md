@@ -32,10 +32,11 @@ bomhort/
 │   │   ├── parsing-worker/main.go      # SBOM + VEX processor
 │   │   ├── api-gateway/main.go         # REST API (39 endpoints)
 │   │   ├── cve-refresher/main.go       # Background CVE Refresh CronJob
-│   │   └── mcp-server/                 # Read-only MCP tool surface (#399)
-│   │       ├── main.go                 #   transports: stdio (default) | http
-│   │       ├── tools.go                #   the seven read-only tools
-│   │       └── http.go                 #   bearer + Origin allow-list guard
+│   │   ├── mcp-server/                 # Read-only MCP tool surface (#399)
+│   │   │   ├── main.go                 #   transports: stdio (default) | http
+│   │   │   ├── tools.go                #   the seven read-only tools
+│   │   │   └── http.go                 #   bearer + Origin allow-list guard
+│   │   └── bomhort-import/main.go      # One-shot migration importer CLI (#536), not deployed
 │   ├── internal/
 │   │   ├── spdx/              # SPDX JSON streaming parser
 │   │   ├── cyclonedx/         # CycloneDX JSON parser
@@ -63,6 +64,7 @@ bomhort/
 │   │   ├── rulesource/        # Rules documents from file / https / s3, polled with last-known-good
 │   │   ├── projectgroup/      # Parent (product) resolution: mapping file, explicit, tag, owner signals
 │   │   ├── repo/              # Filesystem scanner (SBOM + VEX, SHA256)
+│   │   ├── importer/          # Migration importer: CycloneDX analyses → OpenVEX, upload client (#536)
 │   │   └── config/            # Environment-based configuration
 │   └── pkg/
 │       ├── models/            # SBOM, VEXStatement, Vulnerability, License, IngestionJob
@@ -596,6 +598,17 @@ The HTTP transport is remote tool execution, so both guards are mandatory rather
 
 **Dependency:** `github.com/modelcontextprotocol/go-sdk`, direct dependency #6 of 6, pinned `>= v1.4.1` (shipped on `v1.8.0`). The four advisories that set that floor are listed in `AGENTS.md`.
 
+## 9b. Migration Importer (#536)
+
+**Problem:** A team with an existing SBOM inventory will not switch if switching means re-uploading every SBOM by hand and losing years of triage decisions.
+
+**Solution:** `cmd/bomhort-import`, a one-shot CLI (not a deployed binary) over `internal/importer`. It reads CycloneDX documents with embedded `vulnerabilities[].analysis`, uploads each SBOM unchanged and one generated OpenVEX document with its decisions, both through `POST /api/v1/sboms/upload`. Like the MCP server it is a client of the API: an instance URL and an API key, no ClickHouse.
+
+- **Linking:** each statement's product `@id` is the SBOM's `serialNumber`, which the worker resolves against `sboms.document_namespace`. VEX rescue makes the upload order irrelevant, so the importer never needs the server-side `sbom_id`. `document_name` is not used as a fallback (name + version is not unique); an SBOM without a `serialNumber` is imported without its VEX, and the plan says so.
+- **Idempotency:** the generated document is a pure function of the analyses — timestamps come from them, `@id` is a UUIDv5 of the content — so a rerun is a hash duplicate at the upload endpoint, while a changed analysis becomes a new document that wins on timestamp (#335).
+- **Mapping:** CycloneDX states and justifications are mapped to the closest OpenVEX value; the original values are kept in `status_notes`, `detail` becomes the impact (or action) statement, `author` is `imported`.
+- **Sources:** `importer.Source` (`ListProjects`, `GetSBOM`, `ListAnalyses`) with a directory implementation; adapters for inventory APIs plug in behind it.
+
 **Dashboard Integration:** Banner shows last refresh timestamp + number of new vulnerabilities.
 
 **Usage:**
@@ -711,3 +724,4 @@ Exemptions are written at ingest time into `exempted_packages` + `exemption_reas
 | 39 | Dependency scope: each package stores its shortest depth from the SBOM root (`sbom_packages.package_depths`, `vulnerabilities.dependency_depth`, migration `025`, computed by `internal/depgraph` at parse time). Exposed as `dependency_scope` (`root`/`direct`/`transitive`/`unknown`) on vulnerability, dependency-tree and affected-project rows, `package_scopes` on license breakdowns, `?scope=` filter on vulnerability endpoints, and scope badges + filter in the UI. | ✅ Implemented |
 | 40 | CVE id and aliases (#412): every finding exposes `cve_id` (its own id when it is a CVE, else the CVE among its OSV aliases, `osvutil.CVEID`) and `aliases` next to `vuln_id`; VEX statements get the aliases of the findings they match. Lookups by id (`/vulnerabilities/{id}/affected-projects`, global search) accept any alias. The UI leads with the CVE and lists the other names as chips; no schema change (uses `vulnerabilities.aliases`, migration `019`). | ✅ Implemented |
 | 41 | CSV export (#266): `GET /api/v1/reports/vulnerabilities?format=csv` streams the same rows as the vulnerability listing (`StreamVulnerabilities`, which shares its SQL with `QueryVulnerabilities` and has a deterministic ORDER BY) straight from ClickHouse into the response, flushed every 500 rows. `cve_id` comes first, cells are guarded against spreadsheet formula injection, and the "Export CSV" link on the vulnerability page follows the selected scope. | ✅ Implemented |
+| 42 | Migration importer (#536): `cmd/bomhort-import` uploads CycloneDX SBOMs and one generated OpenVEX document of their `vulnerabilities[].analysis` per SBOM through `POST /api/v1/sboms/upload`, no database access. VEX is linked by `serialNumber` (= `document_namespace`), output is deterministic so reruns are hash duplicates, and the project/tag mapping is JSON like `project-groups.json` rather than YAML (no new dependency). | ✅ Implemented |

@@ -4,7 +4,7 @@
 .PHONY: ch-shell ch-migrate
 .PHONY: backend-build backend-test backend-vet
 .PHONY: ui-build ui-dev ui-e2e ui-e2e-wait
-.PHONY: ingest worker api
+.PHONY: ingest worker api import
 .PHONY: images images-push
 .PHONY: release-rc release release-branch cherry-pick kind-deploy-release
 .PHONY: check-demo-sboms
@@ -269,6 +269,10 @@ worker: ## Run Parsing Worker locally (needs ClickHouse)
 
 mcp: ## Run the MCP server locally on stdio (needs a running API gateway)
 	cd backend && go run ./cmd/mcp-server/
+
+import: ## Import an existing inventory, e.g. ARGS="--dir ./export --url https://bomhort.example.com --dry-run"
+	cd backend && go build -o bomhort-import ./cmd/bomhort-import/
+	./backend/bomhort-import $(ARGS)
 
 # ─── Angular UI ──────────────────────────────────────────────────────────────
 ui-dev: ## Start Angular dev server (hot-reload, proxies to localhost:8080)
