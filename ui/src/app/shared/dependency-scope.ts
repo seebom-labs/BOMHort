@@ -23,7 +23,10 @@ export function scopeLabel(scope: DependencyScope | undefined): string {
   return LABELS[scope ?? 'unknown'] ?? LABELS.unknown;
 }
 
-export function scopeTitle(scope: DependencyScope | undefined, depth?: number): string {
+export function scopeTitle(scope: DependencyScope | undefined, depth?: number, reason?: string): string {
+  if (scope === 'unknown' && reason === 'no-dependency-graph') {
+    return 'The SBOM contains a flat component list with no dependency graph relationships (generator limitation)';
+  }
   const base = TITLES[scope ?? 'unknown'] ?? TITLES.unknown;
   return depth !== undefined && scope === 'transitive' ? `${base} (depth ${depth})` : base;
 }

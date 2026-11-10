@@ -26,6 +26,8 @@ export interface DashboardStats {
   last_cve_refresh?: string;
   new_vulns_since_refresh?: number;
   archived_repos_count?: number;
+  low_quality_sboms?: number;
+  average_quality_score?: number;
 }
 
 export interface ArchivedPackageInfo {
@@ -78,6 +80,9 @@ export interface SBOMListItem {
   cluster?: string;
   namespace?: string;
   project?: string;
+  /** Quality evaluation score (0-100) and deduction flags (#537). */
+  quality_score?: number;
+  quality_flags?: string[];
 }
 
 /** Status an advisory feed reports for a finding. */
@@ -143,6 +148,8 @@ export interface VulnerabilityListItem {
    */
   dependency_scope: DependencyScope;
   dependency_depth?: number;
+  /** Reason when scope is unknown (e.g. "no-dependency-graph"). */
+  scope_reason?: string;
 }
 
 export type DependencyScope = 'root' | 'direct' | 'transitive' | 'unknown';
@@ -237,6 +244,23 @@ export interface SBOMDetail {
   medium_vulns: number;
   low_vulns: number;
   scope_breakdown?: ScopeBreakdown;
+  /** Quality evaluation score (0-100) and deduction flags (#537). */
+  quality_score?: number;
+  quality_flags?: string[];
+}
+
+export interface ToolQualitySummary {
+  tool: string;
+  count: number;
+  avg_score: number;
+}
+
+export interface QualityStatsResponse {
+  average_score: number;
+  total_evaluated: number;
+  low_quality_count: number;
+  tools: ToolQualitySummary[];
+  score_distribution: Record<string, number>;
 }
 
 export interface SBOMLicenseBreakdownItem {

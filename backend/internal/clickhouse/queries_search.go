@@ -35,6 +35,16 @@ import (
 // scope ("" or a depgraph scope label) keeps only findings whose package is
 // pulled in that way.
 func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, scope string) ([]dto.VulnerabilityListItem, error) {
+	var qualityFlags []string
+	_ = c.Conn.QueryRow(ctx, "SELECT quality_flags FROM sboms FINAL WHERE sbom_id = ? LIMIT 1", sbomID).Scan(&qualityFlags)
+	hasNoDepGraph := false
+	for _, f := range qualityFlags {
+		if f == "no-dependency-graph" {
+			hasNoDepGraph = true
+			break
+		}
+	}
+
 	scopeAnd := ""
 	if pred := depthPredicate(scope, "v.dependency_depth"); pred != "" {
 		scopeAnd = " AND " + pred
@@ -102,6 +112,9 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 		item.Aliases, item.CVEID = identify(item.VulnID, aliases)
 		item.DiscoveredAt = discoveredAt.Format(time.RFC3339)
 		item.DependencyScope, item.DependencyDepth = scopeFields(depth)
+		if item.DependencyScope == "unknown" && hasNoDepGraph {
+			item.ScopeReason = "no-dependency-graph"
+		}
 		if item.VEXStatus != "" {
 			item.VEXScope = "sbom"
 		}
@@ -264,7 +277,8 @@ func (c *Client) QuerySBOMDetail(ctx context.Context, sbomID string) (*dto.SBOMD
 		SELECT
 			s.sbom_id, s.source_file, s.spdx_version, s.document_name, s.document_version, s.ingested_at,
 			s.source_repo, s.source_ref,
-			ifNull(p.pkg_count, 0) AS package_count
+			ifNull(p.pkg_count, 0) AS package_count,
+			s.quality_score, s.quality_flags
 		FROM (SELECT * FROM sboms FINAL) AS s
 		LEFT JOIN (
 			SELECT sbom_id, length(package_names) AS pkg_count
@@ -276,6 +290,7 @@ func (c *Client) QuerySBOMDetail(ctx context.Context, sbomID string) (*dto.SBOMD
 		&detail.SBOMID, &detail.SourceFile, &detail.SPDXVersion,
 		&detail.DocumentName, &detail.DocumentVersion, &ingestedAt,
 		&detail.SourceRepo, &detail.SourceRef, &detail.PackageCount,
+		&detail.QualityScore, &detail.QualityFlags,
 	)
 	if err != nil {
 		// An unknown sbom_id is a missing resource, not a server fault: report
