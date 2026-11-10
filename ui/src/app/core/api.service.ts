@@ -34,6 +34,7 @@ import {
   ClusterStats,
   NamespaceListItem,
   NamespaceStats,
+  QualityStatsResponse,
 } from './api.models';
 
 /** Base URL of the REST API; the app uses the nginx proxy at `/api/v1`, embedded elements point it elsewhere. */
@@ -65,12 +66,16 @@ export class ApiService {
     return this.http.get<DashboardStats>(`${this.baseUrl}/stats/dashboard`, { params: ownerParams(owner) });
   }
 
+  getQualityStats(): Observable<QualityStatsResponse> {
+    return this.http.get<QualityStatsResponse>(`${this.baseUrl}/stats/quality`);
+  }
+
   /**
    * SBOM list. `search` is a substring match on document name / source path;
    * `project` (#398) is the exact project identity and scopes the list to
-   * one project's versions. They compose.
+   * one project's versions. They compose. `minQuality` filters by minimum quality score (#537).
    */
-  getSboms(page = 1, pageSize = 50, search = '', project = ''): Observable<PaginatedResponse<SBOMListItem>> {
+  getSboms(page = 1, pageSize = 50, search = '', project = '', minQuality = 0): Observable<PaginatedResponse<SBOMListItem>> {
     let params = new HttpParams()
       .set('page', page.toString())
       .set('page_size', pageSize.toString());
@@ -79,6 +84,9 @@ export class ApiService {
     }
     if (project) {
       params = params.set('project', project);
+    }
+    if (minQuality > 0) {
+      params = params.set('min_quality', minQuality.toString());
     }
     return this.http.get<PaginatedResponse<SBOMListItem>>(`${this.baseUrl}/sboms`, { params });
   }

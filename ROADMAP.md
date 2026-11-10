@@ -336,7 +336,7 @@ Everything that touches `db/migrations/` or a frozen response shape, in one plac
 | `03x_add_vulnerability_source` | #515 | `ADD COLUMN source LowCardinality(String) DEFAULT 'osv'` on `vulnerabilities` | post (v1.1.0) | additive |
 | `03x_add_advisory_feed_columns` | #524 | `ADD COLUMN advisory_source, advisory_status LowCardinality(String), component_location String` on `vulnerabilities` | post (v1.1.0) | additive; `advisory_source` may replace #515's `source` if #524 lands first |
 | `03x_add_finding_kind` | #531 | `ADD COLUMN finding_kind LowCardinality(String) DEFAULT 'vulnerability'` on `vulnerabilities`, `lookalike_of Array(String)` on `sbom_packages` | post (v1.0.0) | additive |
-| `03x_add_quality_score` | #537 | `ADD COLUMN quality_score UInt8, quality_flags Array(LowCardinality(String))` on `sboms` | post (v1.0.0) | additive |
+| `029_add_sbom_quality_score` | #537 | `ADD COLUMN quality_score UInt8, quality_flags Array(LowCardinality(String))` on `sboms` | post (v1.0.0) | additive |
 | `03x_add_reachability` | #535 | `ADD COLUMN reachability LowCardinality(String), evidence_source, evidence_ref String, evidence_at DateTime` on `vulnerabilities` | post (v1.1.0) | additive |
 | `03x_add_base_image` | #532 | `ADD COLUMN base_image_ref, base_image_digest` on `sboms`, `inherited_from` on `vulnerabilities` | post (v1.2.0) | additive |
 | `03x_create_cve_records` | #527 | new table `cve_records` (cve_id, cna/adp cvss, ssvc_*, cwe_ids, affected_purls, modified) | post (v1.1.0) | new table |

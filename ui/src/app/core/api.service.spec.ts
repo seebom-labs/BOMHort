@@ -66,6 +66,25 @@ describe('ApiService', () => {
     req.flush(mockStats);
   });
 
+  it('should fetch quality stats', () => {
+    const mockQuality = {
+      average_score: 85,
+      total_evaluated: 10,
+      low_quality_count: 1,
+      tools: [{ tool: 'syft', count: 8, avg_score: 87 }],
+      score_distribution: { '80-100': 8, '60-79': 1, '0-59': 1 },
+    };
+
+    service.getQualityStats().subscribe((stats) => {
+      expect(stats.average_score).toBe(85);
+      expect(stats.tools.length).toBe(1);
+    });
+
+    const req = httpMock.expectOne('/api/v1/stats/quality');
+    expect(req.request.method).toBe('GET');
+    req.flush(mockQuality);
+  });
+
   it('should fetch SBOMs with pagination', () => {
     const mockResp: PaginatedResponse<SBOMListItem> = {
       data: [{ sbom_id: '123', source_file: 'test.spdx.json', spdx_version: 'SPDX-2.3', document_name: 'test', package_count: 10, vuln_count: 2, ingested_at: '2025-01-01' }],

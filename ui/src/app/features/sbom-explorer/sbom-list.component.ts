@@ -74,6 +74,18 @@ export type SbomViewMode = 'flat' | 'grouped';
           [placeholder]="searchPlaceholder"
           class="search-input"
         />
+        <select
+          *ngIf="viewMode === 'flat'"
+          [(ngModel)]="minQuality"
+          (ngModelChange)="onMinQualityChange($event)"
+          class="quality-select"
+          aria-label="Filter by minimum quality"
+        >
+          <option [ngValue]="0">All Quality</option>
+          <option [ngValue]="80">High Quality (≥80)</option>
+          <option [ngValue]="60">Acceptable (≥60)</option>
+          <option [ngValue]="40">Basic (≥40)</option>
+        </select>
         <span class="search-loading" *ngIf="loading">⏳</span>
         <button *ngIf="searchTerm && !loading" class="clear-btn" (click)="clearSearch()">✕</button>
       </div>
@@ -113,6 +125,16 @@ export type SbomViewMode = 'flat' | 'grouped';
             <span class="packages">{{ sbom.package_count | number }} packages</span>
             <span class="vulns" [class.has-vulns]="sbom.vuln_count > 0">
               {{ sbom.vuln_count | number }} vulns
+            </span>
+            <span
+              class="quality-badge"
+              *ngIf="sbom.quality_score !== undefined"
+              [class.good]="sbom.quality_score >= 80"
+              [class.fair]="sbom.quality_score >= 60 && sbom.quality_score < 80"
+              [class.poor]="sbom.quality_score < 60"
+              [title]="'Quality: ' + sbom.quality_score + '/100' + (sbom.quality_flags && sbom.quality_flags.length ? ' (' + sbom.quality_flags.join(', ') + ')' : '')"
+            >
+              Q: {{ sbom.quality_score }}
             </span>
             <span class="date">{{ sbom.ingested_at | date:'short' }}</span>
           </a>
@@ -220,6 +242,18 @@ export type SbomViewMode = 'flat' | 'grouped';
     .packages { color: var(--text-secondary); font-size: 0.8rem; width: 110px; }
     .vulns { font-size: 0.8rem; width: 80px; color: var(--text-secondary); }
     .has-vulns { color: var(--severity-critical); font-weight: 600; }
+    .quality-select {
+      font-size: 0.78rem; padding: 4px 8px; border: 1px solid var(--border);
+      border-radius: 4px; background: var(--surface); color: var(--text);
+      cursor: pointer;
+    }
+    .quality-badge {
+      padding: 1px 6px; border-radius: 2px; font-size: 0.65rem; font-weight: 600;
+      white-space: nowrap; flex-shrink: 0; text-align: center; border: 1px solid var(--border);
+    }
+    .quality-badge.good { background: var(--status-success-bg); color: var(--status-success); border-color: transparent; }
+    .quality-badge.fair { background: var(--severity-high-bg); color: var(--status-warning); border-color: transparent; }
+    .quality-badge.poor { background: var(--severity-critical-bg); color: var(--severity-critical); border-color: transparent; }
     .date { color: var(--text-muted); font-size: 0.75rem; width: 110px; }
 
     .load-more { padding: 12px; text-align: center; }
@@ -238,6 +272,8 @@ export class SbomListComponent implements OnInit, OnDestroy {
   loading = false;
   /** Exact project identity from ?project= (#398); '' = unscoped. */
   projectScope = '';
+  /** Minimum quality score filter (#537). 0 = all. */
+  minQuality = 0;
   /** #58. Linkable via ?view=grouped so a grouped list can be shared. */
   viewMode: SbomViewMode = 'flat';
 
@@ -271,11 +307,13 @@ export class SbomListComponent implements OnInit, OnDestroy {
     this.route.queryParamMap.pipe(takeUntil(this.destroy$)).subscribe((params) => {
       const project = params.get('project') || '';
       const search = params.get('search') || '';
+      const minQualityRaw = parseInt(params.get('min_quality') || '0', 10);
+      const minQuality = isNaN(minQualityRaw) || minQualityRaw < 0 ? 0 : minQualityRaw;
       // A project scope is a list of that project's versions; grouping it
       // would collapse the page into the row that was clicked to open it.
       const view: SbomViewMode = !project && params.get('view') === 'grouped' ? 'grouped' : 'flat';
 
-      const changed = project !== this.projectScope || search !== this.searchTerm || view !== this.viewMode;
+      const changed = project !== this.projectScope || search !== this.searchTerm || view !== this.viewMode || minQuality !== this.minQuality;
       if (this.loadedOnce && !changed) {
         return;
       }
@@ -284,6 +322,7 @@ export class SbomListComponent implements OnInit, OnDestroy {
       }
       this.projectScope = project;
       this.searchTerm = search;
+      this.minQuality = minQuality;
       this.viewMode = view;
       this.loadedOnce = true;
       this.load(search);
@@ -319,6 +358,14 @@ export class SbomListComponent implements OnInit, OnDestroy {
     this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { view: mode === 'grouped' ? 'grouped' : null },
+      queryParamsHandling: 'merge',
+    });
+  }
+
+  onMinQualityChange(val: number): void {
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { min_quality: val > 0 ? val : null },
       queryParamsHandling: 'merge',
     });
   }
@@ -366,7 +413,7 @@ export class SbomListComponent implements OnInit, OnDestroy {
       return;
     }
 
-    this.api.getSboms(this.page, this.pageSize, search, this.projectScope).subscribe((response) => {
+    this.api.getSboms(this.page, this.pageSize, search, this.projectScope, this.minQuality).subscribe((response) => {
       this.sboms = append ? [...this.sboms, ...response.data] : response.data;
       this.total = response.total;
       this.loading = false;

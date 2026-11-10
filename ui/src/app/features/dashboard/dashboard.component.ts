@@ -68,6 +68,16 @@ import { ScopeMatrixComponent } from '../../shared/scope-matrix/scope-matrix.com
             <span class="kpi-value">{{ stats.total_vex_statements | number }}</span>
             <span class="kpi-label">VEX Statements</span>
           </div>
+          <div class="kpi-card">
+            <span class="kpi-value">{{ (stats.average_quality_score ?? 0) | number:'1.0-0' }}%</span>
+            <span class="kpi-label">Avg Quality</span>
+          </div>
+          @if ((stats.low_quality_sboms ?? 0) > 0) {
+            <div class="kpi-card warn">
+              <span class="kpi-value">{{ stats.low_quality_sboms | number }}</span>
+              <span class="kpi-label">Low Quality (&lt;60)</span>
+            </div>
+          }
         </div>
 
         <div class="charts-row">

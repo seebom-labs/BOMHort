@@ -161,6 +161,9 @@ func (c *Client) QueryDashboardStats(ctx context.Context, f VulnFilter) (*dto.Da
 		stats.ArchivedReposCount = archived
 	}
 
+	// Low quality SBOMs and average score (#537).
+	_ = c.Conn.QueryRow(ctx, "SELECT countIf(quality_score < 60), round(ifNull(avg(quality_score), 0), 1) FROM sboms FINAL"+w, args...).Scan(&stats.LowQualitySBOMs, &stats.AverageQualityScore)
+
 	return stats, nil
 }
 
@@ -171,8 +174,9 @@ func (c *Client) QueryDashboardStats(ctx context.Context, f VulnFilter) (*dto.Da
 // the SBOMs that resolve to that project through projectKeyExpr — the same
 // rule the project listing and project page use, so "the SBOMs of
 // kubernetes" is eleven documents and not every path containing the word.
-// The two compose: search narrows within the project.
-func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, project string) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
+// minQuality (#537), when > 0, restricts the list to SBOMs with quality_score >= minQuality.
+// The filters compose.
+func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, project string, minQuality uint8) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
 	if page == 0 {
 		page = 1
 	}
@@ -191,6 +195,10 @@ func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, 
 		conds = append(conds, "(s.document_name ILIKE ? OR s.source_file ILIKE ?)")
 		pattern := "%" + search + "%"
 		whereArgs = append(whereArgs, pattern, pattern)
+	}
+	if minQuality > 0 {
+		conds = append(conds, "s.quality_score >= ?")
+		whereArgs = append(whereArgs, minQuality)
 	}
 	whereClause := ""
 	if len(conds) > 0 {
@@ -218,7 +226,9 @@ func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, 
 			s.namespace,
 			s.project,
 			ifNull(p.pkg_count, 0) AS package_count,
-			ifNull(v.vuln_count, 0) AS vuln_count
+			ifNull(v.vuln_count, 0) AS vuln_count,
+			s.quality_score,
+			s.quality_flags
 		FROM (SELECT * FROM sboms FINAL) AS s
 		LEFT JOIN (
 			SELECT sbom_id, length(package_names) AS pkg_count
@@ -251,6 +261,7 @@ func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, 
 			&item.SourceRepo, &item.SourceRef,
 			&item.Cluster, &item.Namespace, &item.Project,
 			&item.PackageCount, &item.VulnCount,
+			&item.QualityScore, &item.QualityFlags,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan sbom row: %w", err)
 		}
@@ -271,6 +282,50 @@ func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, 
 		Page:     page,
 		PageSize: pageSize,
 	}, nil
+}
+
+// QueryQualityStats computes corpus-wide quality statistics and tool-level averages (#537).
+func (c *Client) QueryQualityStats(ctx context.Context) (*dto.QualityStatsResponse, error) {
+	resp := &dto.QualityStatsResponse{
+		ToolSummaries: []dto.ToolQualitySummary{},
+	}
+
+	err := c.Conn.QueryRow(ctx, `
+		SELECT
+			round(ifNull(avg(quality_score), 0), 1),
+			count(),
+			countIf(quality_score < 60)
+		FROM sboms FINAL
+	`).Scan(&resp.AverageQualityScore, &resp.TotalSBOMs, &resp.LowQualitySBOMs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query overall quality stats: %w", err)
+	}
+
+	rows, err := c.Conn.Query(ctx, `
+		SELECT
+			arrayJoin(creator_tools) AS tool,
+			count() AS sbom_count,
+			round(avg(quality_score), 1) AS avg_score,
+			countIf(quality_score < 60) AS low_quality_count
+		FROM sboms FINAL
+		WHERE length(creator_tools) > 0
+		GROUP BY tool
+		ORDER BY sbom_count DESC
+		LIMIT 50
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query tool quality stats: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var s dto.ToolQualitySummary
+		if err := rows.Scan(&s.ToolName, &s.SBOMCount, &s.AverageQualityScore, &s.LowQualityCount); err != nil {
+			return nil, fmt.Errorf("failed to scan tool quality row: %w", err)
+		}
+		resp.ToolSummaries = append(resp.ToolSummaries, s)
+	}
+	return resp, rows.Err()
 }
 
 // vulnerabilityListSQL is the instance-wide finding listing shared by the

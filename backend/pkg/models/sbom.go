@@ -52,6 +52,12 @@ type SBOM struct {
 	// to resolve a parent for products without a repository URL.
 	RootPURL string `json:"root_purl,omitempty"`
 	Supplier string `json:"supplier,omitempty"`
+	// QualityScore (0-100) measures document completeness and compliance with
+	// NTIA / BSI TR-03183 minimum elements (#537).
+	QualityScore uint8 `json:"quality_score"`
+	// QualityFlags lists reasons for score deductions (e.g. no-dependency-graph,
+	// low-purl-coverage, missing-supplier).
+	QualityFlags []string `json:"quality_flags,omitempty"`
 }
 
 // SBOMPackages stores the full dependency tree of an SBOM as parallel arrays.

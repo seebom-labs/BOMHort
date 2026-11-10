@@ -296,7 +296,7 @@ func TestSBOMListProjectFilterIsExact(t *testing.T) {
 
 	// ?project= is exact identity; the orphan shares a component with the
 	// child but is a different project and must not appear.
-	resp, err := c.QuerySBOMs(ctx, 1, 50, "", f.child)
+	resp, err := c.QuerySBOMs(ctx, 1, 50, "", f.child, 0)
 	if err != nil {
 		t.Fatalf("QuerySBOMs(project): %v", err)
 	}
@@ -310,7 +310,7 @@ func TestSBOMListProjectFilterIsExact(t *testing.T) {
 	}
 
 	// project + search compose.
-	narrowed, err := c.QuerySBOMs(ctx, 1, 50, "1.1.0", f.child)
+	narrowed, err := c.QuerySBOMs(ctx, 1, 50, "1.1.0", f.child, 0)
 	if err != nil {
 		t.Fatalf("QuerySBOMs(project+search): %v", err)
 	}
@@ -321,7 +321,7 @@ func TestSBOMListProjectFilterIsExact(t *testing.T) {
 	// Sanity: the substring search alone is what the UI used to do, and it
 	// is exactly the behaviour #398 complains about — the prefix "fx-" matches
 	// all three fixture projects.
-	loose, err := c.QuerySBOMs(ctx, 1, 50, "fx-", "")
+	loose, err := c.QuerySBOMs(ctx, 1, 50, "fx-", "", 0)
 	if err != nil {
 		t.Fatalf("QuerySBOMs(search): %v", err)
 	}
@@ -403,10 +403,10 @@ func TestProjectRowsUsePrimaryKey(t *testing.T) {
 }
 
 // TestProjectBadgeStatsSeeded verifies project badge stats resolution:
-// 1. Default (version="") resolves latest SBOM, ignoring resolved vulnerabilities from older versions.
-// 2. Fully exempted copyleft packages (present in sbom_packages, with non_compliant_packages=[])
-//    correctly evaluate to 0 violations.
-// 3. Explicit version lookup resolves historical version stats.
+//  1. Default (version="") resolves latest SBOM, ignoring resolved vulnerabilities from older versions.
+//  2. Fully exempted copyleft packages (present in sbom_packages, with non_compliant_packages=[])
+//     correctly evaluate to 0 violations.
+//  3. Explicit version lookup resolves historical version stats.
 func TestProjectBadgeStatsSeeded(t *testing.T) {
 	c := testClient(t)
 	ctx := context.Background()
