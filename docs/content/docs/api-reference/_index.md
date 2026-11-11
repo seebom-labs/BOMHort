@@ -141,6 +141,31 @@ Findings carry where they came from. With no [advisory feeds](../advisory-feeds/
 
 A `not_affected` finding is also recorded as a VEX statement authored by the feed (`vex_author` = the feed name), so `vex_status` reads `not_affected` and the effective counts exclude it like any OpenVEX suppression. The fields appear on `/api/v1/vulnerabilities`, `/api/v1/sboms/{id}/vulnerabilities` and `/api/v1/projects/{name}/vulnerabilities`; clients that ignore them are unaffected.
 
+### Public exploit code {#exploit-code}
+
+Every finding says whether public exploit code exists for its CVE — the signal between "theoretically exploitable" and "exploited in the wild": a [Nuclei](https://github.com/projectdiscovery/nuclei-templates) template, a [Metasploit](https://github.com/rapid7/metasploit-framework) module or an [Exploit-DB](https://www.exploit-db.com) entry. The `cve-refresher` refreshes the three indexes daily (see [Deployment](/docs/deployment/#public-exploit-code)); a finding is matched by its `vuln_id` **or** any alias, so a finding stored as `GHSA-…` picks up exploits filed under its CVE.
+
+| Field | Description |
+|-------|-------------|
+| `exploit_available` | `true` when at least one exploit is known. Always present. |
+| `exploit_sources` | The sources that have one, in the order `nuclei`, `metasploit`, `exploitdb`. Omitted when none. |
+| `exploits` | One entry per exploit: `source`, `ref` (template path, module name or EDB-ID), `url` (its public page) and `title`. Metasploit `exploit/` modules come before `auxiliary/` ones; detection-only modules (`auxiliary/scanner/`) are not counted. Omitted when none. |
+
+```json
+"exploit_available": true,
+"exploit_sources": ["nuclei", "metasploit"],
+"exploits": [
+  {"source": "nuclei", "ref": "http/cves/2021/CVE-2021-44228.yaml",
+   "url": "https://github.com/projectdiscovery/nuclei-templates/blob/main/http/cves/2021/CVE-2021-44228.yaml",
+   "title": "Apache Log4j2 Remote Code Injection"},
+  {"source": "metasploit", "ref": "exploit/multi/http/log4shell_header_injection",
+   "url": "https://github.com/rapid7/metasploit-framework/blob/master/modules/exploits/multi/http/log4shell_header_injection.rb",
+   "title": "Log4Shell HTTP Header Injection"}
+]
+```
+
+The fields appear on `/api/v1/vulnerabilities` (and its cluster/namespace variants), `/api/v1/sboms/{id}/vulnerabilities`, `/api/v1/projects/{name}/vulnerabilities` and the CSV report. Each of these accepts `?exploit=available` to keep only findings with public exploit code; any other value is a `400`. The signal is looked up at query time, so a template published today shows on findings ingested months ago without a re-scan, and an entry removed upstream disappears with the next refresh.
+
 ### Error Responses
 
 All errors return:
@@ -600,6 +625,7 @@ All vulnerabilities found in a specific SBOM, including the effective VEX statem
 |-----------|------|---------|-------------|
 | `scope` | string | all | Only `root`, `direct`, `transitive` or `unknown` findings (see [Dependency scope](#dependency-scope)) |
 | `reachability` | string | all | Filter by reachability evidence: `reachable`, `not_reachable`, or `unknown` (#535) |
+| `exploit` | string | all | `available`: only findings with [public exploit code](#exploit-code) |
 
 **Response:** `200 OK`
 ```json
@@ -626,7 +652,8 @@ All vulnerabilities found in a specific SBOM, including the effective VEX statem
     "reachability": "not_reachable",
     "evidence_source": "govulncheck v1.1.3",
     "evidence_ref": "build-482",
-    "evidence_at": "2026-09-01T12:05:00Z"
+    "evidence_at": "2026-09-01T12:05:00Z",
+    "exploit_available": false
   }
 ]
 ```
@@ -797,6 +824,7 @@ Paginated list of all discovered vulnerabilities across all SBOMs. Each item car
 | `parent` | string | — | Only findings of the projects grouped under these parents (`GET /api/v1/projects?group_by=parent`), the parent itself included |
 | `tag` | string | — | Only findings of SBOMs carrying any of these tags |
 | `reachability` | string | all | Filter by reachability evidence: `reachable`, `not_reachable`, or `unknown` (#535) |
+| `exploit` | string | — | `available`: only findings with [public exploit code](#exploit-code) |
 
 The ownership filters (#459) take comma-separated values: values within one parameter are ORed, parameters are ANDed (`?cluster=prod-eu,prod-us&tag=sandbox` = SBOMs in either cluster that carry `sandbox`). Ownership is read from the SBOM, so it matches the project and fleet views. A value longer than 200 characters is a `400`.
 
@@ -818,7 +846,8 @@ The ownership filters (#459) take comma-separated values: values within one para
       "advisory_source": "osv",
       "dependency_scope": "direct",
       "dependency_depth": 1,
-      "vex_status": ""
+      "vex_status": "",
+      "exploit_available": false
     },
     {
       "vuln_id": "GHSA-abcd-1234-wxyz",
@@ -837,7 +866,8 @@ The ownership filters (#459) take comma-separated values: values within one para
       ],
       "dependency_scope": "transitive",
       "dependency_depth": 2,
-      "vex_status": ""
+      "vex_status": "",
+      "exploit_available": false
     }
   ],
   "total": 892,
@@ -904,6 +934,7 @@ Every finding of [`GET /api/v1/vulnerabilities`](#get-apiv1vulnerabilities) as a
 | `parent` | string | — | Only findings of the projects grouped under these parents (`GET /api/v1/projects?group_by=parent`), the parent itself included |
 | `tag` | string | — | Only findings of SBOMs carrying any of these tags |
 | `reachability` | string | all | Filter by reachability evidence: `reachable`, `not_reachable`, or `unknown` (#535) |
+| `exploit` | string | — | `available`: only findings with [public exploit code](#exploit-code) |
 
 The ownership filters work as on the JSON listing.
 
@@ -912,17 +943,18 @@ A legacy `vex_filter` parameter is ignored, as on the JSON listing.
 **Response:** `200 OK`, `Content-Type: text/csv; charset=utf-8`, `Content-Disposition: attachment; filename="bomhort-vulnerabilities-<YYYY-MM-DD>.csv"` (UTC date).
 
 ```csv
-cve_id,vuln_id,aliases,severity,purl,summary,fixed_version,source_file,discovered_at,dependency_scope,dependency_depth,vex_status
-CVE-2024-45338,GO-2024-3333,CVE-2024-45338;GHSA-w32m-9786-jp63,HIGH,pkg:golang/golang.org/x/net@v0.21.0,Non-linear parsing of case-insensitive content,v0.33.0,etcd-v3.5.12.spdx.json,2026-05-15T00:00:00Z,transitive,3,not_affected
+cve_id,vuln_id,aliases,severity,purl,summary,fixed_version,source_file,discovered_at,dependency_scope,dependency_depth,vex_status,exploit_available,exploit_sources
+CVE-2024-45338,GO-2024-3333,CVE-2024-45338;GHSA-w32m-9786-jp63,HIGH,pkg:golang/golang.org/x/net@v0.21.0,Non-linear parsing of case-insensitive content,v0.33.0,etcd-v3.5.12.spdx.json,2026-05-15T00:00:00Z,transitive,3,not_affected,false,
 ```
 
 - `cve_id` comes first because that is the id audit questionnaires ask for. It is empty when the flaw has no CVE (see [Vulnerability ids and aliases](#vulnerability-ids)). `aliases` are `;`-joined.
 - `dependency_depth` is empty when unknown.
+- `exploit_available` is `true` or `false`; `exploit_sources` is `;`-joined and empty when no [public exploit code](#exploit-code) is known.
 - Cells starting with `=`, `+`, `-`, `@`, tab or carriage return get a leading `'`, so a spreadsheet shows them as text instead of running them as formulas (CSV injection). Summaries come from OSV, and PURLs and file names come from uploaded SBOMs, so the export cannot trust them.
 - The status line goes out before the first row. If the database fails mid-export, the file is cut short and the gateway logs `vulnerability report truncated`. A query that fails up front returns `500` with a JSON error and no file.
 
 **Errors:**
-- `400` — Missing or unsupported `format`, or invalid `scope`
+- `400` — Missing or unsupported `format`, invalid `scope` or invalid `exploit`
 - `500` — The query failed before any row was sent
 
 ---
@@ -1184,7 +1216,7 @@ One row per distinct `(vuln_id, purl)` across every SBOM of the project, with
 among all statements scoped to any of the project's SBOMs that cover the pair,
 the newest wins. Same row shape as `GET /api/v1/vulnerabilities`; not paginated.
 `dependency_scope` is the shallowest depth the package has in any of the
-project's SBOMs. Accepts `?scope=` like `GET /api/v1/vulnerabilities`.
+project's SBOMs. Accepts `?scope=` and `?exploit=available` like `GET /api/v1/vulnerabilities`.
 
 ### `GET /api/v1/projects/{name}/packages`
 

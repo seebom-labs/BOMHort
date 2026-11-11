@@ -3,6 +3,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
   OwnerFilter,
+  VulnListFilter,
   DashboardStats,
   PaginatedResponse,
   SBOMListItem,
@@ -127,7 +128,7 @@ export class ApiService {
    * URL of the CSV export of the vulnerability listing (#266): the same rows
    * as getVulnerabilities, streamed by the gateway as a file download.
    */
-  vulnerabilityReportUrl(scope = '', owner: OwnerFilter = {}, reachability = ''): string {
+  vulnerabilityReportUrl(scope = '', owner: VulnListFilter = {}, reachability = ''): string {
     let params = ownerParams(owner).set('format', 'csv');
     if (scope) {
       params = params.set('scope', scope);
@@ -138,7 +139,7 @@ export class ApiService {
     return `${this.baseUrl}/reports/vulnerabilities?${params.toString()}`;
   }
 
-  getVulnerabilities(page = 1, pageSize = 50, scope = '', owner: OwnerFilter = {}, reachability = ''): Observable<PaginatedResponse<VulnerabilityListItem>> {
+  getVulnerabilities(page = 1, pageSize = 50, scope = '', owner: VulnListFilter = {}, reachability = ''): Observable<PaginatedResponse<VulnerabilityListItem>> {
     let params = ownerParams(owner)
       .set('page', page.toString())
       .set('page_size', pageSize.toString());

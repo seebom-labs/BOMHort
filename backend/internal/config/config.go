@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/seebom-labs/bomhort/backend/internal/advisory"
+	"github.com/seebom-labs/bomhort/backend/internal/exploit"
 	"github.com/seebom-labs/bomhort/backend/internal/ingestpath"
 	"github.com/seebom-labs/bomhort/backend/internal/tags"
 )
@@ -98,6 +99,12 @@ type Config struct {
 	// match SBOM packages against them, feed first for the prefixes a feed
 	// is authoritative for. Empty: osv.dev only.
 	AdvisorySources []advisory.Source
+
+	// Public exploit-code index (cve-refresher). SkipExploitRefs turns the
+	// daily sync off; ExploitFeeds are the enabled sources with the URL of
+	// each index (EXPLOIT_SOURCES, EXPLOIT_<SOURCE>_URL).
+	SkipExploitRefs bool
+	ExploitFeeds    []exploit.Feed
 
 	// Feature flags
 	SkipOSV              bool   // Skip OSV vulnerability lookups (fast ingestion, licenses only)
@@ -289,6 +296,13 @@ func Load() (*Config, error) {
 	if err := loadClickHouseLimits(cfg); err != nil {
 		return nil, err
 	}
+
+	cfg.SkipExploitRefs = getEnvBool("SKIP_EXPLOIT_REFS", false)
+	feeds, err := loadExploitFeeds()
+	if err != nil {
+		return nil, err
+	}
+	cfg.ExploitFeeds = feeds
 
 	switch cfg.MCPTransport {
 	case MCPTransportStdio, MCPTransportHTTP:
@@ -614,4 +628,36 @@ func (c *Config) S3BucketNames() string {
 		}
 	}
 	return strings.Join(names, ", ")
+}
+
+// loadExploitFeeds reads EXPLOIT_SOURCES (comma-separated, default all
+// three) and the per-source index URL EXPLOIT_<SOURCE>_URL (default the
+// upstream file; file:// for an air-gapped mirror). An unknown source name
+// or URL scheme is refused rather than silently skipped, and so is plain
+// http://: an index rewritten in transit would plant false exploit matches.
+func loadExploitFeeds() ([]exploit.Feed, error) {
+	names := exploit.Sources
+	if raw, ok := os.LookupEnv("EXPLOIT_SOURCES"); ok && strings.TrimSpace(raw) != "" {
+		names = nil
+		seen := map[string]bool{}
+		for _, n := range parseCSV(strings.ToLower(raw)) {
+			if !exploit.IsSource(n) {
+				return nil, fmt.Errorf("invalid EXPLOIT_SOURCES entry %q (want %s)", n, strings.Join(exploit.Sources, ", "))
+			}
+			if !seen[n] {
+				seen[n] = true
+				names = append(names, n)
+			}
+		}
+	}
+	feeds := make([]exploit.Feed, 0, len(names))
+	for _, n := range names {
+		key := "EXPLOIT_" + strings.ToUpper(n) + "_URL"
+		u := strings.TrimSpace(getEnv(key, exploit.DefaultURLs[n]))
+		if !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "file://") {
+			return nil, fmt.Errorf("invalid %s (want an https:// or file:// URL)", key)
+		}
+		feeds = append(feeds, exploit.Feed{Source: n, URL: u})
+	}
+	return feeds, nil
 }

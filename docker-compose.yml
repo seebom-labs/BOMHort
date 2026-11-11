@@ -249,6 +249,8 @@ services:
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: ""
       ADVISORY_SOURCES: ${ADVISORY_SOURCES:-}
+      SKIP_EXPLOIT_REFS: ${SKIP_EXPLOIT_REFS:-false}
+      EXPLOIT_SOURCES: ${EXPLOIT_SOURCES:-nuclei,metasploit,exploitdb}
     depends_on:
       clickhouse:
         condition: service_healthy

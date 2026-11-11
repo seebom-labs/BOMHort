@@ -20,6 +20,7 @@ import { ScopeBadgeComponent } from '../../shared/scope-badge/scope-badge.compon
 import { ScopeMatrixComponent } from '../../shared/scope-matrix/scope-matrix.component';
 import { VulnAliasesComponent } from '../../shared/vuln-aliases/vuln-aliases.component';
 import { AdvisoryBadgeComponent } from '../../shared/advisory-badge/advisory-badge.component';
+import { ExploitBadgeComponent } from '../../shared/exploit-badge/exploit-badge.component';
 import { primaryVulnId } from '../../shared/vuln-identity';
 
 type Tab = 'overview' | 'versions' | 'vulns' | 'packages' | 'subprojects';
@@ -62,7 +63,7 @@ export function splitPurl(purl: string): { pkg_name: string; pkg_version: string
 @Component({
   selector: 'app-project-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule, ScrollingModule, RouterModule, DonutChartComponent, HorizontalBarChartComponent, ScopeBadgeComponent, VulnAliasesComponent, ScopeMatrixComponent, AdvisoryBadgeComponent],
+  imports: [CommonModule, FormsModule, ScrollingModule, RouterModule, DonutChartComponent, HorizontalBarChartComponent, ScopeBadgeComponent, VulnAliasesComponent, ExploitBadgeComponent, ScopeMatrixComponent, AdvisoryBadgeComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="project-detail" *ngIf="detail">
@@ -304,6 +305,7 @@ export function splitPurl(purl: string): { pkg_name: string; pkg_version: string
                 <a [routerLink]="['/cve-impact']" [queryParams]="{vuln: vulnLabel(vuln)}" class="vuln-id">{{ vulnLabel(vuln) }}</a>
                 <app-vuln-aliases [vuln]="vuln"></app-vuln-aliases>
               <app-advisory-badge [vuln]="vuln"></app-advisory-badge>
+              <app-exploit-badge [vuln]="vuln"></app-exploit-badge>
               </span>
               <span class="summary">{{ vuln.summary }}</span>
             </div>

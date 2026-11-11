@@ -1,5 +1,6 @@
 import type {
   OwnerFilter,
+  VulnListFilter,
   AffectedProject,
   ArchivedPackageInfo,
   ArchivedRepoGroup,
@@ -143,11 +144,11 @@ export class BomhortApiClient {
     return `${this.baseUrl}/sboms/${sbomId}/download`;
   }
 
-  vulnerabilityReportUrl(scope = '', owner: OwnerFilter = {}, reachability = ''): string {
+  vulnerabilityReportUrl(scope = '', owner: VulnListFilter = {}, reachability = ''): string {
     return `${this.baseUrl}/reports/vulnerabilities${query({ format: 'csv', scope, reachability, ...owner })}`;
   }
 
-  getVulnerabilities(page = 1, pageSize = 50, scope = '', owner: OwnerFilter = {}, reachability = '', signal?: AbortSignal): Promise<PaginatedResponse<VulnerabilityListItem>> {
+  getVulnerabilities(page = 1, pageSize = 50, scope = '', owner: VulnListFilter = {}, reachability = '', signal?: AbortSignal): Promise<PaginatedResponse<VulnerabilityListItem>> {
     return this.get(`/vulnerabilities${query({ page, page_size: pageSize, scope, reachability, ...owner })}`, signal);
   }
 

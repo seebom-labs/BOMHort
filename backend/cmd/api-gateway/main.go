@@ -306,11 +306,19 @@ func main() {
 			writeError(w, http.StatusBadRequest, "Invalid reachability (expected reachable, not_reachable, or unknown)")
 			return
 		}
+		exploitOnly, ok := parseExploit(r.URL.Query().Get("exploit"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, invalidExploitMsg)
+			return
+		}
 		vulns, err := chClient.QuerySBOMVulnerabilities(r.Context(), sbomID, scope, reachability)
 		if err != nil {
 			log.Printf("ERROR: sbom vulns for %s: %v", sanitizeLogParam(sbomID), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch SBOM vulnerabilities")
 			return
+		}
+		if exploitOnly {
+			vulns = onlyExploitable(vulns)
 		}
 		writeJSON(w, http.StatusOK, vulns)
 	})
@@ -538,11 +546,19 @@ func main() {
 			writeError(w, http.StatusBadRequest, "Invalid scope (expected direct, transitive, root or unknown)")
 			return
 		}
+		exploitOnly, ok := parseExploit(r.URL.Query().Get("exploit"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, invalidExploitMsg)
+			return
+		}
 		items, err := chClient.QueryProjectVulnerabilities(r.Context(), name, scope)
 		if err != nil {
 			log.Printf("ERROR: project vulnerabilities for %s: %v", sanitizeLogParam(name), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch project vulnerabilities")
 			return
+		}
+		if exploitOnly {
+			items = onlyExploitable(items)
 		}
 		writeJSON(w, http.StatusOK, items)
 	})
