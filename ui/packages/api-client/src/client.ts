@@ -1,5 +1,6 @@
 import type {
   OwnerFilter,
+  VulnListFilter,
   AffectedProject,
   ArchivedPackageInfo,
   ArchivedRepoGroup,
@@ -222,23 +223,23 @@ export class BomhortApiClient {
     return `${this.baseUrl}/sboms/${sbomId}/download`;
   }
 
-  vulnerabilityReportUrl(scope = '', owner: OwnerFilter = {}, reachability = ''): string {
+  vulnerabilityReportUrl(scope = '', owner: VulnListFilter = {}, reachability = ''): string {
     return `${this.baseUrl}/reports/vulnerabilities${query({ format: 'csv', scope, reachability, ...owner })}`;
   }
 
   getVulnerabilities(page?: number, pageSize?: number, scope?: string, signal?: AbortSignal): Promise<PaginatedResponse<VulnerabilityListItem>>;
   getVulnerabilities(page?: number, pageSize?: number, scope?: string, origin?: string, signal?: AbortSignal): Promise<PaginatedResponse<VulnerabilityListItem>>;
-  getVulnerabilities(page?: number, pageSize?: number, scope?: string, owner?: OwnerFilter, signal?: AbortSignal): Promise<PaginatedResponse<VulnerabilityListItem>>;
-  getVulnerabilities(page?: number, pageSize?: number, scope?: string, owner?: OwnerFilter, reachability?: string, signal?: AbortSignal): Promise<PaginatedResponse<VulnerabilityListItem>>;
+  getVulnerabilities(page?: number, pageSize?: number, scope?: string, owner?: VulnListFilter, signal?: AbortSignal): Promise<PaginatedResponse<VulnerabilityListItem>>;
+  getVulnerabilities(page?: number, pageSize?: number, scope?: string, owner?: VulnListFilter, reachability?: string, signal?: AbortSignal): Promise<PaginatedResponse<VulnerabilityListItem>>;
   getVulnerabilities(
     page = 1,
     pageSize = 50,
     scope = '',
-    ownerOrOriginOrSignal?: OwnerFilter | string | AbortSignal,
+    ownerOrOriginOrSignal?: VulnListFilter | string | AbortSignal,
     reachabilityOrSignal?: string | AbortSignal,
     maybeSignal?: AbortSignal,
   ): Promise<PaginatedResponse<VulnerabilityListItem>> {
-    let owner: OwnerFilter = {};
+    let owner: VulnListFilter = {};
     let reachability = '';
     let signal: AbortSignal | undefined = maybeSignal;
     if (isSignal(ownerOrOriginOrSignal)) {

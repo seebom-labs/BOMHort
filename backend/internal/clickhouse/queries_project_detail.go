@@ -379,10 +379,13 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows error: %w", err)
 	}
+	if err := c.enrichExploits(ctx, items); err != nil {
+		return nil, err
+	}
 	if items == nil {
 		items = []dto.VulnerabilityListItem{}
 	}
-	return items, rows.Err()
+	return items, nil
 }
 
 // QueryProjectPackages lists the distinct components across a project's

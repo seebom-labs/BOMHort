@@ -278,6 +278,7 @@ func TestInsertColumnsExistInSchema(t *testing.T) {
 
 	inserts := insertTargetsFromSource(t,
 		"insert.go",
+		"queries_exploit.go",
 		"queue.go",
 		"queries_images.go",
 		"queries_document_store.go",
@@ -310,6 +311,7 @@ func TestInsertColumnsExistInSchema(t *testing.T) {
 func TestInsertsPersistOwnershipColumns(t *testing.T) {
 	inserts := insertTargetsFromSource(t,
 		"insert.go",
+		"queries_exploit.go",
 		"queue.go",
 		"queries_images.go",
 		"queries_document_store.go",
