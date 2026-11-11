@@ -79,6 +79,13 @@ type PaginatedResponse[T any] struct {
 	PageSize uint64 `json:"page_size"`
 }
 
+// AdvisoryComponent is one component entry of an advisory-feed finding.
+type AdvisoryComponent struct {
+	PURL         string `json:"purl,omitempty"`
+	Location     string `json:"location,omitempty"`
+	Architecture string `json:"architecture,omitempty"`
+}
+
 // VulnerabilityListItem is the response DTO for listing vulnerabilities.
 type VulnerabilityListItem struct {
 	VulnID string `json:"vuln_id"`
@@ -96,7 +103,19 @@ type VulnerabilityListItem struct {
 	FixedVersion string   `json:"fixed_version"`
 	SourceFile   string   `json:"source_file"`
 	DiscoveredAt string   `json:"discovered_at"`
-	VEXStatus    string   `json:"vex_status,omitempty"`
+
+	// AdvisorySource is "osv" when osv.dev reported the finding, else the
+	// name of the ADVISORY_SOURCES feed that decided it.
+	AdvisorySource string `json:"advisory_source"`
+	// AdvisoryStatus is the feed's status vocabulary for the finding:
+	// affected, under_investigation, pending_upstream_fix, fix_not_planned
+	// or not_affected. Omitted for an osv.dev finding.
+	AdvisoryStatus string `json:"advisory_status,omitempty"`
+	// AdvisoryComponents says where in the image the feed locates the
+	// vulnerable file. Omitted when the feed does not say.
+	AdvisoryComponents []AdvisoryComponent `json:"advisory_components,omitempty"`
+
+	VEXStatus string `json:"vex_status,omitempty"`
 	// Effective VEX statement detail (#335): exactly one row per
 	// (vuln_id, purl) is returned; the statement with the newest
 	// vex_timestamp wins (OpenVEX conflict rule). All fields are omitted

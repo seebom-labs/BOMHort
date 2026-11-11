@@ -44,6 +44,7 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 			v.vuln_id, v.severity, v.purl, v.summary,
 			v.fixed_version, v.source_file, v.discovered_at,
 			v.dependency_depth, v.aliases,
+			v.advisory_source, v.advisory_status, v.component_location,
 			ifNull(vx.vex_status, '') AS vex_status,
 			ifNull(vx.vex_justification, '') AS vex_justification,
 			ifNull(vx.winning_timestamp, toDateTime(0)) AS vex_timestamp,
@@ -85,15 +86,19 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 		var discoveredAt, vexTimestamp time.Time
 		var depth uint16
 		var aliases []string
+		var components string
 		if err := rows.Scan(
 			&item.VulnID, &item.Severity, &item.PURL,
 			&item.Summary, &item.FixedVersion, &item.SourceFile,
-			&discoveredAt, &depth, &aliases, &item.VEXStatus,
+			&discoveredAt, &depth, &aliases,
+			&item.AdvisorySource, &item.AdvisoryStatus, &components,
+			&item.VEXStatus,
 			&item.VEXJustification, &vexTimestamp, &item.VEXStatementID,
 			&item.VEXAuthor, &item.VEXTooling,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan vuln row: %w", err)
 		}
+		item.AdvisoryComponents = advisoryComponents(components)
 		item.Aliases, item.CVEID = identify(item.VulnID, aliases)
 		item.DiscoveredAt = discoveredAt.Format(time.RFC3339)
 		item.DependencyScope, item.DependencyDepth = scopeFields(depth)

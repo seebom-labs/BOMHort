@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/seebom-labs/bomhort/backend/internal/advisory"
 	"github.com/seebom-labs/bomhort/backend/internal/depgraph"
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
@@ -120,6 +121,7 @@ func (c *Client) InsertVulnerabilities(ctx context.Context, vulns []models.Vulne
 			discovered_at, sbom_id, source_file, purl, vuln_id,
 			severity, summary, affected_versions, fixed_version, osv_json, aliases,
 			dependency_depth,
+			advisory_source, advisory_status, component_location,
 			cluster, namespace, project
 		)`)
 	if err != nil {
@@ -140,6 +142,9 @@ func (c *Client) InsertVulnerabilities(ctx context.Context, vulns []models.Vulne
 			v.OSVJSON,
 			v.Aliases,
 			v.DependencyDepth,
+			advisorySourceOrOSV(v.AdvisorySource),
+			v.AdvisoryStatus,
+			v.ComponentLocation,
 			v.Cluster,
 			v.Namespace,
 			v.Project,
@@ -240,5 +245,37 @@ func (c *Client) InsertVEXStatements(ctx context.Context, stmts []models.VEXStat
 		}
 	}
 
+	return batch.Send()
+}
+
+// advisorySourceOrOSV stores a row without a feed as osv.dev's, the column
+// default, so a writer that never heard of feeds cannot write an empty
+// source.
+func advisorySourceOrOSV(s string) string {
+	if s == "" {
+		return "osv"
+	}
+	return s
+}
+
+// InsertAdvisoryRecords batch-inserts advisory feed records.
+func (c *Client) InsertAdvisoryRecords(ctx context.Context, rows []advisory.Row) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	batch, err := c.Conn.PrepareBatch(ctx,
+		`INSERT INTO advisory_records (source, id, modified, package_keys, record_json)`)
+	if err != nil {
+		return fmt.Errorf("failed to prepare advisory_records batch: %w", err)
+	}
+	for _, r := range rows {
+		keys := r.PackageKeys
+		if keys == nil {
+			keys = []string{}
+		}
+		if err := batch.Append(r.Source, r.ID, r.Modified, keys, r.RecordJSON); err != nil {
+			return fmt.Errorf("failed to append advisory record %s/%s: %w", r.Source, r.ID, err)
+		}
+	}
 	return batch.Send()
 }

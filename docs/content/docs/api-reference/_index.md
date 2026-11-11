@@ -129,6 +129,18 @@ For Go, npm, PyPI and most other ecosystems OSV's primary id is `GHSA-…`, `GO-
 
 They appear on `/api/v1/vulnerabilities`, `/api/v1/sboms/{id}/vulnerabilities`, `/api/v1/projects/{name}/vulnerabilities`, the vulnerability facet of `/api/v1/search`, and on VEX statements (where `vuln_id` stays the id the VEX author wrote and `aliases` come from the findings it matches). Lookups accept **any** of the names: `/api/v1/vulnerabilities/CVE-2024-45338/affected-projects` finds the findings stored as `GO-2024-3333`, and search matches aliases. Older API versions returned `vuln_id` only; clients that ignore the new fields are unaffected.
 
+### Advisory source and status {#advisory-source}
+
+Findings carry where they came from. With no [advisory feeds](../advisory-feeds/) configured every finding is `osv`.
+
+| Field | Description |
+|-------|-------------|
+| `advisory_source` | `osv` when osv.dev reported the finding (every finding stored before migration `029` included), else the name of the `ADVISORY_SOURCES` feed that decided it. Always present. |
+| `advisory_status` | The feed's status: `affected`, `under_investigation`, `pending_upstream_fix`, `fix_not_planned` or `not_affected`. Omitted for osv.dev findings. A feed's `fixed` verdict produces no finding, so it never appears here. |
+| `advisory_components` | Where in the image the feed locates the vulnerable file: `[{"purl", "location", "architecture"}]`. Omitted when the feed does not say. |
+
+A `not_affected` finding is also recorded as a VEX statement authored by the feed (`vex_author` = the feed name), so `vex_status` reads `not_affected` and the effective counts exclude it like any OpenVEX suppression. The fields appear on `/api/v1/vulnerabilities`, `/api/v1/sboms/{id}/vulnerabilities` and `/api/v1/projects/{name}/vulnerabilities`; clients that ignore them are unaffected.
+
 ### Error Responses
 
 All errors return:
@@ -601,6 +613,7 @@ All vulnerabilities found in a specific SBOM, including the effective VEX statem
     "fixed_version": "v0.23.0",
     "source_file": "containerd-v1.7.2.spdx.json",
     "discovered_at": "2026-05-18T09:00:00Z",
+    "advisory_source": "osv",
     "dependency_scope": "transitive",
     "dependency_depth": 3,
     "vex_status": "not_affected",
@@ -722,7 +735,7 @@ An SBOM that exists but has no package rows yet (for example while it is being i
 
 ### `GET /api/v1/vulnerabilities`
 
-Paginated list of all discovered vulnerabilities across all SBOMs. Each item carries `cve_id` and `aliases` next to `vuln_id` (see [Vulnerability ids and aliases](#vulnerability-ids)).
+Paginated list of all discovered vulnerabilities across all SBOMs. Each item carries `cve_id` and `aliases` next to `vuln_id` (see [Vulnerability ids and aliases](#vulnerability-ids)) and `advisory_source` / `advisory_status` (see [Advisory source and status](#advisory-source)).
 
 **Parameters:**
 
@@ -754,8 +767,28 @@ The ownership filters (#459) take comma-separated values: values within one para
       "fixed_version": "v0.23.0",
       "source_file": "etcd-v3.5.12.spdx.json",
       "discovered_at": "2026-05-15T00:00:00Z",
+      "advisory_source": "osv",
       "dependency_scope": "direct",
       "dependency_depth": 1,
+      "vex_status": ""
+    },
+    {
+      "vuln_id": "GHSA-abcd-1234-wxyz",
+      "cve_id": "CVE-2026-11295",
+      "aliases": ["CGA-xxxw-cg6p-cxxg", "CVE-2026-11295"],
+      "severity": "HIGH",
+      "purl": "pkg:apk/wolfi/libxml2@2.12.0-r0?arch=x86_64",
+      "summary": "Heap overflow in libxml2",
+      "fixed_version": "",
+      "source_file": "base-image.spdx.json",
+      "discovered_at": "2026-11-02T02:00:00Z",
+      "advisory_source": "wolfi",
+      "advisory_status": "pending_upstream_fix",
+      "advisory_components": [
+        {"purl": "pkg:apk/wolfi/libxml2", "location": "/usr/lib/libxml2.so.2", "architecture": "x86_64"}
+      ],
+      "dependency_scope": "transitive",
+      "dependency_depth": 2,
       "vex_status": ""
     }
   ],
