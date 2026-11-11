@@ -160,6 +160,16 @@ export interface VulnerabilityListItem {
   evidence_source?: string;
   evidence_ref?: string;
   evidence_at?: string;
+  /**
+   * Whether public exploit code exists for the finding's CVE (matched by
+   * vuln_id or any alias): a Nuclei template, a Metasploit module or an
+   * Exploit-DB entry. `exploit_sources` names the sources in that order and
+   * `exploits` links each one; both are absent when none is known.
+   * Always sent by current gateways; optional for older ones.
+   */
+  exploit_available?: boolean;
+  exploit_sources?: ExploitSource[];
+  exploits?: ExploitRef[];
   /** Image digest when finding is in a container image (#457). */
   image_digest?: string;
 }
@@ -206,6 +216,18 @@ export interface ReachabilitySummary {
   reachable: number;
   not_reachable: number;
   timestamp: string;
+}
+
+export type ExploitSource = 'nuclei' | 'metasploit' | 'exploitdb';
+
+/** One piece of public exploit code for a finding's CVE. */
+export interface ExploitRef {
+  source: ExploitSource;
+  /** Template path (nuclei), module name (metasploit) or EDB-ID (exploitdb). */
+  ref: string;
+  /** Public page of the exploit. */
+  url: string;
+  title?: string;
 }
 
 export type DependencyScope = 'root' | 'direct' | 'transitive' | 'unknown';
@@ -701,6 +723,14 @@ export interface OwnerFilter {
   parent?: string;
   tag?: string;
   origin?: string;
+}
+
+/**
+ * Filters of the finding listings: the ownership slice plus
+ * `exploit: 'available'`, which keeps only findings with public exploit code.
+ */
+export interface VulnListFilter extends OwnerFilter {
+  exploit?: 'available' | '';
 }
 
 export interface ClusterListItem {
