@@ -353,6 +353,7 @@ func vulnerabilityListSQL(scopeWhere string) string {
 			v.vuln_id, v.severity, v.purl, v.summary,
 			v.fixed_version, v.source_file, v.discovered_at,
 			v.dependency_depth, v.aliases,
+			v.advisory_source, v.advisory_status, v.component_location,
 			ifNull(vx.vex_status, '') AS vex_status
 		FROM (SELECT * FROM vulnerabilities FINAL` + scopeWhere + `) AS v
 		LEFT JOIN (
@@ -384,13 +385,17 @@ func scanVulnerabilityListRow(rows driver.Rows) (dto.VulnerabilityListItem, erro
 	var discoveredAt time.Time
 	var depth uint16
 	var aliases []string
+	var components string
 	if err := rows.Scan(
 		&item.VulnID, &item.Severity, &item.PURL,
 		&item.Summary, &item.FixedVersion, &item.SourceFile,
-		&discoveredAt, &depth, &aliases, &item.VEXStatus,
+		&discoveredAt, &depth, &aliases,
+		&item.AdvisorySource, &item.AdvisoryStatus, &components,
+		&item.VEXStatus,
 	); err != nil {
 		return item, fmt.Errorf("failed to scan vulnerability row: %w", err)
 	}
+	item.AdvisoryComponents = advisoryComponents(components)
 	item.Aliases, item.CVEID = identify(item.VulnID, aliases)
 	item.DiscoveredAt = discoveredAt.Format(time.RFC3339)
 	item.DependencyScope, item.DependencyDepth = scopeFields(depth)

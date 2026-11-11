@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/seebom-labs/bomhort/backend/internal/advisory"
 	"github.com/seebom-labs/bomhort/backend/internal/ingestpath"
 	"github.com/seebom-labs/bomhort/backend/internal/tags"
 )
@@ -90,6 +91,13 @@ type Config struct {
 	// Worker
 	WorkerID        string
 	WorkerBatchSize int
+
+	// AdvisorySources are the OSV-format advisory feeds from ADVISORY_SOURCES
+	// ("name|index[|purl-prefix…]", comma-separated). The cve-refresher
+	// syncs them into advisory_records; the parsing worker and the refresher
+	// match SBOM packages against them, feed first for the prefixes a feed
+	// is authoritative for. Empty: osv.dev only.
+	AdvisorySources []advisory.Source
 
 	// Feature flags
 	SkipOSV              bool   // Skip OSV vulnerability lookups (fast ingestion, licenses only)
@@ -303,6 +311,12 @@ func Load() (*Config, error) {
 	default:
 		return nil, fmt.Errorf("invalid ORIGINAL_STORE_BACKEND %q (want auto|s3|fs|none)", cfg.OriginalStoreBackend)
 	}
+
+	sources, err := advisory.ParseSources(getEnv("ADVISORY_SOURCES", ""))
+	if err != nil {
+		return nil, fmt.Errorf("invalid ADVISORY_SOURCES: %w", err)
+	}
+	cfg.AdvisorySources = sources
 
 	cfg.ExceptionsSource = strings.TrimSpace(getEnv("EXCEPTIONS_SOURCE", ""))
 	cfg.ExceptionsSourceToken = getEnv("EXCEPTIONS_SOURCE_TOKEN", "")

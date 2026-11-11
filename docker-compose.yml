@@ -180,6 +180,7 @@ services:
       TAGS: ${TAGS:-}
       WORKER_BATCH_SIZE: ${WORKER_BATCH_SIZE:-50}
       SKIP_OSV: ${SKIP_OSV:-false}
+      ADVISORY_SOURCES: ${ADVISORY_SOURCES:-}
       SKIP_GITHUB_RESOLVE: ${SKIP_GITHUB_RESOLVE:-false}
       SKIP_NPM_RESOLVE: ${SKIP_NPM_RESOLVE:-false}
       SKIP_NUGET_RESOLVE: ${SKIP_NUGET_RESOLVE:-false}
@@ -247,6 +248,7 @@ services:
       CLICKHOUSE_DATABASE: bomhort
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: ""
+      ADVISORY_SOURCES: ${ADVISORY_SOURCES:-}
     depends_on:
       clickhouse:
         condition: service_healthy

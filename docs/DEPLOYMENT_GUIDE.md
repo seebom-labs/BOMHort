@@ -680,6 +680,7 @@ cp .env.example .env
 | `WORKER_REPLICAS` | `1` | Number of parallel parsing worker containers. Keep `1`: only Kubernetes serialises claims across workers |
 | `WORKER_BATCH_SIZE` | `50` | Jobs claimed per polling cycle per worker |
 | `SKIP_OSV` | `false` | Skip OSV vulnerability API calls. Set `true` for fast initial bulk load. |
+| `ADVISORY_SOURCES` | — | OSV-format advisory feeds, comma-separated `name\|index[\|purl-prefix…]` entries (worker + cve-refresher). See [Advisory Feeds](content/docs/advisory-feeds/_index.md); check each feed's licence before enabling it. |
 | `SKIP_GITHUB_RESOLVE` | `false` | Skip GitHub license resolution for packages with unknown licenses. |
 | `SKIP_NPM_RESOLVE` | `false` | Skip npm registry license resolution for npm packages with unknown licenses. |
 | `SKIP_NUGET_RESOLVE` | `false` | Skip NuGet license resolution for NuGet packages with unknown licenses. |

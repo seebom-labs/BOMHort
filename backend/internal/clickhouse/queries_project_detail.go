@@ -274,6 +274,7 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 		SELECT
 			f.vuln_id, f.severity, f.purl, f.summary, f.fixed_version,
 			f.source_file, f.discovered_at, f.affected_sboms, f.dependency_depth, f.aliases,
+			f.advisory_source, f.advisory_status, f.component_location,
 			ifNull(vx.vex_status, '')            AS vex_status,
 			ifNull(vx.vex_justification, '')     AS vex_justification,
 			ifNull(vx.winning_timestamp, toDateTime(0)) AS vex_timestamp,
@@ -290,7 +291,10 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 				max(v.discovered_at)                     AS discovered_at,
 				uniqExact(v.sbom_id)                     AS affected_sboms,
 				min(v.dependency_depth)                  AS dependency_depth,
-				groupUniqArrayArray(v.aliases)           AS aliases
+				groupUniqArrayArray(v.aliases)           AS aliases,
+				argMax(v.advisory_source, v.discovered_at)    AS advisory_source,
+				argMax(v.advisory_status, v.discovered_at)    AS advisory_status,
+				argMax(v.component_location, v.discovered_at) AS component_location
 			FROM (SELECT * FROM vulnerabilities FINAL) AS v
 			WHERE v.sbom_id IN scope%s
 			GROUP BY v.vuln_id, v.purl
@@ -329,14 +333,17 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 		var discoveredAt, vexTimestamp time.Time
 		var depth uint16
 		var aliases []string
+		var components string
 		if err := rows.Scan(
 			&item.VulnID, &item.Severity, &item.PURL, &item.Summary, &item.FixedVersion,
 			&item.SourceFile, &discoveredAt, &item.AffectedSBOMs, &depth, &aliases,
+			&item.AdvisorySource, &item.AdvisoryStatus, &components,
 			&item.VEXStatus, &item.VEXJustification, &vexTimestamp,
 			&item.VEXStatementID, &item.VEXAuthor, &item.VEXTooling,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan project vulnerability row: %w", err)
 		}
+		item.AdvisoryComponents = advisoryComponents(components)
 		item.Aliases, item.CVEID = identify(item.VulnID, aliases)
 		item.DiscoveredAt = discoveredAt.Format(time.RFC3339)
 		item.DependencyScope, item.DependencyDepth = scopeFields(depth)

@@ -57,6 +57,7 @@ bomhort/
 │   │   ├── npm/ nuget/ depsdev/ packagist/ pypi/ # Registry license resolvers (see docs: License Resolution)
 │   │   ├── osv/               # OSV API client (rate-limited, exponential backoff retry)
 │   │   ├── osvutil/           # Shared OSV helpers (severity, fixed version, affected versions)
+│   │   ├── advisory/          # OSV-format advisory feeds (ADVISORY_SOURCES): sync, apk/dpkg/rpm version order, feed-first matching
 │   │   ├── s3/                # S3-compatible bucket client (AWS S3, MinIO, GCS)
 │   │   ├── license/           # License compliance + externalized policy + exceptions (+ Reevaluate)
 │   │   ├── rulesource/        # Rules documents from file / https / s3, polled with last-known-good
@@ -496,6 +497,20 @@ one bucket is nested and another flat.
 **Retry:** Exponential backoff on HTTP 429/503 (up to 5 retries, 500ms → 30s)  
 **Skip Mode:** `SKIP_OSV=true` for fast initial ingestion (licenses only), then `make re-scan` with `SKIP_OSV=false`
 
+### 6a. Advisory Feeds (`internal/advisory`, migration `029`)
+
+**Problem:** osv.dev matches distro packages (`pkg:apk`, `pkg:deb`, `pkg:rpm`) against the *upstream* range of a CVE, so a fix the distro backported into `-r4` / `+deb12u1` / `.el9_2` still reads as vulnerable; vendor feeds that publish OSV records on their own hosts (with per-component status and file location) never reach BOMHort.
+
+**Solution:** `ADVISORY_SOURCES` adds OSV-format feeds (`name|index[|purl-prefix…]`; index on `https://`, `s3://` or `file://`). OSV stays the only data model.
+
+- **Sync** (`advisory.Sync`, cve-refresher step 0): reads each index (`[{id, modified}]`), fetches only records new or modified since the stored version, stores them in `advisory_records` (`ReplacingMergeTree(synced_at)`, `ORDER BY (source, id)`, `package_keys` = `type/namespace/name` for lookup). A failing feed keeps its last records. Ids the index no longer lists get a tombstone row (empty `record_json` and `package_keys`), which wins over the live row and is skipped by lookups and version reads; an empty index while records are stored is an error, not a mass withdrawal.
+- **Reconcile** (`Matcher.Reconcile`, cve-refresher step 1b): stored findings under the authoritative prefixes are re-evaluated against today's records. `fixed` removes the finding from every SBOM (`ALTER TABLE vulnerabilities DELETE … SETTINGS mutations_sync = 1`, the VEX rescue pattern); `not_affected` writes the feed's VEX statement per SBOM. Closing only — status changes on open findings wait for the lifecycle work.
+- **Match** (`advisory.Matcher`, parsing worker and cve-refresher): for every PURL, records of its package are evaluated with the package's own version order (apk, dpkg, rpm; SemVer for `SEMVER` ranges; anything else is skipped, never guessed). A feed authoritative for the PURL's prefix decides every flaw it has a record of (identity = id ∪ aliases ∪ related): in range → one finding attributed to the feed (built on osv.dev's entry when it has the flaw), past the fix → osv.dev's upstream match is dropped, `not_affected` → finding plus a feed-authored VEX statement (deterministic `vex_id`), so the existing suppression joins apply unchanged. Feeds without prefixes only add open findings.
+- **Columns:** `vulnerabilities.advisory_source` (`DEFAULT 'osv'`), `advisory_status`, `component_location` (JSON); API fields `advisory_source`, `advisory_status`, `advisory_components`.
+- **Ordering:** feed lookups happen after osv.dev hydration and before the insert; a failed lookup fails the job (retried) instead of storing upstream matches the feed may have closed. Feed-only findings borrow severity from osv.dev's record of the related CVE/GHSA (`advisory.Enrich`).
+
+Operator documentation: `docs/content/docs/advisory-feeds/_index.md`.
+
 ## 7. License Policy (see Section 10)
 
 Moved to Section 10 for comprehensive coverage including exemptions and visual representation.
@@ -542,11 +557,12 @@ Moved to Section 10 for comprehensive coverage including exemptions and visual r
 **Solution:** Lightweight background job (`cmd/cve-refresher`) that runs as a K8s CronJob (default: daily at 2 AM).
 
 **Flow:**
+0. With `ADVISORY_SOURCES` set: sync the feeds into `advisory_records` (Section 6a), then (step 1b) close stored findings the authoritative feeds now report as fixed or not affected
 1. `SELECT DISTINCT purl FROM sbom_packages` → ~20k unique PURLs
 2. OSV `QueryBatch` in 1000-item chunks → ~20 API requests (~2-5s)
 3. Dedup: filter against existing `(vuln_id, purl)` combinations in ClickHouse
 4. Reverse-lookup: PURL → which SBOMs contain it? (`has(package_purls, ?)`)
-5. `INSERT` new vulnerability records for all affected SBOMs
+5. With feeds: run the matcher over all PURLs (new osv.dev hits plus feed-only flaws not yet stored under any of their ids), then `INSERT` new vulnerability records — and feed `not_affected` VEX statements — for all affected SBOMs
 6. Write refresh log to `cve_refresh_log`
 
 **Shared Helpers:** `internal/osvutil` package (extracted from parsing-worker) for `ClassifySeverity`, `ExtractFixedVersion`, `ExtractAffectedVersions`.

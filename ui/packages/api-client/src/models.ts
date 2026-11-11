@@ -80,6 +80,21 @@ export interface SBOMListItem {
   project?: string;
 }
 
+/** Status an advisory feed reports for a finding. */
+export type AdvisoryStatus =
+  | 'affected'
+  | 'under_investigation'
+  | 'pending_upstream_fix'
+  | 'fix_not_planned'
+  | 'not_affected';
+
+/** One component entry of an advisory-feed finding. */
+export interface AdvisoryComponent {
+  purl?: string;
+  location?: string;
+  architecture?: string;
+}
+
 export interface VulnerabilityListItem {
   vuln_id: string;
   /** CVE of the finding when one exists (#412): vuln_id itself or a CVE alias. */
@@ -92,6 +107,15 @@ export interface VulnerabilityListItem {
   fixed_version: string;
   source_file: string;
   discovered_at: string;
+  /**
+   * "osv" when osv.dev reported the finding, else the name of the advisory
+   * feed (ADVISORY_SOURCES) that decided it. Absent from older servers.
+   */
+  advisory_source?: string;
+  /** The feed's status vocabulary; omitted for osv.dev findings. */
+  advisory_status?: AdvisoryStatus;
+  /** Where in the image the feed locates the vulnerable file. */
+  advisory_components?: AdvisoryComponent[];
   vex_status?: string;
   /**
    * Effective VEX statement detail (#335): the API returns exactly one row
