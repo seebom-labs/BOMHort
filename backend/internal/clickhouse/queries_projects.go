@@ -63,6 +63,7 @@ const projectSBOMs = `(
 	SELECT s.sbom_id AS sbom_id, s.ingested_at AS ingested_at, s.tags AS tags,
 	       s.document_version AS document_version, s.source_repo AS source_repo,
 	       s.cluster AS cluster, s.namespace AS namespace,
+	       s.quality_flags AS quality_flags,
 	       ` + projectKeyExpr + ` AS project_name
 	FROM (SELECT * FROM sboms FINAL) AS s
 )`

@@ -58,7 +58,7 @@ func EvaluateQualityAt(sbom *models.SBOM, pkgs *models.SBOMPackages, now time.Ti
 	var flags []string
 
 	// 1. Root Component (5 points)
-	hasRoot := (pkgs != nil && len(pkgs.RootIndices) > 0) || (sbom != nil && sbom.DocumentName != "")
+	hasRoot := (pkgs != nil && (len(pkgs.RootIndices) > 0 || len(pkgs.DirectIndices) > 0)) || (sbom != nil && sbom.RootPURL != "")
 	if hasRoot {
 		score += 5
 	} else {

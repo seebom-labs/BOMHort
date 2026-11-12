@@ -162,7 +162,9 @@ func (c *Client) QueryDashboardStats(ctx context.Context, f VulnFilter) (*dto.Da
 	}
 
 	// Low quality SBOMs and average score (#537).
-	_ = c.Conn.QueryRow(ctx, "SELECT countIf(quality_score < 60), round(ifNull(avg(quality_score), 0), 1) FROM sboms FINAL"+w, args...).Scan(&stats.LowQualitySBOMs, &stats.AverageQualityScore)
+	if err := c.Conn.QueryRow(ctx, "SELECT countIf(quality_score < 60), round(ifNull(avg(quality_score), 0), 1) FROM sboms FINAL"+w, args...).Scan(&stats.LowQualitySBOMs, &stats.AverageQualityScore); err != nil {
+		return nil, fmt.Errorf("failed to query quality stats: %w", err)
+	}
 
 	return stats, nil
 }
@@ -409,8 +411,13 @@ func vulnerabilityListSQL(scopeWhere string) string {
 			v.fixed_version, v.source_file, v.discovered_at,
 			v.dependency_depth, v.aliases,
 			v.advisory_source, v.advisory_status, v.component_location,
-			ifNull(vx.vex_status, '') AS vex_status
+			ifNull(vx.vex_status, '') AS vex_status,
+			ifNull(q.has_no_dep_graph, 0) AS has_no_dep_graph
 		FROM (SELECT * FROM vulnerabilities FINAL` + scopeWhere + `) AS v
+		LEFT JOIN (
+			SELECT sbom_id, has(quality_flags, 'no-dependency-graph') AS has_no_dep_graph
+			FROM sboms FINAL
+		) AS q ON q.sbom_id = v.sbom_id
 		LEFT JOIN (
 			SELECT
 				toString(f.sbom_id) AS sbom_id, f.vuln_id AS vuln_id, f.purl AS purl,
@@ -441,12 +448,14 @@ func scanVulnerabilityListRow(rows driver.Rows) (dto.VulnerabilityListItem, erro
 	var depth uint16
 	var aliases []string
 	var components string
+	var hasNoDepGraph uint8
 	if err := rows.Scan(
 		&item.VulnID, &item.Severity, &item.PURL,
 		&item.Summary, &item.FixedVersion, &item.SourceFile,
 		&discoveredAt, &depth, &aliases,
 		&item.AdvisorySource, &item.AdvisoryStatus, &components,
 		&item.VEXStatus,
+		&hasNoDepGraph,
 	); err != nil {
 		return item, fmt.Errorf("failed to scan vulnerability row: %w", err)
 	}
@@ -454,6 +463,9 @@ func scanVulnerabilityListRow(rows driver.Rows) (dto.VulnerabilityListItem, erro
 	item.Aliases, item.CVEID = identify(item.VulnID, aliases)
 	item.DiscoveredAt = discoveredAt.Format(time.RFC3339)
 	item.DependencyScope, item.DependencyDepth = scopeFields(depth)
+	if item.DependencyScope == "unknown" && hasNoDepGraph == 1 {
+		item.ScopeReason = "no-dependency-graph"
+	}
 	return item, nil
 }
 

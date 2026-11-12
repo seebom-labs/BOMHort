@@ -22,7 +22,7 @@ identifiability requirements:
 <!-- quality-weights:start -->
 | Criterion | Points | Evaluation Rule |
 |-----------|--------|-----------------|
-| Root Component | 5 | Root component identifier or document name is specified |
+| Root Component | 5 | Root component identifier is designated |
 | Author & Tooling | 10 | Creator tools or document authors are declared |
 | Timestamp Freshness | 10 | Creation date is non-zero, not in the future, and not stale |
 | Supplier Identity | 10 | Component or product supplier organization is provided |
@@ -52,7 +52,7 @@ reasons for the lower score:
 | no-dependency-graph | Multi-component document contains no dependency relationships |
 | no-licenses | No package in the document has a declared license |
 | no-purls | No package in the document has a valid Package URL |
-| no-root-component | Document has no designated root component or document name |
+| no-root-component | Document has no designated root component |
 | stale-document | Creation timestamp is older than two years |
 | unsupported-spec-version | Document specification version is legacy or unsupported |
 <!-- quality-flags:end -->
