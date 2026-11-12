@@ -166,3 +166,40 @@ func TestEvaluateQuality_TimestampFlags(t *testing.T) {
 		t.Fatalf("expected FlagStaleDocument in %v", f3)
 	}
 }
+
+func TestEvaluateQuality_NoRootComponent(t *testing.T) {
+	refTime := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
+	// DocumentName is present, but no root component is designated in RootIndices, DirectIndices, or RootPURL.
+	sbom := &models.SBOM{
+		DocumentName:    "unrooted-app",
+		DocumentVersion: "1.0.0",
+		Supplier:        "Acme",
+		CreationDate:    refTime.Add(-24 * time.Hour),
+		CreatorTools:    []string{"Tool: test"},
+		SPDXVersion:     "SPDX-2.3",
+	}
+	pkgs := &models.SBOMPackages{
+		PackageNames:    []string{"pkg-a", "pkg-b"},
+		PackageVersions: []string{"1.0.0", "2.0.0"},
+		PackagePURLs:    []string{"pkg:npm/pkg-a@1.0.0", "pkg:npm/pkg-b@2.0.0"},
+		PackageLicenses: []string{"MIT", "Apache-2.0"},
+		RelTypes:        []string{"DEPENDS_ON"},
+		RootIndices:     nil, // No root component designated
+	}
+
+	score, flags := EvaluateQualityAt(sbom, pkgs, refTime)
+	// Loses root component (5 points): 100 - 5 = 95
+	if score != 95 {
+		t.Fatalf("expected score 95, got %d (flags: %v)", score, flags)
+	}
+	foundNoRoot := false
+	for _, f := range flags {
+		if f == FlagNoRootComponent {
+			foundNoRoot = true
+			break
+		}
+	}
+	if !foundNoRoot {
+		t.Fatalf("expected FlagNoRootComponent in %v", flags)
+	}
+}

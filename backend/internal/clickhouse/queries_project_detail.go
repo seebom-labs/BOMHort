@@ -270,7 +270,11 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 		scopeAnd = " AND " + pred
 	}
 	rows, err := c.Conn.Query(ctx, fmt.Sprintf(`
-		WITH scope AS (SELECT sbom_id FROM %s AS s WHERE s.project_name = ?)
+		WITH scope AS (
+			SELECT sbom_id, has(quality_flags, 'no-dependency-graph') AS has_no_dep_graph
+			FROM %s AS s
+			WHERE s.project_name = ?
+		)
 		SELECT
 			f.vuln_id, f.severity, f.purl, f.summary, f.fixed_version,
 			f.source_file, f.discovered_at, f.affected_sboms, f.dependency_depth, f.aliases,
@@ -280,7 +284,8 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 			ifNull(vx.winning_timestamp, toDateTime(0)) AS vex_timestamp,
 			ifNull(vx.vex_statement_id, '')      AS vex_statement_id,
 			ifNull(vx.vex_author, '')            AS vex_author,
-			ifNull(vx.vex_tooling, '')           AS vex_tooling
+			ifNull(vx.vex_tooling, '')           AS vex_tooling,
+			f.has_no_dep_graph                   AS has_no_dep_graph
 		FROM (
 			SELECT
 				v.vuln_id AS vuln_id, v.purl AS purl,
@@ -294,9 +299,11 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 				groupUniqArrayArray(v.aliases)           AS aliases,
 				argMax(v.advisory_source, v.discovered_at)    AS advisory_source,
 				argMax(v.advisory_status, v.discovered_at)    AS advisory_status,
-				argMax(v.component_location, v.discovered_at) AS component_location
+				argMax(v.component_location, v.discovered_at) AS component_location,
+				max(sc.has_no_dep_graph)                 AS has_no_dep_graph
 			FROM (SELECT * FROM vulnerabilities FINAL) AS v
-			WHERE v.sbom_id IN scope%s
+			INNER JOIN scope AS sc ON sc.sbom_id = v.sbom_id
+			WHERE 1=1%s
 			GROUP BY v.vuln_id, v.purl
 		) AS f
 		LEFT JOIN (
@@ -311,9 +318,9 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 			FROM (
 				SELECT DISTINCT vuln_id, purl,
 					arrayJoin(arrayConcat([vuln_id], aliases)) AS match_id
-				FROM vulnerabilities FINAL WHERE sbom_id IN scope
+				FROM vulnerabilities FINAL WHERE sbom_id IN (SELECT sbom_id FROM scope)
 			) AS m
-			INNER JOIN (SELECT * FROM vex_statements FINAL WHERE sbom_id IN scope) AS st
+			INNER JOIN (SELECT * FROM vex_statements FINAL WHERE sbom_id IN (SELECT sbom_id FROM scope)) AS st
 				ON st.vuln_id = m.match_id
 			WHERE st.product_purl = m.purl OR st.product_purl = '*'
 			GROUP BY m.vuln_id, m.purl
@@ -334,12 +341,14 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 		var depth uint16
 		var aliases []string
 		var components string
+		var hasNoDepGraph uint8
 		if err := rows.Scan(
 			&item.VulnID, &item.Severity, &item.PURL, &item.Summary, &item.FixedVersion,
 			&item.SourceFile, &discoveredAt, &item.AffectedSBOMs, &depth, &aliases,
 			&item.AdvisorySource, &item.AdvisoryStatus, &components,
 			&item.VEXStatus, &item.VEXJustification, &vexTimestamp,
 			&item.VEXStatementID, &item.VEXAuthor, &item.VEXTooling,
+			&hasNoDepGraph,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan project vulnerability row: %w", err)
 		}
@@ -347,6 +356,9 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 		item.Aliases, item.CVEID = identify(item.VulnID, aliases)
 		item.DiscoveredAt = discoveredAt.Format(time.RFC3339)
 		item.DependencyScope, item.DependencyDepth = scopeFields(depth)
+		if item.DependencyScope == "unknown" && hasNoDepGraph == 1 {
+			item.ScopeReason = "no-dependency-graph"
+		}
 		if item.VEXStatus != "" {
 			item.VEXScope = "sbom"
 		}
