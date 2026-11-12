@@ -115,3 +115,53 @@ func TestVEXStatement_ClusterField(t *testing.T) {
 		t.Errorf("expected Cluster=\"fleet-asia\", got %q", stmt.Cluster)
 	}
 }
+
+func TestSBOM_UploadedByField(t *testing.T) {
+	sbom := SBOM{
+		IngestedAt:   time.Now(),
+		SBOMID:       uuid.New(),
+		SourceFile:   "test.spdx.json",
+		DocumentName: "test-doc",
+		UploadedBy:   "ci-builder",
+	}
+
+	if sbom.UploadedBy != "ci-builder" {
+		t.Errorf("expected UploadedBy=\"ci-builder\", got %q", sbom.UploadedBy)
+	}
+
+	data, err := json.Marshal(sbom)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if m["uploaded_by"] != "ci-builder" {
+		t.Errorf("JSON uploaded_by field = %v, want \"ci-builder\"", m["uploaded_by"])
+	}
+}
+
+func TestSBOM_UploadedByOmitEmpty(t *testing.T) {
+	sbom := SBOM{
+		IngestedAt:   time.Now(),
+		SBOMID:       uuid.New(),
+		SourceFile:   "test.spdx.json",
+		DocumentName: "test-doc",
+		UploadedBy:   "",
+	}
+
+	data, err := json.Marshal(sbom)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+
+	var m map[string]interface{}
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if _, exists := m["uploaded_by"]; exists {
+		t.Error("expected uploaded_by to be omitted for empty value")
+	}
+}

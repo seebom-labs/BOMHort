@@ -160,3 +160,16 @@ func TestOwnershipDoesNotTouchSPDXDocumentNamespace(t *testing.T) {
 		t.Errorf("Namespace = %q, want payments", m.Namespace)
 	}
 }
+
+func TestOwnershipCarriesUploadedBy(t *testing.T) {
+	job := testJob()
+	job.UploadedBy = "ci-pipeline"
+
+	own := ownershipOf(job)
+	var m models.SBOM
+	own.applySBOM(&m)
+
+	if m.UploadedBy != "ci-pipeline" {
+		t.Errorf("UploadedBy = %q, want ci-pipeline", m.UploadedBy)
+	}
+}

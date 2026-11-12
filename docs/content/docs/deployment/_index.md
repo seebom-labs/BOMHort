@@ -742,14 +742,37 @@ curl -H "X-Service-Token: your-strong-random-secret-here" \
   https://bomhort.example.com/api/v1/stats/dashboard
 ```
 
-**Mode 2: API Keys** — multiple pre-shared keys for direct consumers (CI/CD pipelines, scripts):
+**Mode 2: API Keys** — pre-shared keys for direct consumers (CI/CD pipelines, scripts).
+
+Can be configured as a comma-separated string (flat keys) or as a list of **named, scoped API keys** (#456):
 
 ```yaml
 apiGateway:
   auth:
     enabled: true
+    # Option A: flat keys (backward-compatible)
     apiKeys: "ci-cd-pipeline-key,monitoring-key,backup-script-key"
+
+    # Option B: named, scoped API keys
+    apiKeys:
+      - name: "ci-pipeline"
+        secret: "super-secret-key-1"
+        scope:
+          origins: ["ci"]
+          clusters: ["prod-eu"]
+          namespaces: ["payments"]
+          projects: ["payment-service"]
+      - name: "cluster-scanner"
+        secret: "super-secret-key-2"
+        scope:
+          origins: ["cluster-scan"]
 ```
+
+When using scoped keys:
+- Uploads (`POST /api/v1/sboms/upload`) are validated against the key's allowed `origins`, `clusters`, `namespaces`, and `projects`.
+- Single values in scope are automatically applied as defaults if omitted by the request.
+- Violations return `403 Forbidden` with the key name (`credential "ci-pipeline" is not permitted for origin "manual"`). Secrets are never logged or exposed in errors.
+- Every ingested SBOM records the key's name in `uploaded_by` for audit attribution.
 
 Clients send the key via:
 
@@ -768,6 +791,7 @@ Reference a pre-existing Secret instead of inlining the token in Helm values —
 kubectl create secret generic bomhort-api-auth \
   --from-literal=SERVICE_TOKEN="$(openssl rand -hex 32)" \
   --from-literal=API_KEYS="key1,key2,key3" \
+  --from-literal=API_KEYS_JSON='[{"name":"ci-pipeline","secret":"...","scope":{"origins":["ci"]}}]' \
   -n bomhort
 ```
 
@@ -780,6 +804,7 @@ apiGateway:
       secretName: "bomhort-api-auth"
       serviceTokenKey: "SERVICE_TOKEN"   # key inside the Secret
       apiKeysKey: "API_KEYS"
+      apiKeysJsonKey: "API_KEYS_JSON"   # optional: JSON array of named scoped keys
 ```
 
 Both the API Gateway and the UI nginx container automatically read `SERVICE_TOKEN` from this Secret. To rotate the token, update the Secret and restart both Deployments:
