@@ -52,7 +52,6 @@ type vexDocument struct {
 	Context    string         `json:"@context"`
 	ID         string         `json:"@id"`
 	Author     string         `json:"author"`
-	Timestamp  string         `json:"timestamp,omitempty"`
 	Version    int            `json:"version"`
 	Tooling    string         `json:"tooling"`
 	Statements []vexStatement `json:"statements"`
@@ -107,23 +106,21 @@ func (v VEX) Statements() int {
 // stored document_namespace, so the statements are scoped to the SBOM
 // whichever of the two is processed first.
 //
-// The output is a pure function of its input: no clock, no random IDs. The
-// timestamps come from the analyses (a statement without one gets the time
-// BOMHort ingests it), and @id is derived from the content. Uploading the
-// same analyses again is therefore a hash duplicate, while a changed analysis
-// yields a new document that wins over the old one on timestamp.
+// The output is a pure function of its input: no clock, no random IDs. Each
+// statement carries its own analysis time; there is deliberately no
+// document-level timestamp, because the VEX parser falls back to it for every
+// statement without one, and an undated decision would then inherit another
+// finding's date. A statement without a time gets the time BOMHort ingests
+// it. @id is derived from the content, so uploading the same analyses again
+// is a hash duplicate, while a changed analysis yields a new document.
 func BuildVEX(serial string, analyses []Analysis) (VEX, error) {
 	out := VEX{ByStatus: map[string]int{}}
 	stmts := make([]vexStatement, 0, len(analyses))
-	var latest time.Time
 	for _, a := range analyses {
 		stmt, err := statement(serial, a)
 		if err != nil {
 			out.Notes = append(out.Notes, fmt.Sprintf("skipped %s: %v", a.VulnID, err))
 			continue
-		}
-		if a.Updated.After(latest) {
-			latest = a.Updated
 		}
 		stmts = append(stmts, stmt)
 		out.ByStatus[stmt.Status]++
@@ -162,9 +159,6 @@ func BuildVEX(serial string, analyses []Analysis) (VEX, error) {
 		Version:    1,
 		Tooling:    importTooling,
 		Statements: stmts,
-	}
-	if !latest.IsZero() {
-		doc.Timestamp = latest.UTC().Format(time.RFC3339)
 	}
 	data, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {

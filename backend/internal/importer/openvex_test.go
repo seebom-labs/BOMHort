@@ -142,7 +142,7 @@ func TestBuildVEX_IsDeterministic(t *testing.T) {
 		t.Fatalf("output depends on input order:\n%s\n%s", first.Data, second.Data)
 	}
 	if !bytes.Contains(first.Data, []byte(`"timestamp": "2025-03-01T12:00:00Z"`)) {
-		t.Errorf("document timestamp is not the latest analysis time:\n%s", first.Data)
+		t.Errorf("the dated statement lost its analysis time:\n%s", first.Data)
 	}
 
 	// A changed decision must produce a new document (new @id), or the worker
@@ -154,6 +154,40 @@ func TestBuildVEX_IsDeterministic(t *testing.T) {
 	}
 	if docID(t, changed.Data) == docID(t, first.Data) {
 		t.Error("a changed analysis kept the same @id")
+	}
+}
+
+// An undated analysis must not inherit the date of another one in the same
+// document: the VEX parser falls back to the document timestamp for a
+// statement without its own, so the document must not carry one.
+func TestBuildVEX_UndatedStatementDoesNotInheritADate(t *testing.T) {
+	dated := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
+	got, err := BuildVEX(testSerial, []Analysis{
+		{VulnID: "CVE-1", PURLs: []string{"pkg:npm/a@1"}, State: "not_affected", Justification: "code_not_present", Updated: dated},
+		{VulnID: "CVE-2", PURLs: []string{"pkg:npm/b@1"}, State: "not_affected", Justification: "code_not_present"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := time.Now()
+	res, err := vex.Parse(bytes.NewReader(got.Data), "import.openvex.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range res.Statements {
+		switch s.VulnID {
+		case "CVE-1":
+			if !s.VEXTimestamp.Equal(dated) {
+				t.Errorf("dated statement: timestamp %v, want %v", s.VEXTimestamp, dated)
+			}
+		case "CVE-2":
+			if s.VEXTimestamp.Equal(dated) || s.VEXTimestamp.Before(before.Add(-time.Minute)) {
+				t.Errorf("undated statement got %v; want the ingest time, not another finding's date", s.VEXTimestamp)
+			}
+		}
+	}
+	if len(res.Statements) != 2 {
+		t.Fatalf("parsed %d statements, want 2", len(res.Statements))
 	}
 }
 

@@ -76,9 +76,17 @@ func NewClient(baseURL, apiKey string, timeout time.Duration) (*Client, error) {
 	return &Client{
 		endpoint: u.String() + uploadPath,
 		apiKey:   apiKey,
-		http:     &http.Client{Timeout: timeout},
+		http:     &http.Client{Timeout: timeout, CheckRedirect: refuseRedirect},
 		wait:     sleep,
 	}, nil
+}
+
+// refuseRedirect stops every redirect. Go strips Authorization on a redirect
+// to another host but not custom headers, so following one would send
+// X-API-Key to wherever the endpoint points. A same-origin redirect gains
+// nothing either: 301/302 turn the POST into a body-less GET.
+func refuseRedirect(req *http.Request, _ []*http.Request) error {
+	return fmt.Errorf("refusing to follow a redirect to %s, which would resend the API key; pass the final URL as --url", req.URL.Redacted())
 }
 
 // Upload sends one document. A 429 is retried after Retry-After, a bounded

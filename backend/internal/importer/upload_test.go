@@ -104,6 +104,37 @@ func TestClient_RetriesRateLimit(t *testing.T) {
 	}
 }
 
+// A redirect must not carry the API key to another host, so none is followed.
+func TestClient_RefusesRedirects(t *testing.T) {
+	var leaked atomic.Int32
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-API-Key") != "" {
+			leaked.Add(1)
+		}
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"status":"pending","job_id":"job-1"}`))
+	}))
+	defer other.Close()
+
+	for _, code := range []int{http.StatusMovedPermanently, http.StatusFound, http.StatusTemporaryRedirect, http.StatusPermanentRedirect} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, other.URL+uploadPath, code)
+		}))
+		c, err := NewClient(srv.URL, "secret", time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = c.Upload(context.Background(), Upload{FileName: "a.json", Data: []byte("{}")})
+		if err == nil || !strings.Contains(err.Error(), "refusing to follow a redirect") {
+			t.Errorf("%d: err = %v, want the redirect refused", code, err)
+		}
+		srv.Close()
+	}
+	if n := leaked.Load(); n != 0 {
+		t.Errorf("the API key reached the redirect target %d times", n)
+	}
+}
+
 func TestNewClient_Validates(t *testing.T) {
 	for _, u := range []string{"", "bomhort.example.com", "ftp://host", "https://"} {
 		if _, err := NewClient(u, "key", time.Second); err == nil {
