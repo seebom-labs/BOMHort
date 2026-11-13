@@ -150,6 +150,22 @@ export interface VulnerabilityListItem {
   dependency_depth?: number;
   /** Reason when scope is unknown (e.g. "no-dependency-graph"). */
   scope_reason?: string;
+  /** Reachability evidence (#535): 'reachable', 'not_reachable', or 'unknown'. */
+  reachability?: 'reachable' | 'not_reachable' | 'unknown' | string;
+  evidence_source?: string;
+  evidence_ref?: string;
+  evidence_at?: string;
+}
+
+/** ReachabilitySummary is returned by POST /api/v1/sboms/{id}/evidence (#535). */
+export interface ReachabilitySummary {
+  sbom_id: string;
+  tool: string;
+  ref?: string;
+  total_findings: number;
+  reachable: number;
+  not_reachable: number;
+  timestamp: string;
 }
 
 export type DependencyScope = 'root' | 'direct' | 'transitive' | 'unknown';

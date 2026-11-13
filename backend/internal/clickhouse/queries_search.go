@@ -8,6 +8,7 @@ import (
 
 	"github.com/seebom-labs/bomhort/backend/internal/depgraph"
 	"github.com/seebom-labs/bomhort/backend/pkg/dto"
+	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
 
 // QuerySBOMVulnerabilities fetches vulnerabilities for a specific SBOM with
@@ -33,11 +34,17 @@ import (
 // VEX scope.
 //
 // scope ("" or a depgraph scope label) keeps only findings whose package is
-// pulled in that way.
-func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, scope string) ([]dto.VulnerabilityListItem, error) {
+// pulled in that way. reachability ("" or "reachable", "not_reachable", "unknown")
+// filters by reachability evidence (#535).
+func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, scope string, reachability string) ([]dto.VulnerabilityListItem, error) {
 	scopeAnd := ""
 	if pred := depthPredicate(scope, "v.dependency_depth"); pred != "" {
 		scopeAnd = " AND " + pred
+	}
+	args := []any{sbomID, sbomID, sbomID}
+	if reachability != "" {
+		scopeAnd += " AND v.reachability = ?"
+		args = append(args, reachability)
 	}
 	rows, err := c.Conn.Query(ctx, `
 		SELECT
@@ -51,7 +58,8 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 			ifNull(vx.vex_statement_id, '') AS vex_statement_id,
 			ifNull(vx.vex_author, '') AS vex_author,
 			ifNull(vx.vex_tooling, '') AS vex_tooling,
-			ifNull(q.has_no_dep_graph, 0) AS has_no_dep_graph
+			ifNull(q.has_no_dep_graph, 0) AS has_no_dep_graph,
+			v.reachability, v.evidence_source, v.evidence_ref, v.evidence_at
 		FROM (SELECT * FROM vulnerabilities FINAL) AS v
 		LEFT JOIN (
 			SELECT sbom_id, has(quality_flags, 'no-dependency-graph') AS has_no_dep_graph
@@ -79,7 +87,7 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 		WHERE v.sbom_id = ?`+scopeAnd+`
 		ORDER BY v.severity ASC, v.discovered_at DESC
 		LIMIT 1 BY v.vuln_id, v.purl
-	`, sbomID, sbomID, sbomID)
+	`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query vulns for sbom %s: %w", sbomID, err)
 	}
@@ -88,7 +96,7 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 	var items []dto.VulnerabilityListItem
 	for rows.Next() {
 		var item dto.VulnerabilityListItem
-		var discoveredAt, vexTimestamp time.Time
+		var discoveredAt, vexTimestamp, evidenceAt time.Time
 		var depth uint16
 		var aliases []string
 		var components string
@@ -101,6 +109,7 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 			&item.VEXStatus,
 			&item.VEXJustification, &vexTimestamp, &item.VEXStatementID,
 			&item.VEXAuthor, &item.VEXTooling, &hasNoDepGraph,
+			&item.Reachability, &item.EvidenceSource, &item.EvidenceRef, &evidenceAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan vuln row: %w", err)
 		}
@@ -110,6 +119,15 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 		item.DependencyScope, item.DependencyDepth = scopeFields(depth)
 		if item.DependencyScope == "unknown" && hasNoDepGraph == 1 {
 			item.ScopeReason = "no-dependency-graph"
+		}
+		if (item.Reachability == "" || item.Reachability == models.ReachabilityUnknown) && item.VEXJustification == "vulnerable_code_not_in_execute_path" {
+			item.Reachability = models.ReachabilityNotReachable
+			if item.EvidenceSource == "" {
+				item.EvidenceSource = item.VEXTooling
+			}
+		}
+		if !evidenceAt.IsZero() && evidenceAt.Unix() > 0 {
+			item.EvidenceAt = evidenceAt.Format(time.RFC3339)
 		}
 		if item.VEXStatus != "" {
 			item.VEXScope = "sbom"

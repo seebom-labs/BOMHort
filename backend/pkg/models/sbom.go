@@ -132,7 +132,20 @@ type Vulnerability struct {
 	Cluster   string `json:"cluster,omitempty"`
 	Namespace string `json:"namespace,omitempty"`
 	Project   string `json:"project,omitempty"`
+
+	// Reachability evidence (#535): reachable, not_reachable, or unknown.
+	Reachability   string    `json:"reachability,omitempty"`
+	EvidenceSource string    `json:"evidence_source,omitempty"`
+	EvidenceRef    string    `json:"evidence_ref,omitempty"`
+	EvidenceAt     time.Time `json:"evidence_at,omitempty"`
 }
+
+// Reachability vocabulary constants (#535).
+const (
+	ReachabilityReachable    = "reachable"
+	ReachabilityNotReachable = "not_reachable"
+	ReachabilityUnknown      = "unknown"
+)
 
 // LicenseCompliance represents the compliance status for a license within an SBOM.
 type LicenseCompliance struct {

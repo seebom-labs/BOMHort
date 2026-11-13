@@ -15,6 +15,7 @@ func TestCorsMiddleware_AllowMethods_ScopedToUploadRoute(t *testing.T) {
 	}{
 		{"/api/v1/sboms", "GET, OPTIONS"},
 		{"/api/v1/stats/dashboard", "GET, OPTIONS"},
+		{"/api/v1/sboms/c8734994-df7a-4ec6-8964-b8166c303115/evidence", "GET, POST, OPTIONS"},
 		{uploadPath, "GET, POST, OPTIONS"},
 	}
 

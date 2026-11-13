@@ -33,6 +33,7 @@ import type {
   VEXStatementItem,
   VersionSkewResponse,
   VulnerabilityListItem,
+  ReachabilitySummary,
 } from './models';
 
 export interface ApiClientOptions {
@@ -94,6 +95,18 @@ export class BomhortApiClient {
     return (await res.json()) as T;
   }
 
+  private async post<T>(path: string, body: string, signal?: AbortSignal): Promise<T> {
+    const url = `${this.baseUrl}${path}`;
+    const res = await this.fetchFn(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...this.headers },
+      body,
+      signal,
+    });
+    if (!res.ok) throw new ApiError(res.status, url, await res.text());
+    return (await res.json()) as T;
+  }
+
   getDashboardStats(owner: OwnerFilter = {}, signal?: AbortSignal): Promise<DashboardStats> {
     return this.get(`/stats/dashboard${query({ ...owner })}`, signal);
   }
@@ -114,8 +127,8 @@ export class BomhortApiClient {
     return this.get(`/sboms/${sbomId}/dependencies`, signal);
   }
 
-  getSbomVulnerabilities(sbomId: string, scope = '', signal?: AbortSignal): Promise<VulnerabilityListItem[]> {
-    return this.get(`/sboms/${sbomId}/vulnerabilities${query({ scope })}`, signal);
+  getSbomVulnerabilities(sbomId: string, scope = '', reachability = '', signal?: AbortSignal): Promise<VulnerabilityListItem[]> {
+    return this.get(`/sboms/${sbomId}/vulnerabilities${query({ scope, reachability })}`, signal);
   }
 
   getSbomVex(sbomId: string, signal?: AbortSignal): Promise<VEXStatementItem[]> {
@@ -130,12 +143,17 @@ export class BomhortApiClient {
     return `${this.baseUrl}/sboms/${sbomId}/download`;
   }
 
-  vulnerabilityReportUrl(scope = '', owner: OwnerFilter = {}): string {
-    return `${this.baseUrl}/reports/vulnerabilities${query({ format: 'csv', scope, ...owner })}`;
+  vulnerabilityReportUrl(scope = '', owner: OwnerFilter = {}, reachability = ''): string {
+    return `${this.baseUrl}/reports/vulnerabilities${query({ format: 'csv', scope, reachability, ...owner })}`;
   }
 
-  getVulnerabilities(page = 1, pageSize = 50, scope = '', owner: OwnerFilter = {}, signal?: AbortSignal): Promise<PaginatedResponse<VulnerabilityListItem>> {
-    return this.get(`/vulnerabilities${query({ page, page_size: pageSize, scope, ...owner })}`, signal);
+  getVulnerabilities(page = 1, pageSize = 50, scope = '', owner: OwnerFilter = {}, reachability = '', signal?: AbortSignal): Promise<PaginatedResponse<VulnerabilityListItem>> {
+    return this.get(`/vulnerabilities${query({ page, page_size: pageSize, scope, reachability, ...owner })}`, signal);
+  }
+
+  uploadEvidence(sbomId: string, evidenceJson: string | object, ref = '', signal?: AbortSignal): Promise<ReachabilitySummary> {
+    const body = typeof evidenceJson === 'string' ? evidenceJson : JSON.stringify(evidenceJson);
+    return this.post(`/sboms/${encodeURIComponent(sbomId)}/evidence${query({ ref })}`, body, signal);
   }
 
   getAffectedProjectsByCVE(vulnId: string, owner: OwnerFilter = {}, signal?: AbortSignal): Promise<AffectedProject[]> {

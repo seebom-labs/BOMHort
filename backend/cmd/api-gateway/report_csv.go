@@ -45,6 +45,7 @@ var vulnerabilityCSVHeader = []string{
 	"cve_id", "vuln_id", "aliases", "severity", "purl", "summary",
 	"fixed_version", "source_file", "discovered_at",
 	"dependency_scope", "dependency_depth", "vex_status",
+	"reachability", "evidence_source", "evidence_ref", "evidence_at",
 }
 
 func vulnerabilityCSVRecord(v dto.VulnerabilityListItem) []string {
@@ -56,6 +57,7 @@ func vulnerabilityCSVRecord(v dto.VulnerabilityListItem) []string {
 		v.CVEID, v.VulnID, strings.Join(v.Aliases, ";"), v.Severity, v.PURL, v.Summary,
 		v.FixedVersion, v.SourceFile, v.DiscoveredAt,
 		v.DependencyScope, depth, v.VEXStatus,
+		v.Reachability, v.EvidenceSource, v.EvidenceRef, v.EvidenceAt,
 	}
 	for i := range rec {
 		rec[i] = csvSafe(rec[i])

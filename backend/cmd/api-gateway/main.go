@@ -27,6 +27,7 @@ import (
 	"github.com/seebom-labs/bomhort/backend/internal/config"
 	"github.com/seebom-labs/bomhort/backend/internal/depgraph"
 	"github.com/seebom-labs/bomhort/backend/internal/docstore"
+	"github.com/seebom-labs/bomhort/backend/internal/evidence"
 	"github.com/seebom-labs/bomhort/backend/internal/license"
 	"github.com/seebom-labs/bomhort/backend/internal/repo"
 	"github.com/seebom-labs/bomhort/backend/internal/rulesource"
@@ -300,13 +301,53 @@ func main() {
 			writeError(w, http.StatusBadRequest, "Invalid scope (expected direct, transitive, root or unknown)")
 			return
 		}
-		vulns, err := chClient.QuerySBOMVulnerabilities(r.Context(), sbomID, scope)
+		reachability, ok := parseReachability(r.URL.Query().Get("reachability"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Invalid reachability (expected reachable, not_reachable, or unknown)")
+			return
+		}
+		vulns, err := chClient.QuerySBOMVulnerabilities(r.Context(), sbomID, scope, reachability)
 		if err != nil {
 			log.Printf("ERROR: sbom vulns for %s: %v", sanitizeLogParam(sbomID), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch SBOM vulnerabilities")
 			return
 		}
 		writeJSON(w, http.StatusOK, vulns)
+	})
+
+	// Reachability evidence ingest for a specific SBOM (#535).
+	mux.HandleFunc("POST /api/v1/sboms/{id}/evidence", func(w http.ResponseWriter, r *http.Request) {
+		if !cfg.AuthEnabled {
+			log.Printf("AUTH: rejected evidence ingest from %s -- AUTH_ENABLED=false", clientIP(r))
+			writeError(w, http.StatusForbidden, "Evidence ingest requires AUTH_ENABLED=true")
+			return
+		}
+		sbomID := r.PathValue("id")
+		if !isValidUUID(sbomID) {
+			writeError(w, http.StatusBadRequest, "Invalid SBOM ID")
+			return
+		}
+		ref := r.URL.Query().Get("ref")
+		if ref == "" {
+			ref = r.Header.Get("X-Evidence-Ref")
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
+		report, err := evidence.ParseGovulncheck(r.Body)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		summary, err := chClient.ApplyReachabilityEvidence(r.Context(), sbomID, report.Tool, ref, report.Findings)
+		if err != nil {
+			if errors.Is(err, clickhouse.ErrSBOMNotFound) {
+				writeError(w, http.StatusNotFound, "SBOM not found")
+				return
+			}
+			log.Printf("ERROR: apply evidence for %s: %v", sanitizeLogParam(sbomID), err)
+			writeError(w, http.StatusInternalServerError, "Failed to apply evidence")
+			return
+		}
+		writeJSON(w, http.StatusOK, summary)
 	})
 
 	// Licenses for a specific SBOM.
@@ -1157,14 +1198,13 @@ func corsMiddleware(allowedOrigins string, next http.Handler) http.Handler {
 			}
 		}
 
-		// POST is only ever valid on the upload route — advertising it on every
-		// endpoint would be misleading for what is otherwise a read-only API.
+		// POST is valid on the upload route and evidence routes.
 		allowedMethods := "GET, OPTIONS"
-		if r.URL.Path == uploadPath {
+		if r.URL.Path == uploadPath || (strings.HasPrefix(r.URL.Path, "/api/v1/sboms/") && strings.HasSuffix(r.URL.Path, "/evidence")) {
 			allowedMethods = "GET, POST, OPTIONS"
 		}
 		w.Header().Set("Access-Control-Allow-Methods", allowedMethods)
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Service-Token, X-API-Key, X-Filename")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Service-Token, X-API-Key, X-Filename, X-Evidence-Ref")
 		w.Header().Set("Access-Control-Max-Age", "86400")
 
 		if r.Method == http.MethodOptions {

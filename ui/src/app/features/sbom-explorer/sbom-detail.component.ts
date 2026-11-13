@@ -104,6 +104,12 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
             <span class="vex-badge" *ngIf="vuln.vex_status" [class]="'vex-' + vuln.vex_status">
               {{ vuln.vex_status | titlecase }}
             </span>
+            <span class="reachability-badge" *ngIf="vuln.reachability && vuln.reachability !== 'unknown'"
+                  [class.reachability-reachable]="vuln.reachability === 'reachable'"
+                  [class.reachability-not-reachable]="vuln.reachability === 'not_reachable'"
+                  [title]="reachabilityTooltip(vuln)">
+              {{ vuln.reachability === 'reachable' ? 'REACHABLE' : 'NOT REACHABLE' }}
+            </span>
             <app-scope-badge [scope]="vuln.dependency_scope" [depth]="vuln.dependency_depth" [reason]="vuln.scope_reason"></app-scope-badge>
             <span class="purl">{{ vuln.purl }}</span>
           </div>
@@ -299,8 +305,8 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
     .stats-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
     .stat { background: var(--surface-alt); padding: 6px 14px; border-radius: 2px; font-size: 0.8rem; border: 1px solid var(--border); }
     .stat.quality.good { border-color: var(--status-success); color: var(--status-success); }
-    .stat.quality.fair { border-color: var(--status-warning); color: var(--status-warning); }
-    .stat.quality.poor { border-color: var(--severity-critical); color: var(--severity-critical); }
+    .stat.quality.fair, .medium { border-color: var(--status-warning); color: var(--status-warning); }
+    .stat.quality.poor, .critical { border-color: var(--severity-critical); color: var(--severity-critical); }
     .quality-flags-row {
       display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: -8px 0 16px;
       font-size: 0.72rem;
@@ -311,9 +317,7 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
       border: 1px dashed var(--border); border-radius: 2px; padding: 2px 6px;
       font-family: monospace; font-size: 0.68rem;
     }
-    .critical { color: var(--severity-critical); }
     .high { color: var(--severity-high); }
-    .medium { color: var(--status-warning); }
     .low { color: var(--text-secondary); }
     .scope-section { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; margin-bottom: 16px; }
     .scope-section h3 { margin: 0 0 10px; font-size: 0.9rem; font-weight: 600; }
@@ -331,11 +335,11 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
       height: 52px; display: flex; align-items: center; gap: 12px; padding: 0 12px;
       border-bottom: 1px solid var(--border);
     }
-    .severity-badge, .sev-critical, .sev-high, .sev-medium, .sev-low {
+    .severity-badge {
       padding: 2px 7px; border-radius: 2px; font-size: 0.65rem; font-weight: 600;
       text-transform: uppercase; min-width: 64px; text-align: center; letter-spacing: 0.03em;
     }
-    .sev-critical { background: var(--severity-critical-bg); color: var(--severity-critical); }
+    .sev-critical, .reachability-reachable { background: var(--severity-critical-bg); color: var(--severity-critical); }
     .sev-high { background: var(--severity-high-bg); color: var(--severity-high); }
     .sev-medium { background: var(--severity-high-bg); color: var(--status-warning); }
     .sev-low { background: var(--bg); color: var(--text-secondary); }
@@ -344,8 +348,12 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
     .vuln-id { font-weight: 600; font-size: 0.8rem; color: var(--accent); text-decoration: none; }
     .summary { color: var(--text-secondary); font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .vex-badge { padding: 2px 6px; border-radius: 2px; font-size: 0.6rem; font-weight: 600; }
-    .vex-not_affected { background: var(--status-success-bg); color: var(--status-success); }
+    .vex-not_affected, .reachability-not-reachable { background: var(--status-success-bg); color: var(--status-success); }
     .vex-fixed { background: var(--status-info-bg); color: var(--accent-hover); }
+    .reachability-badge {
+      padding: 2px 6px; border-radius: 2px; font-size: 0.6rem; font-weight: 600;
+      text-transform: uppercase; min-width: 90px; text-align: center; letter-spacing: 0.02em;
+    }
     .purl { color: var(--text-secondary); font-size: 0.7rem; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
     .license-summary { display: flex; gap: 8px; margin-bottom: 16px; }
     .license-summary-item {
@@ -354,10 +362,9 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
     }
     .license-summary-count { font-size: 1.25rem; font-weight: 700; color: var(--text); }
     .license-summary-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-secondary); font-weight: 500; }
-    .permissive-bg { background: var(--surface-alt); }
+    .permissive-bg, .unknown-bg { background: var(--surface-alt); }
     .copyleft-bg { background: var(--severity-critical-bg); }
     .unapproved-bg { background: var(--severity-high-bg); }
-    .unknown-bg { background: var(--surface-alt); }
 
     .license-list { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
     .license-row {
@@ -365,11 +372,10 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
     }
     .license-row:hover { box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
     .license-row.expanded { border-color: var(--accent); }
-    .cat-permissive { background: var(--surface); border: 1px solid var(--border); }
+    .cat-permissive, .cat-unknown { background: var(--surface); border: 1px solid var(--border); }
     .cat-copyleft { background: var(--severity-critical-bg); border: 1px solid var(--severity-critical); }
     .cat-copyleft-exempted { background: var(--status-success-bg); border: 1px solid var(--status-success); }
     .cat-unapproved { background: var(--severity-high-bg); border: 1px solid var(--severity-high); }
-    .cat-unknown { background: var(--surface); border: 1px solid var(--border); }
     .lic-header {
       display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer;
       transition: background 0.1s;
@@ -426,9 +432,6 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
       max-height: 300px; overflow-y: auto;
     }
     .lic-pkg-item {
-      /* flex-shrink: 0 – otherwise items in the max-height column flex container
-         shrink below their content height (overflow:hidden permits it) and
-         all rows get squashed into 300px instead of scrolling. */
       flex-shrink: 0;
       padding: 5px 10px; border-radius: 3px; font-size: 0.75rem;
       background: var(--bg); border: 1px solid var(--border);
@@ -557,6 +560,11 @@ export class SbomDetailComponent implements OnInit {
   }
 
   trackByVuln(_i: number, v: VulnerabilityListItem): string { return v.vuln_id + v.purl; }
+
+  reachabilityTooltip(v: VulnerabilityListItem): string {
+    if (!v.evidence_source) return v.reachability === 'reachable' ? 'Reachable' : 'Not reachable';
+    return `Evidence: ${v.evidence_source}${v.evidence_ref ? ' (' + v.evidence_ref + ')' : ''}`;
+  }
   trackByVexStmt(_i: number, s: VEXStatementItem): string { return s.vex_id; }
 
   /** Heuristic from #334: tooling set, or role mentions automation. */

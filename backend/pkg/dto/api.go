@@ -150,6 +150,23 @@ type VulnerabilityListItem struct {
 	DependencyDepth *uint16 `json:"dependency_depth,omitempty"`
 	// ScopeReason explains why dependency_scope is "unknown" (e.g. "no-dependency-graph", #537).
 	ScopeReason string `json:"scope_reason,omitempty"`
+
+	// Reachability evidence (#535): "reachable", "not_reachable", or "unknown".
+	Reachability   string `json:"reachability,omitempty"`
+	EvidenceSource string `json:"evidence_source,omitempty"`
+	EvidenceRef    string `json:"evidence_ref,omitempty"`
+	EvidenceAt     string `json:"evidence_at,omitempty"`
+}
+
+// ReachabilitySummary is the response returned when uploading reachability evidence (#535).
+type ReachabilitySummary struct {
+	SBOMID        string `json:"sbom_id"`
+	Tool          string `json:"tool"`
+	Ref           string `json:"ref,omitempty"`
+	TotalFindings int    `json:"total_findings"`
+	Reachable     int    `json:"reachable"`
+	NotReachable  int    `json:"not_reachable"`
+	Timestamp     string `json:"timestamp"`
 }
 
 // DependencyNode represents a single node in the dependency tree for the UI.
