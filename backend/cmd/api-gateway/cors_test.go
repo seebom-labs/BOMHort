@@ -13,8 +13,8 @@ func TestCorsMiddleware_AllowMethods_ScopedToUploadRoute(t *testing.T) {
 		path        string
 		wantMethods string
 	}{
-		{"/api/v1/sboms", "GET, OPTIONS"},
-		{"/api/v1/stats/dashboard", "GET, OPTIONS"},
+		{"/api/v1/sboms", "GET, HEAD, OPTIONS"},
+		{"/api/v1/stats/dashboard", "GET, HEAD, OPTIONS"},
 		{"/api/v1/sboms/c8734994-df7a-4ec6-8964-b8166c303115/evidence", "GET, POST, OPTIONS"},
 		{uploadPath, "GET, POST, OPTIONS"},
 	}

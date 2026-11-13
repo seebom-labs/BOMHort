@@ -11,6 +11,7 @@ import (
 	json "github.com/goccy/go-json"
 	"github.com/google/uuid"
 
+	"github.com/seebom-labs/bomhort/backend/internal/imageid"
 	"github.com/seebom-labs/bomhort/backend/internal/sbomname"
 	"github.com/seebom-labs/bomhort/backend/internal/sourcerepo"
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
@@ -187,6 +188,7 @@ func Parse(data []byte, sourceFile, sha256Hash string) (*ParseResult, error) {
 	}
 	sbom.SourceRepo, sbom.SourceRef = extractSourceRepo(&doc)
 	sbom.RootPURL, sbom.Supplier = extractGroupingSignals(&doc)
+	sbom.ImageRef, sbom.ImageDigest = imageid.FromPURL(sbom.RootPURL)
 	// The version of the product the BOM describes; document_name may carry it
 	// as a display suffix (above), document_version is the raw attribute.
 	if doc.Metadata.Component != nil {

@@ -518,9 +518,13 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 	own := ownershipOf(job)
 	own.applySBOM(&result.SBOM)
 	applySourceOverride(&result.SBOM, job)
+	if job.ImageDigest != "" {
+		result.SBOM.ImageRef, result.SBOM.ImageDigest = job.ImageRef, job.ImageDigest
+	}
 
 	// 4. Insert package arrays (with resolved licenses).
 	own.applyPackages(&result.Packages)
+	result.Packages.ImageDigest = result.SBOM.ImageDigest
 	if err := chClient.InsertSBOMPackages(ctx, &result.Packages); err != nil {
 		return err
 	}
@@ -547,6 +551,7 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 			v := f.Vulnerability(result.SBOM.SBOMID, job.SourceFile,
 				depgraph.MinDepthForPURL(result.Packages.PackagePURLs, result.Packages.PackageDepths, f.PURL))
 			own.applyVulnerability(&v)
+			v.ImageDigest = result.SBOM.ImageDigest
 			vulns = append(vulns, v)
 			if st, ok := f.NotAffectedStatement(v); ok {
 				feedVEX = append(feedVEX, st)

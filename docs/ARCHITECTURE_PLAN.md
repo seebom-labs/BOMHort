@@ -228,7 +228,9 @@ S3 project grouping continues to use the source path. See the
 | GET | `/api/v1/stats/dashboard` | Dashboard statistics (incl. VEX effective/suppressed, license breakdown) |
 | GET | `/api/v1/stats/dependencies?limit=N` | Top-N dependencies cross-project with vuln count |
 | GET | `/api/v1/stats/version-skew?page=&page_size=&search=` | Packages with inconsistent versions across projects (paginated, searchable) |
-| GET | `/api/v1/sboms?page=&page_size=&search=` | Paginated SBOM list with package/vuln counts |
+| GET | `/api/v1/sboms?page=&page_size=&search=&digest=&image=` | Paginated SBOM list with package/vuln counts and optional image identity filters |
+| GET | `/api/v1/images` | Image reference/digest inventory with counts, worst severity, and first/last seen |
+| GET/HEAD | `/api/v1/images/{digest}` | SBOMs and ownership tuples for one immutable image digest |
 | GET | `/api/v1/sboms/{id}/detail` | SBOM detail with severity breakdown |
 | GET | `/api/v1/sboms/{id}/vulnerabilities` | All vulns for an SBOM with VEX status |
 | GET | `/api/v1/sboms/{id}/licenses` | License breakdown per SBOM (with package list per license) |
@@ -439,7 +441,7 @@ one bucket is nested and another flat.
 
 | Table | Engine | ORDER BY | Purpose |
 |-------|--------|----------|---------|
-| `sboms` | ReplacingMergeTree | (sbom_id) | SBOM metadata |
+| `sboms` | ReplacingMergeTree | (sbom_id) | SBOM metadata, including optional source `origin` |
 | `sbom_packages` | MergeTree | (sbom_id) | Parallel arrays (names, PURLs, licenses, relationships) |
 
 > **Package Name Sanitization:** Go SBOM generators (e.g. `bom` by kubernetes-sigs) frequently capture temporary build directories as package names during CI/CD builds (e.g. `tmp.ej9m9OiO2V`). These Go artifacts are cleaned up in two places:
@@ -448,7 +450,7 @@ one bucket is nested and another flat.
 
 | `vulnerabilities` | MergeTree | (sbom_id, purl, vuln_id) | OSV results; `cluster`/`namespace`/`project` are copied from the SBOM by both writers (parsing worker and `cve-refresher`, #480) so scoped views see CVEs disclosed after ingest |
 | `license_compliance` | SummingMergeTree | (sbom_id, license_id) | License compliance per SBOM (+exempted_packages, exemption_reason) |
-| `ingestion_queue` | ReplacingMergeTree | (job_id) | Job queue (job_type: sbom/vex/license_recheck; a recheck's `sha256_hash` is the digest of the exceptions it applies); `retry_after` (migration `026`) parks a job until a time, e.g. a GitHub rate-limit reset |
+| `ingestion_queue` | ReplacingMergeTree | (job_id) | Job queue (job_type: sbom/vex/license_recheck; a recheck's `sha256_hash` is the digest of the exceptions it applies); `origin` carries optional SBOM provenance; `retry_after` (migration `026`) parks a job until a time, e.g. a GitHub rate-limit reset |
 | `dashboard_stats_mv` | SummingMergeTree (MV) | (stat_date) | Pre-aggregated daily stats |
 | `vex_statements` | ReplacingMergeTree | (vuln_id, product_purl, vex_id) | OpenVEX statements |
 | `cve_refresh_log` | MergeTree | (started_at, refresh_id) | CVE refresh run history (timestamp, results, status) |
@@ -457,6 +459,14 @@ one bucket is nested and another flat.
 | `registry_license_cache` | ReplacingMergeTree | (registry, package) | Cache for npm/NuGet/deps.dev/Packagist/PyPI resolved licenses; negatives stored as `!<reason>` |
 | `document_store` | ReplacingMergeTree | (sbom_id) | Reference + sha256 of the captured original SBOM bytes (#256); bytes live in the blob store |
 | `data_migrations` | ReplacingMergeTree | (name) | Marker rows of completed one-off data backfills (migration `027`, #480): a backfill's `INSERT … SELECT` is guarded by its own marker, so the migration directory stays re-runnable without re-scanning the big tables |
+
+Image identity (#457) is stored on `sboms` as `image_ref` / `image_digest`;
+the digest is copied to `sbom_packages` and `vulnerabilities` for filtering
+and joins. A bloom-filter skip index supports digest lookups. Image uploads
+can opt into digest-based deduplication with `DEDUP_BY_IMAGE_DIGEST=true`.
+SBOM provenance is stored separately as `origin` (`cluster-scan`, `ci`,
+`registry`, `vendor`, or `manual`); it follows the queue job and is part of the
+cloned image identity, so separate sources remain distinguishable.
 
 ### Key Queries for Search Features
 

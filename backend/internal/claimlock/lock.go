@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -32,14 +34,30 @@ var (
 
 // ErrLeaseLost reports a critical section that may have overlapped another
 // holder; its result must be discarded.
+const keyedLockShards = 64
+
 var ErrLeaseLost = errors.New("claim lock lost or held too long; result discarded")
 
 type Locker interface {
 	WithLock(context.Context, func(context.Context) error) error
 }
 
+type KeyedLocker interface {
+	WithKey(context.Context, string, func(context.Context) error) error
+}
+
 type localLocker struct {
 	gate chan struct{}
+}
+
+type shardedLocker struct {
+	mu        sync.Mutex
+	locks     map[uint32]Locker
+	workerID  string
+	prefix    string
+	maxHold   time.Duration
+	client    kubernetes.Interface
+	namespace string
 }
 
 // Local serialises callers inside one process only. Separate worker
@@ -59,11 +77,28 @@ func (l *localLocker) WithLock(ctx context.Context, fn func(context.Context) err
 }
 
 type kubernetesLocker struct {
-	local Locker
-	lock  resourcelock.Interface
+	local                        Locker
+	lock                         resourcelock.Interface
+	name                         string
+	leaseDuration, renewDeadline time.Duration
+	retryPeriod, maxHold         time.Duration
 }
 
 func New(workerID string) (Locker, error) {
+	return NewNamed(workerID, leaseName)
+}
+
+func NewNamed(workerID, name string) (Locker, error) {
+	return NewNamedWithMaxHold(workerID, name, maxHold)
+}
+
+func NewNamedWithMaxHold(workerID, name string, maxHold time.Duration) (Locker, error) {
+	if name == "" {
+		return nil, errors.New("lease name is required")
+	}
+	if maxHold <= 0 {
+		return nil, errors.New("claim lock max hold must be positive")
+	}
 	namespace := os.Getenv("POD_NAMESPACE")
 	if namespace == "" {
 		if os.Getenv("KUBERNETES_SERVICE_HOST") == "" {
@@ -79,10 +114,83 @@ func New(workerID string) (Locker, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create Kubernetes client for claim lock: %w", err)
 	}
+	return newKubernetesLocker(workerID, namespace, name, maxHold, client)
+}
+
+// NewShardedNamed creates a bounded set of named Leases. Equal keys always
+// share a Lease; different keys may share one of 64 Leases and serialize.
+func NewShardedNamed(workerID, prefix string, maxHold time.Duration) (KeyedLocker, error) {
+	if prefix == "" || len(prefix)+3 > 63 {
+		return nil, errors.New("lease name prefix must fit a 63-character Kubernetes name")
+	}
+	if maxHold <= 0 {
+		return nil, errors.New("claim lock max hold must be positive")
+	}
+	namespace := os.Getenv("POD_NAMESPACE")
+	if namespace == "" {
+		if os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
+			return nil, errors.New("POD_NAMESPACE is required for the Kubernetes claim lock")
+		}
+		return &shardedLocker{locks: make(map[uint32]Locker), workerID: workerID, prefix: prefix, maxHold: maxHold}, nil
+	}
+	cfg, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, fmt.Errorf("load in-cluster config for claim lock: %w", err)
+	}
+	client, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("create Kubernetes client for claim lock: %w", err)
+	}
+	return &shardedLocker{
+		locks: make(map[uint32]Locker), workerID: workerID, prefix: prefix,
+		maxHold: maxHold, client: client, namespace: namespace,
+	}, nil
+}
+
+func LocalKeyed() KeyedLocker {
+	return &shardedLocker{locks: make(map[uint32]Locker), maxHold: maxHold}
+}
+
+func (l *shardedLocker) WithKey(ctx context.Context, key string, fn func(context.Context) error) error {
+	shard := keyShard(key)
+	locker, err := l.locker(shard)
+	if err != nil {
+		return err
+	}
+	return locker.WithLock(ctx, fn)
+}
+
+func keyShard(key string) uint32 {
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(key))
+	return hash.Sum32() % keyedLockShards
+}
+
+func (l *shardedLocker) locker(shard uint32) (Locker, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if locker := l.locks[shard]; locker != nil {
+		return locker, nil
+	}
+	if l.client == nil {
+		locker := Local()
+		l.locks[shard] = locker
+		return locker, nil
+	}
+	name := fmt.Sprintf("%s-%02x", l.prefix, shard)
+	locker, err := newKubernetesLocker(l.workerID, l.namespace, name, l.maxHold, l.client)
+	if err != nil {
+		return nil, err
+	}
+	l.locks[shard] = locker
+	return locker, nil
+}
+
+func newKubernetesLocker(workerID, namespace, name string, maxHold time.Duration, client kubernetes.Interface) (Locker, error) {
 	lock, err := resourcelock.New(
 		resourcelock.LeasesResourceLock,
 		namespace,
-		leaseName,
+		name,
 		client.CoreV1(),
 		client.CoordinationV1(),
 		resourcelock.ResourceLockConfig{Identity: workerID + "/" + uuid.NewString()},
@@ -90,7 +198,11 @@ func New(workerID string) (Locker, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create Kubernetes Lease lock: %w", err)
 	}
-	return &kubernetesLocker{local: Local(), lock: lock}, nil
+	return &kubernetesLocker{
+		local: Local(), lock: lock, name: name,
+		leaseDuration: 3 * maxHold, renewDeadline: 2 * maxHold,
+		retryPeriod: 2 * maxHold / 5, maxHold: maxHold,
+	}, nil
 }
 
 func (l *kubernetesLocker) WithLock(ctx context.Context, fn func(context.Context) error) error {
@@ -105,18 +217,18 @@ func (l *kubernetesLocker) WithLock(ctx context.Context, fn func(context.Context
 		runDone := make(chan struct{})
 		elector, err := leaderelection.NewLeaderElector(leaderelection.LeaderElectionConfig{
 			Lock:            l.lock,
-			LeaseDuration:   leaseDuration,
-			RenewDeadline:   renewDeadline,
-			RetryPeriod:     retryPeriod,
+			LeaseDuration:   l.leaseDuration,
+			RenewDeadline:   l.renewDeadline,
+			RetryPeriod:     l.retryPeriod,
 			ReleaseOnCancel: true,
-			Name:            leaseName,
+			Name:            l.name,
 			Callbacks: leaderelection.LeaderCallbacks{
 				OnStartedLeading: func(leaderCtx context.Context) {
 					close(started)
-					fnCtx, cancelFn := context.WithDeadline(leaderCtx, start.Add(maxHold))
+					fnCtx, cancelFn := context.WithDeadline(leaderCtx, start.Add(l.maxHold))
 					stopCancel := context.AfterFunc(ctx, cancelFn)
 					err := fn(fnCtx)
-					if leaderCtx.Err() != nil || time.Since(start) >= maxHold {
+					if leaderCtx.Err() != nil || time.Since(start) >= l.maxHold {
 						err = ErrLeaseLost
 					}
 					result <- err

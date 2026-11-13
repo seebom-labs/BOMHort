@@ -13,6 +13,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
+
+	"github.com/seebom-labs/bomhort/backend/internal/claimlock"
+	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
 	"github.com/seebom-labs/bomhort/backend/internal/config"
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
@@ -24,6 +28,31 @@ type fakeUploadStore struct {
 	hashExistsErr error
 	enqueueErr    error
 	enqueuedJobs  []models.IngestionJob
+	imageOwner    *clickhouse.ImageSBOMRef
+	pendingJob    *models.IngestionJob
+}
+
+func (f *fakeUploadStore) FindImageByDigest(ctx context.Context, digest string) (*clickhouse.ImageSBOMRef, error) {
+	return f.imageOwner, nil
+}
+
+func (f *fakeUploadStore) FindImageByDigestOwner(ctx context.Context, digest, imageRef, cluster, namespace, project, origin string) (*clickhouse.ImageSBOMRef, error) {
+	if f.imageOwner != nil && f.imageOwner.ImageRef == imageRef && f.imageOwner.Cluster == cluster && f.imageOwner.Namespace == namespace && f.imageOwner.Project == project && f.imageOwner.Origin == origin {
+		return f.imageOwner, nil
+	}
+	return nil, nil
+}
+
+func (f *fakeUploadStore) FindSBOMByHash(ctx context.Context, hash string) (*clickhouse.ImageSBOMRef, error) {
+	return f.imageOwner, nil
+}
+
+func (f *fakeUploadStore) FindPendingImageJob(ctx context.Context, digest, imageRef, cluster, namespace, project, origin string) (*models.IngestionJob, error) {
+	return f.pendingJob, nil
+}
+
+func (f *fakeUploadStore) CloneImageSBOM(ctx context.Context, source clickhouse.ImageSBOMRef, digest, imageRef, sourceRepo, sourceRef, cluster, namespace, project, parent, origin string, tags []string) (string, error) {
+	return "cloned-sbom-id", nil
 }
 
 func (f *fakeUploadStore) HashExists(ctx context.Context, hash string) (bool, error) {
@@ -92,9 +121,10 @@ func testUploadConfig(t *testing.T) *config.Config {
 // most tests in this file exercise.
 func localUploadHandler(cfg *config.Config, store uploadStore) http.HandlerFunc {
 	return uploadHandler(uploadDeps{
-		cfg:           cfg,
-		store:         store,
-		localWritable: true,
+		cfg:            cfg,
+		store:          store,
+		imageDedupLock: claimlock.LocalKeyed(),
+		localWritable:  true,
 	})
 }
 
@@ -174,6 +204,110 @@ func TestUploadHandler_HappyPath(t *testing.T) {
 	}
 	if !bytes.Equal(written, body) {
 		t.Errorf("written file contents = %q, want %q", written, body)
+	}
+}
+
+func TestUploadHandler_ImageIdentity(t *testing.T) {
+	cfg := testUploadConfig(t)
+	store := &fakeUploadStore{}
+	digest := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/sboms/upload?image=ghcr.io%2Facme%2Fapi%40"+strings.ReplaceAll(digest, ":", "%3A"), strings.NewReader(`{}`))
+	req.Header.Set("X-Filename", "api.spdx.json")
+	rec := httptest.NewRecorder()
+	localUploadHandler(cfg, store).ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := store.enqueuedJobs[0]; got.ImageRef != "ghcr.io/acme/api" || got.ImageDigest != digest {
+		t.Errorf("queued image identity = (%q, %q)", got.ImageRef, got.ImageDigest)
+	}
+}
+
+func TestUploadHandler_ImageDigestDedup(t *testing.T) {
+	cfg := testUploadConfig(t)
+	cfg.DedupByImageDigest = true
+	digest := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	for _, tc := range []struct {
+		name       string
+		owner      clickhouse.ImageSBOMRef
+		wantResult string
+	}{
+		{name: "same image and ownership", owner: clickhouse.ImageSBOMRef{ImageRef: "ghcr.io/acme/api", Cluster: "default-cluster"}, wantResult: "duplicate"},
+		{name: "new ownership", owner: clickhouse.ImageSBOMRef{ImageRef: "ghcr.io/acme/api", Cluster: "other-cluster"}, wantResult: "reused"},
+		{name: "new reference, same digest and ownership", owner: clickhouse.ImageSBOMRef{ImageRef: "ghcr.io/acme/api:stable", Cluster: "default-cluster"}, wantResult: "reused"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &fakeUploadStore{imageOwner: &tc.owner}
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/sboms/upload?image=ghcr.io%2Facme%2Fapi%40"+strings.ReplaceAll(digest, ":", "%3A"), strings.NewReader(`{}`))
+			req.Header.Set("X-Filename", "api.spdx.json")
+			rec := httptest.NewRecorder()
+			localUploadHandler(cfg, store).ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+			}
+			var body map[string]any
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body["status"] != tc.wantResult {
+				t.Errorf("status result = %q, want %q", body["status"], tc.wantResult)
+			}
+			if got, want := body["duplicate"], tc.wantResult == "duplicate"; got != want {
+				t.Errorf("duplicate = %v, want %v", got, want)
+			}
+			if len(store.enqueuedJobs) != 0 {
+				t.Errorf("dedup path enqueued %d jobs", len(store.enqueuedJobs))
+			}
+			assertNoFilesInPushedDir(t, cfg)
+		})
+	}
+}
+
+func TestUploadHandler_ImageDigestPendingJob(t *testing.T) {
+	cfg := testUploadConfig(t)
+	cfg.DedupByImageDigest = true
+	jobID := uuid.New()
+	store := &fakeUploadStore{pendingJob: &models.IngestionJob{JobID: jobID}}
+	digest := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/sboms/upload?image=ghcr.io%2Facme%2Fapi%40"+strings.ReplaceAll(digest, ":", "%3A"), strings.NewReader(`{}`))
+	req.Header.Set("X-Filename", "api.spdx.json")
+	rec := httptest.NewRecorder()
+	localUploadHandler(cfg, store).ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["job_id"] != jobID.String() || len(store.enqueuedJobs) != 0 {
+		t.Fatalf("pending response = %#v; enqueued jobs = %d", body, len(store.enqueuedJobs))
+	}
+}
+
+func TestUploadHandler_OriginOverride(t *testing.T) {
+	cfg := testUploadConfig(t)
+	cfg.Origin = "registry"
+	store := &fakeUploadStore{}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/sboms/upload?origin=CI", strings.NewReader(`{}`))
+	req.Header.Set("X-Filename", "api.spdx.json")
+	rec := httptest.NewRecorder()
+	localUploadHandler(cfg, store).ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(store.enqueuedJobs) != 1 || store.enqueuedJobs[0].Origin != "ci" {
+		t.Fatalf("queued origin = %#v, want ci", store.enqueuedJobs)
+	}
+
+	for _, query := range []string{"origin=unknown", "origin=ci&origin=registry"} {
+		req = httptest.NewRequest(http.MethodPost, "/api/v1/sboms/upload?"+query, strings.NewReader(`{}`))
+		req.Header.Set("X-Filename", "api.spdx.json")
+		rec = httptest.NewRecorder()
+		localUploadHandler(cfg, store).ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s status = %d, want 400", query, rec.Code)
+		}
 	}
 }
 

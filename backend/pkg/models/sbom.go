@@ -24,6 +24,7 @@ type SBOM struct {
 	// DocumentNamespace above, which is the SPDX document's URI identifier.
 	Namespace string `json:"namespace,omitempty"`
 	Project   string `json:"project,omitempty"`
+	Origin    string `json:"origin,omitempty"`
 	// SourceRepo/SourceRef (#332) name where the product's source lives:
 	// a normalised https repository URL and the commit/tag/branch the SBOM
 	// was generated from. Extracted from the document at parse time
@@ -50,8 +51,10 @@ type SBOM struct {
 	// RootPURL and Supplier are grouping signals extracted at parse time:
 	// the package URL of the described component and who ships it. Used only
 	// to resolve a parent for products without a repository URL.
-	RootPURL string `json:"root_purl,omitempty"`
-	Supplier string `json:"supplier,omitempty"`
+	RootPURL    string `json:"root_purl,omitempty"`
+	Supplier    string `json:"supplier,omitempty"`
+	ImageRef    string `json:"image_ref,omitempty"`
+	ImageDigest string `json:"image_digest,omitempty"`
 	// QualityScore (0-100) measures document completeness and compliance with
 	// NTIA / BSI TR-03183 minimum elements (#537).
 	QualityScore uint8 `json:"quality_score"`
@@ -86,6 +89,7 @@ type SBOMPackages struct {
 	Cluster       string   `json:"cluster,omitempty"`
 	Namespace     string   `json:"namespace,omitempty"`
 	Project       string   `json:"project,omitempty"`
+	ImageDigest   string   `json:"image_digest,omitempty"`
 	// RootIndices marks the package(s) the SBOM DESCRIBES – the product itself,
 	// not a dependency. Kept in the arrays (index 0 is the dependency-tree root)
 	// but excluded from license compliance. Not persisted to ClickHouse.
@@ -129,9 +133,10 @@ type Vulnerability struct {
 	// where in the image the feed says the vulnerable file sits.
 	ComponentLocation string `json:"component_location,omitempty"`
 
-	Cluster   string `json:"cluster,omitempty"`
-	Namespace string `json:"namespace,omitempty"`
-	Project   string `json:"project,omitempty"`
+	Cluster     string `json:"cluster,omitempty"`
+	Namespace   string `json:"namespace,omitempty"`
+	Project     string `json:"project,omitempty"`
+	ImageDigest string `json:"image_digest,omitempty"`
 
 	// Reachability evidence (#535): reachable, not_reachable, or unknown.
 	Reachability   string    `json:"reachability,omitempty"`
@@ -193,7 +198,10 @@ type IngestionJob struct {
 	Tags []string `json:"tags,omitempty"`
 	// Parent carries an explicit parent assignment (bucket config, path
 	// layout, ?parent=) from the watcher or gateway to the parsing worker.
-	Parent string `json:"parent,omitempty"`
+	Parent      string `json:"parent,omitempty"`
+	Origin      string `json:"origin,omitempty"`
+	ImageRef    string `json:"image_ref,omitempty"`
+	ImageDigest string `json:"image_digest,omitempty"`
 	// RetryAfter keeps a newly enqueued job unclaimable until then. Zero
 	// means immediately.
 	RetryAfter time.Time `json:"retry_after,omitempty"`

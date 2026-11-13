@@ -21,6 +21,12 @@ spec:
         bomhort.io/sbom-volume: "true"
         {{- end }}
     spec:
+      {{- if .Values.apiGateway.dedupByImageDigest }}
+      serviceAccountName: {{ .Release.Name }}-api-gateway
+      automountServiceAccountToken: true
+      {{- else }}
+      automountServiceAccountToken: false
+      {{- end }}
       {{- with .Values.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}
@@ -62,7 +68,7 @@ spec:
           {{- end }}
           {{- end }}
           {{- $exceptionsEnv := include "bomhort.licenseExceptions.env" . }}
-          {{- if or .Values.clickhouse.userPasswordSecret.enabled .Values.s3.credentialsSecret.enabled .Values.apiGateway.auth.enabled .Values.apiGateway.maxUploadSizeMB $queryLimits $exceptionsEnv }}
+          {{- if or .Values.clickhouse.userPasswordSecret.enabled .Values.s3.credentialsSecret.enabled .Values.apiGateway.auth.enabled .Values.apiGateway.maxUploadSizeMB .Values.apiGateway.dedupByImageDigest $queryLimits $exceptionsEnv }}
           env:
             {{- if .Values.clickhouse.userPasswordSecret.enabled }}
             - name: CLICKHOUSE_PASSWORD
@@ -112,6 +118,14 @@ spec:
             {{- if .Values.apiGateway.maxUploadSizeMB }}
             - name: MAX_UPLOAD_SIZE_MB
               value: {{ .Values.apiGateway.maxUploadSizeMB | quote }}
+            {{- end }}
+            {{- if .Values.apiGateway.dedupByImageDigest }}
+            - name: DEDUP_BY_IMAGE_DIGEST
+              value: "true"
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
             {{- end }}
             {{- range $queryLimits }}
             - name: {{ .name }}
@@ -194,4 +208,3 @@ spec:
             # explicit rules, the automatic grouping still applies.
             optional: true
         {{- end }}
-

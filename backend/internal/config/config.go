@@ -11,6 +11,7 @@ import (
 
 	"github.com/seebom-labs/bomhort/backend/internal/advisory"
 	"github.com/seebom-labs/bomhort/backend/internal/ingestpath"
+	"github.com/seebom-labs/bomhort/backend/internal/origin"
 	"github.com/seebom-labs/bomhort/backend/internal/tags"
 )
 
@@ -35,6 +36,7 @@ type S3BucketConfig struct {
 	// NAMESPACE/PROJECT defaults and anything derived from the object key.
 	Namespace string `json:"namespace,omitempty"`
 	Project   string `json:"project,omitempty"`
+	Origin    string `json:"origin,omitempty"`
 	// Parent pins every object in this bucket to one parent (product), for
 	// a bucket per product. Explicit configuration, so it outranks the
 	// global PARENT, the "parent" path-layout token and every automatic
@@ -101,6 +103,7 @@ type Config struct {
 
 	// Feature flags
 	SkipOSV              bool   // Skip OSV vulnerability lookups (fast ingestion, licenses only)
+	DedupByImageDigest   bool   // Reuse existing image SBOMs when ?image= is supplied
 	SkipGitHubResolve    bool   // Skip GitHub license resolution for unknown licenses
 	SkipNPMResolve       bool   // Skip npm registry license resolution for unknown licenses
 	SkipNuGetResolve     bool   // Skip NuGet license resolution for unknown licenses
@@ -139,6 +142,7 @@ type Config struct {
 	// config, path derivation, upload query param) supplies a value.
 	Namespace string // Default namespace (default "" = unassigned)
 	Project   string // Default project   (default "" = unassigned)
+	Origin    string // Optional provenance label for ingested documents
 	// Parent is the instance-wide default parent (product) for every
 	// ingested SBOM, from PARENT. Rarely useful instance-wide; per-bucket
 	// "parent", the "parent" path-layout token and ?parent= on upload are the
@@ -245,6 +249,7 @@ func Load() (*Config, error) {
 		WorkerID:              getEnv("WORKER_ID", ""),
 		WorkerBatchSize:       getEnvInt("WORKER_BATCH_SIZE", 10),
 		SkipOSV:               getEnvBool("SKIP_OSV", false),
+		DedupByImageDigest:    getEnvBool("DEDUP_BY_IMAGE_DIGEST", false),
 		SkipGitHubResolve:     getEnvBool("SKIP_GITHUB_RESOLVE", false),
 		SkipNPMResolve:        getEnvBool("SKIP_NPM_RESOLVE", false),
 		SkipNuGetResolve:      getEnvBool("SKIP_NUGET_RESOLVE", false),
@@ -261,6 +266,7 @@ func Load() (*Config, error) {
 		ClusterName:           getEnv("CLUSTER_NAME", ""),
 		Namespace:             getEnv("NAMESPACE", ""),
 		Project:               getEnv("PROJECT", ""),
+		Origin:                origin.Normalize(getEnv("ORIGIN", "")),
 		Parent:                strings.TrimSpace(getEnv("PARENT", "")),
 		Tags:                  tags.Parse(getEnv("TAGS", "")),
 		IngestPathLayout:      getEnv("INGEST_PATH_LAYOUT", ""),
@@ -288,6 +294,9 @@ func Load() (*Config, error) {
 
 	if err := loadClickHouseLimits(cfg); err != nil {
 		return nil, err
+	}
+	if cfg.Origin != "" && !origin.IsValid(cfg.Origin) {
+		return nil, fmt.Errorf("invalid ORIGIN %q", cfg.Origin)
 	}
 
 	switch cfg.MCPTransport {
@@ -379,6 +388,10 @@ func Load() (*Config, error) {
 	sharedPathStyle := getEnvBool("S3_USE_PATH_STYLE", false)
 	sharedUseSSL := getEnvBool("S3_USE_SSL", true)
 	for i := range cfg.S3Buckets {
+		cfg.S3Buckets[i].Origin = origin.Normalize(cfg.S3Buckets[i].Origin)
+		if cfg.S3Buckets[i].Origin != "" && !origin.IsValid(cfg.S3Buckets[i].Origin) {
+			return nil, fmt.Errorf("invalid origin for bucket %q: %q", cfg.S3Buckets[i].Name, cfg.S3Buckets[i].Origin)
+		}
 		if cfg.S3Buckets[i].AccessKey == "" && sharedAccessKey != "" {
 			cfg.S3Buckets[i].AccessKey = sharedAccessKey
 		}

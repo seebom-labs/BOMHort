@@ -65,6 +65,8 @@ type SBOMListItem struct {
 	IngestedAt      string `json:"ingested_at"`
 	SourceRepo      string `json:"source_repo,omitempty"`
 	SourceRef       string `json:"source_ref,omitempty"`
+	ImageRef        string `json:"image_ref,omitempty"`
+	ImageDigest     string `json:"image_digest,omitempty"`
 	// Ownership dimensions (#177). Completes the list contract before the
 	// v1.0 freeze: the detail view and the cluster endpoints already expose
 	// these, so a client could not tell which cluster/namespace/project a
@@ -77,6 +79,36 @@ type SBOMListItem struct {
 	QualityScore uint8 `json:"quality_score"`
 	// QualityFlags lists reasons for quality deductions (#537).
 	QualityFlags []string `json:"quality_flags,omitempty"`
+}
+
+type ImageListItem struct {
+	ImageRef      string `json:"image_ref"`
+	Digest        string `json:"digest"`
+	SBOMCount     uint64 `json:"sbom_count"`
+	WorstSeverity string `json:"worst_severity"`
+	FirstSeenAt   string `json:"first_seen_at"`
+	LastSeenAt    string `json:"last_seen_at"`
+}
+
+type ImageSBOM struct {
+	SBOMID          string `json:"sbom_id"`
+	SourceFile      string `json:"source_file"`
+	DocumentName    string `json:"document_name"`
+	DocumentVersion string `json:"document_version,omitempty"`
+	ImageRef        string `json:"image_ref,omitempty"`
+	Origin          string `json:"origin,omitempty"`
+	Cluster         string `json:"cluster,omitempty"`
+	Namespace       string `json:"namespace,omitempty"`
+	Project         string `json:"project,omitempty"`
+	IngestedAt      string `json:"ingested_at"`
+}
+
+type ImageDetail struct {
+	Digest   string      `json:"digest"`
+	SBOMs    []ImageSBOM `json:"sboms"`
+	Total    uint64      `json:"total"`
+	Page     uint64      `json:"page"`
+	PageSize uint64      `json:"page_size"`
 }
 
 // PaginatedResponse wraps any list response with pagination metadata.
@@ -273,6 +305,8 @@ type SBOMDetail struct {
 	IngestedAt      string `json:"ingested_at"`
 	SourceRepo      string `json:"source_repo,omitempty"`
 	SourceRef       string `json:"source_ref,omitempty"`
+	ImageRef        string `json:"image_ref,omitempty"`
+	ImageDigest     string `json:"image_digest,omitempty"`
 	CriticalVulns   uint64 `json:"critical_vulns"`
 	HighVulns       uint64 `json:"high_vulns"`
 	MediumVulns     uint64 `json:"medium_vulns"`

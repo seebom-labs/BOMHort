@@ -43,6 +43,7 @@ type ownership struct {
 	// parent is the bucket's explicit parent (bucket "parent", else PARENT);
 	// a "parent" layout segment fills it when both are empty.
 	parent string
+	origin string
 }
 
 // resolve returns the ownership for one object key, applying path
@@ -210,6 +211,7 @@ func ingestLocalFiles(ctx context.Context, cfg *config.Config, chClient *clickho
 			Project:    project,
 			Tags:       fileTags,
 			Parent:     parent,
+			Origin:     cfg.Origin,
 		})
 
 		// Flush batch when it reaches the threshold.
@@ -266,6 +268,7 @@ func ingestS3Buckets(ctx context.Context, cfg *config.Config, chClient *clickhou
 			namespace: firstNonEmpty(b.Namespace, cfg.Namespace),
 			project:   firstNonEmpty(b.Project, cfg.Project),
 			parent:    firstNonEmpty(strings.TrimSpace(b.Parent), cfg.Parent),
+			origin:    firstNonEmpty(b.Origin, cfg.Origin),
 			prefix:    b.Prefix,
 			layout:    cfg.BucketIngestLayout(b),
 			tags:      cfg.BucketTags(b),
@@ -338,6 +341,7 @@ func ingestS3Buckets(ctx context.Context, cfg *config.Config, chClient *clickhou
 			Project:    project,
 			Tags:       objTags,
 			Parent:     parent,
+			Origin:     bucketOwner[obj.Bucket].origin,
 		})
 
 		// Flush batch.

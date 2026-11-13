@@ -34,6 +34,20 @@ func TestGroupingSignalsManufacturerWins(t *testing.T) {
 	}
 }
 
+func TestImageIdentityFromRootPURL(t *testing.T) {
+	digest := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	res, err := Parse([]byte(`{
+		"bomFormat":"CycloneDX","specVersion":"1.6",
+		"metadata":{"component":{"type":"container","name":"api","purl":"pkg:oci/acme/api@`+digest+`?repository_url=ghcr.io%2Facme%2Fapi"}}
+	}`), "api.cdx.json", "hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.SBOM.ImageRef != "ghcr.io/acme/api" || res.SBOM.ImageDigest != digest {
+		t.Errorf("image identity = (%q, %q)", res.SBOM.ImageRef, res.SBOM.ImageDigest)
+	}
+}
+
 // CycloneDX 1.5 spelled it "manufacture".
 func TestGroupingSignalsManufacture15(t *testing.T) {
 	_, supplier := parseCDXSignals(t, `{
