@@ -302,9 +302,9 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 				argMax(v.advisory_status, v.discovered_at)    AS advisory_status,
 				argMax(v.component_location, v.discovered_at) AS component_location,
 				max(sc.has_no_dep_graph)                 AS has_no_dep_graph,
-				argMax(v.reachability, v.discovered_at)   AS reachability,
-				argMax(v.evidence_source, v.discovered_at) AS evidence_source,
-				argMax(v.evidence_ref, v.discovered_at)  AS evidence_ref,
+				argMax(v.reachability, (v.evidence_at, v.discovered_at)) AS reachability,
+				argMax(v.evidence_source, (v.evidence_at, v.discovered_at)) AS evidence_source,
+				argMax(v.evidence_ref, (v.evidence_at, v.discovered_at)) AS evidence_ref,
 				max(v.evidence_at)                       AS evidence_at
 			FROM (SELECT * FROM vulnerabilities FINAL) AS v
 			INNER JOIN scope AS sc ON sc.sbom_id = v.sbom_id

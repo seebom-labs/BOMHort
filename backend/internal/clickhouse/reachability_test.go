@@ -95,6 +95,22 @@ func TestClassifySBOMFindings_UnreportedFindingsUntouched(t *testing.T) {
 	}
 }
 
+func TestClassifySBOMFindings_ModulelessReportDoesNotMatchAllGoPackages(t *testing.T) {
+	existing := []SBOMVulnRow{
+		{VulnID: "CVE-2024-0001", PURL: "pkg:golang/example.com/one@v1.0.0"},
+		{VulnID: "CVE-2024-0001", PURL: "pkg:golang/example.com/two@v1.0.0"},
+	}
+	report := []evidence.FindingEvidence{{
+		OSV:     "GO-2024-0001",
+		Aliases: []string{"CVE-2024-0001"},
+	}}
+
+	reachable, notReachable := ClassifySBOMFindings(existing, report)
+	if len(reachable) != 0 || len(notReachable) != 0 {
+		t.Fatalf("module-less finding matched packages: reachable=%+v notReachable=%+v", reachable, notReachable)
+	}
+}
+
 func TestBuildKeyFilter(t *testing.T) {
 	keys := []VulnKey{
 		{VulnID: "CVE-1", PURL: "pkg:golang/a@1"},
@@ -133,6 +149,8 @@ func TestPurlMatchesModule(t *testing.T) {
 		{"pkg:golang/example.com/foobar@v1.0.0", "example.com/foo", false},
 		{"pkg:golang/example.com/foo-client@v1.0.0", "example.com/foo", false},
 		{"pkg:golang/stdlib@v1.25.12", "stdlib", true},
+		{"pkg:golang/stdlib/net@v1.25.12", "stdlib", true},
+		{"pkg:golang/stdlibfoo@v1.25.12", "stdlib", false},
 		{"pkg:golang/go@v1.25.12", "stdlib", true},
 		{"stdlib", "stdlib", true},
 	}

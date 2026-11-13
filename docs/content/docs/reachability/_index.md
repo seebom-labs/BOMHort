@@ -10,7 +10,7 @@ A vulnerability finding in a Software Bill of Materials (SBOM) indicates that a 
 
 Without reachability evidence, marking a finding as non-actionable is merely an assertion. With concrete evidence ("the vulnerable function is not reachable from this binary according to govulncheck 1.1.3 on commit abc1234"), security teams and compliance auditors can verify that the risk is mitigated.
 
-BOMHort stores reachability evidence directly on the `vulnerabilities` table (introduced in migration `029_add_reachability.up.sql`), surfaces evidence badges and filters in the web console, and records the tool version and reference alongside each finding.
+BOMHort stores reachability evidence directly on the `vulnerabilities` table (introduced in migration `031_add_reachability.up.sql`), surfaces evidence badges and filters in the web console, and records the tool version and reference alongside each finding.
 
 ## Reachability Vocabulary
 
@@ -97,4 +97,3 @@ In the BOMHort web interface:
   - `/api/v1/vulnerabilities?reachability=not_reachable`
   - `/api/v1/vulnerabilities?reachability=unknown`
 - **CSV Reports**: Exporting findings via `GET /api/v1/reports/vulnerabilities?format=csv` includes the four evidence columns (`reachability`, `evidence_source`, `evidence_ref`, and `evidence_at`) for offline review and audit reporting.
-

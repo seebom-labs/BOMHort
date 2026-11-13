@@ -250,6 +250,32 @@ func TestProjectVulnerabilitiesOneRowPerPair(t *testing.T) {
 	}
 }
 
+func TestProjectVulnerabilitiesPrefersEvidenceOverNewerSBOM(t *testing.T) {
+	c := testClient(t)
+	f := insertProjectFixture(t, c)
+	evidenceAt := time.Now().UTC().Truncate(time.Second)
+	if err := c.Conn.Exec(context.Background(), `
+		ALTER TABLE vulnerabilities
+		UPDATE reachability = 'reachable', evidence_source = 'govulncheck test',
+			evidence_ref = 'older-sbom', evidence_at = ?
+		WHERE sbom_id = ? AND vuln_id = 'CVE-2024-0001'
+		SETTINGS mutations_sync = 1`, evidenceAt, f.childV1); err != nil {
+		t.Fatalf("set evidence on older SBOM: %v", err)
+	}
+
+	items, err := c.QueryProjectVulnerabilities(context.Background(), f.child, "")
+	if err != nil {
+		t.Fatalf("QueryProjectVulnerabilities: %v", err)
+	}
+	if len(items) == 0 {
+		t.Fatal("expected project vulnerability findings")
+	}
+	if items[0].Reachability != "reachable" || items[0].EvidenceSource != "govulncheck test" || items[0].EvidenceRef != "older-sbom" {
+		t.Errorf("project evidence = %q/%q/%q, want reachable/govulncheck test/older-sbom",
+			items[0].Reachability, items[0].EvidenceSource, items[0].EvidenceRef)
+	}
+}
+
 func TestProjectPackagesDistinctWithReach(t *testing.T) {
 	c := testClient(t)
 	f := insertProjectFixture(t, c)
