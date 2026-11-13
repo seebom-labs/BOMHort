@@ -188,8 +188,7 @@ func matchesFinding(row SBOMVulnRow, ev evidence.FindingEvidence) bool {
 		return purlMatchesModule(row.PURL, ev.Module)
 	}
 
-	// Fallback when module is unspecified in report: only match Go findings.
-	return strings.HasPrefix(row.PURL, "pkg:golang/")
+	return false
 }
 
 func purlMatchesModule(purl, module string) bool {
@@ -197,7 +196,10 @@ func purlMatchesModule(purl, module string) bool {
 		return false
 	}
 	if module == "stdlib" {
-		return strings.HasPrefix(purl, "pkg:golang/stdlib") ||
+		return purl == "pkg:golang/stdlib" ||
+			strings.HasPrefix(purl, "pkg:golang/stdlib@") ||
+			strings.HasPrefix(purl, "pkg:golang/stdlib/") ||
+			strings.HasPrefix(purl, "pkg:golang/stdlib?") ||
 			strings.HasPrefix(purl, "pkg:golang/go@") ||
 			strings.HasPrefix(purl, "pkg:golang/go/") ||
 			purl == "stdlib"
