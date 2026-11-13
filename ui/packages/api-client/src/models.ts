@@ -26,6 +26,8 @@ export interface DashboardStats {
   last_cve_refresh?: string;
   new_vulns_since_refresh?: number;
   archived_repos_count?: number;
+  low_quality_sboms?: number;
+  average_quality_score?: number;
 }
 
 export interface ArchivedPackageInfo {
@@ -78,6 +80,24 @@ export interface SBOMListItem {
   cluster?: string;
   namespace?: string;
   project?: string;
+  /** Quality evaluation score (0-100) and deduction flags (#537). */
+  quality_score?: number;
+  quality_flags?: string[];
+}
+
+/** Status an advisory feed reports for a finding. */
+export type AdvisoryStatus =
+  | 'affected'
+  | 'under_investigation'
+  | 'pending_upstream_fix'
+  | 'fix_not_planned'
+  | 'not_affected';
+
+/** One component entry of an advisory-feed finding. */
+export interface AdvisoryComponent {
+  purl?: string;
+  location?: string;
+  architecture?: string;
 }
 
 export interface VulnerabilityListItem {
@@ -92,6 +112,15 @@ export interface VulnerabilityListItem {
   fixed_version: string;
   source_file: string;
   discovered_at: string;
+  /**
+   * "osv" when osv.dev reported the finding, else the name of the advisory
+   * feed (ADVISORY_SOURCES) that decided it. Absent from older servers.
+   */
+  advisory_source?: string;
+  /** The feed's status vocabulary; omitted for osv.dev findings. */
+  advisory_status?: AdvisoryStatus;
+  /** Where in the image the feed locates the vulnerable file. */
+  advisory_components?: AdvisoryComponent[];
   vex_status?: string;
   /**
    * Effective VEX statement detail (#335): the API returns exactly one row
@@ -119,6 +148,8 @@ export interface VulnerabilityListItem {
    */
   dependency_scope: DependencyScope;
   dependency_depth?: number;
+  /** Reason when scope is unknown (e.g. "no-dependency-graph"). */
+  scope_reason?: string;
 }
 
 export type DependencyScope = 'root' | 'direct' | 'transitive' | 'unknown';
@@ -213,6 +244,23 @@ export interface SBOMDetail {
   medium_vulns: number;
   low_vulns: number;
   scope_breakdown?: ScopeBreakdown;
+  /** Quality evaluation score (0-100) and deduction flags (#537). */
+  quality_score?: number;
+  quality_flags?: string[];
+}
+
+export interface ToolQualitySummary {
+  tool: string;
+  count: number;
+  avg_score: number;
+}
+
+export interface QualityStatsResponse {
+  average_score: number;
+  total_evaluated: number;
+  low_quality_count: number;
+  tools: ToolQualitySummary[];
+  score_distribution: Record<string, number>;
 }
 
 export interface SBOMLicenseBreakdownItem {

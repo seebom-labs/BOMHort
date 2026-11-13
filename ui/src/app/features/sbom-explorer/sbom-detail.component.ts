@@ -19,6 +19,7 @@ import { scopeOf } from '../../shared/dependency-scope';
 import { ScopeBadgeComponent } from '../../shared/scope-badge/scope-badge.component';
 import { ScopeMatrixComponent } from '../../shared/scope-matrix/scope-matrix.component';
 import { VulnAliasesComponent } from '../../shared/vuln-aliases/vuln-aliases.component';
+import { AdvisoryBadgeComponent } from '../../shared/advisory-badge/advisory-badge.component';
 import { primaryVulnId } from '../../shared/vuln-identity';
 
 type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
@@ -26,7 +27,7 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
 @Component({
   selector: 'app-sbom-detail',
   standalone: true,
-  imports: [CommonModule, ScrollingModule, RouterModule, ScopeBadgeComponent, VulnAliasesComponent, ScopeMatrixComponent],
+  imports: [CommonModule, ScrollingModule, RouterModule, ScopeBadgeComponent, VulnAliasesComponent, ScopeMatrixComponent, AdvisoryBadgeComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="sbom-detail" *ngIf="detail">
@@ -55,6 +56,14 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
         <div class="stat high" *ngIf="detail.high_vulns">{{ detail.high_vulns | number }} high</div>
         <div class="stat medium" *ngIf="detail.medium_vulns">{{ detail.medium_vulns | number }} medium</div>
         <div class="stat low" *ngIf="detail.low_vulns">{{ detail.low_vulns | number }} low</div>
+        <div class="stat quality" *ngIf="detail.quality_score !== undefined" [class.good]="detail.quality_score >= 80" [class.fair]="detail.quality_score >= 60 && detail.quality_score < 80" [class.poor]="detail.quality_score < 60">
+          <strong>{{ detail.quality_score }}/100</strong> quality
+        </div>
+      </div>
+
+      <div class="quality-flags-row" *ngIf="detail.quality_flags && detail.quality_flags.length > 0">
+        <span class="flags-label">Quality Deductions:</span>
+        <span class="quality-flag-tag" *ngFor="let flag of detail.quality_flags">{{ flag }}</span>
       </div>
 
       <div class="scope-section" *ngIf="detail.vuln_count">
@@ -88,13 +97,14 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
                   {{ vulnLabel(vuln) }}
                 </a>
                 <app-vuln-aliases [vuln]="vuln"></app-vuln-aliases>
+              <app-advisory-badge [vuln]="vuln"></app-advisory-badge>
               </span>
               <span class="summary">{{ vuln.summary }}</span>
             </div>
             <span class="vex-badge" *ngIf="vuln.vex_status" [class]="'vex-' + vuln.vex_status">
               {{ vuln.vex_status | titlecase }}
             </span>
-            <app-scope-badge [scope]="vuln.dependency_scope" [depth]="vuln.dependency_depth"></app-scope-badge>
+            <app-scope-badge [scope]="vuln.dependency_scope" [depth]="vuln.dependency_depth" [reason]="vuln.scope_reason"></app-scope-badge>
             <span class="purl">{{ vuln.purl }}</span>
           </div>
         </cdk-virtual-scroll-viewport>
@@ -288,6 +298,19 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
     }
     .stats-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
     .stat { background: var(--surface-alt); padding: 6px 14px; border-radius: 2px; font-size: 0.8rem; border: 1px solid var(--border); }
+    .stat.quality.good { border-color: var(--status-success); color: var(--status-success); }
+    .stat.quality.fair { border-color: var(--status-warning); color: var(--status-warning); }
+    .stat.quality.poor { border-color: var(--severity-critical); color: var(--severity-critical); }
+    .quality-flags-row {
+      display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: -8px 0 16px;
+      font-size: 0.72rem;
+    }
+    .flags-label { color: var(--text-secondary); font-weight: 600; }
+    .quality-flag-tag {
+      background: var(--severity-low-bg); color: var(--text-secondary);
+      border: 1px dashed var(--border); border-radius: 2px; padding: 2px 6px;
+      font-family: monospace; font-size: 0.68rem;
+    }
     .critical { color: var(--severity-critical); }
     .high { color: var(--severity-high); }
     .medium { color: var(--status-warning); }

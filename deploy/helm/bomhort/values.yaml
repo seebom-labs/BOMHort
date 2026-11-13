@@ -248,6 +248,31 @@ gitSync:
   # For private repos, mount a Secret with SSH key or token:
   # secretName: git-sync-credentials
 
+# OSV-format advisory feeds (ADVISORY_SOURCES), consulted next to osv.dev.
+# Empty by default: osv.dev only.
+#
+# A feed is an index document (a JSON array of {id, modified}) with one OSV
+# record per id next to it (<dir>/<id>.json): https://, s3:// (the bucket
+# must be in s3.buckets) or file://. The cve-refresher syncs the records into
+# ClickHouse each run (only those whose `modified` moved); the parsing worker
+# and the refresher match packages against them.
+#
+# prefixes: the PURL prefixes a feed is authoritative for. For those PURLs
+# the feed's verdict replaces osv.dev's upstream range match for every flaw
+# the feed has a record of — a backported fix (pkg:apk/…-r4, +deb12u1,
+# .el9_2) closes the finding. A feed without prefixes only adds findings.
+#
+# Some vendor feeds carry a non-commercial or otherwise restricted licence.
+# BOMHort does not check it: read the feed's terms before enabling it.
+#
+# advisorySources:
+#   - name: wolfi
+#     index: https://packages.example.dev/osv/all.json
+#     prefixes: ["pkg:apk/wolfi"]
+#   - name: private
+#     index: s3://security-advisories/osv/all.json
+advisorySources: []
+
 # License exceptions. No approvals by default.
 #
 # Exactly one source: custom (rendered into a ConfigMap), existingConfigMap,

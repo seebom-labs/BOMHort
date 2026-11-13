@@ -144,7 +144,16 @@ type VulnEntry struct {
 	// (GHSA-… ↔ CVE-… ↔ GO-…). Dropping them made VEX matching an exact
 	// string comparison, so a statement about the CVE never suppressed
 	// the finding OSV reported under its GHSA id.
-	Aliases          []string               `json:"aliases"`
+	Aliases []string `json:"aliases"`
+	// Related lists identifiers of closely related records. Advisory feeds
+	// that mint their own ids (a distro or vendor feed) put the CVE here
+	// rather than in Aliases, so matching a feed record against an osv.dev
+	// finding has to read both.
+	Related []string `json:"related,omitempty"`
+	// Modified and Withdrawn are RFC 3339 timestamps; a withdrawn record
+	// must never produce a finding.
+	Modified         string                 `json:"modified,omitempty"`
+	Withdrawn        string                 `json:"withdrawn,omitempty"`
 	Severity         []Severity             `json:"severity"`
 	Affected         []Affected             `json:"affected"`
 	DatabaseSpecific map[string]interface{} `json:"database_specific"`
@@ -161,6 +170,11 @@ type Affected struct {
 	Package  AffectedPackage `json:"package"`
 	Ranges   []Range         `json:"ranges"`
 	Versions []string        `json:"versions"`
+	// EcosystemSpecific and DatabaseSpecific carry what a feed adds beyond
+	// the core schema, such as a per-component status and the location of
+	// the vulnerable file in an image (internal/advisory reads them).
+	EcosystemSpecific map[string]interface{} `json:"ecosystem_specific,omitempty"`
+	DatabaseSpecific  map[string]interface{} `json:"database_specific,omitempty"`
 }
 
 // AffectedPackage identifies the affected package.
@@ -178,8 +192,10 @@ type Range struct {
 
 // Event represents a version event (introduced/fixed).
 type Event struct {
-	Introduced string `json:"introduced,omitempty"`
-	Fixed      string `json:"fixed,omitempty"`
+	Introduced   string `json:"introduced,omitempty"`
+	Fixed        string `json:"fixed,omitempty"`
+	LastAffected string `json:"last_affected,omitempty"`
+	Limit        string `json:"limit,omitempty"`
 }
 
 // QueryBatch sends a batch of PURLs to the OSV API and returns the results.

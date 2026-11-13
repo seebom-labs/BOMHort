@@ -12,6 +12,7 @@ package pypi
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -35,6 +36,12 @@ const (
 	// maxLicenseText bounds the "license" field: older packages paste the
 	// whole license text there, which is not a name to normalise.
 	maxLicenseText = 100
+
+	// maxResponseSize bounds a PyPI response (same cap as rulesource.MaxSize).
+	// The project document of a package with many releases runs to a few MB;
+	// a larger body is cut off and fails to decode, so a broken or hostile
+	// index cannot make the worker allocate without limit.
+	maxResponseSize = 10 << 20
 )
 
 // Resolver resolves PyPI package licenses.
@@ -170,7 +177,7 @@ func (r *Resolver) fetch(ctx context.Context, name, version string) string {
 		return ""
 	}
 	var p projectInfo
-	if err := json.NewDecoder(resp.Body).Decode(&p); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseSize)).Decode(&p); err != nil {
 		return ""
 	}
 	if lic := Expression(p.Info.LicenseExpression, p.Info.License, p.Info.Classifiers); lic != "" {

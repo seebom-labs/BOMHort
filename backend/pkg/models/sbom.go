@@ -52,6 +52,12 @@ type SBOM struct {
 	// to resolve a parent for products without a repository URL.
 	RootPURL string `json:"root_purl,omitempty"`
 	Supplier string `json:"supplier,omitempty"`
+	// QualityScore (0-100) measures document completeness and compliance with
+	// NTIA / BSI TR-03183 minimum elements (#537).
+	QualityScore uint8 `json:"quality_score"`
+	// QualityFlags lists reasons for score deductions (e.g. no-dependency-graph,
+	// low-purl-coverage, missing-supplier).
+	QualityFlags []string `json:"quality_flags,omitempty"`
 }
 
 // SBOMPackages stores the full dependency tree of an SBOM as parallel arrays.
@@ -111,9 +117,21 @@ type Vulnerability struct {
 	// DependencyDepth is the smallest depth of the affected PURL in the SBOM
 	// (see SBOMPackages.PackageDepths); depgraph.Unknown when not derivable.
 	DependencyDepth uint16 `json:"dependency_depth"`
-	Cluster         string `json:"cluster,omitempty"`
-	Namespace       string `json:"namespace,omitempty"`
-	Project         string `json:"project,omitempty"`
+
+	// AdvisorySource is "osv" for a finding osv.dev reported, else the name
+	// of the ADVISORY_SOURCES feed that decided it.
+	AdvisorySource string `json:"advisory_source,omitempty"`
+	// AdvisoryStatus is the feed's status for the finding (affected,
+	// under_investigation, pending_upstream_fix, fix_not_planned,
+	// not_affected); "" for an osv.dev finding.
+	AdvisoryStatus string `json:"advisory_status,omitempty"`
+	// ComponentLocation is a JSON array of {purl, location, architecture}:
+	// where in the image the feed says the vulnerable file sits.
+	ComponentLocation string `json:"component_location,omitempty"`
+
+	Cluster   string `json:"cluster,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
+	Project   string `json:"project,omitempty"`
 }
 
 // LicenseCompliance represents the compliance status for a license within an SBOM.

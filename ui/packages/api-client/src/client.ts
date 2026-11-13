@@ -24,10 +24,12 @@ import type {
   ProjectLicenseViolationSummary,
   ProjectListItem,
   ProjectPackageItem,
+  QualityStatsResponse,
   SBOMDetail,
   SBOMLicenseBreakdownItem,
   SBOMListItem,
   TagListItem,
+  ToolQualitySummary,
   VEXStatementItem,
   VersionSkewResponse,
   VulnerabilityListItem,
@@ -96,8 +98,12 @@ export class BomhortApiClient {
     return this.get(`/stats/dashboard${query({ ...owner })}`, signal);
   }
 
-  getSboms(page = 1, pageSize = 50, search = '', project = '', signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>> {
-    return this.get(`/sboms${query({ page, page_size: pageSize, search, project })}`, signal);
+  getQualityStats(signal?: AbortSignal): Promise<QualityStatsResponse> {
+    return this.get('/stats/quality', signal);
+  }
+
+  getSboms(page = 1, pageSize = 50, search = '', project = '', minQuality = 0, signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>> {
+    return this.get(`/sboms${query({ page, page_size: pageSize, search, project, min_quality: minQuality > 0 ? minQuality : undefined })}`, signal);
   }
 
   getSbomDetail(sbomId: string, signal?: AbortSignal): Promise<SBOMDetail> {

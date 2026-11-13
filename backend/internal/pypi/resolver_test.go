@@ -2,8 +2,10 @@ package pypi
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -108,5 +110,36 @@ func TestResolve(t *testing.T) {
 	}
 	if calls != before {
 		t.Errorf("expected cache hits, got %d extra calls", calls-before)
+	}
+}
+
+// Project documents of packages with many releases run to a few MB and must
+// still decode; one larger than maxResponseSize is cut off and treated as an
+// unreadable response (no license, nothing cached).
+func TestResponseSizeLimit(t *testing.T) {
+	tests := []struct {
+		name    string
+		padding int
+		want    string
+	}{
+		{"just under the limit", maxResponseSize - 1<<10, "MIT"},
+		{"over the limit", maxResponseSize, ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			padding := strings.Repeat("x", tc.padding)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = fmt.Fprintf(w, `{"info":{"license":"MIT","description":%q}}`, padding)
+			}))
+			defer srv.Close()
+
+			r := NewResolverWithBaseURL(srv.URL)
+			if got := r.Resolve(context.Background(), "pkg:pypi/huge@1.0.0"); got != tc.want {
+				t.Fatalf("Resolve() = %q, want %q", got, tc.want)
+			}
+			if _, found := r.LoadValue("huge@1.0.0"); found != (tc.want != "") {
+				t.Fatalf("cached = %v, want %v", found, tc.want != "")
+			}
+		})
 	}
 }

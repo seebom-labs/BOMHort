@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/seebom-labs/bomhort/backend/internal/advisory"
 	"github.com/seebom-labs/bomhort/backend/internal/claimlock"
 	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
 	"github.com/seebom-labs/bomhort/backend/internal/config"
@@ -22,7 +23,6 @@ import (
 	gh "github.com/seebom-labs/bomhort/backend/internal/github"
 	"github.com/seebom-labs/bomhort/backend/internal/license"
 	"github.com/seebom-labs/bomhort/backend/internal/osv"
-	"github.com/seebom-labs/bomhort/backend/internal/osvutil"
 	"github.com/seebom-labs/bomhort/backend/internal/rulesource"
 	s3client "github.com/seebom-labs/bomhort/backend/internal/s3"
 	"github.com/seebom-labs/bomhort/backend/internal/sbom"
@@ -521,90 +521,37 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 	} else {
 		// Filter out empty PURLs first.
 		var purls []string
-		purlToIndex := make(map[string]int) // track which PURL maps to which query index
 		for _, purl := range result.Packages.PackagePURLs {
 			if purl != "" {
-				purlToIndex[purl] = len(purls)
 				purls = append(purls, purl)
 			}
 		}
 
+		findings, err := scanVulnerabilities(ctx, osvClient, advisory.NewMatcher(cfg.AdvisorySources, chClient), purls)
+		if err != nil {
+			return err
+		}
 		var vulns []models.Vulnerability
-		if len(purls) > 0 {
-			// Collect vuln IDs from batch queries, then hydrate with full details.
-			type vulnPURL struct {
-				id   string
-				purl string
+		var feedVEX []models.VEXStatement
+		for _, f := range findings {
+			v := f.Vulnerability(result.SBOM.SBOMID, job.SourceFile,
+				depgraph.MinDepthForPURL(result.Packages.PackagePURLs, result.Packages.PackageDepths, f.PURL))
+			own.applyVulnerability(&v)
+			vulns = append(vulns, v)
+			if st, ok := f.NotAffectedStatement(v); ok {
+				feedVEX = append(feedVEX, st)
 			}
-			var discovered []vulnPURL
-
-			// Chunk PURLs into batches of 1000 (OSV API limit).
-			const chunkSize = 1000
-			for i := 0; i < len(purls); i += chunkSize {
-				end := i + chunkSize
-				if end > len(purls) {
-					end = len(purls)
-				}
-				chunk := purls[i:end]
-
-				osvResp, err := osvClient.QueryBatch(ctx, chunk)
-				if err != nil {
-					log.Printf("  WARNING: OSV query failed for chunk %d-%d: %v", i, end, err)
-					continue
-				}
-
-				for j, qr := range osvResp.Results {
-					if len(qr.Vulns) == 0 {
-						continue
-					}
-					purl := chunk[j]
-					for _, v := range qr.Vulns {
-						discovered = append(discovered, vulnPURL{id: v.ID, purl: purl})
-					}
-				}
+		}
+		if len(vulns) > 0 {
+			log.Printf("  Found %d vulnerabilities in %s", len(vulns), job.SourceFile)
+			if err := chClient.InsertVulnerabilities(ctx, vulns); err != nil {
+				return err
 			}
-
-			if len(discovered) > 0 {
-				// Collect unique vuln IDs and hydrate with full details.
-				uniqueIDs := make([]string, 0)
-				seen := make(map[string]struct{})
-				for _, d := range discovered {
-					if _, ok := seen[d.id]; !ok {
-						seen[d.id] = struct{}{}
-						uniqueIDs = append(uniqueIDs, d.id)
-					}
-				}
-
-				hydrated, err := osvClient.HydrateVulns(ctx, uniqueIDs)
-				if err != nil {
-					log.Printf("  WARNING: Hydration failed: %v", err)
-				}
-
-				// Un-hydrated IDs are skipped, not stubbed: the daily
-				// cve-refresher inserts them once OSV answers (#485).
-				var skipped []string
-				for _, d := range discovered {
-					h, ok := hydrated[d.id]
-					if !ok {
-						skipped = append(skipped, d.id)
-						continue
-					}
-					v := osvutil.BuildVulnerability(*h, result.SBOM.SBOMID, job.SourceFile, d.purl,
-						depgraph.MinDepthForPURL(result.Packages.PackagePURLs, result.Packages.PackageDepths, d.purl))
-					own.applyVulnerability(&v)
-					vulns = append(vulns, v)
-				}
-				if len(skipped) > 0 {
-					log.Printf("  WARNING: %d findings skipped (hydration failed), e.g. %v; cve-refresher will add them",
-						len(skipped), skipped[:min(5, len(skipped))])
-				}
-			}
-
-			if len(vulns) > 0 {
-				log.Printf("  Found %d vulnerabilities in %s", len(vulns), job.SourceFile)
-				if err := chClient.InsertVulnerabilities(ctx, vulns); err != nil {
-					return err
-				}
+		}
+		if len(feedVEX) > 0 {
+			log.Printf("  %d findings marked not_affected by an advisory feed", len(feedVEX))
+			if err := chClient.InsertVEXStatements(ctx, feedVEX); err != nil {
+				return err
 			}
 		}
 	}

@@ -41,6 +41,18 @@ data:
   SKIP_PACKAGIST_RESOLVE: {{ .Values.parsingWorker.skipPackagistResolve | default false | quote }}
   SKIP_PYPI_RESOLVE: {{ .Values.parsingWorker.skipPyPIResolve | default false | quote }}
   SBOM_LIMIT: {{ .Values.ingestionWatcher.sbomLimit | quote }}
+  {{- /* advisorySources may be absent on `helm upgrade --reuse-values` from
+       a chart that predates it; that is "no feeds". Rendered as the
+       name|index|prefix… entries the backend parses; it validates them and
+       refuses to start on a malformed one. */}}
+  {{- $feeds := list }}
+  {{- range (.Values.advisorySources | default list) }}
+  {{- if or (not .name) (not .index) }}
+  {{- fail "advisorySources: every entry needs a name and an index" }}
+  {{- end }}
+  {{- $feeds = append $feeds (join "|" (concat (list .name .index) (.prefixes | default list))) }}
+  {{- end }}
+  ADVISORY_SOURCES: {{ join "," $feeds | quote }}
   EXCEPTIONS_FILE: {{ include "bomhort.licenseExceptions.file" . | quote }}
   EXCEPTIONS_SOURCE: {{ include "bomhort.licenseExceptions.source" . | quote }}
   EXCEPTIONS_REFRESH_INTERVAL: {{ include "bomhort.licenseExceptions.refreshInterval" . | quote }}

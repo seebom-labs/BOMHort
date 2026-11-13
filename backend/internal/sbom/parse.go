@@ -102,6 +102,7 @@ func Parse(r io.Reader, sourceFile, sha256Hash string) (*ParseResult, error) {
 	}
 	normalizeNPMIdentities(&result.Packages)
 	assignDepths(&result.Packages)
+	result.SBOM.QualityScore, result.SBOM.QualityFlags = EvaluateQuality(&result.SBOM, &result.Packages)
 	return result, nil
 }
 

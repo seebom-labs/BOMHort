@@ -2,8 +2,10 @@ package packagist
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	json "github.com/goccy/go-json"
@@ -156,5 +158,23 @@ func TestResolve(t *testing.T) {
 	}
 	if _, reason, _ := offline.Explain("pkg:composer/private/thing@1.0.0"); reason != "not-published" {
 		t.Errorf("reason lost across persistence: %q", reason)
+	}
+}
+
+// A p2 file larger than maxResponseSize is cut off and fails to decode, like
+// any other unreadable response: no license, and nothing cached.
+func TestOversizedResponseIsNotDecoded(t *testing.T) {
+	padding := strings.Repeat("x", maxResponseSize)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprintf(w, `{"packages":{"vendor/huge":[{"version":"1.0.0","license":["MIT"],"description":%q}]}}`, padding)
+	}))
+	defer srv.Close()
+
+	r := NewResolverWithBaseURL(srv.URL)
+	if got := r.Resolve(context.Background(), "pkg:composer/vendor/huge@1.0.0"); got != "" {
+		t.Fatalf("Resolve() = %q, want empty for an oversized response", got)
+	}
+	if _, found := r.LoadValue("vendor/huge@1.0.0"); found {
+		t.Fatal("oversized response must not be cached")
 	}
 }

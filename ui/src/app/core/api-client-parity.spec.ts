@@ -10,6 +10,7 @@ import { BomhortApiClient } from '@bomhort/api-client';
 // a component ported to another framework hits the same endpoints.
 const calls: Record<string, unknown[]> = {
   getDashboardStats: [{ cluster: 'prod-eu', namespace: '' }],
+  getQualityStats: [],
   getSboms: [2, 25, 'gin', 'payment-api'],
   getSbomDetail: ['id-1'],
   getSbomDependencies: ['id-1'],

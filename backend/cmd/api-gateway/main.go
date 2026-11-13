@@ -180,13 +180,15 @@ func main() {
 	// ?project= is the exact project name as the project listing shows it;
 	// ?search= is a substring match on document name or source path. They
 	// compose, so a project page can offer a search box within the project.
+	// ?min_quality= filters for SBOMs with quality_score >= min_quality (0-100, #537).
 	mux.HandleFunc("GET /api/v1/sboms", func(w http.ResponseWriter, r *http.Request) {
 		page := parseUint64(r.URL.Query().Get("page"), 1)
 		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
 		search := sanitizeSearchTerm(r.URL.Query().Get("search"))
 		project := sanitizeProjectName(r.URL.Query().Get("project"))
+		minQuality := parseUint8(r.URL.Query().Get("min_quality"), 0)
 
-		resp, err := chClient.QuerySBOMs(r.Context(), page, pageSize, search, project)
+		resp, err := chClient.QuerySBOMs(r.Context(), page, pageSize, search, project, minQuality)
 		if err != nil {
 			log.Printf("ERROR: list sboms: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch SBOMs")
@@ -595,6 +597,17 @@ func main() {
 		writeJSON(w, http.StatusOK, resp)
 	})
 
+	// Corpus quality and per-tool quality aggregations (#537).
+	mux.HandleFunc("GET /api/v1/stats/quality", func(w http.ResponseWriter, r *http.Request) {
+		stats, err := chClient.QueryQualityStats(r.Context())
+		if err != nil {
+			log.Printf("ERROR: quality stats: %v", err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch quality stats")
+			return
+		}
+		writeJSON(w, http.StatusOK, stats)
+	})
+
 	// VEX statements list with pagination.
 	mux.HandleFunc("GET /api/v1/vex/statements", func(w http.ResponseWriter, r *http.Request) {
 		page := parseUint64(r.URL.Query().Get("page"), 1)
@@ -996,6 +1009,17 @@ func parseUint64(s string, fallback uint64) uint64 {
 		return fallback
 	}
 	return v
+}
+
+func parseUint8(s string, fallback uint8) uint8 {
+	if s == "" {
+		return fallback
+	}
+	v, err := strconv.ParseUint(s, 10, 8)
+	if err != nil {
+		return fallback
+	}
+	return uint8(v)
 }
 
 // clampPageSize enforces a maximum page size to prevent abusive queries.

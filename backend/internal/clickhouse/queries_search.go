@@ -44,13 +44,19 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 			v.vuln_id, v.severity, v.purl, v.summary,
 			v.fixed_version, v.source_file, v.discovered_at,
 			v.dependency_depth, v.aliases,
+			v.advisory_source, v.advisory_status, v.component_location,
 			ifNull(vx.vex_status, '') AS vex_status,
 			ifNull(vx.vex_justification, '') AS vex_justification,
 			ifNull(vx.winning_timestamp, toDateTime(0)) AS vex_timestamp,
 			ifNull(vx.vex_statement_id, '') AS vex_statement_id,
 			ifNull(vx.vex_author, '') AS vex_author,
-			ifNull(vx.vex_tooling, '') AS vex_tooling
+			ifNull(vx.vex_tooling, '') AS vex_tooling,
+			ifNull(q.has_no_dep_graph, 0) AS has_no_dep_graph
 		FROM (SELECT * FROM vulnerabilities FINAL) AS v
+		LEFT JOIN (
+			SELECT sbom_id, has(quality_flags, 'no-dependency-graph') AS has_no_dep_graph
+			FROM sboms FINAL
+		) AS q ON q.sbom_id = v.sbom_id
 		LEFT JOIN (
 			SELECT
 				f.vuln_id AS vuln_id, f.purl AS purl,
@@ -85,18 +91,26 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 		var discoveredAt, vexTimestamp time.Time
 		var depth uint16
 		var aliases []string
+		var components string
+		var hasNoDepGraph uint8
 		if err := rows.Scan(
 			&item.VulnID, &item.Severity, &item.PURL,
 			&item.Summary, &item.FixedVersion, &item.SourceFile,
-			&discoveredAt, &depth, &aliases, &item.VEXStatus,
+			&discoveredAt, &depth, &aliases,
+			&item.AdvisorySource, &item.AdvisoryStatus, &components,
+			&item.VEXStatus,
 			&item.VEXJustification, &vexTimestamp, &item.VEXStatementID,
-			&item.VEXAuthor, &item.VEXTooling,
+			&item.VEXAuthor, &item.VEXTooling, &hasNoDepGraph,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan vuln row: %w", err)
 		}
+		item.AdvisoryComponents = advisoryComponents(components)
 		item.Aliases, item.CVEID = identify(item.VulnID, aliases)
 		item.DiscoveredAt = discoveredAt.Format(time.RFC3339)
 		item.DependencyScope, item.DependencyDepth = scopeFields(depth)
+		if item.DependencyScope == "unknown" && hasNoDepGraph == 1 {
+			item.ScopeReason = "no-dependency-graph"
+		}
 		if item.VEXStatus != "" {
 			item.VEXScope = "sbom"
 		}
@@ -259,7 +273,8 @@ func (c *Client) QuerySBOMDetail(ctx context.Context, sbomID string) (*dto.SBOMD
 		SELECT
 			s.sbom_id, s.source_file, s.spdx_version, s.document_name, s.document_version, s.ingested_at,
 			s.source_repo, s.source_ref,
-			ifNull(p.pkg_count, 0) AS package_count
+			ifNull(p.pkg_count, 0) AS package_count,
+			s.quality_score, s.quality_flags
 		FROM (SELECT * FROM sboms FINAL) AS s
 		LEFT JOIN (
 			SELECT sbom_id, length(package_names) AS pkg_count
@@ -271,6 +286,7 @@ func (c *Client) QuerySBOMDetail(ctx context.Context, sbomID string) (*dto.SBOMD
 		&detail.SBOMID, &detail.SourceFile, &detail.SPDXVersion,
 		&detail.DocumentName, &detail.DocumentVersion, &ingestedAt,
 		&detail.SourceRepo, &detail.SourceRef, &detail.PackageCount,
+		&detail.QualityScore, &detail.QualityFlags,
 	)
 	if err != nil {
 		// An unknown sbom_id is a missing resource, not a server fault: report

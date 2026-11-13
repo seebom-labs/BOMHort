@@ -29,9 +29,10 @@ import { scopeClass, scopeLabel, scopeTitle } from '../dependency-scope';
 export class ScopeBadgeComponent {
   @Input() scope: DependencyScope | undefined;
   @Input() depth: number | undefined;
+  @Input() reason: string | undefined;
   @Input() size: 'sm' | 'md' = 'sm';
 
   get label(): string { return scopeLabel(this.scope); }
-  get title(): string { return scopeTitle(this.scope, this.depth); }
+  get title(): string { return scopeTitle(this.scope, this.depth, this.reason); }
   get cls(): string { return scopeClass(this.scope); }
 }
