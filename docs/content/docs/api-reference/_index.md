@@ -599,6 +599,7 @@ All vulnerabilities found in a specific SBOM, including the effective VEX statem
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `scope` | string | all | Only `root`, `direct`, `transitive` or `unknown` findings (see [Dependency scope](#dependency-scope)) |
+| `reachability` | string | all | Filter by reachability evidence: `reachable`, `not_reachable`, or `unknown` (#535) |
 
 **Response:** `200 OK`
 ```json
@@ -621,12 +622,58 @@ All vulnerabilities found in a specific SBOM, including the effective VEX statem
     "vex_timestamp": "2026-09-01T12:00:00Z",
     "vex_statement_id": "b3f1c2d4-5678-90ab-cdef-1234567890ab",
     "vex_author": "Example Org Security Team",
-    "vex_tooling": "VEXViper/0.1.0"
+    "vex_tooling": "VEXViper/0.1.0",
+    "reachability": "not_reachable",
+    "evidence_source": "govulncheck v1.1.3",
+    "evidence_ref": "build-482",
+    "evidence_at": "2026-09-01T12:05:00Z"
   }
 ]
 ```
 
-`vex_justification`, `vex_timestamp`, `vex_statement_id`, `vex_author` and `vex_tooling` describe the **winning** statement and are omitted (like `vex_status`) when no VEX statement covers the pair. `vex_author`/`vex_tooling` carry the provenance captured by migration `017` (#334) and are empty for statements ingested before it. `vex_timestamp` enables re-triage policies such as "re-open `under_investigation` older than 30 days" without paging through `/api/v1/vex/statements`.
+`vex_justification`, `vex_timestamp`, `vex_statement_id`, `vex_author` and `vex_tooling` describe the **winning** statement and are omitted (like `vex_status`) when no VEX statement covers the pair. `vex_author`/`vex_tooling` carry the provenance captured by migration `017` (#334) and are empty for statements ingested before it. `vex_timestamp` enables re-triage policies such as "re-open `under_investigation` older than 30 days" without paging through `/api/v1/vex/statements`. `reachability` (`reachable`, `not_reachable`, or `unknown`), `evidence_source`, `evidence_ref`, and `evidence_at` carry the reachability evidence (#535).
+
+
+### `POST /api/v1/sboms/{id}/evidence`
+
+Ingests reachability evidence for an SBOM (#535). Accepts raw `govulncheck -json` output in either newline-delimited JSON or JSON array format. Requires authentication (`AUTH_ENABLED=true`). Payloads must contain valid scanner configuration (`scanner_name = "govulncheck"`) and at least one finding.
+
+Evidence is classified and applied per `(vuln_id, purl)` pair:
+- Findings represented in the report with an execution trace (`finding.trace` non-empty) are marked `reachable`.
+- Findings represented in the report without a call trace are marked `not_reachable`.
+- Unreported findings (such as non-Go components or packages not covered in the report) remain untouched in their existing state.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `id` | UUID | SBOM identifier |
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `ref` | string | empty | Optional audit reference, commit hash, or CI job URL |
+
+**Headers:**
+
+| Header | Description |
+|--------|-------------|
+| `Content-Type` | `application/json` |
+| `X-Evidence-Ref` | Optional fallback for `ref` when omitted from query parameters |
+
+**Response:** `200 OK`
+```json
+{
+  "sbom_id": "6f2b525a-fbde-5b43-aa92-ac06a3f7220d",
+  "tool": "govulncheck v1.1.3",
+  "ref": "build-482",
+  "total_findings": 8,
+  "reachable": 2,
+  "not_reachable": 6,
+  "timestamp": "2026-11-11T14:00:00Z"
+}
+```
 
 
 ### `GET /api/v1/sboms/{id}/vex`
@@ -749,6 +796,7 @@ Paginated list of all discovered vulnerabilities across all SBOMs. Each item car
 | `project` | string | — | Only findings of these projects (the project name `GET /api/v1/projects` lists) |
 | `parent` | string | — | Only findings of the projects grouped under these parents (`GET /api/v1/projects?group_by=parent`), the parent itself included |
 | `tag` | string | — | Only findings of SBOMs carrying any of these tags |
+| `reachability` | string | all | Filter by reachability evidence: `reachable`, `not_reachable`, or `unknown` (#535) |
 
 The ownership filters (#459) take comma-separated values: values within one parameter are ORed, parameters are ANDed (`?cluster=prod-eu,prod-us&tag=sandbox` = SBOMs in either cluster that carry `sandbox`). Ownership is read from the SBOM, so it matches the project and fleet views. A value longer than 200 characters is a `400`.
 
@@ -855,6 +903,7 @@ Every finding of [`GET /api/v1/vulnerabilities`](#get-apiv1vulnerabilities) as a
 | `project` | string | — | Only findings of these projects (the project name `GET /api/v1/projects` lists) |
 | `parent` | string | — | Only findings of the projects grouped under these parents (`GET /api/v1/projects?group_by=parent`), the parent itself included |
 | `tag` | string | — | Only findings of SBOMs carrying any of these tags |
+| `reachability` | string | all | Filter by reachability evidence: `reachable`, `not_reachable`, or `unknown` (#535) |
 
 The ownership filters work as on the JSON listing.
 

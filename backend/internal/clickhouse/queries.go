@@ -345,6 +345,8 @@ type VulnFilter struct {
 	// ParentMembers is ?parent= resolved to its projects by the caller;
 	// parents are computed in Go, not stored.
 	ParentMembers []string
+	// Reachability filters findings by evidence ("reachable", "not_reachable", "unknown").
+	Reachability string
 }
 
 // ownerPredicate restricts sbom_id to the SBOMs matching f, or returns ""
@@ -391,12 +393,18 @@ func ownerWhere(f VulnFilter, asString bool) (string, []any) {
 // over vulnerabilities, with its placeholder args.
 func vulnWhere(scope string, f VulnFilter) (string, []any) {
 	var preds []string
+	var args []any
 	if pred := depthPredicate(scope, "dependency_depth"); pred != "" {
 		preds = append(preds, pred)
 	}
-	owner, args := ownerPredicate(f, false)
+	if f.Reachability != "" {
+		preds = append(preds, "reachability = ?")
+		args = append(args, f.Reachability)
+	}
+	owner, ownerArgs := ownerPredicate(f, false)
 	if owner != "" {
 		preds = append(preds, owner)
+		args = append(args, ownerArgs...)
 	}
 	if len(preds) == 0 {
 		return "", nil
@@ -412,7 +420,8 @@ func vulnerabilityListSQL(scopeWhere string) string {
 			v.dependency_depth, v.aliases,
 			v.advisory_source, v.advisory_status, v.component_location,
 			ifNull(vx.vex_status, '') AS vex_status,
-			ifNull(q.has_no_dep_graph, 0) AS has_no_dep_graph
+			ifNull(q.has_no_dep_graph, 0) AS has_no_dep_graph,
+			v.reachability, v.evidence_source, v.evidence_ref, v.evidence_at
 		FROM (SELECT * FROM vulnerabilities FINAL` + scopeWhere + `) AS v
 		LEFT JOIN (
 			SELECT sbom_id, has(quality_flags, 'no-dependency-graph') AS has_no_dep_graph
@@ -444,7 +453,7 @@ func vulnerabilityListSQL(scopeWhere string) string {
 // scanVulnerabilityListRow scans one row of vulnerabilityListSQL.
 func scanVulnerabilityListRow(rows driver.Rows) (dto.VulnerabilityListItem, error) {
 	var item dto.VulnerabilityListItem
-	var discoveredAt time.Time
+	var discoveredAt, evidenceAt time.Time
 	var depth uint16
 	var aliases []string
 	var components string
@@ -456,6 +465,7 @@ func scanVulnerabilityListRow(rows driver.Rows) (dto.VulnerabilityListItem, erro
 		&item.AdvisorySource, &item.AdvisoryStatus, &components,
 		&item.VEXStatus,
 		&hasNoDepGraph,
+		&item.Reachability, &item.EvidenceSource, &item.EvidenceRef, &evidenceAt,
 	); err != nil {
 		return item, fmt.Errorf("failed to scan vulnerability row: %w", err)
 	}
@@ -465,6 +475,9 @@ func scanVulnerabilityListRow(rows driver.Rows) (dto.VulnerabilityListItem, erro
 	item.DependencyScope, item.DependencyDepth = scopeFields(depth)
 	if item.DependencyScope == "unknown" && hasNoDepGraph == 1 {
 		item.ScopeReason = "no-dependency-graph"
+	}
+	if !evidenceAt.IsZero() && evidenceAt.Unix() > 0 {
+		item.EvidenceAt = evidenceAt.Format(time.RFC3339)
 	}
 	return item, nil
 }

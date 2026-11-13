@@ -86,7 +86,7 @@ func TestFindingsCarryCVEAndAliases(t *testing.T) {
 	wantAliases := []string{f.cveID, f.ghsaID}
 	slices.Sort(wantAliases)
 
-	sbomVulns, err := c.QuerySBOMVulnerabilities(ctx, f.sbomID, "")
+	sbomVulns, err := c.QuerySBOMVulnerabilities(ctx, f.sbomID, "", "")
 	if err != nil {
 		t.Fatalf("QuerySBOMVulnerabilities: %v", err)
 	}

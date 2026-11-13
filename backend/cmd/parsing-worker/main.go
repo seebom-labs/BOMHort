@@ -20,6 +20,7 @@ import (
 	"github.com/seebom-labs/bomhort/backend/internal/config"
 	"github.com/seebom-labs/bomhort/backend/internal/depgraph"
 	"github.com/seebom-labs/bomhort/backend/internal/docstore"
+	"github.com/seebom-labs/bomhort/backend/internal/evidence"
 	gh "github.com/seebom-labs/bomhort/backend/internal/github"
 	"github.com/seebom-labs/bomhort/backend/internal/license"
 	"github.com/seebom-labs/bomhort/backend/internal/osv"
@@ -376,6 +377,15 @@ func processVEXJob(ctx context.Context, chClient *clickhouse.Client, openFile fu
 	if len(result.Statements) > 0 {
 		if err := chClient.InsertVEXStatements(ctx, result.Statements); err != nil {
 			return err
+		}
+		for _, stmt := range result.Statements {
+			if stmt.SBOMID != "" {
+				if status, ok := evidence.IsReachabilityVEX(stmt); ok {
+					if err := chClient.ApplyVEXReachability(ctx, stmt.SBOMID, stmt.VulnID, stmt.ProductPURL, status, stmt.Tooling, stmt.DocumentID, stmt.VEXTimestamp); err != nil {
+						log.Printf("  WARNING: failed to apply VEX reachability evidence for sbom %s: %v", stmt.SBOMID, err)
+					}
+				}
+			}
 		}
 	}
 

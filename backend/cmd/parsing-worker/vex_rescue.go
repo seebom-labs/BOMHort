@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/seebom-labs/bomhort/backend/internal/evidence"
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
 
@@ -15,6 +16,7 @@ type vexRescuer interface {
 	QueryUnscopedVEXStatements(ctx context.Context) ([]models.VEXStatement, error)
 	InsertVEXStatements(ctx context.Context, stmts []models.VEXStatement) error
 	DeleteUnscopedVEXStatements(ctx context.Context, vexIDs []string) error
+	ApplyVEXReachability(ctx context.Context, sbomID, vulnID, purl, reachability, tooling, ref string, at time.Time) error
 }
 
 // rescueUnscopedVEX re-resolves statements that were stored without an SBOM
@@ -74,6 +76,13 @@ func rescueUnscopedVEX(ctx context.Context, store vexRescuer, sourceFile string)
 	if err := store.InsertVEXStatements(ctx, rescued); err != nil {
 		log.Printf("  WARNING: VEX rescue after %s: insert failed: %v", sourceFile, err)
 		return
+	}
+	for _, stmt := range rescued {
+		if status, ok := evidence.IsReachabilityVEX(stmt); ok {
+			if err := store.ApplyVEXReachability(ctx, stmt.SBOMID, stmt.VulnID, stmt.ProductPURL, status, stmt.Tooling, stmt.DocumentID, stmt.VEXTimestamp); err != nil {
+				log.Printf("  WARNING: VEX rescue reachability apply for sbom %s: %v", stmt.SBOMID, err)
+			}
+		}
 	}
 	if err := store.DeleteUnscopedVEXStatements(ctx, oldIDs); err != nil {
 		log.Printf("  WARNING: VEX rescue after %s: cleanup failed (scoped copies are in place, unscoped originals linger): %v", sourceFile, err)

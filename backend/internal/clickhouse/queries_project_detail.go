@@ -205,7 +205,7 @@ func (c *Client) QueryProjectBadgeStats(ctx context.Context, name, version strin
 	}
 
 	// Count unsuppressed vulnerabilities using the scope-aware VEX join.
-	vulns, err := c.QuerySBOMVulnerabilities(ctx, targetSBOMID, "")
+	vulns, err := c.QuerySBOMVulnerabilities(ctx, targetSBOMID, "", "")
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +285,8 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 			ifNull(vx.vex_statement_id, '')      AS vex_statement_id,
 			ifNull(vx.vex_author, '')            AS vex_author,
 			ifNull(vx.vex_tooling, '')           AS vex_tooling,
-			f.has_no_dep_graph                   AS has_no_dep_graph
+			f.has_no_dep_graph                   AS has_no_dep_graph,
+			f.reachability, f.evidence_source, f.evidence_ref, f.evidence_at
 		FROM (
 			SELECT
 				v.vuln_id AS vuln_id, v.purl AS purl,
@@ -300,7 +301,11 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 				argMax(v.advisory_source, v.discovered_at)    AS advisory_source,
 				argMax(v.advisory_status, v.discovered_at)    AS advisory_status,
 				argMax(v.component_location, v.discovered_at) AS component_location,
-				max(sc.has_no_dep_graph)                 AS has_no_dep_graph
+				max(sc.has_no_dep_graph)                 AS has_no_dep_graph,
+				argMax(v.reachability, v.discovered_at)   AS reachability,
+				argMax(v.evidence_source, v.discovered_at) AS evidence_source,
+				argMax(v.evidence_ref, v.discovered_at)  AS evidence_ref,
+				max(v.evidence_at)                       AS evidence_at
 			FROM (SELECT * FROM vulnerabilities FINAL) AS v
 			INNER JOIN scope AS sc ON sc.sbom_id = v.sbom_id
 			WHERE 1=1%s
@@ -337,7 +342,7 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 	var items []dto.VulnerabilityListItem
 	for rows.Next() {
 		var item dto.VulnerabilityListItem
-		var discoveredAt, vexTimestamp time.Time
+		var discoveredAt, vexTimestamp, evidenceAt time.Time
 		var depth uint16
 		var aliases []string
 		var components string
@@ -349,6 +354,7 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 			&item.VEXStatus, &item.VEXJustification, &vexTimestamp,
 			&item.VEXStatementID, &item.VEXAuthor, &item.VEXTooling,
 			&hasNoDepGraph,
+			&item.Reachability, &item.EvidenceSource, &item.EvidenceRef, &evidenceAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan project vulnerability row: %w", err)
 		}
@@ -364,6 +370,9 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 		}
 		if !vexTimestamp.IsZero() && vexTimestamp.Unix() != 0 {
 			item.VEXTimestamp = vexTimestamp.Format(time.RFC3339)
+		}
+		if !evidenceAt.IsZero() && evidenceAt.Unix() > 0 {
+			item.EvidenceAt = evidenceAt.Format(time.RFC3339)
 		}
 		items = append(items, item)
 	}

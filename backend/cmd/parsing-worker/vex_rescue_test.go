@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
@@ -38,6 +39,10 @@ func (m *mockRescueStore) InsertVEXStatements(_ context.Context, stmts []models.
 
 func (m *mockRescueStore) DeleteUnscopedVEXStatements(_ context.Context, ids []string) error {
 	m.deleted = append(m.deleted, ids...)
+	return nil
+}
+
+func (m *mockRescueStore) ApplyVEXReachability(_ context.Context, _, _, _, _, _, _ string, _ time.Time) error {
 	return nil
 }
 

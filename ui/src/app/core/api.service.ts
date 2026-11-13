@@ -9,6 +9,7 @@ import {
   SBOMDetail,
   SBOMLicenseBreakdownItem,
   VulnerabilityListItem,
+  ReachabilitySummary,
   DependencyNode,
   LicenseComplianceItem,
   LicenseSourceItem,
@@ -99,9 +100,13 @@ export class ApiService {
     return this.http.get<DependencyNode[]>(`${this.baseUrl}/sboms/${sbomId}/dependencies`);
   }
 
-  getSbomVulnerabilities(sbomId: string, scope = ''): Observable<VulnerabilityListItem[]> {
-    const params = scope ? new HttpParams().set('scope', scope) : undefined;
-    return this.http.get<VulnerabilityListItem[]>(`${this.baseUrl}/sboms/${sbomId}/vulnerabilities`, { params });
+  getSbomVulnerabilities(sbomId: string, scope = '', reachability = ''): Observable<VulnerabilityListItem[]> {
+    let params = new HttpParams();
+    if (scope) params = params.set('scope', scope);
+    if (reachability) params = params.set('reachability', reachability);
+    return this.http.get<VulnerabilityListItem[]>(`${this.baseUrl}/sboms/${sbomId}/vulnerabilities`, {
+      params: params.keys().length ? params : undefined,
+    });
   }
 
   /** VEX statements affecting one SBOM (#350): scoped first, then global. */
@@ -122,25 +127,41 @@ export class ApiService {
    * URL of the CSV export of the vulnerability listing (#266): the same rows
    * as getVulnerabilities, streamed by the gateway as a file download.
    */
-  vulnerabilityReportUrl(scope = '', owner: OwnerFilter = {}): string {
+  vulnerabilityReportUrl(scope = '', owner: OwnerFilter = {}, reachability = ''): string {
     let params = ownerParams(owner).set('format', 'csv');
     if (scope) {
       params = params.set('scope', scope);
     }
+    if (reachability) {
+      params = params.set('reachability', reachability);
+    }
     return `${this.baseUrl}/reports/vulnerabilities?${params.toString()}`;
   }
 
-  getVulnerabilities(page = 1, pageSize = 50, scope = '', owner: OwnerFilter = {}): Observable<PaginatedResponse<VulnerabilityListItem>> {
+  getVulnerabilities(page = 1, pageSize = 50, scope = '', owner: OwnerFilter = {}, reachability = ''): Observable<PaginatedResponse<VulnerabilityListItem>> {
     let params = ownerParams(owner)
       .set('page', page.toString())
       .set('page_size', pageSize.toString());
     if (scope) {
       params = params.set('scope', scope);
     }
+    if (reachability) {
+      params = params.set('reachability', reachability);
+    }
     return this.http.get<PaginatedResponse<VulnerabilityListItem>>(
       `${this.baseUrl}/vulnerabilities`,
       { params }
     );
+  }
+
+  uploadEvidence(sbomId: string, evidenceJson: string | object, ref = ''): Observable<ReachabilitySummary> {
+    const body = typeof evidenceJson === 'string' ? evidenceJson : JSON.stringify(evidenceJson);
+    let params = new HttpParams();
+    if (ref) params = params.set('ref', ref);
+    return this.http.post<ReachabilitySummary>(`${this.baseUrl}/sboms/${encodeURIComponent(sbomId)}/evidence`, body, {
+      headers: { 'Content-Type': 'application/json' },
+      params: params.keys().length ? params : undefined,
+    });
   }
 
   getAffectedProjectsByCVE(vulnId: string, owner: OwnerFilter = {}): Observable<AffectedProject[]> {

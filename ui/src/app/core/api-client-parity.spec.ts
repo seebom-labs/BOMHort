@@ -46,6 +46,7 @@ const calls: Record<string, unknown[]> = {
   getNamespaces: ['prod-eu'],
   getNamespaceStats: ['payments', 'prod-eu'],
   getNamespaceSboms: ['payments', 'prod-eu', 2, 50],
+  uploadEvidence: ['id-1', '{"config":{}}', 'ref-1'],
 };
 
 describe('ApiService ↔ @bomhort/api-client parity', () => {

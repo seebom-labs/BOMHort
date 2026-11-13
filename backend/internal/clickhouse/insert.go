@@ -130,13 +130,22 @@ func (c *Client) InsertVulnerabilities(ctx context.Context, vulns []models.Vulne
 			severity, summary, affected_versions, fixed_version, osv_json, aliases,
 			dependency_depth,
 			advisory_source, advisory_status, component_location,
-			cluster, namespace, project
+			cluster, namespace, project,
+			reachability, evidence_source, evidence_ref, evidence_at
 		)`)
 	if err != nil {
 		return fmt.Errorf("failed to prepare vulnerabilities batch: %w", err)
 	}
 
 	for _, v := range vulns {
+		reachability := v.Reachability
+		if reachability == "" {
+			reachability = models.ReachabilityUnknown
+		}
+		evidenceAt := v.EvidenceAt
+		if evidenceAt.IsZero() {
+			evidenceAt = time.Unix(0, 0)
+		}
 		if err := batch.Append(
 			v.DiscoveredAt,
 			v.SBOMID,
@@ -156,6 +165,10 @@ func (c *Client) InsertVulnerabilities(ctx context.Context, vulns []models.Vulne
 			v.Cluster,
 			v.Namespace,
 			v.Project,
+			reachability,
+			v.EvidenceSource,
+			v.EvidenceRef,
+			evidenceAt,
 		); err != nil {
 			return fmt.Errorf("failed to append vulnerability %s: %w", v.VulnID, err)
 		}

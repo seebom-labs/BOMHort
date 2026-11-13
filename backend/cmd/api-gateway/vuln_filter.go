@@ -99,7 +99,13 @@ func vulnListHandler(chClient *clickhouse.Client, filter vulnFilterFunc, preset 
 			writeError(w, http.StatusBadRequest, "Invalid scope (expected direct, transitive, root or unknown)")
 			return
 		}
+		reachability, ok := parseReachability(r.URL.Query().Get("reachability"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Invalid reachability (expected reachable, not_reachable, or unknown)")
+			return
+		}
 		f, status, msg := filter(r)
+		f.Reachability = reachability
 		if status == 0 && preset != nil {
 			if msg = preset(r, &f); msg != "" {
 				status = http.StatusBadRequest
@@ -134,5 +140,19 @@ func pathOwner(kind string, dst func(*clickhouse.VulnFilter) *[]string) func(*ht
 		}
 		*dst(f) = []string{name}
 		return ""
+	}
+}
+
+// parseReachability validates the ?reachability= parameter (#535).
+func parseReachability(raw string) (string, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", true
+	}
+	switch raw {
+	case "reachable", "not_reachable", "unknown":
+		return raw, true
+	default:
+		return "", false
 	}
 }
