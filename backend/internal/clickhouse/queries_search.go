@@ -35,16 +35,6 @@ import (
 // scope ("" or a depgraph scope label) keeps only findings whose package is
 // pulled in that way.
 func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, scope string) ([]dto.VulnerabilityListItem, error) {
-	var qualityFlags []string
-	_ = c.Conn.QueryRow(ctx, "SELECT quality_flags FROM sboms FINAL WHERE sbom_id = ? LIMIT 1", sbomID).Scan(&qualityFlags)
-	hasNoDepGraph := false
-	for _, f := range qualityFlags {
-		if f == "no-dependency-graph" {
-			hasNoDepGraph = true
-			break
-		}
-	}
-
 	scopeAnd := ""
 	if pred := depthPredicate(scope, "v.dependency_depth"); pred != "" {
 		scopeAnd = " AND " + pred
@@ -60,8 +50,13 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 			ifNull(vx.winning_timestamp, toDateTime(0)) AS vex_timestamp,
 			ifNull(vx.vex_statement_id, '') AS vex_statement_id,
 			ifNull(vx.vex_author, '') AS vex_author,
-			ifNull(vx.vex_tooling, '') AS vex_tooling
+			ifNull(vx.vex_tooling, '') AS vex_tooling,
+			ifNull(q.has_no_dep_graph, 0) AS has_no_dep_graph
 		FROM (SELECT * FROM vulnerabilities FINAL) AS v
+		LEFT JOIN (
+			SELECT sbom_id, has(quality_flags, 'no-dependency-graph') AS has_no_dep_graph
+			FROM sboms FINAL
+		) AS q ON q.sbom_id = v.sbom_id
 		LEFT JOIN (
 			SELECT
 				f.vuln_id AS vuln_id, f.purl AS purl,
@@ -97,6 +92,7 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 		var depth uint16
 		var aliases []string
 		var components string
+		var hasNoDepGraph uint8
 		if err := rows.Scan(
 			&item.VulnID, &item.Severity, &item.PURL,
 			&item.Summary, &item.FixedVersion, &item.SourceFile,
@@ -104,7 +100,7 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 			&item.AdvisorySource, &item.AdvisoryStatus, &components,
 			&item.VEXStatus,
 			&item.VEXJustification, &vexTimestamp, &item.VEXStatementID,
-			&item.VEXAuthor, &item.VEXTooling,
+			&item.VEXAuthor, &item.VEXTooling, &hasNoDepGraph,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan vuln row: %w", err)
 		}
@@ -112,7 +108,7 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 		item.Aliases, item.CVEID = identify(item.VulnID, aliases)
 		item.DiscoveredAt = discoveredAt.Format(time.RFC3339)
 		item.DependencyScope, item.DependencyDepth = scopeFields(depth)
-		if item.DependencyScope == "unknown" && hasNoDepGraph {
+		if item.DependencyScope == "unknown" && hasNoDepGraph == 1 {
 			item.ScopeReason = "no-dependency-graph"
 		}
 		if item.VEXStatus != "" {
