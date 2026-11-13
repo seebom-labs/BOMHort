@@ -692,6 +692,7 @@ cp .env.example .env
 | `EXCEPTIONS_SOURCE` | *(empty)* | Read the exceptions from an `https://` URL or `s3://bucket/key` instead of `EXCEPTIONS_FILE`. A missing remote document is an error; an unreachable one keeps the last rules that loaded. |
 | `EXCEPTIONS_SOURCE_TOKEN` | *(empty)* | Bearer token sent to an `https://` `EXCEPTIONS_SOURCE` (private repositories). |
 | `EXCEPTIONS_REFRESH_INTERVAL` | `60s` | How often the exceptions are re-read (Go duration, `0` = only at startup). Changes are re-applied to the stored results of all ingested SBOMs, no re-scan needed. |
+| `EXTRA_FIELDS_FILE` | `/data/config/extra-fields.json` | Parsing worker: producer-written SBOM fields to recognise, e.g. a team contact. Missing file = off; invalid file = startup error. Compose mounts `sboms/extra-fields.json`. See the *Extra SBOM Fields* docs page. |
 | `CUSTOM_THEME` | (example file) | Path to a custom CSS theme file for the UI |
 | `UI_CONFIG` | `./ui/public/ui-config.json` | Path to a JSON file with UI text overrides (brand, titles, disclaimer) |
 

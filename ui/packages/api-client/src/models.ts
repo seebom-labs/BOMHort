@@ -263,6 +263,21 @@ export interface SBOMDetail {
   /** Quality evaluation score (0-100) and deduction flags (#537). */
   quality_score?: number;
   quality_flags?: string[];
+  /**
+   * Operator-declared extra fields found in the document, keyed by
+   * field name; omitted when there are none. Values are untrusted producer
+   * input: render them as text and link only http(s) URLs.
+   */
+  extra_fields?: Record<string, string[]>;
+}
+
+/**
+ * Narrows the SBOM listing by an extra field: `extra_field` alone keeps
+ * SBOMs carrying the field, with `extra_value` one of its values must match exactly.
+ */
+export interface ExtraFieldFilter {
+  extra_field?: string;
+  extra_value?: string;
 }
 
 export interface ToolQualitySummary {

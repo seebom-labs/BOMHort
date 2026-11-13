@@ -4,6 +4,7 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { ActivatedRoute } from '@angular/router';
 import { SbomDetailComponent } from './sbom-detail.component';
+import { extraFieldList } from './extra-fields.component';
 
 describe('SbomDetailComponent', () => {
   beforeEach(async () => {
@@ -96,6 +97,58 @@ describe('SbomDetailComponent', () => {
     // container height instead of scrolling (regression: overlapping rows).
     const style = getComputedStyle(items[0]);
     expect(style.flexShrink).toBe('0');
+  });
+
+  it('should list extra fields name-sorted and drop empty ones', () => {
+    expect(extraFieldList(undefined)).toEqual([]);
+    expect(extraFieldList({ z: ['1'], a: ['x', 'y'], empty: [] })).toEqual([
+      { name: 'a', values: ['x', 'y'] },
+      { name: 'z', values: ['1'] },
+    ]);
+  });
+
+  it('should render extra fields as escaped text and link out only http(s) URLs', () => {
+    const fixture = TestBed.createComponent(SbomDetailComponent);
+    const component = fixture.componentInstance;
+    const fields = {
+      owner_contact: ['team@example.com', '<img src=x onerror=alert(1)>'],
+      runbook: ['https://wiki.example.com/payments', 'javascript:alert(1)'],
+    };
+    component.detail = {
+      sbom_id: 'test-sbom-123',
+      source_file: 'test.spdx.json',
+      document_name: 'test',
+      extra_fields: fields,
+    } as any;
+    component.extraFields = extraFieldList(fields);
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const names = [...compiled.querySelectorAll('.extra-name')].map((e) => e.textContent?.trim());
+    expect(names).toEqual(['owner_contact', 'runbook']);
+
+    // Untrusted markup stays text.
+    expect(compiled.querySelector('.extra-fields img')).toBeNull();
+    const values = [...compiled.querySelectorAll('.extra-filter')].map((e) => e.textContent?.trim());
+    expect(values).toContain('<img src=x onerror=alert(1)>');
+
+    // Each value filters the SBOM list by that field and value.
+    const filter = compiled.querySelector<HTMLAnchorElement>('.extra-filter')!;
+    const params = new URL(filter.getAttribute('href')!, 'http://h').searchParams;
+    expect(params.get('extra_field')).toBe('owner_contact');
+    expect(params.get('extra_value')).toBe('team@example.com');
+
+    // Only the https value gets an outbound link; javascript: never does.
+    const out = [...compiled.querySelectorAll<HTMLAnchorElement>('.extra-out')].map((a) => a.getAttribute('href'));
+    expect(out).toEqual(['https://wiki.example.com/payments']);
+  });
+
+  it('should render no extra-fields block without extra fields', () => {
+    const fixture = TestBed.createComponent(SbomDetailComponent);
+    const component = fixture.componentInstance;
+    component.detail = { sbom_id: 'test-sbom-123', source_file: 'test.spdx.json', document_name: 'test' } as any;
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('.extra-fields')).toBeNull();
   });
 
   it('should render the VEX statements scoped to this SBOM (#350)', () => {

@@ -439,6 +439,11 @@ names until re-processed. Project-scoped license exceptions match the exact reso
 | `page` | uint64 | 1 | Page number |
 | `page_size` | uint64 | 50 | Items per page (max 500) |
 | `search` | string | — | Filter by document name or source file (case-insensitive) |
+| `extra_field` | string | — | Only SBOMs that carry this [extra field]({{< relref "/docs/extra-fields" >}}), e.g. `owner_contact`. Must match `^[a-z][a-z0-9_]{0,62}$` |
+| `extra_value` | string | — | With `extra_field`: only SBOMs where one of the field's values equals this exactly (case-sensitive, max 1024 bytes). Requires `extra_field` |
+
+**Errors:**
+- `400` — `extra_value` without `extra_field`, a malformed `extra_field`, or an over-long `extra_value`
 
 **Response:** `200 OK`
 ```json
@@ -501,11 +506,16 @@ Detailed SBOM information including vulnerability severity breakdown.
   "scope_breakdown": {
     "direct":     { "total": 4, "critical": 1, "high": 1, "medium": 2, "low": 0 },
     "transitive": { "total": 8, "critical": 0, "high": 2, "medium": 4, "low": 2 }
+  },
+  "extra_fields": {
+    "owner_contact": ["containerd-maintainers@example.com"]
   }
 }
 ```
 
 `scope_breakdown` splits the severity counts by dependency scope (`root`, `direct`, `transitive`, `unknown` — same vocabulary as the `scope` filter). Scopes without findings are omitted; the field is absent on an SBOM without vulnerabilities.
+
+`extra_fields` holds the operator-declared [extra fields]({{< relref "/docs/extra-fields" >}}) found in the document at ingest, keyed by field name; each value list is in source priority order. Omitted when the document carries none (and for SBOMs ingested before the fields were configured). The values are **untrusted producer input**: render them as text and link only `http(s)` URLs. Filter the list endpoint with `?extra_field=` / `?extra_value=`.
 
 **Errors:**
 - `400` — Invalid UUID format

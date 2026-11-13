@@ -124,6 +124,10 @@ type Config struct {
 	// to parents explicitly (internal/projectgroup). A missing file means
 	// "no explicit rules"; the automatic grouping still applies.
 	ProjectGroupsFile string
+	// ExtraFieldsFile declares which SBOM fields beyond the built-in ones
+	// the parsing worker recognises and stores in sboms.extra_fields
+	// (internal/extrafields). A missing file means "recognise nothing".
+	ExtraFieldsFile   string
 	LicensePolicyFile string // Path to license-policy.json
 	// LicenseExpressionMode overrides the policy file's expressionMode for
 	// compound SPDX expressions: "strict" | "permissive-wins" | "off".
@@ -255,6 +259,7 @@ func Load() (*Config, error) {
 		IgnorePrefix:          getEnv("SBOM_IGNORE_PREFIX", "_"),
 		ExceptionsFile:        getEnv("EXCEPTIONS_FILE", "/data/config/license-exceptions.json"),
 		ProjectGroupsFile:     getEnv("PROJECT_GROUPS_FILE", "/data/config/project-groups.json"),
+		ExtraFieldsFile:       getEnv("EXTRA_FIELDS_FILE", "/data/config/extra-fields.json"),
 		LicensePolicyFile:     getEnv("LICENSE_POLICY_FILE", "/data/config/license-policy.json"),
 		LicenseExpressionMode: strings.ToLower(strings.TrimSpace(getEnv("LICENSE_EXPRESSION_MODE", ""))),
 		GitHubToken:           getEnv("GITHUB_TOKEN", ""),

@@ -190,6 +190,8 @@ services:
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       EXCEPTIONS_FILE: /data/config/license-exceptions.json
       LICENSE_POLICY_FILE: /data/config/license-policy.json
+      # Producer-written SBOM fields to recognise, e.g. a team contact.
+      EXTRA_FIELDS_FILE: /data/config/extra-fields.json
       # strict (default) | permissive-wins | off — how compound SPDX expressions
       # ("Apache-2.0 AND MIT") are classified. Overrides the policy file.
       LICENSE_EXPRESSION_MODE: ${LICENSE_EXPRESSION_MODE:-}
@@ -211,6 +213,7 @@ services:
       - ${SBOM_SOURCE_DIR:-./sboms}:/data/sboms:ro
       - ./sboms/license-exceptions.json:/data/config/license-exceptions.json:ro
       - ./sboms/license-policy.json:/data/config/license-policy.json:ro
+      - ./sboms/extra-fields.json:/data/config/extra-fields.json:ro
       - originals_data:/data/originals
     depends_on:
       clickhouse:
