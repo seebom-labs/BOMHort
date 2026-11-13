@@ -211,6 +211,10 @@ export class ApiService {
     return this.http.get<PaginatedResponse<VEXStatementItem>>(`${this.baseUrl}/vex/statements`, { params });
   }
 
+  syncUpstreamVEX(): Observable<{ applied: number; status: string }> {
+    return this.http.post<{ applied: number; status: string }>(`${this.baseUrl}/vex/upstream/sync`, {});
+  }
+
   getLicenseExceptions(): Observable<LicenseExceptionsFile> {
     return this.http.get<LicenseExceptionsFile>(`${this.baseUrl}/license-exceptions`);
   }

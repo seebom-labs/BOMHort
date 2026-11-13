@@ -26,6 +26,7 @@ const calls: Record<string, unknown[]> = {
   getDependencyStats: [0], // 0 is a real value and must not be dropped like '' / undefined
   getVersionSkew: [1, 20, 'lodash'],
   getVEXStatements: [1, 50],
+  syncUpstreamVEX: [],
   getLicenseExceptions: [],
   getArchivedPackages: ['id-1'],
   getArchivedRepos: [2, 20],

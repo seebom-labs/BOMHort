@@ -382,6 +382,21 @@ projectGroups:
   #       reason: shared org, the projects are unrelated
   groups: []
 
+# Upstream VEX Subscriptions (#538).
+# Configure external OpenVEX hubs, CSAF providers, and OCI referrers to pull
+# upstream VEX advisories and apply them to matching stored SBOM packages.
+# Can be a JSON array of source objects, or a comma-separated string (e.g. "openvex-hub=https://...,csaf-provider=https://...").
+# Example:
+#   vexSources:
+#     - type: openvex-hub
+#       url: https://raw.githubusercontent.com/openvex/vex-hub/main
+#     - type: csaf-provider
+#       url: https://redhat.com/.well-known/csaf/provider-metadata.json
+vexSources: []
+
+# How often upstream VEX subscriptions are polled by workers (Go duration, default 1h).
+vexRefreshInterval: 1h
+
 # Ingestion Watcher (CronJob)
 ingestionWatcher:
   schedule: "0 */6 * * *"  # Every 6 hours

@@ -187,6 +187,40 @@ func main() {
 		}
 	}()
 
+	// Upstream VEX subscriptions (#538).
+	if cfg.HasVEXSources() {
+		log.Printf("Upstream VEX subscriptions enabled (%d source(s), refresh interval: %v)", len(cfg.VEXSources), cfg.VEXRefreshInterval)
+		err := claimlock.RunLeader(ctx, cfg.WorkerID, "bomhort-upstream-vex-sync", func(leaderCtx context.Context) {
+			if applied, err := chClient.SyncUpstreamVEX(leaderCtx, cfg.VEXSources); err != nil {
+				log.Printf("WARNING: initial upstream VEX sync: %v", err)
+			} else if applied > 0 {
+				log.Printf("Initial upstream VEX sync: %d statement(s) applied", applied)
+			}
+
+			if cfg.VEXRefreshInterval <= 0 {
+				return
+			}
+
+			t := time.NewTicker(cfg.VEXRefreshInterval)
+			defer t.Stop()
+			for {
+				select {
+				case <-leaderCtx.Done():
+					return
+				case <-t.C:
+					if applied, err := chClient.SyncUpstreamVEX(leaderCtx, cfg.VEXSources); err != nil {
+						log.Printf("WARNING: periodic upstream VEX sync: %v", err)
+					} else if applied > 0 {
+						log.Printf("Periodic upstream VEX sync: %d statement(s) applied", applied)
+					}
+				}
+			}
+		})
+		if err != nil {
+			log.Printf("WARNING: could not start upstream VEX sync leader election: %v", err)
+		}
+	}
+
 	// Handle graceful shutdown.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)

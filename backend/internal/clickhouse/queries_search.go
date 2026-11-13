@@ -46,6 +46,7 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 		scopeAnd += " AND v.reachability = ?"
 		args = append(args, reachability)
 	}
+	vexOrder := vexPrecedenceExpr("s")
 	rows, err := c.Conn.Query(ctx, `
 		SELECT
 			v.vuln_id, v.severity, v.purl, v.summary,
@@ -58,6 +59,7 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 			ifNull(vx.vex_statement_id, '') AS vex_statement_id,
 			ifNull(vx.vex_author, '') AS vex_author,
 			ifNull(vx.vex_tooling, '') AS vex_tooling,
+			ifNull(vx.vex_role, '') AS vex_role,
 			ifNull(q.has_no_dep_graph, 0) AS has_no_dep_graph,
 			v.reachability, v.evidence_source, v.evidence_ref, v.evidence_at
 		FROM (SELECT * FROM vulnerabilities FINAL) AS v
@@ -68,12 +70,13 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 		LEFT JOIN (
 			SELECT
 				f.vuln_id AS vuln_id, f.purl AS purl,
-				argMax(s.status, s.vex_timestamp) AS vex_status,
-				argMax(s.justification, s.vex_timestamp) AS vex_justification,
-				argMax(toString(s.vex_id), s.vex_timestamp) AS vex_statement_id,
-				argMax(s.author, s.vex_timestamp) AS vex_author,
-				argMax(s.tooling, s.vex_timestamp) AS vex_tooling,
-				max(s.vex_timestamp) AS winning_timestamp
+				argMax(s.status, `+vexOrder+`) AS vex_status,
+				argMax(s.justification, `+vexOrder+`) AS vex_justification,
+				argMax(toString(s.vex_id), `+vexOrder+`) AS vex_statement_id,
+				argMax(s.author, `+vexOrder+`) AS vex_author,
+				argMax(s.tooling, `+vexOrder+`) AS vex_tooling,
+				argMax(s.role, `+vexOrder+`) AS vex_role,
+				argMax(s.vex_timestamp, `+vexOrder+`) AS winning_timestamp
 			FROM (
 				SELECT DISTINCT vuln_id, purl,
 					arrayJoin(arrayConcat([vuln_id], aliases)) AS match_id
@@ -108,7 +111,7 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 			&item.AdvisorySource, &item.AdvisoryStatus, &components,
 			&item.VEXStatus,
 			&item.VEXJustification, &vexTimestamp, &item.VEXStatementID,
-			&item.VEXAuthor, &item.VEXTooling, &hasNoDepGraph,
+			&item.VEXAuthor, &item.VEXTooling, &item.VEXRole, &hasNoDepGraph,
 			&item.Reachability, &item.EvidenceSource, &item.EvidenceRef, &evidenceAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan vuln row: %w", err)

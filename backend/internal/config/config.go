@@ -217,7 +217,24 @@ type Config struct {
 	MCPAPIKey         string
 	MCPServiceToken   string
 	MCPRequestTimeout int
+
+	// Upstream VEX subscriptions (#538).
+	VEXSources         []VEXSourceConfig
+	VEXRefreshInterval time.Duration
 }
+
+// VEXSourceConfig defines an upstream VEX source subscription (#538).
+type VEXSourceConfig struct {
+	Type string `json:"type"`
+	URL  string `json:"url"`
+}
+
+// Upstream VEX source types (#538).
+const (
+	VEXSourceTypeOpenVEXHub   = "openvex-hub"
+	VEXSourceTypeCSAFProvider = "csaf-provider"
+	VEXSourceTypeOCIReferrers = "oci-referrers"
+)
 
 // MCP transport identifiers.
 const (
@@ -422,7 +439,87 @@ func Load() (*Config, error) {
 		}
 	}
 
+	// Upstream VEX subscriptions (#538).
+	if raw := getEnv("VEX_SOURCES", ""); strings.TrimSpace(raw) != "" {
+		sources, err := parseVEXSources(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid VEX_SOURCES: %w", err)
+		}
+		cfg.VEXSources = sources
+	}
+	vexRefresh, err := time.ParseDuration(getEnv("VEX_REFRESH_INTERVAL", "1h"))
+	if err != nil || vexRefresh < 0 {
+		return nil, fmt.Errorf("invalid VEX_REFRESH_INTERVAL %q (want a duration such as 1h, or 0 to disable): %w", getEnv("VEX_REFRESH_INTERVAL", "1h"), err)
+	}
+	cfg.VEXRefreshInterval = vexRefresh
+
 	return cfg, nil
+}
+
+// HasVEXSources returns true if any upstream VEX sources are configured (#538).
+func (c *Config) HasVEXSources() bool {
+	return len(c.VEXSources) > 0
+}
+
+// parseVEXSources parses VEX_SOURCES as either a JSON array/object or comma-separated type=url list (#538).
+func parseVEXSources(raw string) ([]VEXSourceConfig, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	if strings.HasPrefix(raw, "[") {
+		var sources []VEXSourceConfig
+		if err := json.Unmarshal([]byte(raw), &sources); err != nil {
+			return nil, err
+		}
+		return validateVEXSources(sources)
+	}
+	if strings.HasPrefix(raw, "{") {
+		var single VEXSourceConfig
+		if err := json.Unmarshal([]byte(raw), &single); err != nil {
+			return nil, err
+		}
+		return validateVEXSources([]VEXSourceConfig{single})
+	}
+
+	var sources []VEXSourceConfig
+	parts := strings.Split(raw, ",")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		typeAndURL := strings.SplitN(part, "=", 2)
+		if len(typeAndURL) != 2 {
+			return nil, fmt.Errorf("expected type=url, got %q", part)
+		}
+		sources = append(sources, VEXSourceConfig{
+			Type: strings.TrimSpace(typeAndURL[0]),
+			URL:  strings.TrimSpace(typeAndURL[1]),
+		})
+	}
+	return validateVEXSources(sources)
+}
+
+func validateVEXSources(sources []VEXSourceConfig) ([]VEXSourceConfig, error) {
+	var valid []VEXSourceConfig
+	for _, s := range sources {
+		s.Type = strings.TrimSpace(s.Type)
+		s.URL = strings.TrimSpace(s.URL)
+		if s.Type == "" && s.URL == "" {
+			continue
+		}
+		switch s.Type {
+		case "openvex-hub", "csaf-provider", "oci-referrers":
+		default:
+			return nil, fmt.Errorf("unsupported VEX source type %q (expected openvex-hub, csaf-provider, or oci-referrers)", s.Type)
+		}
+		if s.URL == "" {
+			return nil, fmt.Errorf("VEX source %q requires a url", s.Type)
+		}
+		valid = append(valid, s)
+	}
+	return valid, nil
 }
 
 // IngestLayout returns the parsed instance-wide ingestion path layout.

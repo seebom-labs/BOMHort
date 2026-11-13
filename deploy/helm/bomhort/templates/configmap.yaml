@@ -90,3 +90,13 @@ data:
   S3_BUCKETS: {{ .Values.s3.buckets | toJson | quote }}
   {{- end }}
   {{- end }}
+  {{- if .Values.vexSources }}
+  {{- if kindIs "string" .Values.vexSources }}
+  VEX_SOURCES: {{ .Values.vexSources | quote }}
+  {{- else }}
+  VEX_SOURCES: {{ .Values.vexSources | toJson | quote }}
+  {{- end }}
+  {{- end }}
+  {{- with .Values.vexRefreshInterval }}
+  VEX_REFRESH_INTERVAL: {{ . | quote }}
+  {{- end }}

@@ -95,12 +95,17 @@ export class BomhortApiClient {
     return (await res.json()) as T;
   }
 
-  private async post<T>(path: string, body: string, signal?: AbortSignal): Promise<T> {
+  private async post<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
     const url = `${this.baseUrl}${path}`;
+    const payload = typeof body === 'string' ? body : (body !== undefined ? JSON.stringify(body) : undefined);
     const res = await this.fetchFn(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...this.headers },
-      body,
+      headers: {
+        Accept: 'application/json',
+        ...(payload !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        ...this.headers,
+      },
+      body: payload,
       signal,
     });
     if (!res.ok) throw new ApiError(res.status, url, await res.text());
@@ -186,6 +191,10 @@ export class BomhortApiClient {
 
   getVEXStatements(page = 1, pageSize = 50, signal?: AbortSignal): Promise<PaginatedResponse<VEXStatementItem>> {
     return this.get(`/vex/statements${query({ page, page_size: pageSize })}`, signal);
+  }
+
+  syncUpstreamVEX(signal?: AbortSignal): Promise<{ applied: number; status: string }> {
+    return this.post('/vex/upstream/sync', undefined, signal);
   }
 
   getLicenseExceptions(signal?: AbortSignal): Promise<LicenseExceptionsFile> {
