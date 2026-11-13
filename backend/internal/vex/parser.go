@@ -175,8 +175,14 @@ func Parse(r io.Reader, sourceFile string) (out *ParseResult, err error) {
 					continue // Skip products without a PURL
 				}
 
-				// Generate a deterministic VEX ID from the document, vulnerability, and product.
-				vexID := uuid.NewSHA1(uuid.NameSpaceDNS, []byte(doc.ID+"|"+vulnID+"|"+purl))
+				// Deterministic VEX ID from the document, vulnerability,
+				// product and component. The product is part of it because
+				// vex_id is part of the table's ReplacingMergeTree key: one
+				// document stating the same vulnerability for the same
+				// component in two products (two versions, two images) would
+				// otherwise produce one key, and ClickHouse would keep only
+				// one of the two statements.
+				vexID := uuid.NewSHA1(uuid.NameSpaceDNS, []byte(doc.ID+"|"+vulnID+"|"+productRef+"|"+purl))
 
 				result = append(result, models.VEXStatement{
 					IngestedAt:      now,

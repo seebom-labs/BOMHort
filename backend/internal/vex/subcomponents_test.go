@@ -92,3 +92,71 @@ func TestParse_ComponentShape(t *testing.T) {
 		t.Errorf("sbom_id = %q, want empty before scoping", s.SBOMID)
 	}
 }
+
+// One document stating the same vulnerability for the same component in two
+// products must yield two statements with two distinct storage keys.
+// vex_statements is a ReplacingMergeTree ordered by (vuln_id, product_purl,
+// vex_id); when vex_id left the product out, both statements shared a key
+// and ClickHouse silently kept only one of them.
+func TestParse_SameComponentInTwoProducts(t *testing.T) {
+	docs := map[string]string{
+		"one statement, two products": `{
+			"@context": "https://openvex.dev/ns/v0.2.0",
+			"@id": "https://example.com/vex/payments",
+			"statements": [{
+				"vulnerability": {"name": "CVE-2021-44228"},
+				"products": [
+					{"@id": "urn:uuid:payments-3.2.0", "subcomponents": [{"@id": "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1"}]},
+					{"@id": "urn:uuid:payments-3.3.0", "subcomponents": [{"@id": "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1"}]}
+				],
+				"status": "not_affected",
+				"justification": "vulnerable_code_not_in_execute_path"
+			}]
+		}`,
+		"two statements, two products": `{
+			"@context": "https://openvex.dev/ns/v0.2.0",
+			"@id": "https://example.com/vex/payments",
+			"statements": [
+				{"vulnerability": {"name": "CVE-2021-44228"},
+				 "products": [{"@id": "urn:uuid:payments-3.2.0", "subcomponents": [{"@id": "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1"}]}],
+				 "status": "not_affected", "justification": "vulnerable_code_not_in_execute_path"},
+				{"vulnerability": {"name": "CVE-2021-44228"},
+				 "products": [{"@id": "urn:uuid:orders-1.0.0", "subcomponents": [{"@id": "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1"}]}],
+				 "status": "affected", "action_statement": "Upgrade to 2.17.1."}
+			]
+		}`,
+	}
+	for name, doc := range docs {
+		t.Run(name, func(t *testing.T) {
+			res, err := Parse(strings.NewReader(doc), "multi-product.openvex.json")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(res.Statements) != 2 {
+				t.Fatalf("got %d statements, want 2", len(res.Statements))
+			}
+			type storageKey struct{ vuln, purl, id string }
+			keys := map[storageKey]string{}
+			for _, s := range res.Statements {
+				k := storageKey{s.VulnID, s.ProductPURL, s.VEXID.String()}
+				if other, dup := keys[k]; dup {
+					t.Fatalf("products %q and %q share the storage key %v; one statement would be lost", other, s.ProductRef, k)
+				}
+				keys[k] = s.ProductRef
+			}
+
+			// The id stays deterministic: parsing the same document again
+			// yields the same ids, so a re-processed document replaces its
+			// own rows instead of adding new ones.
+			again, err := Parse(strings.NewReader(doc), "multi-product.openvex.json")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i := range res.Statements {
+				if res.Statements[i].VEXID != again.Statements[i].VEXID {
+					t.Errorf("statement %d: id changed between parses", i)
+				}
+			}
+		})
+	}
+}
