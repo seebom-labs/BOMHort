@@ -46,6 +46,22 @@ func TestGroupingSignalsFromRoot(t *testing.T) {
 	}
 }
 
+func TestImageIdentityFromRootPURL(t *testing.T) {
+	digest := "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	res, err := Parse(strings.NewReader(`{
+		"spdxVersion":"SPDX-2.3","SPDXID":"SPDXRef-DOCUMENT","name":"api",
+		"documentDescribes":["SPDXRef-Package-api"],
+		"packages":[{"SPDXID":"SPDXRef-Package-api","name":"api",
+			"externalRefs":[{"referenceCategory":"PACKAGE-MANAGER","referenceType":"purl","referenceLocator":"pkg:oci/acme/api@`+digest+`?repository_url=ghcr.io%2Facme%2Fapi"}]}]
+	}`), "api.spdx.json", "hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.SBOM.ImageRef != "ghcr.io/acme/api" || res.SBOM.ImageDigest != digest {
+		t.Errorf("image identity = (%q, %q)", res.SBOM.ImageRef, res.SBOM.ImageDigest)
+	}
+}
+
 // Originator is the fallback, a Person's email is dropped, NOASSERTION is
 // nothing.
 func TestGroupingSignalsSupplierFallbacks(t *testing.T) {

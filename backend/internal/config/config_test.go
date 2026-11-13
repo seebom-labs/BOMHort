@@ -11,6 +11,8 @@ func TestLoad_Defaults(t *testing.T) {
 		"CLICKHOUSE_HOST", "CLICKHOUSE_PORT", "CLICKHOUSE_DATABASE",
 		"SBOM_DIR", "API_PORT", "WORKER_BATCH_SIZE", "SKIP_OSV", "SBOM_LIMIT",
 		"S3_BUCKETS", "S3_BUCKET",
+		"DEDUP_BY_IMAGE_DIGEST",
+		"ORIGIN",
 	} {
 		os.Unsetenv(key)
 	}
@@ -38,6 +40,9 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.SkipOSV != false {
 		t.Error("expected default SkipOSV=false")
 	}
+	if cfg.DedupByImageDigest {
+		t.Error("expected default DedupByImageDigest=false")
+	}
 	if cfg.SBOMLimit != 0 {
 		t.Errorf("expected default SBOMLimit=0, got %d", cfg.SBOMLimit)
 	}
@@ -63,6 +68,7 @@ func TestLoad_CustomEnv(t *testing.T) {
 	t.Setenv("SBOM_LIMIT", "500")
 	t.Setenv("WORKER_ID", "test-worker-1")
 	t.Setenv("MAX_UPLOAD_SIZE_MB", "250")
+	t.Setenv("DEDUP_BY_IMAGE_DIGEST", "true")
 
 	cfg, err := Load()
 	if err != nil {
@@ -98,6 +104,9 @@ func TestLoad_CustomEnv(t *testing.T) {
 	}
 	if cfg.MaxUploadSizeMB != 250 {
 		t.Errorf("expected 250, got %d", cfg.MaxUploadSizeMB)
+	}
+	if !cfg.DedupByImageDigest {
+		t.Error("expected DEDUP_BY_IMAGE_DIGEST=true")
 	}
 }
 
@@ -177,6 +186,30 @@ func TestLoad_S3BucketsJSON(t *testing.T) {
 	// Endpoint should be empty (auto-resolved from region at client creation time).
 	if b1.Endpoint != "" {
 		t.Errorf("bucket[1].Endpoint = %q, want empty (auto-resolve from region)", b1.Endpoint)
+	}
+}
+
+func TestLoad_OriginValidationAndNormalization(t *testing.T) {
+	t.Setenv("ORIGIN", " CI ")
+	t.Setenv("S3_BUCKETS", `[{"name":"from-ci","origin":"REGISTRY"}]`)
+	t.Setenv("S3_BUCKET", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.Origin != "ci" || cfg.S3Buckets[0].Origin != "registry" {
+		t.Fatalf("origins = (%q, %q), want (ci, registry)", cfg.Origin, cfg.S3Buckets[0].Origin)
+	}
+
+	t.Setenv("ORIGIN", "unknown")
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() accepted an unknown ORIGIN")
+	}
+	t.Setenv("ORIGIN", "")
+	t.Setenv("S3_BUCKETS", `[{"name":"bad","origin":"unknown"}]`)
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() accepted an unknown bucket origin")
 	}
 }
 

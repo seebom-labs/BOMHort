@@ -255,6 +255,12 @@ apiGateway:
   maxUploadSizeMB: 25
 ```
 
+Image-digest deduplication is opt-in. Set `apiGateway.dedupByImageDigest: true`
+to reuse an already-ingested digest on uploads that provide
+`?image=<ref>@sha256:<digest>`. Same-ownership uploads are acknowledged as
+duplicates; a different ownership tuple gets a metadata/package/vulnerability
+clone without parsing the document again.
+
 ### Original Document Store (Tier-2 Fidelity) {#original-document-store}
 
 From v0.7 the parsing worker keeps the **original bytes** of every ingested SBOM so it can be reproduced byte-for-byte later (download, enriched export, re-signing — see [Architecture](/docs/architecture/#original-document-store-tier-2-fidelity)). ClickHouse only stores a reference and `sha256`; the bytes go to a blob store selected by `originalStore.backend`:
@@ -316,6 +322,8 @@ For the tag dimension there is `make demo-catalogue`, which ingests
 Every ingested row carries three orthogonal ownership labels, plus a list of
 free-form [tags](#tags). All default to `""` / `[]` (unassigned), so an
 existing deployment that sets none of them keeps behaving exactly as before.
+Provenance is separate from ownership: the optional `origin` records how an
+SBOM arrived (`cluster-scan`, `ci`, `registry`, `vendor`, or `manual`).
 
 | Label | Question it answers | Example | Typical cardinality | Owned by |
 |-------|---------------------|---------|---------------------|----------|
@@ -323,12 +331,18 @@ existing deployment that sets none of them keeps behaving exactly as before.
 | `namespace` | Which tenant/team boundary inside the cluster? | `payments` | 10–500 | Platform / team |
 | `project` | What is it / who owns it? | `payment-service` | 50–5000 | Dev teams |
 | `tags` | Which grouping does it belong to? | `sandbox-applications` | 5–100 | Curator |
+| `origin` | How did the SBOM arrive? | `cluster-scan` | 5 | Ingestion source |
 
 Stored as `LowCardinality(String)` columns on every core table (`sboms`,
 `sbom_packages`, `vulnerabilities`, `license_compliance`, `ingestion_queue`,
 `vex_statements`, `document_store`) by migrations `012` (cluster) and `015`
 (namespace, project). `tags` is an `Array(String)` on `sboms` and
 `ingestion_queue` (migration `022`).
+Set `ownership.origin` for the instance default, a bucket's `"origin"` for a
+source-specific value, or `?origin=` on a push upload for a per-document
+override. The accepted values are fixed and validated; unset stays empty and
+is omitted from the image detail API. Origin is persisted with the SBOM and
+carried through the ingestion queue, but is not derived from path layout.
 
 ### Static values
 

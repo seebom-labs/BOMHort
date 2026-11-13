@@ -11,6 +11,7 @@ import (
 	json "github.com/goccy/go-json"
 	"github.com/google/uuid"
 
+	"github.com/seebom-labs/bomhort/backend/internal/imageid"
 	"github.com/seebom-labs/bomhort/backend/internal/sbomname"
 	"github.com/seebom-labs/bomhort/backend/internal/sourcerepo"
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
@@ -328,6 +329,7 @@ func Parse(r io.Reader, sourceFile, sha256Hash string) (result *ParseResult, err
 	}
 	sbom.SourceRepo, sbom.SourceRef = extractSourceRepo(&doc)
 	sbom.RootPURL, sbom.Supplier = extractGroupingSignals(&doc)
+	sbom.ImageRef, sbom.ImageDigest = imageid.FromPURL(sbom.RootPURL)
 	sbom.DocumentVersion = extractDocumentVersion(&doc)
 
 	// SPDX IDs that participate in at least one relationship. Used by the

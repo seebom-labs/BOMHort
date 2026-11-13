@@ -7,6 +7,7 @@ package protobomparser
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/protobom/protobom/pkg/reader"
 	"github.com/protobom/protobom/pkg/sbom"
 
+	"github.com/seebom-labs/bomhort/backend/internal/imageid"
 	"github.com/seebom-labs/bomhort/backend/internal/sbomname"
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
@@ -44,12 +46,104 @@ func Parse(data []byte, sourceFile, sha256Hash string) (*ParseResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	if result.SBOM.ImageDigest == "" {
+		if purl := spdx3RootContentIdentifier(data); purl != "" {
+			result.SBOM.RootPURL = purl
+			result.SBOM.ImageRef, result.SBOM.ImageDigest = imageid.FromPURL(purl)
+		}
+	}
 	name, err := sbomname.Resolve(data, result.SBOM.DocumentName, sourceFile)
 	if err != nil {
 		return nil, err
 	}
 	result.SBOM.DocumentName = name
 	return result, nil
+}
+
+func spdx3RootContentIdentifier(data []byte) string {
+	var graph struct {
+		Graph []map[string]json.RawMessage `json:"@graph"`
+	}
+	if json.Unmarshal(data, &graph) != nil {
+		return ""
+	}
+	nodes := make(map[string]map[string]json.RawMessage, len(graph.Graph))
+	var roots []string
+	for _, node := range graph.Graph {
+		var id, spdxID, typ string
+		_ = json.Unmarshal(node["@id"], &id)
+		_ = json.Unmarshal(node["spdxId"], &spdxID)
+		_ = json.Unmarshal(node["type"], &typ)
+		if id != "" {
+			nodes[id] = node
+		}
+		if spdxID != "" {
+			nodes[spdxID] = node
+		}
+		if strings.Contains(typ, "SpdxDocument") {
+			_ = json.Unmarshal(node["rootElement"], &roots)
+			if len(roots) == 0 {
+				var root string
+				_ = json.Unmarshal(node["rootElement"], &root)
+				if root != "" {
+					roots = []string{root}
+				}
+			}
+		}
+	}
+	visited := make(map[string]bool)
+	for len(roots) > 0 {
+		root := roots[0]
+		roots = roots[1:]
+		if visited[root] {
+			continue
+		}
+		visited[root] = true
+		node := nodes[root]
+		if purl := findOCIPURL(node["contentIdentifier"]); purl != "" {
+			return purl
+		}
+		var children []string
+		if json.Unmarshal(node["rootElement"], &children) == nil {
+			roots = append(roots, children...)
+		} else {
+			var child string
+			if json.Unmarshal(node["rootElement"], &child) == nil && child != "" {
+				roots = append(roots, child)
+			}
+		}
+	}
+	return ""
+}
+
+func findOCIPURL(raw json.RawMessage) string {
+	var value any
+	if json.Unmarshal(raw, &value) != nil {
+		return ""
+	}
+	switch v := value.(type) {
+	case string:
+		if strings.HasPrefix(v, "pkg:oci/") {
+			return v
+		}
+	case []any:
+		for _, item := range v {
+			if b, err := json.Marshal(item); err == nil {
+				if purl := findOCIPURL(b); purl != "" {
+					return purl
+				}
+			}
+		}
+	case map[string]any:
+		for _, item := range v {
+			if b, err := json.Marshal(item); err == nil {
+				if purl := findOCIPURL(b); purl != "" {
+					return purl
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // ParseReader reads from an io.Reader and parses via protobom.
@@ -165,6 +259,8 @@ func convertDocument(doc *sbom.Document, sourceFile, sha256Hash string) (*ParseR
 		}
 	}
 
+	setRootImageIdentity(&sbomModel, purls, rootIndices)
+
 	for _, edge := range doc.NodeList.GetEdges() {
 		srcIdx, srcOK := nodeIDToIndex[edge.GetFrom()]
 		if !srcOK {
@@ -200,6 +296,21 @@ func convertDocument(doc *sbom.Document, sourceFile, sha256Hash string) (*ParseR
 		SBOM:     sbomModel,
 		Packages: packages,
 	}, nil
+}
+
+func setRootImageIdentity(sbomModel *models.SBOM, purls []string, rootIndices []uint32) {
+	for _, rootIndex := range rootIndices {
+		if int(rootIndex) >= len(purls) {
+			continue
+		}
+		if sbomModel.RootPURL == "" {
+			sbomModel.RootPURL = purls[rootIndex]
+		}
+		if ref, digest := imageid.FromPURL(purls[rootIndex]); digest != "" {
+			sbomModel.ImageRef, sbomModel.ImageDigest = ref, digest
+			break
+		}
+	}
 }
 
 // extractNodeLicense extracts the best license string from a protobom Node.

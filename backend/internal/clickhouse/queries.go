@@ -179,6 +179,16 @@ func (c *Client) QueryDashboardStats(ctx context.Context, f VulnFilter) (*dto.Da
 // minQuality (#537), when > 0, restricts the list to SBOMs with quality_score >= minQuality.
 // The filters compose.
 func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, project string, minQuality uint8) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
+	return c.querySBOMs(ctx, page, pageSize, search, project, minQuality, "", "")
+}
+
+// QuerySBOMsByImage adds digest and image-reference prefix filters to the
+// regular SBOM listing filters.
+func (c *Client) QuerySBOMsByImage(ctx context.Context, page, pageSize uint64, search, project string, minQuality uint8, digest, imagePrefix string) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
+	return c.querySBOMs(ctx, page, pageSize, search, project, minQuality, digest, imagePrefix)
+}
+
+func (c *Client) querySBOMs(ctx context.Context, page, pageSize uint64, search, project string, minQuality uint8, digest, imagePrefix string) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
 	if page == 0 {
 		page = 1
 	}
@@ -202,6 +212,14 @@ func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, 
 		conds = append(conds, "s.quality_score >= ?")
 		whereArgs = append(whereArgs, minQuality)
 	}
+	if digest != "" {
+		conds = append(conds, "s.image_digest = ?")
+		whereArgs = append(whereArgs, digest)
+	}
+	if imagePrefix != "" {
+		conds = append(conds, "startsWith(s.image_ref, ?)")
+		whereArgs = append(whereArgs, imagePrefix)
+	}
 	whereClause := ""
 	if len(conds) > 0 {
 		whereClause = "WHERE " + strings.Join(conds, " AND ")
@@ -224,6 +242,8 @@ func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, 
 			s.ingested_at,
 			s.source_repo,
 			s.source_ref,
+			s.image_ref,
+			s.image_digest,
 			s.cluster,
 			s.namespace,
 			s.project,
@@ -261,6 +281,7 @@ func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, 
 			&item.SBOMID, &item.SourceFile, &item.SPDXVersion,
 			&item.DocumentName, &item.DocumentVersion, &ingestedAt,
 			&item.SourceRepo, &item.SourceRef,
+			&item.ImageRef, &item.ImageDigest,
 			&item.Cluster, &item.Namespace, &item.Project,
 			&item.PackageCount, &item.VulnCount,
 			&item.QualityScore, &item.QualityFlags,

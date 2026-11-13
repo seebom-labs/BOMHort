@@ -177,11 +177,11 @@ func TestMigrationsParseIntoASchema(t *testing.T) {
 	// Sanity: the core tables must exist with a few known columns, otherwise a
 	// silently broken parser would make every other test in this file vacuous.
 	want := map[string][]string{
-		"sboms":              {"sbom_id", "source_file", "document_name", "cluster", "namespace", "project"},
-		"sbom_packages":      {"sbom_id", "package_purls", "cluster", "namespace", "project"},
-		"vulnerabilities":    {"sbom_id", "vuln_id", "purl", "cluster", "namespace", "project"},
+		"sboms":              {"sbom_id", "source_file", "document_name", "cluster", "namespace", "project", "image_ref", "image_digest"},
+		"sbom_packages":      {"sbom_id", "package_purls", "cluster", "namespace", "project", "image_digest"},
+		"vulnerabilities":    {"sbom_id", "vuln_id", "purl", "cluster", "namespace", "project", "image_digest"},
 		"license_compliance": {"sbom_id", "license_id", "exempted_packages", "cluster", "namespace", "project"},
-		"ingestion_queue":    {"job_id", "status", "cluster", "namespace", "project"},
+		"ingestion_queue":    {"job_id", "status", "cluster", "namespace", "project", "image_ref", "image_digest"},
 		"vex_statements":     {"vuln_id", "product_purl", "cluster", "namespace", "project"},
 		"document_store":     {"sbom_id", "storage_ref", "content_encoding", "cluster", "namespace", "project"},
 	}
@@ -279,6 +279,7 @@ func TestInsertColumnsExistInSchema(t *testing.T) {
 	inserts := insertTargetsFromSource(t,
 		"insert.go",
 		"queue.go",
+		"queries_images.go",
 		"queries_document_store.go",
 	)
 
@@ -310,6 +311,7 @@ func TestInsertsPersistOwnershipColumns(t *testing.T) {
 	inserts := insertTargetsFromSource(t,
 		"insert.go",
 		"queue.go",
+		"queries_images.go",
 		"queries_document_store.go",
 	)
 

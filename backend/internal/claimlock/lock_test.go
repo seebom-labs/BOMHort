@@ -17,6 +17,18 @@ func TestNewUsesLocalLockOutsideKubernetes(t *testing.T) {
 	if _, err := New("worker"); err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	if _, err := NewNamed("api-gateway", "bomhort-image-dedup"); err != nil {
+		t.Fatalf("NewNamed: %v", err)
+	}
+	if _, err := NewNamedWithMaxHold("api-gateway", "bomhort-image-dedup", 30*time.Second); err != nil {
+		t.Fatalf("NewNamedWithMaxHold: %v", err)
+	}
+	if _, err := NewNamedWithMaxHold("api-gateway", "bomhort-image-dedup", 0); err == nil {
+		t.Fatal("NewNamedWithMaxHold accepted a zero max hold")
+	}
+	if _, err := NewNamed("api-gateway", ""); err == nil {
+		t.Fatal("NewNamed accepted an empty lease name")
+	}
 }
 
 func TestNewRequiresNamespaceInKubernetes(t *testing.T) {
@@ -78,6 +90,74 @@ func TestLocalSerializesCallbacks(t *testing.T) {
 	}
 }
 
+func TestLocalKeyedSerializesSameKeyWithoutBlockingOtherShards(t *testing.T) {
+	locker := LocalKeyed()
+	firstEntered := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	sameKeyEntered := make(chan struct{})
+	otherKeyEntered := make(chan struct{})
+	firstDone := make(chan error, 1)
+	sameKeyDone := make(chan error, 1)
+	otherKeyDone := make(chan error, 1)
+
+	go func() {
+		firstDone <- locker.WithKey(context.Background(), "image-a", func(context.Context) error {
+			close(firstEntered)
+			<-releaseFirst
+			return nil
+		})
+	}()
+	select {
+	case <-firstEntered:
+	case <-time.After(time.Second):
+		t.Fatal("first callback did not enter")
+	}
+
+	go func() {
+		sameKeyDone <- locker.WithKey(context.Background(), "image-a", func(context.Context) error {
+			close(sameKeyEntered)
+			return nil
+		})
+	}()
+	select {
+	case <-sameKeyEntered:
+		t.Fatal("same-key callback entered while the first held the lock")
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	otherKey := "image-b"
+	for keyShard(otherKey) == keyShard("image-a") {
+		otherKey += "b"
+	}
+	go func() {
+		otherKeyDone <- locker.WithKey(context.Background(), otherKey, func(context.Context) error {
+			close(otherKeyEntered)
+			return nil
+		})
+	}()
+	select {
+	case <-otherKeyEntered:
+	case <-time.After(time.Second):
+		t.Fatal("different-shard callback was blocked")
+	}
+	if err := <-otherKeyDone; err != nil {
+		t.Fatalf("different-shard callback: %v", err)
+	}
+
+	close(releaseFirst)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first callback: %v", err)
+	}
+	select {
+	case <-sameKeyEntered:
+	case <-time.After(time.Second):
+		t.Fatal("same-key callback did not enter after release")
+	}
+	if err := <-sameKeyDone; err != nil {
+		t.Fatalf("same-key callback: %v", err)
+	}
+}
+
 func newTestLocker(t *testing.T, client *fake.Clientset, identity string) Locker {
 	t.Helper()
 	lock, err := resourcelock.New(
@@ -91,7 +171,11 @@ func newTestLocker(t *testing.T, client *fake.Clientset, identity string) Locker
 	if err != nil {
 		t.Fatalf("create lease lock: %v", err)
 	}
-	return &kubernetesLocker{local: Local(), lock: lock}
+	return &kubernetesLocker{
+		local: Local(), lock: lock,
+		leaseDuration: leaseDuration, renewDeadline: renewDeadline,
+		retryPeriod: retryPeriod, maxHold: maxHold,
+	}
 }
 
 // A critical section that outlives maxHold may have overlapped the next

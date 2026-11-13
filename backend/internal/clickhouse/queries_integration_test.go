@@ -106,6 +106,32 @@ func TestQueriesExecute(t *testing.T) {
 		{"QuerySBOMs/search", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "test", "", 0); return err }},
 		{"QuerySBOMs/project", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "", "payment-api", 0); return err }},
 		{"QuerySBOMs/project+search", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "v1", "payment-api", 0); return err }},
+		{"QuerySBOMs/image filters", func() error {
+			_, err := c.QuerySBOMsByImage(ctx, 1, 10, "", "", 0, "sha256:"+strings.Repeat("a", 64), "ghcr.io/acme")
+			return err
+		}},
+		{"QueryImages", func() error { _, err := c.QueryImages(ctx, 1, 10); return err }},
+		{"QueryImages/overflow page", func() error {
+			resp, err := c.QueryImages(ctx, ^uint64(0), 2)
+			if err != nil {
+				return err
+			}
+			if len(resp.Data) != 0 {
+				return errors.New("overflow page returned images")
+			}
+			return nil
+		}},
+		{"QueryImage", func() error {
+			_, err := c.QueryImage(ctx, "sha256:"+strings.Repeat("a", 64), 1, 10)
+			if errors.Is(err, ErrImageNotFound) {
+				return nil
+			}
+			return err
+		}},
+		{"ImageExists", func() error {
+			_, err := c.ImageExists(ctx, "sha256:"+strings.Repeat("a", 64))
+			return err
+		}},
 		{"QuerySBOMDetail", func() error { _, err := c.QuerySBOMDetail(ctx, someID); return err }},
 		{"QuerySBOMVulnerabilities", func() error { _, err := c.QuerySBOMVulnerabilities(ctx, someID, "", ""); return err }},
 		{"QuerySBOMLicenses", func() error { _, err := c.QuerySBOMLicenses(ctx, someID); return err }},

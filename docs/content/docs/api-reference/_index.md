@@ -347,10 +347,12 @@ This endpoint refuses every request with `403 Forbidden` unless `AUTH_ENABLED=tr
 | `namespace` | string | Overrides the configured `NAMESPACE` (#138). The deployment namespace the artifact belongs to, e.g. `payments`. |
 | `project` | string | Overrides the configured `PROJECT` (#57), e.g. `payment-service`. |
 | `parent` | string | Overrides the configured `PARENT`: the parent (product) this SBOM's project belongs to. Outranks the mapping file and the automatic grouping ([Project groups](#project-groups)). |
+| `origin` | string | SBOM provenance: `cluster-scan`, `ci`, `registry`, `vendor`, or `manual`. Overrides the configured `ORIGIN`; empty is allowed when unknown. |
 | `tags` | string | Comma-separated grouping labels (#357), e.g. `sandbox-applications,platform`. **Merged** with the instance-wide `TAGS` rather than overriding them — a CI job adding a grouping does not contradict a configured one. Normalised (trimmed, lowercased, deduplicated, max 32 × 64 chars). |
+| `image` | string | SBOM uploads only: OCI reference pinned as `<ref>@sha256:<64 lowercase hex characters>`. Overrides image identity extracted from the root OCI PURL. |
 | `sbom_id` | — | **VEX uploads only** (#350): scopes every statement in the document to this SBOM. Must be a valid SBOM UUID; rejected with `400` on SBOM uploads or malformed values. Without it, the worker resolves the statement's OpenVEX product `@id` against `sboms` (`source_repo`, `document_namespace`, `document_name`); if nothing matches the statement is stored **unscoped** and suppresses nothing — until a later ingest of the product's SBOM lets the **VEX rescue** pass (migration `020`) re-resolve and scope it. |
 
-The ownership parameters are optional and independent. A parameter that is absent **or blank** inherits the instance default — `?namespace=` and omitting it entirely mean the same thing, so a client cannot accidentally blank out a configured value. Values are trimmed.
+The ownership parameters are optional and independent. A parameter that is absent **or blank** inherits the instance default — `?namespace=` and omitting it entirely mean the same thing, so a client cannot accidentally blank out a configured value. Values are trimmed. `origin` is normalized to lowercase and values outside its listed vocabulary are rejected.
 
 `tags` is the one exception to that override model: because groupings are many-to-many, upload tags are added to the configured ones instead of replacing them. `project` and `tags` also answer different questions — `project` names *what the artifact is*, `tags` say *what kind of thing it is* — so tagging an upload never collapses it into the tag. See [Fleet Views]({{< relref "/docs/ownership" >}}).
 
@@ -379,10 +381,13 @@ Unlike the bucket/directory ingestion path, the server cannot infer these from a
 }
 ```
 
+With `DEDUP_BY_IMAGE_DIGEST=true` (Helm: `apiGateway.dedupByImageDigest`, default `false`), an upload with `?image=<ref>@sha256:<digest>` returns `200` with `"duplicate": true` if the digest already exists for the same cluster/namespace/project. For a different ownership tuple, BOMHort clones the existing parsed SBOM data and returns `"reused": true`; the uploaded document is not stored or parsed again. If identical content is still queued but has not yet been ingested, the upload returns `409` and can be retried after ingestion.
+
 **Errors:**
-- `400` — Missing `X-Filename` header, unsupported file extension, empty body, malformed `X-Source-Repo`/`X-Source-Ref` header, or content that fails validation (SBOM uploads must be a single well-formed JSON object; VEX uploads must be a valid OpenVEX document — see below)
+- `400` — Missing `X-Filename` header, unsupported file extension, empty body, malformed image/source metadata, or content that fails validation (SBOM uploads must be a single well-formed JSON object; VEX uploads must be a valid OpenVEX document — see below)
 - `403` — `AUTH_ENABLED` is not `true` on this instance
 - `413` — Body exceeds `MAX_UPLOAD_SIZE_MB`
+- `409` — Image digest reuse is enabled but identical content is still queued and has not been ingested yet
 - `500` — Storage (S3 or local) or ingestion-queue failure
 - `503` — No push-storage backend is configured (no `skipScan` S3 bucket, and `SBOM_DIR` isn't writable)
 
@@ -405,6 +410,16 @@ curl -X POST "http://localhost:8080/api/v1/sboms/upload?cluster=prod-eu&namespac
   -H "X-Filename: my-service.spdx.json" \
   --data-binary @my-service.spdx.json
 ```
+
+Setting provenance at upload time:
+```bash
+curl -X POST "http://localhost:8080/api/v1/sboms/upload?origin=ci" \
+  -H "X-API-Key: <api-key>" \
+  -H "X-Filename: my-service.spdx.json" \
+  --data-binary @my-service.spdx.json
+```
+`origin` is optional and accepts `cluster-scan`, `ci`, `registry`, `vendor`, or
+`manual`. It overrides the global `ORIGIN` default; unknown values are rejected.
 
 Stating the source attribution from CI, where the pipeline knows the exact repo and commit (#332):
 ```bash
@@ -439,6 +454,8 @@ names until re-processed. Project-scoped license exceptions match the exact reso
 | `page` | uint64 | 1 | Page number |
 | `page_size` | uint64 | 50 | Items per page (max 500) |
 | `search` | string | — | Filter by document name or source file (case-insensitive) |
+| `digest` | string | — | Exact OCI SHA-256 digest filter |
+| `image` | string | — | Image-reference prefix filter |
 
 **Response:** `200 OK`
 ```json
@@ -455,6 +472,8 @@ names until re-processed. Project-scoped license exceptions match the exact reso
       "ingested_at": "2026-05-20T14:30:00Z",
       "source_repo": "https://github.com/containerd/containerd",
       "source_ref": "v1.7.2",
+      "image_ref": "ghcr.io/containerd/containerd",
+      "image_digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
       "cluster": "prod-eu",
       "namespace": "payments",
       "project": "payment-service"
@@ -466,9 +485,22 @@ names until re-processed. Project-scoped license exceptions match the exact reso
 }
 ```
 
+### Image inventory
+
+`GET /api/v1/images?page=1&page_size=50` lists distinct `(image_ref, image_digest)` pairs found on ingested SBOMs, with SBOM count, worst vulnerability severity, and first/last seen timestamps.
+`GET /api/v1/images/{digest}?page=1&page_size=50` returns a paginated list of SBOMs associated with a digest;
+`HEAD` on the same path returns `200` when known and `404` otherwise. The
+digest path value must be `sha256:` followed by 64 lowercase hexadecimal
+characters. SPDX and CycloneDX root OCI PURLs populate image identity
+automatically; upload `?image=<ref>@sha256:<digest>` overrides the parsed value.
+The detail response includes each SBOM's cluster, namespace, and project,
+plus `origin`, `total`, `page`, and `page_size`. An unset origin is omitted.
+
 `source_repo` / `source_ref` (#332) identify where the product's source lives — extracted from the document at ingest (SPDX root `downloadLocation` / vcs `ExternalRef`, then a `source: <kind>:<url>` entry in `creationInfo.creators`, then a repository-shaped `documentNamespace`; CycloneDX `metadata.component.externalReferences[type=vcs]` and `pedigree.commits[0].uid`), overridable via the upload headers or `PATCH /api/v1/sboms/{id}`. Both are omitted from the JSON when unknown.
 
 `document_version` is the version of the product the document describes — SPDX root package `versionInfo`, CycloneDX `metadata.component.version` — extracted at ingest and omitted when the document states none. Also returned by the detail endpoint.
+
+`image_ref` and `image_digest` are populated from the root OCI PURL in SPDX/CycloneDX documents or overridden by the upload `image` parameter. They are omitted when no digest is available.
 
 `cluster` / `namespace` / `project` (#177) are the three ownership dimensions the SBOM was tagged with at ingest (see [Ownership Data Model]({{< relref "/docs/architecture" >}}#ownership-data-model)). Each is omitted when unset, so single-instance deployments see the same payload as before. The same fields are returned by `GET /api/v1/clusters/{name}/sboms`.
 

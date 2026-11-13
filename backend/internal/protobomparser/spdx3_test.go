@@ -3,7 +3,10 @@ package protobomparser
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
 
 // TestParse_SPDX3 verifies that protobom's SPDX 3 (JSON-LD) unserializer is
@@ -104,10 +107,38 @@ func TestParse_SPDX3_Minimal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse() failed: %v", err)
 	}
+
 	if result.SBOM.SPDXVersion != "SPDX-3.0.1" || result.SBOM.DocumentName != "empty" {
 		t.Errorf("got %q / %q", result.SBOM.SPDXVersion, result.SBOM.DocumentName)
 	}
 	if len(result.Packages.PackageNames) != 0 {
 		t.Errorf("expected no packages, got %v", result.Packages.PackageNames)
+	}
+}
+
+func TestParse_SPDX3ContentIdentifierImage(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "demo-app.spdx3.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+	raw := strings.Replace(string(data),
+		`"software_packageUrl": "pkg:generic/demo-app@1.2.3"`,
+		`"software_packageUrl": "pkg:generic/demo-app@1.2.3", "contentIdentifier": "pkg:oci/acme/api@`+digest+`"`, 1)
+	result, err := Parse([]byte(raw), "demo-app.spdx3.json", "spdx3-content-identifier")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.SBOM.ImageRef != "acme/api" || result.SBOM.ImageDigest != digest {
+		t.Errorf("image identity = (%q, %q)", result.SBOM.ImageRef, result.SBOM.ImageDigest)
+	}
+}
+
+func TestParse_SPDX3RootImageWithoutDependencies(t *testing.T) {
+	digest := "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+	var result models.SBOM
+	setRootImageIdentity(&result, []string{"pkg:oci/acme/api@" + digest}, []uint32{0})
+	if result.RootPURL != "pkg:oci/acme/api@"+digest || result.ImageRef != "acme/api" || result.ImageDigest != digest {
+		t.Fatalf("root image = (%q, %q, %q)", result.RootPURL, result.ImageRef, result.ImageDigest)
 	}
 }

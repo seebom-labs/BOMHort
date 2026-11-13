@@ -12,6 +12,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path"
 	"path/filepath"
@@ -23,12 +24,15 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/seebom-labs/bomhort/backend/internal/claimlock"
 	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
 	"github.com/seebom-labs/bomhort/backend/internal/config"
 	"github.com/seebom-labs/bomhort/backend/internal/depgraph"
 	"github.com/seebom-labs/bomhort/backend/internal/docstore"
 	"github.com/seebom-labs/bomhort/backend/internal/evidence"
+	"github.com/seebom-labs/bomhort/backend/internal/imageid"
 	"github.com/seebom-labs/bomhort/backend/internal/license"
+	originpkg "github.com/seebom-labs/bomhort/backend/internal/origin"
 	"github.com/seebom-labs/bomhort/backend/internal/repo"
 	"github.com/seebom-labs/bomhort/backend/internal/rulesource"
 	s3client "github.com/seebom-labs/bomhort/backend/internal/s3"
@@ -67,6 +71,14 @@ func main() {
 		log.Fatalf("Failed to connect to ClickHouse: %v", err)
 	}
 	defer chClient.Close()
+
+	var imageDedupLock claimlock.KeyedLocker
+	if cfg.DedupByImageDigest {
+		imageDedupLock, err = claimlock.NewShardedNamed(cfg.WorkerID, "bomhort-image-dedup", 30*time.Second)
+		if err != nil {
+			log.Fatalf("Failed to initialize image deduplication lock: %v", err)
+		}
+	}
 
 	// Initialize S3 client for SBOM download (if S3 sources are configured).
 	var s3c *s3client.Client
@@ -188,14 +200,76 @@ func main() {
 		search := sanitizeSearchTerm(r.URL.Query().Get("search"))
 		project := sanitizeProjectName(r.URL.Query().Get("project"))
 		minQuality := parseUint8(r.URL.Query().Get("min_quality"), 0)
+		digest := strings.TrimSpace(r.URL.Query().Get("digest"))
+		imagePrefix := strings.TrimSpace(r.URL.Query().Get("image"))
+		if digest != "" && !imageid.ValidDigest(digest) {
+			writeError(w, http.StatusBadRequest, "?digest= must be sha256:<64 lowercase hex characters>")
+			return
+		}
+		if imagePrefix != "" && !imageid.ValidRefPrefix(imagePrefix) {
+			writeError(w, http.StatusBadRequest, "?image= must be a non-empty image reference prefix of at most 1024 characters")
+			return
+		}
 
-		resp, err := chClient.QuerySBOMs(r.Context(), page, pageSize, search, project, minQuality)
+		resp, err := chClient.QuerySBOMsByImage(r.Context(), page, pageSize, search, project, minQuality, digest, imagePrefix)
 		if err != nil {
 			log.Printf("ERROR: list sboms: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch SBOMs")
 			return
 		}
 		writeJSON(w, http.StatusOK, resp)
+	})
+
+	mux.HandleFunc("GET /api/v1/images", func(w http.ResponseWriter, r *http.Request) {
+		page := parseUint64(r.URL.Query().Get("page"), 1)
+		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
+		resp, err := chClient.QueryImages(r.Context(), page, pageSize)
+		if err != nil {
+			log.Printf("ERROR: list images: %v", err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch images")
+			return
+		}
+		writeJSON(w, http.StatusOK, resp)
+	})
+	imageDetail := func(w http.ResponseWriter, r *http.Request, includeBody bool) {
+		digest := r.PathValue("digest")
+		if !imageid.ValidDigest(digest) {
+			writeError(w, http.StatusBadRequest, "digest must be sha256:<64 lowercase hex characters>")
+			return
+		}
+		if !includeBody {
+			exists, err := chClient.ImageExists(r.Context(), digest)
+			if err != nil {
+				log.Printf("ERROR: image existence: %v", err)
+				writeError(w, http.StatusInternalServerError, "Failed to check image")
+				return
+			}
+			if !exists {
+				writeError(w, http.StatusNotFound, "Image not found")
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		page := parseUint64(r.URL.Query().Get("page"), 1)
+		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
+		detail, err := chClient.QueryImage(r.Context(), digest, page, pageSize)
+		if errors.Is(err, clickhouse.ErrImageNotFound) {
+			writeError(w, http.StatusNotFound, "Image not found")
+			return
+		}
+		if err != nil {
+			log.Printf("ERROR: image detail: %v", err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch image")
+			return
+		}
+		writeJSON(w, http.StatusOK, detail)
+	}
+	mux.HandleFunc("GET /api/v1/images/{digest}", func(w http.ResponseWriter, r *http.Request) {
+		imageDetail(w, r, true)
+	})
+	mux.HandleFunc("HEAD /api/v1/images/{digest}", func(w http.ResponseWriter, r *http.Request) {
+		imageDetail(w, r, false)
 	})
 
 	// List vulnerabilities with pagination. Every finding is returned with its
@@ -952,12 +1026,13 @@ func main() {
 	// parsing-worker processes it exactly like any other job, so no ingestion
 	// logic is duplicated here.
 	mux.HandleFunc("POST "+uploadPath, uploadHandler(uploadDeps{
-		cfg:           cfg,
-		store:         chClient,
-		s3Store:       uploadS3Store,
-		pushBucket:    pushBucket,
-		useS3Push:     hasPushBucket,
-		localWritable: localUploadWritable,
+		cfg:            cfg,
+		store:          chClient,
+		imageDedupLock: imageDedupLock,
+		s3Store:        uploadS3Store,
+		pushBucket:     pushBucket,
+		useS3Push:      hasPushBucket,
+		localWritable:  localUploadWritable,
 	}))
 
 	// Manual source attribution override (#332): the escape hatch for SBOMs
@@ -1199,7 +1274,7 @@ func corsMiddleware(allowedOrigins string, next http.Handler) http.Handler {
 		}
 
 		// POST is valid on the upload route and evidence routes.
-		allowedMethods := "GET, OPTIONS"
+		allowedMethods := "GET, HEAD, OPTIONS"
 		if r.URL.Path == uploadPath || (strings.HasPrefix(r.URL.Path, "/api/v1/sboms/") && strings.HasSuffix(r.URL.Path, "/evidence")) {
 			allowedMethods = "GET, POST, OPTIONS"
 		}
@@ -1449,6 +1524,11 @@ func queryOverride(r *http.Request, param, fallback string) string {
 // uploadStore is the minimal surface uploadHandler needs, kept small for testing.
 type uploadStore interface {
 	HashExists(ctx context.Context, hash string) (bool, error)
+	FindImageByDigest(ctx context.Context, digest string) (*clickhouse.ImageSBOMRef, error)
+	FindImageByDigestOwner(ctx context.Context, digest, imageRef, cluster, namespace, project, origin string) (*clickhouse.ImageSBOMRef, error)
+	FindPendingImageJob(ctx context.Context, digest, imageRef, cluster, namespace, project, origin string) (*models.IngestionJob, error)
+	FindSBOMByHash(ctx context.Context, hash string) (*clickhouse.ImageSBOMRef, error)
+	CloneImageSBOM(ctx context.Context, source clickhouse.ImageSBOMRef, digest, imageRef, sourceRepo, sourceRef, cluster, namespace, project, parent, origin string, tags []string) (string, error)
 	EnqueueJobs(ctx context.Context, jobs []models.IngestionJob) error
 }
 
@@ -1510,8 +1590,9 @@ func isDirWritable(dir string) bool {
 type uploadDeps struct {
 	cfg *config.Config
 
-	store   uploadStore
-	s3Store uploadObjectStore
+	store          uploadStore
+	imageDedupLock claimlock.KeyedLocker
+	s3Store        uploadObjectStore
 
 	// pushBucket is the resolved skipScan S3 bucket to push uploads to.
 	// Only meaningful when useS3Push is true; zero value otherwise.
@@ -1567,6 +1648,32 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "Unsupported file type: filename must end in .spdx.json, .cdx.json, .openvex.json, .vex.json, or .json")
 			return
 		}
+		imageRef, imageDigest := "", ""
+		if values := r.URL.Query()["image"]; len(values) > 1 {
+			writeError(w, http.StatusBadRequest, "?image= may be specified only once")
+			return
+		}
+		if rawImage := strings.TrimSpace(r.URL.Query().Get("image")); rawImage != "" {
+			if fileType == models.JobTypeVEX {
+				writeError(w, http.StatusBadRequest, "?image= is only valid for SBOM uploads")
+				return
+			}
+			var err error
+			imageRef, imageDigest, err = imageid.ParseRef(rawImage)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
+		if len(r.URL.Query()["origin"]) > 1 {
+			writeError(w, http.StatusBadRequest, "?origin= may be specified only once")
+			return
+		}
+		uploadOrigin := originpkg.Normalize(queryOverride(r, "origin", cfg.Origin))
+		if uploadOrigin != "" && !originpkg.IsValid(uploadOrigin) {
+			writeError(w, http.StatusBadRequest, "origin must be one of cluster-scan, ci, registry, vendor, manual")
+			return
+		}
 
 		// Stage the body in a local temp file for hashing + content validation
 		// regardless of the final destination. When pushing to S3 there's no
@@ -1616,241 +1723,339 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 		}
 
 		hash := hex.EncodeToString(hasher.Sum(nil))
-
-		// Dedup: skip re-ingesting content BOMHort has already processed. This
-		// is checked before content validation so repeat pushes of a file
-		// that's already been ingested don't pay the parse cost again.
-		//
-		// Note: this check and the EnqueueJobs below are not atomic. Two
-		// concurrent uploads of identical content (across replicas, or on one
-		// replica) can both observe "not present" and both enqueue. That's
-		// accepted here rather than serialized: the parsing worker is already
-		// idempotent on re-ingested content (SBOMExists / VEXDocumentExists),
-		// so the worst case is one redundant parse, not duplicated data.
-		exists, err := store.HashExists(r.Context(), hash)
-		if err != nil {
-			log.Printf("ERROR: upload hash check for %s: %v", sanitizeLogParam(filename), err)
-			writeError(w, http.StatusInternalServerError, "Failed to check for duplicate upload")
-			return
-		}
-		if exists {
-			writeJSON(w, http.StatusOK, map[string]string{
-				"status":      "duplicate",
-				"sha256_hash": hash,
-				"message":     "Content already ingested, skipping",
-			})
-			return
-		}
-
-		// Validate content before persisting/enqueueing so bad uploads fail
-		// fast with a 400 instead of a 202 that silently fails in the worker
-		// minutes later. This intentionally stays lightweight: a full parse
-		// (package/component extraction) belongs to the parsing-worker, not
-		// here — duplicating it would undercut the point of the push model,
-		// which is to reuse the existing ingestion pipeline unmodified.
-		if _, err := tmp.Seek(0, io.SeekStart); err != nil {
-			log.Printf("ERROR: upload seek for %s: %v", sanitizeLogParam(filename), err)
-			writeError(w, http.StatusInternalServerError, "Failed to validate upload")
-			return
-		}
-		switch fileType {
-		case models.JobTypeVEX:
-			if _, err := vex.Parse(tmp, filename); err != nil {
-				writeError(w, http.StatusBadRequest, "Invalid VEX content: "+err.Error())
-				return
-			}
-		default: // sbom
-			// We don't require a recognized format marker
-			// (bomFormat/spdxVersion/predicateType) to be present — sbom.Parse
-			// falls back to the SPDX parser for unrecognized shapes and handles
-			// unknown input gracefully. We only need to catch content that isn't
-			// a well-formed JSON document.
+		process := func(w http.ResponseWriter, r *http.Request) {
+			// Dedup: skip re-ingesting content BOMHort has already processed. This
+			// is checked before content validation so repeat pushes of a file
+			// that's already been ingested don't pay the parse cost again.
 			//
-			// Decode into json.RawMessage rather than a typed probe struct:
-			// Decode reads exactly one JSON value and silently ignores anything
-			// after it, and a bare `null` decodes successfully into any struct.
-			// Both would let malformed payloads through with a 202 and defer the
-			// failure to the worker — the exact outcome this check exists to
-			// prevent. The trailing-data and object-shape checks below close that gap.
-			dec := json.NewDecoder(tmp)
-			var raw json.RawMessage
-			if err := dec.Decode(&raw); err != nil {
-				writeError(w, http.StatusBadRequest, "Invalid SBOM content: not valid JSON")
+			// For non-image uploads this check is not atomic with EnqueueJobs; the
+			// worker's SBOMExists/VEXDocumentExists guards make a duplicate harmless.
+			exists, err := store.HashExists(r.Context(), hash)
+			if err != nil {
+				log.Printf("ERROR: upload hash check for %s: %v", sanitizeLogParam(filename), err)
+				writeError(w, http.StatusInternalServerError, "Failed to check for duplicate upload")
 				return
 			}
-			// A second Decode must hit io.EOF, i.e. nothing but whitespace follows
-			// the first document. Deliberately not dec.More(), which is
-			// `peek() != ']' && peek() != '}'` — that catches `{...}{...}` and
-			// `{...} junk`, but reports false for a trailing `]` or `}`, so
-			// `{"spdxVersion":"x"}]` would slip through as a valid document.
-			if err := dec.Decode(new(json.RawMessage)); err != io.EOF {
-				writeError(w, http.StatusBadRequest, "Invalid SBOM content: unexpected trailing data after the JSON document")
+			if exists && !(cfg.DedupByImageDigest && imageDigest != "") {
+				writeJSON(w, http.StatusOK, map[string]string{
+					"status":      "duplicate",
+					"sha256_hash": hash,
+					"message":     "Content already ingested, skipping",
+				})
 				return
 			}
-			// Every supported SBOM format (SPDX, CycloneDX, in-toto envelope) is
-			// a JSON object at the top level. null / arrays / bare scalars are
-			// syntactically valid JSON but can never be a parseable SBOM.
-			if len(raw) == 0 || raw[0] != '{' {
-				writeError(w, http.StatusBadRequest, "Invalid SBOM content: expected a JSON object at the top level")
-				return
-			}
-		}
 
-		// Ownership dimensions: query params override this instance's configured
-		// defaults. Deliberately query params rather than headers, matching the
-		// existing ?cluster= contract (#131) -- a pushing CI job names where the
-		// artifact belongs, the server cannot infer it for an uploaded body the
-		// way the watcher can from an object key.
-		cluster := queryOverride(r, "cluster", cfg.ClusterName)
-		namespace := queryOverride(r, "namespace", cfg.Namespace)
-		project := queryOverride(r, "project", cfg.Project)
-		// ?parent= names the product this upload belongs to explicitly; it
-		// outranks the mapping file and the automatic grouping signals.
-		parent := queryOverride(r, "parent", cfg.Parent)
-		// Tags are merged with the instance defaults rather than overriding
-		// them, unlike the three above. A CI job labelling its artifact
-		// "sandbox-applications" is adding a grouping, not contradicting an
-		// instance-wide one — and because tags are many-to-many there is no
-		// reason to make the two levels mutually exclusive.
-		uploadTags := tagpkg.Merge(cfg.Tags, tagpkg.Parse(r.URL.Query().Get("tags")))
-
-		// VEX→SBOM mapping (#350): ?sbom_id= scopes every statement in the
-		// uploaded VEX document to one SBOM. Only meaningful for VEX uploads;
-		// rejected otherwise so a typo cannot silently do nothing. Validated
-		// as a UUID — an arbitrary string here would make the worker scope
-		// statements to a nonexistent SBOM, hiding them from every view.
-		targetSBOMID := strings.TrimSpace(r.URL.Query().Get("sbom_id"))
-		if targetSBOMID != "" {
-			if fileType != models.JobTypeVEX {
-				writeError(w, http.StatusBadRequest, "?sbom_id= is only valid for VEX uploads")
-				return
-			}
-			if _, err := uuid.Parse(targetSBOMID); err != nil {
-				writeError(w, http.StatusBadRequest, "?sbom_id= must be a valid SBOM UUID")
-				return
-			}
-		}
-
-		// Source attribution (#332): headers rather than query params, matching
-		// X-Filename — these describe the uploaded artifact itself, not where it
-		// belongs. Rejected (not silently dropped) when malformed: the caller is
-		// authenticated and can be told "no", and a bad value stored here sends
-		// triage tooling to clone the wrong code fleet-wide.
-		sourceRepoHdr := strings.TrimSpace(r.Header.Get("X-Source-Repo"))
-		sourceRefHdr := strings.TrimSpace(r.Header.Get("X-Source-Ref"))
-		if sourceRepoHdr != "" && !sourcerepo.IsValidRepoURL(sourceRepoHdr) {
-			writeError(w, http.StatusBadRequest, "X-Source-Repo must be an http(s) repository URL without credentials")
-			return
-		}
-		if sourceRefHdr != "" && !sourcerepo.IsValidRef(sourceRefHdr) {
-			writeError(w, http.StatusBadRequest, "X-Source-Ref must be a git ref without whitespace (max 256 chars)")
-			return
-		}
-		// Normalise the accepted value so the stored form is identical whether it
-		// arrived via header or was extracted from a document.
-		if sourceRepoHdr != "" {
-			if norm, normRef := sourcerepo.Normalize(sourceRepoHdr); norm != "" {
-				sourceRepoHdr = norm
-				if sourceRefHdr == "" {
-					sourceRefHdr = normRef
-				}
-			}
-		}
-
-		// Persist to whichever backend is active. Both paths only commit the
-		// content to its final, discoverable location after hashing and
-		// content validation succeed — the S3 PutObject / local os.Rename
-		// below are the first point at which anything else could observe this
-		// upload, so nothing ever sees a partial or invalid file/object.
-		var sourceFile string
-		if useS3Push {
+			// Validate content before persisting/enqueueing so bad uploads fail
+			// fast with a 400 instead of a 202 that silently fails in the worker
+			// minutes later. This intentionally stays lightweight: a full parse
+			// (package/component extraction) belongs to the parsing-worker, not
+			// here — duplicating it would undercut the point of the push model,
+			// which is to reuse the existing ingestion pipeline unmodified.
 			if _, err := tmp.Seek(0, io.SeekStart); err != nil {
 				log.Printf("ERROR: upload seek for %s: %v", sanitizeLogParam(filename), err)
-				writeError(w, http.StatusInternalServerError, "Failed to store upload")
+				writeError(w, http.StatusInternalServerError, "Failed to validate upload")
 				return
 			}
-			key := path.Join(pushBucket.Prefix, "pushed", uuid.New().String()+"-"+filename)
-			if err := s3Store.PutObject(r.Context(), pushBucket.Name, key, tmp, n); err != nil {
-				log.Printf("ERROR: upload S3 put %s/%s: %v", sanitizeLogParam(pushBucket.Name), sanitizeLogParam(key), err)
-				writeError(w, http.StatusInternalServerError, "Failed to store upload")
+			switch fileType {
+			case models.JobTypeVEX:
+				if _, err := vex.Parse(tmp, filename); err != nil {
+					writeError(w, http.StatusBadRequest, "Invalid VEX content: "+err.Error())
+					return
+				}
+			default: // sbom
+				// We don't require a recognized format marker
+				// (bomFormat/spdxVersion/predicateType) to be present — sbom.Parse
+				// falls back to the SPDX parser for unrecognized shapes and handles
+				// unknown input gracefully. We only need to catch content that isn't
+				// a well-formed JSON document.
+				//
+				// Decode into json.RawMessage rather than a typed probe struct:
+				// Decode reads exactly one JSON value and silently ignores anything
+				// after it, and a bare `null` decodes successfully into any struct.
+				// Both would let malformed payloads through with a 202 and defer the
+				// failure to the worker — the exact outcome this check exists to
+				// prevent. The trailing-data and object-shape checks below close that gap.
+				dec := json.NewDecoder(tmp)
+				var raw json.RawMessage
+				if err := dec.Decode(&raw); err != nil {
+					writeError(w, http.StatusBadRequest, "Invalid SBOM content: not valid JSON")
+					return
+				}
+				// A second Decode must hit io.EOF, i.e. nothing but whitespace follows
+				// the first document. Deliberately not dec.More(), which is
+				// `peek() != ']' && peek() != '}'` — that catches `{...}{...}` and
+				// `{...} junk`, but reports false for a trailing `]` or `}`, so
+				// `{"spdxVersion":"x"}]` would slip through as a valid document.
+				if err := dec.Decode(new(json.RawMessage)); err != io.EOF {
+					writeError(w, http.StatusBadRequest, "Invalid SBOM content: unexpected trailing data after the JSON document")
+					return
+				}
+				// Every supported SBOM format (SPDX, CycloneDX, in-toto envelope) is
+				// a JSON object at the top level. null / arrays / bare scalars are
+				// syntactically valid JSON but can never be a parseable SBOM.
+				if len(raw) == 0 || raw[0] != '{' {
+					writeError(w, http.StatusBadRequest, "Invalid SBOM content: expected a JSON object at the top level")
+					return
+				}
+			}
+
+			// Ownership dimensions: query params override this instance's configured
+			// defaults. Deliberately query params rather than headers, matching the
+			// existing ?cluster= contract (#131) -- a pushing CI job names where the
+			// artifact belongs, the server cannot infer it for an uploaded body the
+			// way the watcher can from an object key.
+			cluster := queryOverride(r, "cluster", cfg.ClusterName)
+			namespace := queryOverride(r, "namespace", cfg.Namespace)
+			project := queryOverride(r, "project", cfg.Project)
+			// ?parent= names the product this upload belongs to explicitly; it
+			// outranks the mapping file and the automatic grouping signals.
+			parent := queryOverride(r, "parent", cfg.Parent)
+			// Tags are merged with the instance defaults rather than overriding
+			// them, unlike the three above. A CI job labelling its artifact
+			// "sandbox-applications" is adding a grouping, not contradicting an
+			// instance-wide one — and because tags are many-to-many there is no
+			// reason to make the two levels mutually exclusive.
+			uploadTags := tagpkg.Merge(cfg.Tags, tagpkg.Parse(r.URL.Query().Get("tags")))
+
+			// VEX→SBOM mapping (#350): ?sbom_id= scopes every statement in the
+			// uploaded VEX document to one SBOM. Only meaningful for VEX uploads;
+			// rejected otherwise so a typo cannot silently do nothing. Validated
+			// as a UUID — an arbitrary string here would make the worker scope
+			// statements to a nonexistent SBOM, hiding them from every view.
+			targetSBOMID := strings.TrimSpace(r.URL.Query().Get("sbom_id"))
+			if targetSBOMID != "" {
+				if fileType != models.JobTypeVEX {
+					writeError(w, http.StatusBadRequest, "?sbom_id= is only valid for VEX uploads")
+					return
+				}
+				if _, err := uuid.Parse(targetSBOMID); err != nil {
+					writeError(w, http.StatusBadRequest, "?sbom_id= must be a valid SBOM UUID")
+					return
+				}
+			}
+
+			// Source attribution (#332): headers rather than query params, matching
+			// X-Filename — these describe the uploaded artifact itself, not where it
+			// belongs. Rejected (not silently dropped) when malformed: the caller is
+			// authenticated and can be told "no", and a bad value stored here sends
+			// triage tooling to clone the wrong code fleet-wide.
+			sourceRepoHdr := strings.TrimSpace(r.Header.Get("X-Source-Repo"))
+			sourceRefHdr := strings.TrimSpace(r.Header.Get("X-Source-Ref"))
+			if sourceRepoHdr != "" && !sourcerepo.IsValidRepoURL(sourceRepoHdr) {
+				writeError(w, http.StatusBadRequest, "X-Source-Repo must be an http(s) repository URL without credentials")
 				return
 			}
-			sourceFile = "s3://" + pushBucket.Name + "/" + key
-		} else {
-			relPath := filepath.Join("pushed", uuid.New().String()+"-"+filename)
-			absPath := filepath.Join(cfg.SBOMDir, relPath)
-			if err := tmp.Close(); err != nil {
-				log.Printf("ERROR: upload close for %s: %v", sanitizeLogParam(relPath), err)
-				writeError(w, http.StatusInternalServerError, "Failed to store upload")
+			if sourceRefHdr != "" && !sourcerepo.IsValidRef(sourceRefHdr) {
+				writeError(w, http.StatusBadRequest, "X-Source-Ref must be a git ref without whitespace (max 256 chars)")
 				return
 			}
-			if err := os.Rename(tmpPath, absPath); err != nil {
-				log.Printf("ERROR: upload rename %s -> %s: %v", sanitizeLogParam(tmpPath), sanitizeLogParam(relPath), err)
-				writeError(w, http.StatusInternalServerError, "Failed to store upload")
+			// Normalise the accepted value so the stored form is identical whether it
+			// arrived via header or was extracted from a document.
+			if sourceRepoHdr != "" {
+				if norm, normRef := sourcerepo.Normalize(sourceRepoHdr); norm != "" {
+					sourceRepoHdr = norm
+					if sourceRefHdr == "" {
+						sourceRefHdr = normRef
+					}
+				}
+			}
+
+			if cfg.DedupByImageDigest && imageDigest != "" {
+				matchingOwner, err := store.FindImageByDigestOwner(r.Context(), imageDigest, imageRef, cluster, namespace, project, uploadOrigin)
+				if err != nil {
+					log.Printf("ERROR: image dedup check: %v", err)
+					writeError(w, http.StatusInternalServerError, "Failed to check for duplicate image")
+					return
+				}
+				if matchingOwner != nil {
+					writeJSON(w, http.StatusOK, map[string]any{
+						"status":       "duplicate",
+						"duplicate":    true,
+						"sbom_id":      matchingOwner.SBOMID.String(),
+						"image_digest": imageDigest,
+						"message":      "Image digest already ingested for this ownership",
+					})
+					return
+				}
+				pendingJob, err := store.FindPendingImageJob(r.Context(), imageDigest, imageRef, cluster, namespace, project, uploadOrigin)
+				if err != nil {
+					log.Printf("ERROR: pending image job lookup: %v", err)
+					writeError(w, http.StatusInternalServerError, "Failed to check for a pending image upload")
+					return
+				}
+				if pendingJob != nil {
+					writeJSON(w, http.StatusAccepted, map[string]string{
+						"status":       "pending",
+						"job_id":       pendingJob.JobID.String(),
+						"image_digest": imageDigest,
+					})
+					return
+				}
+				existingImage, err := store.FindImageByDigest(r.Context(), imageDigest)
+				if err != nil {
+					log.Printf("ERROR: image lookup for digest reuse: %v", err)
+					writeError(w, http.StatusInternalServerError, "Failed to look up existing image")
+					return
+				}
+				if existingImage == nil && exists {
+					existingImage, err = store.FindSBOMByHash(r.Context(), hash)
+					if err != nil {
+						log.Printf("ERROR: source SBOM lookup for image reuse: %v", err)
+						writeError(w, http.StatusInternalServerError, "Failed to look up existing SBOM")
+						return
+					}
+					if existingImage == nil {
+						writeError(w, http.StatusConflict, "Identical SBOM content is already queued; retry the image upload after ingestion completes")
+						return
+					}
+				}
+				if existingImage != nil {
+					sbomID, err := store.CloneImageSBOM(r.Context(), *existingImage, imageDigest, imageRef, sourceRepoHdr, sourceRefHdr, cluster, namespace, project, parent, uploadOrigin, uploadTags)
+					if err != nil {
+						log.Printf("ERROR: clone image SBOM: %v", err)
+						writeError(w, http.StatusInternalServerError, "Failed to reuse existing image SBOM")
+						return
+					}
+					writeJSON(w, http.StatusOK, map[string]any{
+						"status":       "reused",
+						"duplicate":    false,
+						"reused":       true,
+						"sbom_id":      sbomID,
+						"image_digest": imageDigest,
+					})
+					return
+				}
+			}
+
+			// Persist to whichever backend is active. Both paths only commit the
+			// content to its final, discoverable location after hashing and
+			// content validation succeed — the S3 PutObject / local os.Rename
+			// below are the first point at which anything else could observe this
+			// upload, so nothing ever sees a partial or invalid file/object.
+			var sourceFile string
+			if useS3Push {
+				if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+					log.Printf("ERROR: upload seek for %s: %v", sanitizeLogParam(filename), err)
+					writeError(w, http.StatusInternalServerError, "Failed to store upload")
+					return
+				}
+				key := path.Join(pushBucket.Prefix, "pushed", uuid.New().String()+"-"+filename)
+				if err := s3Store.PutObject(r.Context(), pushBucket.Name, key, tmp, n); err != nil {
+					log.Printf("ERROR: upload S3 put %s/%s: %v", sanitizeLogParam(pushBucket.Name), sanitizeLogParam(key), err)
+					writeError(w, http.StatusInternalServerError, "Failed to store upload")
+					return
+				}
+				sourceFile = "s3://" + pushBucket.Name + "/" + key
+			} else {
+				relPath := filepath.Join("pushed", uuid.New().String()+"-"+filename)
+				absPath := filepath.Join(cfg.SBOMDir, relPath)
+				if err := tmp.Close(); err != nil {
+					log.Printf("ERROR: upload close for %s: %v", sanitizeLogParam(relPath), err)
+					writeError(w, http.StatusInternalServerError, "Failed to store upload")
+					return
+				}
+				if err := os.Rename(tmpPath, absPath); err != nil {
+					log.Printf("ERROR: upload rename %s -> %s: %v", sanitizeLogParam(tmpPath), sanitizeLogParam(relPath), err)
+					writeError(w, http.StatusInternalServerError, "Failed to store upload")
+					return
+				}
+				sourceFile = relPath
+			}
+
+			job := models.IngestionJob{
+				CreatedAt:    time.Now(),
+				JobID:        uuid.New(),
+				SourceFile:   sourceFile,
+				SHA256Hash:   hash,
+				Status:       models.JobStatusPending,
+				JobType:      fileType,
+				Cluster:      cluster,
+				Namespace:    namespace,
+				Project:      project,
+				SourceRepo:   sourceRepoHdr,
+				SourceRef:    sourceRefHdr,
+				TargetSBOMID: targetSBOMID,
+				Tags:         uploadTags,
+				Parent:       parent,
+				Origin:       uploadOrigin,
+				ImageRef:     imageRef,
+				ImageDigest:  imageDigest,
+			}
+			// Single-row insert, deliberately: the API contract returns job_id
+			// synchronously, so the row has to be durable before we respond — there
+			// is nothing to batch it with. This is the one place that departs from
+			// the project-wide "always batch inserts" rule; ingestion_queue is a
+			// low-volume control table, not a hot analytics path. If push traffic
+			// ever grows enough for the small-parts pressure to matter, enable
+			// ClickHouse async_insert=1 with wait_for_async_insert=1 rather than
+			// buffering job rows in the gateway.
+			if err := store.EnqueueJobs(r.Context(), []models.IngestionJob{job}); err != nil {
+				log.Printf("ERROR: upload enqueue for %s: %v", sanitizeLogParam(sourceFile), err)
+				// Best-effort cleanup so a failed enqueue doesn't leave an orphaned
+				// file/object behind. Deliberately not r.Context(): the request
+				// context may already be cancelled (that can be *why* the enqueue
+				// failed), which would cancel the cleanup too. Bounded by its own
+				// timeout so a hung S3 endpoint can't pin this goroutine forever.
+				if useS3Push {
+					if _, key, parseErr := s3client.ParseURI(sourceFile); parseErr == nil {
+						cleanupCtx, cancel := context.WithTimeout(context.Background(), uploadCleanupTimeout)
+						_ = s3Store.RemoveObject(cleanupCtx, pushBucket.Name, key)
+						cancel()
+					}
+				} else {
+					_ = os.Remove(filepath.Join(cfg.SBOMDir, sourceFile))
+				}
+				writeError(w, http.StatusInternalServerError, "Failed to enqueue ingestion job")
 				return
 			}
-			sourceFile = relPath
+
+			log.Printf("Upload accepted: %s (job=%s, type=%s, cluster=%s, namespace=%s, project=%s, source=%s)",
+				sanitizeLogParam(filename), job.JobID, fileType,
+				sanitizeLogParam(cluster), sanitizeLogParam(namespace), sanitizeLogParam(project),
+				sanitizeLogParam(sourceFile))
+
+			writeJSON(w, http.StatusAccepted, map[string]string{
+				"status":       "pending",
+				"job_id":       job.JobID.String(),
+				"sha256_hash":  hash,
+				"job_type":     fileType,
+				"cluster":      cluster,
+				"namespace":    namespace,
+				"project":      project,
+				"parent":       parent,
+				"origin":       uploadOrigin,
+				"image_ref":    imageRef,
+				"image_digest": imageDigest,
+			})
 		}
 
-		job := models.IngestionJob{
-			CreatedAt:    time.Now(),
-			JobID:        uuid.New(),
-			SourceFile:   sourceFile,
-			SHA256Hash:   hash,
-			Status:       models.JobStatusPending,
-			JobType:      fileType,
-			Cluster:      cluster,
-			Namespace:    namespace,
-			Project:      project,
-			SourceRepo:   sourceRepoHdr,
-			SourceRef:    sourceRefHdr,
-			TargetSBOMID: targetSBOMID,
-			Tags:         uploadTags,
-			Parent:       parent,
-		}
-		// Single-row insert, deliberately: the API contract returns job_id
-		// synchronously, so the row has to be durable before we respond — there
-		// is nothing to batch it with. This is the one place that departs from
-		// the project-wide "always batch inserts" rule; ingestion_queue is a
-		// low-volume control table, not a hot analytics path. If push traffic
-		// ever grows enough for the small-parts pressure to matter, enable
-		// ClickHouse async_insert=1 with wait_for_async_insert=1 rather than
-		// buffering job rows in the gateway.
-		if err := store.EnqueueJobs(r.Context(), []models.IngestionJob{job}); err != nil {
-			log.Printf("ERROR: upload enqueue for %s: %v", sanitizeLogParam(sourceFile), err)
-			// Best-effort cleanup so a failed enqueue doesn't leave an orphaned
-			// file/object behind. Deliberately not r.Context(): the request
-			// context may already be cancelled (that can be *why* the enqueue
-			// failed), which would cancel the cleanup too. Bounded by its own
-			// timeout so a hung S3 endpoint can't pin this goroutine forever.
-			if useS3Push {
-				if _, key, parseErr := s3client.ParseURI(sourceFile); parseErr == nil {
-					cleanupCtx, cancel := context.WithTimeout(context.Background(), uploadCleanupTimeout)
-					_ = s3Store.RemoveObject(cleanupCtx, pushBucket.Name, key)
-					cancel()
-				}
-			} else {
-				_ = os.Remove(filepath.Join(cfg.SBOMDir, sourceFile))
-			}
-			writeError(w, http.StatusInternalServerError, "Failed to enqueue ingestion job")
+		if !cfg.DedupByImageDigest || len(r.URL.Query()["image"]) == 0 {
+			process(w, r)
 			return
 		}
-
-		log.Printf("Upload accepted: %s (job=%s, type=%s, cluster=%s, namespace=%s, project=%s, source=%s)",
-			sanitizeLogParam(filename), job.JobID, fileType,
-			sanitizeLogParam(cluster), sanitizeLogParam(namespace), sanitizeLogParam(project),
-			sanitizeLogParam(sourceFile))
-
-		writeJSON(w, http.StatusAccepted, map[string]string{
-			"status":      "pending",
-			"job_id":      job.JobID.String(),
-			"sha256_hash": hash,
-			"job_type":    fileType,
-			"cluster":     cluster,
-			"namespace":   namespace,
-			"project":     project,
-			"parent":      parent,
+		if deps.imageDedupLock == nil {
+			writeError(w, http.StatusServiceUnavailable, "Image deduplication lock is unavailable")
+			return
+		}
+		recorder := httptest.NewRecorder()
+		lockErr := deps.imageDedupLock.WithKey(r.Context(), imageDigest, func(ctx context.Context) error {
+			process(recorder, r.WithContext(ctx))
+			return nil
 		})
+		if lockErr != nil {
+			log.Printf("ERROR: image deduplication lock: %v", lockErr)
+			writeError(w, http.StatusServiceUnavailable, "Image deduplication is busy; retry the upload")
+			return
+		}
+		for name, values := range recorder.Header() {
+			for _, value := range values {
+				w.Header().Add(name, value)
+			}
+		}
+		w.WriteHeader(recorder.Code)
+		if _, err := io.Copy(w, recorder.Body); err != nil {
+			log.Printf("ERROR: write buffered image upload response: %v", err)
+		}
 	}
 }
 

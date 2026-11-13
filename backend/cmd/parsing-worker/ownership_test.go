@@ -16,6 +16,7 @@ func testJob() models.IngestionJob {
 		Cluster:   "prod-eu",
 		Namespace: "payments",
 		Project:   "payment-service",
+		Origin:    "ci",
 	}
 }
 
@@ -44,6 +45,9 @@ func TestOwnershipAppliesToEveryRowType(t *testing.T) {
 		var m models.SBOM
 		own.applySBOM(&m)
 		assertOwnership(t, "SBOM", m.Cluster, m.Namespace, m.Project)
+		if m.Origin != "ci" {
+			t.Errorf("SBOM origin = %q, want ci", m.Origin)
+		}
 	})
 
 	t.Run("SBOMPackages", func(t *testing.T) {

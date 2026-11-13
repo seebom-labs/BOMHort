@@ -35,6 +35,10 @@ ownership:
   cluster: ""
   namespace: ""
   project: ""
+  # Optional SBOM provenance: cluster-scan, ci, registry, vendor, or manual.
+  # Leave empty when the source is unknown. A bucket's "origin" or upload's
+  # ?origin= overrides this default.
+  origin: ""
   # Default parent (product) for every ingested SBOM (PARENT). Usually left
   # empty: per-bucket "parent", the "parent" pathLayout token, ?parent= on
   # upload and the automatic grouping are the normal sources. See
@@ -112,7 +116,7 @@ s3:
   # [{"name":"my-org-sboms","region":"us-east-1"},{"name":"bomhort-pushed","region":"us-east-1","skipScan":true}]
   #
   # Per-bucket ownership and grouping: a bucket entry may carry "cluster",
-  # "namespace", "project", "pathLayout" and "tags". This is the usual way to
+  # "namespace", "project", "origin", "pathLayout" and "tags". This is the usual way to
   # label a catalogue instance, where each bucket holds one category of
   # projects:
   # [{"name":"sboms-sandbox","region":"us-east-1","tags":["sandbox-applications"],"pathLayout":"_/_/project"},
@@ -420,6 +424,9 @@ apiGateway:
   # per-IP write budget. Lower it if the upload endpoint is exposed to
   # untrusted networks.
   maxUploadSizeMB: 50
+  # Reuse parsed SBOM data for repeated image digests (#457). Uploads must
+  # provide ?image=<ref>@sha256:<digest>; disabled by default.
+  dedupByImageDigest: false
   # Per-query ClickHouse limits for the API gateway only (#344-I), sent as
   # session settings with every query. One heavy interactive query should
   # fail on its own instead of starving every other page and the ingestion
