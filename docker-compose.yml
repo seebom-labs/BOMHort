@@ -94,6 +94,8 @@ services:
       # Original SBOM bytes and immutable TEA snapshots.
       ORIGINAL_STORE_BACKEND: ${ORIGINAL_STORE_BACKEND:-auto}
       ORIGINAL_STORE_FS_PATH: /data/originals
+      VEX_SOURCES: ${VEX_SOURCES:-}
+      VEX_REFRESH_INTERVAL: ${VEX_REFRESH_INTERVAL:-1h}
     volumes:
       - ${SBOM_SOURCE_DIR:-./sboms}:/data/sboms:ro
       - ./sboms/license-exceptions.json:/data/config/license-exceptions.json:ro
@@ -206,6 +208,8 @@ services:
       # gateway; the worker needs the originals volume read-write.
       ORIGINAL_STORE_BACKEND: ${ORIGINAL_STORE_BACKEND:-auto}
       ORIGINAL_STORE_FS_PATH: /data/originals
+      VEX_SOURCES: ${VEX_SOURCES:-}
+      VEX_REFRESH_INTERVAL: ${VEX_REFRESH_INTERVAL:-1h}
     volumes:
       - ${SBOM_SOURCE_DIR:-./sboms}:/data/sboms:ro
       - ./sboms/license-exceptions.json:/data/config/license-exceptions.json:ro
@@ -250,6 +254,8 @@ services:
       ADVISORY_SOURCES: ${ADVISORY_SOURCES:-}
       SKIP_EXPLOIT_REFS: ${SKIP_EXPLOIT_REFS:-false}
       EXPLOIT_SOURCES: ${EXPLOIT_SOURCES:-nuclei,metasploit,exploitdb}
+      VEX_SOURCES: ${VEX_SOURCES:-}
+      VEX_REFRESH_INTERVAL: ${VEX_REFRESH_INTERVAL:-1h}
     depends_on:
       clickhouse:
         condition: service_healthy
