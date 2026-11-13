@@ -66,6 +66,7 @@ func TestProjectRoutes_PathValueDecoding(t *testing.T) {
 	mux.HandleFunc("GET /api/v1/projects/{name}/sboms", echo("sboms"))
 	mux.HandleFunc("GET /api/v1/projects/{name}/vulnerabilities", echo("vulns"))
 	mux.HandleFunc("GET /api/v1/projects/{name}/packages", echo("packages"))
+	mux.HandleFunc("GET /api/v1/projects/{name}/vex", echo("vex"))
 
 	tests := []struct {
 		path, want string
@@ -74,8 +75,10 @@ func TestProjectRoutes_PathValueDecoding(t *testing.T) {
 		{"/api/v1/projects/kubernetes/sboms", "sboms:kubernetes"},
 		{"/api/v1/projects/kubernetes/vulnerabilities", "vulns:kubernetes"},
 		{"/api/v1/projects/kubernetes/packages", "packages:kubernetes"},
+		{"/api/v1/projects/kubernetes/vex", "vex:kubernetes"},
 		{"/api/v1/projects/cncf%2Fkubernetes", "detail:cncf/kubernetes"},
 		{"/api/v1/projects/cncf%2Fkubernetes/sboms", "sboms:cncf/kubernetes"},
+		{"/api/v1/projects/cncf%2Fkubernetes/vex", "vex:cncf/kubernetes"},
 		{"/api/v1/projects/license-compliance", "literal"},
 		{"/api/v1/projects/a%20b", "detail:a b"},
 	}
@@ -98,5 +101,22 @@ func TestProjectRoutes_PathValueDecoding(t *testing.T) {
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/projects/cncf/kubernetes", nil))
 	if rec.Body.String() == "detail:cncf/kubernetes" {
 		t.Errorf("unencoded slash reached the detail handler; encoding would be pointless")
+	}
+}
+
+// The VEX export (#533) puts the project name into a quoted
+// Content-Disposition filename; nothing that could end the quote or the
+// header may survive.
+func TestSafeFileName(t *testing.T) {
+	for in, want := range map[string]string{
+		"payments-api":        "payments-api",
+		"cncf/kubernetes":     "cncf-kubernetes",
+		"v1.2_rc":             "v1.2_rc",
+		"a\"b\r\nSet-Cookie:": "a-b--Set-Cookie-",
+		"ünïcode":             "-n-code",
+	} {
+		if got := safeFileName(in); got != want {
+			t.Errorf("safeFileName(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

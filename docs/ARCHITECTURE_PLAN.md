@@ -489,6 +489,8 @@ one bucket is nested and another flat.
 - Vulnerability rows carry a `vex_status` field via LEFT JOIN
 - VEX statements API returns `affected_sboms` array with matched SBOMs
 
+**Export (#533):** `GET /api/v1/sboms/{id}/vex?format=openvex` and `GET /api/v1/projects/{name}/vex` hand the effective decisions out as one OpenVEX document (`internal/vex/export.go`, queries in `internal/clickhouse/vex_export.go`). Per (SBOM, vulnerability, component) the newest scoped statement wins, as in every suppression query; unscoped statements are not exported. Each statement's product is its SBOM — the `document_namespace`, else the `sbom_id`, both of which the worker resolves again on upload — so a project export keeps every version's decisions apart. The document is deterministic (`@id` = UUIDv5 of the statements, `timestamp` = newest statement, statements sorted); every statement carries its own timestamp, so the document timestamp is never a fallback. OpenVEX has no per-statement author: `author`/`role`/`tooling` are kept when all statements share them, otherwise the author is `BOMHort`. Re-uploading an export changes no effective status; avoiding the duplicate rows it adds is #336. Unsigned; CSAF, signing and OCI publish are follow-ups.
+
 ## 6. OSV Integration
 
 **Endpoint:** `POST https://api.osv.dev/v1/querybatch`  

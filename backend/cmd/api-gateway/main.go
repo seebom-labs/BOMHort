@@ -350,11 +350,24 @@ func main() {
 		writeJSON(w, http.StatusOK, summary)
 	})
 
-	// Licenses for a specific SBOM.
+	// VEX statements scoped to one SBOM (#350). ?format=openvex returns the
+	// effective decisions as one OpenVEX document instead (#533); without it
+	// the route keeps returning the JSON statement listing.
 	mux.HandleFunc("GET /api/v1/sboms/{id}/vex", func(w http.ResponseWriter, r *http.Request) {
 		sbomID := r.PathValue("id")
 		if _, err := uuid.Parse(sbomID); err != nil {
 			writeError(w, http.StatusBadRequest, "Invalid SBOM ID")
+			return
+		}
+		switch r.URL.Query().Get("format") {
+		case "":
+		case vexFormatOpenVEX:
+			serveOpenVEX(w, "sbom-"+sbomID, "SBOM not found", func() ([]vex.ExportStatement, bool, error) {
+				return chClient.QuerySBOMVEXExport(r.Context(), sbomID)
+			})
+			return
+		default:
+			writeError(w, http.StatusBadRequest, "format must be openvex")
 			return
 		}
 		stmts, err := chClient.QuerySBOMVEXStatements(r.Context(), sbomID)
@@ -563,6 +576,25 @@ func main() {
 			return
 		}
 		writeJSON(w, http.StatusOK, resp)
+	})
+
+	// OpenVEX export of a project (#533): the effective decisions of every
+	// version, each under its own SBOM as product. OpenVEX is the only
+	// format; ?format=openvex is accepted so both export routes take the
+	// same parameter.
+	mux.HandleFunc("GET /api/v1/projects/{name}/vex", func(w http.ResponseWriter, r *http.Request) {
+		name := sanitizeProjectName(r.PathValue("name"))
+		if name == "" {
+			writeError(w, http.StatusBadRequest, "Invalid project name")
+			return
+		}
+		if f := r.URL.Query().Get("format"); f != "" && f != vexFormatOpenVEX {
+			writeError(w, http.StatusBadRequest, "format must be openvex")
+			return
+		}
+		serveOpenVEX(w, "project-"+safeFileName(name), "Project not found", func() ([]vex.ExportStatement, bool, error) {
+			return chClient.QueryProjectVEXExport(r.Context(), name)
+		})
 	})
 
 	// Project README status badges.
@@ -1033,6 +1065,47 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		log.Printf("ERROR: Failed to encode JSON response: %v", err)
 	}
+}
+
+// vexFormatOpenVEX is the ?format= value of the VEX export routes (#533).
+const vexFormatOpenVEX = "openvex"
+
+// serveOpenVEX writes the statements load returns as one OpenVEX document,
+// offered for download as <name>.openvex.json, or 404 with notFound when the
+// SBOM or project does not exist.
+func serveOpenVEX(w http.ResponseWriter, name, notFound string, load func() ([]vex.ExportStatement, bool, error)) {
+	stmts, found, err := load()
+	if err != nil {
+		log.Printf("ERROR: vex export %s: %v", sanitizeLogParam(name), err)
+		writeError(w, http.StatusInternalServerError, "Failed to export VEX")
+		return
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, notFound)
+		return
+	}
+	doc, err := vex.Export(stmts)
+	if err != nil {
+		log.Printf("ERROR: vex export %s: %v", sanitizeLogParam(name), err)
+		writeError(w, http.StatusInternalServerError, "Failed to export VEX")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`.openvex.json"`)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(doc)
+}
+
+// safeFileName keeps a value usable inside a quoted Content-Disposition
+// filename: anything but letters, digits, '.', '_' and '-' becomes '-'.
+func safeFileName(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '_', r == '-':
+			return r
+		}
+		return '-'
+	}, s)
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {
