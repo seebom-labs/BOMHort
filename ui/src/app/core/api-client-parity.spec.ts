@@ -34,6 +34,7 @@ const calls: Record<string, unknown[]> = {
   getProjects: [1, 50, '', 'sandbox'],
   getProjectGroups: [1, 50, 'api', ''],
   getTags: [],
+  getOrigins: [],
   getProjectDetail: ['org/project'],
   getProjectSboms: ['org/project', 1, 50],
   getProjectVulnerabilities: ['org/project', 'root'],
@@ -110,5 +111,82 @@ describe('ApiService ↔ @bomhort/api-client parity', () => {
       },
     });
     await expect(client.getTags()).rejects.toMatchObject({ name: 'ApiError', status: 404, body: 'nope', url: 'https://x/api/v1/tags' });
+  });
+
+  it('preserves trailing AbortSignal backward compatibility across shifted methods', async () => {
+    let capturedSignal: AbortSignal | undefined;
+    let capturedUrl = '';
+    const client = new BomhortApiClient({
+      fetch: async (input, init) => {
+        capturedUrl = String(input);
+        capturedSignal = init?.signal ?? undefined;
+        return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+      },
+    });
+
+    const controller = new AbortController();
+
+    // 1. getFleet(controller.signal)
+    await client.getFleet(controller.signal);
+    expect(capturedUrl).toBe('/api/v1/fleet');
+    expect(capturedSignal).toBe(controller.signal);
+
+    await client.getFleet('ci', controller.signal);
+    expect(capturedUrl).toBe('/api/v1/fleet?origin=ci');
+    expect(capturedSignal).toBe(controller.signal);
+
+    // 2. getSboms(..., controller.signal)
+    await client.getSboms(1, 50, '', '', controller.signal);
+    expect(capturedUrl).toBe('/api/v1/sboms?page=1&page_size=50');
+    expect(capturedSignal).toBe(controller.signal);
+
+    await client.getSboms(1, 50, '', '', 'ci', controller.signal);
+    expect(capturedUrl).toBe('/api/v1/sboms?page=1&page_size=50&origin=ci');
+    expect(capturedSignal).toBe(controller.signal);
+
+    // 3. getVulnerabilities(..., controller.signal)
+    await client.getVulnerabilities(1, 50, '', controller.signal);
+    expect(capturedUrl).toBe('/api/v1/vulnerabilities?page=1&page_size=50');
+    expect(capturedSignal).toBe(controller.signal);
+
+    await client.getVulnerabilities(1, 50, '', 'ci', controller.signal);
+    expect(capturedUrl).toBe('/api/v1/vulnerabilities?page=1&page_size=50&origin=ci');
+    expect(capturedSignal).toBe(controller.signal);
+
+    // 4. getProjects(..., controller.signal)
+    await client.getProjects(1, 50, '', '', controller.signal);
+    expect(capturedUrl).toBe('/api/v1/projects?page=1&page_size=50');
+    expect(capturedSignal).toBe(controller.signal);
+
+    await client.getProjects(1, 50, '', '', 'ci', controller.signal);
+    expect(capturedUrl).toBe('/api/v1/projects?page=1&page_size=50&origin=ci');
+    expect(capturedSignal).toBe(controller.signal);
+
+    // 5. getProjectGroups(..., controller.signal)
+    await client.getProjectGroups(1, 50, '', '', controller.signal);
+    expect(capturedUrl).toBe('/api/v1/projects?group_by=parent&page=1&page_size=50');
+    expect(capturedSignal).toBe(controller.signal);
+
+    await client.getProjectGroups(1, 50, '', '', 'ci', controller.signal);
+    expect(capturedUrl).toBe('/api/v1/projects?group_by=parent&page=1&page_size=50&origin=ci');
+    expect(capturedSignal).toBe(controller.signal);
+
+    // 6. getClusterSboms(..., controller.signal)
+    await client.getClusterSboms('prod-eu', 1, 50, controller.signal);
+    expect(capturedUrl).toBe('/api/v1/clusters/prod-eu/sboms?page=1&page_size=50');
+    expect(capturedSignal).toBe(controller.signal);
+
+    await client.getClusterSboms('prod-eu', 1, 50, 'ci', controller.signal);
+    expect(capturedUrl).toBe('/api/v1/clusters/prod-eu/sboms?page=1&page_size=50&origin=ci');
+    expect(capturedSignal).toBe(controller.signal);
+
+    // 7. getNamespaceSboms(..., controller.signal)
+    await client.getNamespaceSboms('payments', 'prod-eu', 1, 50, controller.signal);
+    expect(capturedUrl).toBe('/api/v1/namespaces/payments/sboms?cluster=prod-eu&page=1&page_size=50');
+    expect(capturedSignal).toBe(controller.signal);
+
+    await client.getNamespaceSboms('payments', 'prod-eu', 1, 50, 'ci', controller.signal);
+    expect(capturedUrl).toBe('/api/v1/namespaces/payments/sboms?cluster=prod-eu&page=1&page_size=50&origin=ci');
+    expect(capturedSignal).toBe(controller.signal);
   });
 });

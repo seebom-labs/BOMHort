@@ -178,8 +178,8 @@ func (c *Client) QueryNamespaceStats(ctx context.Context, namespace, clusterFilt
 }
 
 // QueryNamespaceSBOMs returns a paginated list of SBOMs in one namespace,
-// optionally scoped to a single cluster.
-func (c *Client) QueryNamespaceSBOMs(ctx context.Context, namespace, clusterFilter string, page, pageSize uint64) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
+// optionally scoped to a single cluster and origin.
+func (c *Client) QueryNamespaceSBOMs(ctx context.Context, namespace, clusterFilter, originFilter string, page, pageSize uint64) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
 	if page == 0 {
 		page = 1
 	}
@@ -188,8 +188,8 @@ func (c *Client) QueryNamespaceSBOMs(ctx context.Context, namespace, clusterFilt
 	var total uint64
 	if err := c.Conn.QueryRow(ctx, `
 		SELECT count() FROM sboms FINAL
-		WHERE namespace = ? AND (? = '' OR cluster = ?)
-	`, namespace, clusterFilter, clusterFilter).Scan(&total); err != nil {
+		WHERE namespace = ? AND (? = '' OR cluster = ?) AND (? = '' OR origin = ?)
+	`, namespace, clusterFilter, clusterFilter, originFilter, originFilter).Scan(&total); err != nil {
 		return nil, fmt.Errorf("failed to count namespace sboms: %w", err)
 	}
 
@@ -206,27 +206,28 @@ func (c *Client) QueryNamespaceSBOMs(ctx context.Context, namespace, clusterFilt
 			s.source_ref,
 			s.cluster,
 			s.namespace,
-			s.project
+			s.project,
+			s.origin
 		FROM (SELECT * FROM sboms FINAL) AS s
 		LEFT JOIN (
 			SELECT sbom_id, sum(length(package_names)) AS pkg_count
 			FROM sbom_packages FINAL
-			WHERE namespace = ? AND (? = '' OR cluster = ?)
+			WHERE namespace = ? AND (? = '' OR cluster = ?) AND (? = '' OR origin = ?)
 			GROUP BY sbom_id
 		) p ON s.sbom_id = p.sbom_id
 		LEFT JOIN (
 			SELECT sbom_id, count() AS vuln_count
 			FROM vulnerabilities FINAL
-			WHERE namespace = ? AND (? = '' OR cluster = ?)
+			WHERE namespace = ? AND (? = '' OR cluster = ?) AND (? = '' OR origin = ?)
 			GROUP BY sbom_id
 		) v ON s.sbom_id = v.sbom_id
-		WHERE s.namespace = ? AND (? = '' OR s.cluster = ?)
+		WHERE s.namespace = ? AND (? = '' OR s.cluster = ?) AND (? = '' OR s.origin = ?)
 		ORDER BY s.ingested_at DESC
 		LIMIT ? OFFSET ?
 	`,
-		namespace, clusterFilter, clusterFilter,
-		namespace, clusterFilter, clusterFilter,
-		namespace, clusterFilter, clusterFilter,
+		namespace, clusterFilter, clusterFilter, originFilter, originFilter,
+		namespace, clusterFilter, clusterFilter, originFilter, originFilter,
+		namespace, clusterFilter, clusterFilter, originFilter, originFilter,
 		pageSize, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query namespace sboms: %w", err)
@@ -240,7 +241,7 @@ func (c *Client) QueryNamespaceSBOMs(ctx context.Context, namespace, clusterFilt
 		if err := rows.Scan(&item.SBOMID, &item.SourceFile, &item.SPDXVersion,
 			&item.DocumentName, &item.PackageCount, &item.VulnCount, &ingestedAt,
 			&item.SourceRepo, &item.SourceRef,
-			&item.Cluster, &item.Namespace, &item.Project); err != nil {
+			&item.Cluster, &item.Namespace, &item.Project, &item.Origin); err != nil {
 			return nil, fmt.Errorf("failed to scan namespace sbom row: %w", err)
 		}
 		item.IngestedAt = ingestedAt.Format(time.RFC3339)
@@ -265,7 +266,7 @@ func (c *Client) QueryNamespaceSBOMs(ctx context.Context, namespace, clusterFilt
 // QueryFleetTree returns the full cluster → namespace → project hierarchy in a
 // single round trip. The UI renders the whole ownership tree at once; issuing
 // one query per cluster would turn a fleet view into an N+1 problem.
-func (c *Client) QueryFleetTree(ctx context.Context) ([]dto.FleetCluster, error) {
+func (c *Client) QueryFleetTree(ctx context.Context, originFilter string) ([]dto.FleetCluster, error) {
 	rows, err := c.Conn.Query(ctx, `
 		SELECT
 			s.cluster,
@@ -278,15 +279,17 @@ func (c *Client) QueryFleetTree(ctx context.Context) ([]dto.FleetCluster, error)
 			SELECT cluster, namespace, project,
 			       count() AS sbom_count, max(ingested_at) AS last_ingested
 			FROM sboms FINAL
+			WHERE ? = '' OR origin = ?
 			GROUP BY cluster, namespace, project
 		) s
 		LEFT JOIN (
 			SELECT cluster, namespace, project, count() AS vuln_count
 			FROM vulnerabilities FINAL
+			WHERE ? = '' OR origin = ?
 			GROUP BY cluster, namespace, project
 		) v ON s.cluster = v.cluster AND s.namespace = v.namespace AND s.project = v.project
 		ORDER BY s.cluster, s.namespace, s.project
-	`)
+	`, originFilter, originFilter, originFilter, originFilter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query fleet tree: %w", err)
 	}

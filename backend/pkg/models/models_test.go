@@ -115,3 +115,52 @@ func TestVEXStatement_ClusterField(t *testing.T) {
 		t.Errorf("expected Cluster=\"fleet-asia\", got %q", stmt.Cluster)
 	}
 }
+
+func TestSBOM_OriginField(t *testing.T) {
+	sbom := SBOM{
+		IngestedAt:   time.Now(),
+		SBOMID:       uuid.New(),
+		SourceFile:   "test.spdx.json",
+		DocumentName: "test-doc",
+		Origin:       "cluster-scan",
+	}
+
+	if sbom.Origin != "cluster-scan" {
+		t.Errorf("expected Origin=\"cluster-scan\", got %q", sbom.Origin)
+	}
+
+	data, err := json.Marshal(sbom)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if m["origin"] != "cluster-scan" {
+		t.Errorf("JSON origin field = %v, want \"cluster-scan\"", m["origin"])
+	}
+}
+
+func TestSBOM_OriginOmitEmpty(t *testing.T) {
+	sbom := SBOM{
+		IngestedAt:   time.Now(),
+		SBOMID:       uuid.New(),
+		SourceFile:   "test.spdx.json",
+		DocumentName: "test-doc",
+		Origin:       "",
+	}
+
+	data, err := json.Marshal(sbom)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+
+	var m map[string]interface{}
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if _, exists := m["origin"]; exists {
+		t.Error("expected origin to be omitted for empty value")
+	}
+}

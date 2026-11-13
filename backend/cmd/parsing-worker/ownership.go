@@ -4,8 +4,9 @@ import (
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
 
-// ownership carries the three orthogonal dimensions (#131 cluster, #138
-// namespace, #57 project) from an ingestion job onto the rows produced for it.
+// ownership carries the four orthogonal dimensions (#131 cluster, #138
+// namespace, #57 project, #455 origin) from an ingestion job onto the rows
+// produced for it.
 //
 // This exists so the copy happens in one place instead of six. Each data table
 // is written by a different part of processSBOMJob, and a single forgotten
@@ -16,6 +17,7 @@ type ownership struct {
 	cluster   string
 	namespace string
 	project   string
+	origin    string
 	// tags (#357) ride along on the same carrier because they arrive from the
 	// same place -- the job -- but they are stamped onto the sboms row only.
 	// The derived tables reach tags by joining on sbom_id, so denormalising an
@@ -35,31 +37,32 @@ func ownershipOf(job models.IngestionJob) ownership {
 		cluster:   job.Cluster,
 		namespace: job.Namespace,
 		project:   job.Project,
+		origin:    job.Origin,
 		tags:      job.Tags,
 		parent:    job.Parent,
 	}
 }
 
 func (o ownership) applySBOM(m *models.SBOM) {
-	m.Cluster, m.Namespace, m.Project = o.cluster, o.namespace, o.project
+	m.Cluster, m.Namespace, m.Project, m.Origin = o.cluster, o.namespace, o.project, o.origin
 	m.Tags = o.tags
 	m.Parent = o.parent
 }
 
 func (o ownership) applyPackages(m *models.SBOMPackages) {
-	m.Cluster, m.Namespace, m.Project = o.cluster, o.namespace, o.project
+	m.Cluster, m.Namespace, m.Project, m.Origin = o.cluster, o.namespace, o.project, o.origin
 }
 
 func (o ownership) applyVulnerability(m *models.Vulnerability) {
-	m.Cluster, m.Namespace, m.Project = o.cluster, o.namespace, o.project
+	m.Cluster, m.Namespace, m.Project, m.Origin = o.cluster, o.namespace, o.project, o.origin
 }
 
 func (o ownership) applyLicenseCompliance(m *models.LicenseCompliance) {
-	m.Cluster, m.Namespace, m.Project = o.cluster, o.namespace, o.project
+	m.Cluster, m.Namespace, m.Project, m.Origin = o.cluster, o.namespace, o.project, o.origin
 }
 
 func (o ownership) applyStoredDocument(m *models.StoredDocument) {
-	m.Cluster, m.Namespace, m.Project = o.cluster, o.namespace, o.project
+	m.Cluster, m.Namespace, m.Project, m.Origin = o.cluster, o.namespace, o.project, o.origin
 }
 
 // applyVEXStatements stamps every statement in a parsed VEX document.
@@ -73,5 +76,5 @@ func (o ownership) applyVEXStatements(stmts []models.VEXStatement) {
 }
 
 func (o ownership) applyVEXStatement(m *models.VEXStatement) {
-	m.Cluster, m.Namespace, m.Project = o.cluster, o.namespace, o.project
+	m.Cluster, m.Namespace, m.Project, m.Origin = o.cluster, o.namespace, o.project, o.origin
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/seebom-labs/bomhort/backend/internal/advisory"
 	"github.com/seebom-labs/bomhort/backend/internal/ingestpath"
+	"github.com/seebom-labs/bomhort/backend/internal/origin"
 	"github.com/seebom-labs/bomhort/backend/internal/tags"
 )
 
@@ -35,6 +36,9 @@ type S3BucketConfig struct {
 	// NAMESPACE/PROJECT defaults and anything derived from the object key.
 	Namespace string `json:"namespace,omitempty"`
 	Project   string `json:"project,omitempty"`
+	// Origin (#455) optionally sets the origin for all SBOMs in this bucket:
+	// cluster-scan, ci, registry, vendor, manual.
+	Origin string `json:"origin,omitempty"`
 	// Parent pins every object in this bucket to one parent (product), for
 	// a bucket per product. Explicit configuration, so it outranks the
 	// global PARENT, the "parent" path-layout token and every automatic
@@ -139,6 +143,10 @@ type Config struct {
 	// config, path derivation, upload query param) supplies a value.
 	Namespace string // Default namespace (default "" = unassigned)
 	Project   string // Default project   (default "" = unassigned)
+	// Origin (#455) records how the SBOM was produced: cluster-scan, ci,
+	// registry, vendor, manual. Instance-wide default, used when nothing more
+	// specific supplies a value.
+	Origin string // Default origin (default "" = unassigned)
 	// Parent is the instance-wide default parent (product) for every
 	// ingested SBOM, from PARENT. Rarely useful instance-wide; per-bucket
 	// "parent", the "parent" path-layout token and ?parent= on upload are the
@@ -261,6 +269,7 @@ func Load() (*Config, error) {
 		ClusterName:           getEnv("CLUSTER_NAME", ""),
 		Namespace:             getEnv("NAMESPACE", ""),
 		Project:               getEnv("PROJECT", ""),
+		Origin:                origin.Normalize(getEnv("ORIGIN", "")),
 		Parent:                strings.TrimSpace(getEnv("PARENT", "")),
 		Tags:                  tags.Parse(getEnv("TAGS", "")),
 		IngestPathLayout:      getEnv("INGEST_PATH_LAYOUT", ""),
@@ -330,6 +339,10 @@ func Load() (*Config, error) {
 	case "", "strict", "permissive-wins", "off":
 	default:
 		return nil, fmt.Errorf("invalid LICENSE_EXPRESSION_MODE %q (want strict|permissive-wins|off)", cfg.LicenseExpressionMode)
+	}
+
+	if err := origin.Validate(cfg.Origin); err != nil {
+		return nil, fmt.Errorf("invalid ORIGIN: %w", err)
 	}
 
 	// Fail fast on a malformed layout rather than ingesting a whole fleet with
@@ -402,10 +415,14 @@ func Load() (*Config, error) {
 	// Deduplicate bucket names.
 	cfg.S3Buckets = deduplicateBuckets(cfg.S3Buckets)
 
-	// Per-bucket layouts are validated here for the same fail-fast reason.
-	for _, b := range cfg.S3Buckets {
-		if _, err := ingestpath.ParseLayout(b.PathLayout); err != nil {
-			return nil, fmt.Errorf("invalid pathLayout for bucket %q: %w", b.Name, err)
+	// Per-bucket layouts and origins are validated here for the same fail-fast reason.
+	for i := range cfg.S3Buckets {
+		if _, err := ingestpath.ParseLayout(cfg.S3Buckets[i].PathLayout); err != nil {
+			return nil, fmt.Errorf("invalid pathLayout for bucket %q: %w", cfg.S3Buckets[i].Name, err)
+		}
+		cfg.S3Buckets[i].Origin = origin.Normalize(cfg.S3Buckets[i].Origin)
+		if err := origin.Validate(cfg.S3Buckets[i].Origin); err != nil {
+			return nil, fmt.Errorf("invalid origin for bucket %q: %w", cfg.S3Buckets[i].Name, err)
 		}
 	}
 
