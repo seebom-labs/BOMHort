@@ -355,6 +355,8 @@ The ownership parameters are optional and independent. A parameter that is absen
 `tags` is the one exception to that override model: because groupings are many-to-many, upload tags are added to the configured ones instead of replacing them. `project` and `tags` also answer different questions — `project` names *what the artifact is*, `tags` say *what kind of thing it is* — so tagging an upload never collapses it into the tag. See [Fleet Views]({{< relref "/docs/ownership" >}}).
 
 
+A cluster scanner pushing one SBOM per running image should follow the conformance list in [Scanning a Cluster]({{< relref "/docs/scanning-a-cluster#conformance-list" >}}), which says which of these parameters a scanner must send.
+
 Unlike the bucket/directory ingestion path, the server cannot infer these from an uploaded body, so a pushing CI job states them explicitly. They are stamped onto the ingestion job and copied onto every row the parsing worker writes (`sboms`, `sbom_packages`, `vulnerabilities`, `license_compliance`, `vex_statements`, `document_store`).
 
 **Response (accepted):** `202 Accepted`
