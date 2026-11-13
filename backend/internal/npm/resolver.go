@@ -9,6 +9,7 @@ package npm
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -28,6 +29,11 @@ const (
 	// The public registry is generous, but stay polite: ~5 req/s sustained.
 	defaultRate  = 5.0
 	defaultBurst = 10
+
+	// maxResponseSize bounds a registry response (same cap as
+	// rulesource.MaxSize). A larger body is cut off and fails to decode, so a
+	// broken or hostile mirror cannot make the worker allocate without limit.
+	maxResponseSize = 10 << 20
 )
 
 // Resolver resolves npm package licenses via the registry API.
@@ -142,7 +148,7 @@ func (r *Resolver) fetchLicense(ctx context.Context, name, version string) (stri
 	}
 
 	var m manifest
-	if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseSize)).Decode(&m); err != nil {
 		return "", ""
 	}
 	if lic := NormalizeLicense(m.License, m.Licenses); lic != "" {

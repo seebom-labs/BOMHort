@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -36,6 +37,11 @@ const (
 
 	defaultRate  = 5.0
 	defaultBurst = 10
+
+	// maxResponseSize bounds a registration or catalog response (same cap as
+	// rulesource.MaxSize). A larger body is cut off and fails to decode, so a
+	// broken or hostile hive cannot make the worker allocate without limit.
+	maxResponseSize = 10 << 20
 )
 
 // RepoResolver resolves a license from a source repository purl (pkg:github/owner/repo).
@@ -244,7 +250,7 @@ func (r *Resolver) getJSON(ctx context.Context, u string, out any) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("status %d", resp.StatusCode)
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	return json.NewDecoder(io.LimitReader(resp.Body, maxResponseSize)).Decode(out)
 }
 
 // LicenseFromURL maps a well-known license URL to an SPDX ID, or "".
