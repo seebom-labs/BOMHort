@@ -46,6 +46,7 @@ var vulnerabilityCSVHeader = []string{
 	"fixed_version", "source_file", "discovered_at",
 	"dependency_scope", "dependency_depth", "vex_status",
 	"reachability", "evidence_source", "evidence_ref", "evidence_at",
+	"exploit_available", "exploit_sources",
 }
 
 func vulnerabilityCSVRecord(v dto.VulnerabilityListItem) []string {
@@ -58,6 +59,7 @@ func vulnerabilityCSVRecord(v dto.VulnerabilityListItem) []string {
 		v.FixedVersion, v.SourceFile, v.DiscoveredAt,
 		v.DependencyScope, depth, v.VEXStatus,
 		v.Reachability, v.EvidenceSource, v.EvidenceRef, v.EvidenceAt,
+		strconv.FormatBool(v.ExploitAvailable), strings.Join(v.ExploitSources, ";"),
 	}
 	for i := range rec {
 		rec[i] = csvSafe(rec[i])
@@ -99,11 +101,18 @@ func vulnerabilityReportHandler(filter vulnFilterFunc, stream vulnerabilityStrea
 			return
 		}
 
+		exploitOnly, ok := parseExploit(q.Get("exploit"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, invalidExploitMsg)
+			return
+		}
+
 		f, status, msg := filter(r)
 		if status != 0 {
 			writeError(w, status, msg)
 			return
 		}
+		f.ExploitAvailable = exploitOnly
 
 		rows, err := stream(r.Context(), scope, f)
 		if err != nil {

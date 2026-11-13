@@ -882,6 +882,33 @@ See [Architecture: License Resolution](/docs/architecture/#license-resolution) f
 
 ---
 
+## 8a. Public Exploit Code {#public-exploit-code}
+
+`cve-refresher` also refreshes, on every run, an index of which CVEs have public exploit code: Nuclei templates, Metasploit modules and Exploit-DB entries. Findings show it next to the CVE, link each exploit, and the listings and the CSV report take `?exploit=available` ([API reference](/docs/api-reference/#exploit-code)).
+
+| Source | Index file | License | Size |
+|--------|------------|---------|------|
+| `nuclei` | `projectdiscovery/nuclei-templates` `cves.json` | MIT | ~2 MB |
+| `metasploit` | `rapid7/metasploit-framework` `db/modules_metadata_base.json` (`exploit/` modules and `auxiliary/` modules outside `auxiliary/scanner/`, which only detect a flaw) | BSD-3-Clause | ~12 MB |
+| `exploitdb` | `exploit-database/exploitdb` `files_exploits.csv` | GPL-2.0 (index read as data; no exploit code is fetched or linked into BOMHort) | ~10 MB |
+
+The refresher downloads the three index files, not the repositories: about 25 MB per run, a few seconds of work, and no `git` in the image. Each source is independent. A source that fails to download or parse, or parses to nothing (a format change upstream), keeps its previous snapshot and is logged as a `WARNING`; it never empties the signal. The CVE refresh runs either way.
+
+```yaml
+cveRefresher:
+  exploitRefs:
+    enabled: true                               # false: skip the sync
+    sources: [nuclei, metasploit, exploitdb]    # any subset
+    urls:                                       # empty = upstream file
+      nuclei: ""
+      metasploit: ""
+      exploitdb: ""
+```
+
+For air-gapped installs, mirror the three files and point `urls` at an internal `https://` location, or at `file:///path` on a volume you mount into the CronJob. Outside Helm the variables are `SKIP_EXPLOIT_REFS`, `EXPLOIT_SOURCES` (comma-separated) and `EXPLOIT_NUCLEI_URL` / `EXPLOIT_METASPLOIT_URL` / `EXPLOIT_EXPLOITDB_URL`. An unknown source name or URL scheme stops the refresher at startup. Plain `http://` is refused — in the URL and as a redirect target — because an index rewritten in transit would plant false exploit matches; use `https://` or `file://`.
+
+The data lives in `exploit_refs` (migration `032`). Findings are matched against it at query time, by `vuln_id` or any alias, so nothing has to be re-scanned when a new exploit appears.
+
 ## 9. Full Deployment Example
 
 ### S3-based (recommended)

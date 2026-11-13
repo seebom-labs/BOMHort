@@ -20,6 +20,7 @@ import { ScopeBadgeComponent } from '../../shared/scope-badge/scope-badge.compon
 import { ScopeMatrixComponent } from '../../shared/scope-matrix/scope-matrix.component';
 import { VulnAliasesComponent } from '../../shared/vuln-aliases/vuln-aliases.component';
 import { AdvisoryBadgeComponent } from '../../shared/advisory-badge/advisory-badge.component';
+import { ExploitBadgeComponent } from '../../shared/exploit-badge/exploit-badge.component';
 import { primaryVulnId } from '../../shared/vuln-identity';
 
 type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
@@ -27,7 +28,7 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
 @Component({
   selector: 'app-sbom-detail',
   standalone: true,
-  imports: [CommonModule, ScrollingModule, RouterModule, ScopeBadgeComponent, VulnAliasesComponent, ScopeMatrixComponent, AdvisoryBadgeComponent],
+  imports: [CommonModule, ScrollingModule, RouterModule, ScopeBadgeComponent, VulnAliasesComponent, ExploitBadgeComponent, ScopeMatrixComponent, AdvisoryBadgeComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="sbom-detail" *ngIf="detail">
@@ -98,6 +99,7 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
                 </a>
                 <app-vuln-aliases [vuln]="vuln"></app-vuln-aliases>
               <app-advisory-badge [vuln]="vuln"></app-advisory-badge>
+              <app-exploit-badge [vuln]="vuln"></app-exploit-badge>
               </span>
               <span class="summary">{{ vuln.summary }}</span>
             </div>

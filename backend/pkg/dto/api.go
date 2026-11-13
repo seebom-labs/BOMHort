@@ -156,6 +156,15 @@ type VulnerabilityListItem struct {
 	EvidenceSource string `json:"evidence_source,omitempty"`
 	EvidenceRef    string `json:"evidence_ref,omitempty"`
 	EvidenceAt     string `json:"evidence_at,omitempty"`
+
+	// ExploitAvailable says whether public exploit code exists for the
+	// finding's CVE (matched by vuln_id or any alias): a Nuclei template, a
+	// Metasploit module or an Exploit-DB entry. ExploitSources names the
+	// sources in that order, Exploits links each one; both are omitted when
+	// none is known.
+	ExploitAvailable bool         `json:"exploit_available"`
+	ExploitSources   []string     `json:"exploit_sources,omitempty"`
+	Exploits         []ExploitRef `json:"exploits,omitempty"`
 }
 
 // ReachabilitySummary is the response returned when uploading reachability evidence (#535).
@@ -167,6 +176,18 @@ type ReachabilitySummary struct {
 	Reachable     int    `json:"reachable"`
 	NotReachable  int    `json:"not_reachable"`
 	Timestamp     string `json:"timestamp"`
+}
+
+// ExploitRef is one piece of public exploit code for a finding's CVE.
+type ExploitRef struct {
+	// Source is "nuclei", "metasploit" or "exploitdb".
+	Source string `json:"source"`
+	// Ref identifies the exploit within its source: the template path, the
+	// module name or the EDB-ID.
+	Ref string `json:"ref"`
+	// URL is the public page of the exploit.
+	URL   string `json:"url"`
+	Title string `json:"title,omitempty"`
 }
 
 // DependencyNode represents a single node in the dependency tree for the UI.

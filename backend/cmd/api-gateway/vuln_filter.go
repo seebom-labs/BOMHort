@@ -10,6 +10,7 @@ import (
 	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
 	"github.com/seebom-labs/bomhort/backend/internal/projectgroup"
 	tagpkg "github.com/seebom-labs/bomhort/backend/internal/tags"
+	"github.com/seebom-labs/bomhort/backend/pkg/dto"
 )
 
 // vulnFilterFunc reads the ownership filters (#459) of a vulnerability
@@ -104,8 +105,14 @@ func vulnListHandler(chClient *clickhouse.Client, filter vulnFilterFunc, preset 
 			writeError(w, http.StatusBadRequest, "Invalid reachability (expected reachable, not_reachable, or unknown)")
 			return
 		}
+		exploitOnly, ok := parseExploit(r.URL.Query().Get("exploit"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, invalidExploitMsg)
+			return
+		}
 		f, status, msg := filter(r)
 		f.Reachability = reachability
+		f.ExploitAvailable = exploitOnly
 		if status == 0 && preset != nil {
 			if msg = preset(r, &f); msg != "" {
 				status = http.StatusBadRequest
@@ -155,4 +162,31 @@ func parseReachability(raw string) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+// invalidExploitMsg answers an ?exploit= value outside parseExploit's vocabulary.
+const invalidExploitMsg = "Invalid exploit (expected available)"
+
+// parseExploit validates the optional ?exploit= filter: "available" keeps
+// only findings with public exploit code, "" filters nothing.
+func parseExploit(raw string) (bool, bool) {
+	switch raw {
+	case "":
+		return false, true
+	case "available":
+		return true, true
+	}
+	return false, false
+}
+
+// onlyExploitable keeps the findings with public exploit code, for the
+// listings that are assembled in full before they are returned.
+func onlyExploitable(items []dto.VulnerabilityListItem) []dto.VulnerabilityListItem {
+	out := make([]dto.VulnerabilityListItem, 0, len(items))
+	for _, it := range items {
+		if it.ExploitAvailable {
+			out = append(out, it)
+		}
+	}
+	return out
 }

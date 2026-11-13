@@ -347,6 +347,10 @@ type VulnFilter struct {
 	ParentMembers []string
 	// Reachability filters findings by evidence ("reachable", "not_reachable", "unknown").
 	Reachability string
+	// ExploitAvailable (?exploit=available) keeps only findings with public
+	// exploit code. Honoured by the finding listings (vulnWhere), not by the
+	// dashboard counts.
+	ExploitAvailable bool
 }
 
 // ownerPredicate restricts sbom_id to the SBOMs matching f, or returns ""
@@ -405,6 +409,9 @@ func vulnWhere(scope string, f VulnFilter) (string, []any) {
 	if owner != "" {
 		preds = append(preds, owner)
 		args = append(args, ownerArgs...)
+	}
+	if f.ExploitAvailable {
+		preds = append(preds, exploitPredicate)
 	}
 	if len(preds) == 0 {
 		return "", nil
@@ -484,11 +491,21 @@ func scanVulnerabilityListRow(rows driver.Rows) (dto.VulnerabilityListItem, erro
 
 // VulnerabilityCursor streams the rows of the instance-wide finding listing
 // one at a time (#266). Close it when done.
+//
+// Rows are read ahead in batches of streamBatch so exploit references can be
+// looked up once per batch instead of once per row; memory stays bounded by
+// the batch, not by the export.
 type VulnerabilityCursor struct {
+	c    *Client
+	ctx  context.Context
 	rows driver.Rows
+	buf  []dto.VulnerabilityListItem
+	pos  int
 	item dto.VulnerabilityListItem
 	err  error
 }
+
+const streamBatch = 500
 
 // StreamVulnerabilities runs the same query as QueryVulnerabilities without
 // pagination and returns a cursor over it. The query is sent before this
@@ -500,17 +517,44 @@ func (c *Client) StreamVulnerabilities(ctx context.Context, scope string, f Vuln
 	if err != nil {
 		return nil, fmt.Errorf("failed to query vulnerabilities: %w", err)
 	}
-	return &VulnerabilityCursor{rows: rows}, nil
+	return &VulnerabilityCursor{c: c, ctx: ctx, rows: rows}, nil
 }
 
 // Next advances to the next finding. It returns false at the end or on an
 // error; check Err afterwards.
 func (cur *VulnerabilityCursor) Next() bool {
-	if cur.err != nil || !cur.rows.Next() {
+	if cur.err != nil {
 		return false
 	}
-	cur.item, cur.err = scanVulnerabilityListRow(cur.rows)
-	return cur.err == nil
+	if cur.pos >= len(cur.buf) && !cur.fill() {
+		return false
+	}
+	cur.item = cur.buf[cur.pos]
+	cur.pos++
+	return true
+}
+
+// fill reads the next batch and attaches its exploit references.
+func (cur *VulnerabilityCursor) fill() bool {
+	cur.buf, cur.pos = cur.buf[:0], 0
+	for len(cur.buf) < streamBatch && cur.rows.Next() {
+		item, err := scanVulnerabilityListRow(cur.rows)
+		if err != nil {
+			cur.err = err
+			return false
+		}
+		cur.buf = append(cur.buf, item)
+	}
+	if len(cur.buf) == 0 {
+		return false
+	}
+	if cur.c != nil {
+		if err := cur.c.enrichExploits(cur.ctx, cur.buf); err != nil {
+			cur.err = err
+			return false
+		}
+	}
+	return true
 }
 
 // Item returns the current finding.
@@ -575,6 +619,9 @@ func (c *Client) QueryVulnerabilities(ctx context.Context, page, pageSize uint64
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to read vulnerability rows: %w", err)
+	}
+	if err := c.enrichExploits(ctx, items); err != nil {
+		return nil, err
 	}
 
 	if items == nil {

@@ -142,6 +142,9 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows error: %w", err)
 	}
+	if err := c.enrichExploits(ctx, items); err != nil {
+		return nil, err
+	}
 	if items == nil {
 		items = []dto.VulnerabilityListItem{}
 	}

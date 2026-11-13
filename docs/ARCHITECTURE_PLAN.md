@@ -51,6 +51,7 @@ bomhort/
 │   │   │   ├── queries_project_groups.go # Parent grouping: per-project signals, grouped listing
 │   │   │   ├── queries_search.go  # SBOM detail, CVE impact, license violations, dep stats
 │   │   │   ├── queries_refresh.go # CVE Refresh: PURL dedup, reverse-lookup, refresh log
+│   │   │   ├── queries_exploit.go # Public exploit code: snapshot write, per-finding lookup, ?exploit filter
 │   │   │   ├── queries_github_cache.go # GitHub license cache read/write
 │   │   │   └── queries_license_recheck.go # Stored compliance rows + latest recheck job
 │   │   ├── github/            # GitHub API client for license resolution (PURL→license)
@@ -58,6 +59,7 @@ bomhort/
 │   │   ├── osv/               # OSV API client (rate-limited, exponential backoff retry)
 │   │   ├── osvutil/           # Shared OSV helpers (severity, fixed version, affected versions)
 │   │   ├── advisory/          # OSV-format advisory feeds (ADVISORY_SOURCES): sync, apk/dpkg/rpm version order, feed-first matching
+│   │   ├── exploit/           # Public exploit-code indexes (Nuclei, Metasploit, Exploit-DB): fetch, parse, snapshot sync
 │   │   ├── s3/                # S3-compatible bucket client (AWS S3, MinIO, GCS)
 │   │   ├── license/           # License compliance + externalized policy + exceptions (+ Reevaluate)
 │   │   ├── rulesource/        # Rules documents from file / https / s3, polled with last-known-good
@@ -452,6 +454,7 @@ one bucket is nested and another flat.
 | `dashboard_stats_mv` | SummingMergeTree (MV) | (stat_date) | Pre-aggregated daily stats |
 | `vex_statements` | ReplacingMergeTree | (vuln_id, product_purl, vex_id) | OpenVEX statements |
 | `cve_refresh_log` | MergeTree | (started_at, refresh_id) | CVE refresh run history (timestamp, results, status) |
+| `exploit_refs` | ReplacingMergeTree(last_seen) | (source, cve_id, ref) | Public exploit code per CVE (migration `032`): Nuclei templates, Metasploit modules, Exploit-DB entries. Reference data keyed by CVE, no ownership columns; each source is a snapshot (rows of its newest `last_seen` are current) |
 | `github_license_cache` | ReplacingMergeTree | (repo) | Cache for resolved GitHub licenses (avoids API redundancy) |
 | `github_repo_metadata` | ReplacingMergeTree | (repo) | GitHub repo metadata (archived, fork, stars, pushed_at) for dependency health |
 | `registry_license_cache` | ReplacingMergeTree | (registry, package) | Cache for npm/NuGet/deps.dev/Packagist/PyPI resolved licenses; negatives stored as `!<reason>` |
@@ -564,6 +567,10 @@ Moved to Section 10 for comprehensive coverage including exemptions and visual r
 4. Reverse-lookup: PURL → which SBOMs contain it? (`has(package_purls, ?)`)
 5. With feeds: run the matcher over all PURLs (new osv.dev hits plus feed-only flaws not yet stored under any of their ids), then `INSERT` new vulnerability records — and feed `not_affected` VEX statements — for all affected SBOMs
 6. Write refresh log to `cve_refresh_log`
+
+**Public exploit code.** Before the OSV pass, the refresher syncs `exploit_refs` from three index files — nuclei-templates `cves.json`, Metasploit `db/modules_metadata_base.json`, Exploit-DB `files_exploits.csv` (~25 MB together, a few seconds; downloads, not clones, so no `git` in the image and no GB-scale checkouts). Each source is written as one batch with a shared `last_seen`; readers keep only each source's newest snapshot, so an entry removed upstream disappears and a failed sync (download, parse, or an index that suddenly parses to nothing) leaves the previous snapshot in force. Links are built from fixed upstream prefixes plus a validated path, never taken from the document. Indexes are only read over `https://` (redirects to plain HTTP refused) or from `file://`. Metasploit's `auxiliary/scanner/` category is left out: those modules detect a flaw, they do not exploit it. `first_seen` is carried over on every re-insert.
+
+The signal is **not** copied onto `vulnerabilities`. Finding listings look it up at query time — one `cve_id IN (…)` lookup per page (per 500 rows for the CSV stream), matching `vuln_id` and every alias — and `?exploit=available` is a row-local predicate: each row's `vuln_id` and aliases are probed against the current exploit CVE set, built once per query, so a scoped listing reads only its own rows and the count query does not rescan `vulnerabilities`. A new template therefore shows on findings ingested long ago without rewriting them, and the remediation SLA policy can read the same table when it lands.
 
 **Shared Helpers:** `internal/osvutil` package (extracted from parsing-worker) for `ClassifySeverity`, `ExtractFixedVersion`, `ExtractAffectedVersions`.
 

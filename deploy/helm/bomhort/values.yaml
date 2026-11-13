@@ -599,6 +599,20 @@ mcp:
 cveRefresher:
   enabled: true
   schedule: "0 2 * * *"    # Daily at 2 AM
+  # Public exploit-code index: which CVEs have a Nuclei template, a
+  # Metasploit module or an Exploit-DB entry. Three index files (~25 MB in
+  # all) are downloaded on every run; findings show the result next to the
+  # CVE and the listings accept ?exploit=available.
+  exploitRefs:
+    enabled: true
+    # Any subset of: nuclei, metasploit, exploitdb.
+    sources: [nuclei, metasploit, exploitdb]
+    # Override an index URL, e.g. an internal mirror or file:// on a mounted
+    # volume for air-gapped installs. Empty = the upstream file.
+    urls:
+      nuclei: ""
+      metasploit: ""
+      exploitdb: ""
   resources:
     requests:
       cpu: 100m

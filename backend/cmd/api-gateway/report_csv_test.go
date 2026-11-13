@@ -62,6 +62,7 @@ func TestVulnerabilityReportCSV(t *testing.T) {
 			DependencyScope: "direct", DependencyDepth: depth(1), VEXStatus: "not_affected",
 			Reachability: "not_reachable", EvidenceSource: "govulncheck v1.1.3",
 			EvidenceRef: "job-42", EvidenceAt: "2026-05-15T01:00:00Z",
+			ExploitAvailable: true, ExploitSources: []string{"nuclei", "exploitdb"},
 		},
 		{VulnID: "GHSA-aaaa-bbbb-cccc", Severity: "LOW", PURL: "pkg:npm/x@1", DependencyScope: "unknown"},
 	}}
@@ -96,12 +97,12 @@ func TestVulnerabilityReportCSV(t *testing.T) {
 	want := []string{"CVE-2024-45338", "GO-2024-3333", "CVE-2024-45338;GHSA-w32m-9786-jp63", "HIGH",
 		"pkg:golang/golang.org/x/net@v0.21.0", "Non-linear parsing, \"quoted\", with a comma", "v0.33.0",
 		"etcd.spdx.json", "2026-05-15T00:00:00Z", "direct", "1", "not_affected",
-		"not_reachable", "govulncheck v1.1.3", "job-42", "2026-05-15T01:00:00Z"}
+		"not_reachable", "govulncheck v1.1.3", "job-42", "2026-05-15T01:00:00Z", "true", "nuclei;exploitdb"}
 	if strings.Join(records[1], "|") != strings.Join(want, "|") {
 		t.Errorf("row 1 =\n%v\nwant\n%v", records[1], want)
 	}
 	// No CVE, no aliases, unknown depth: empty cells, not "0" or "null".
-	if records[2][0] != "" || records[2][2] != "" || records[2][10] != "" {
+	if records[2][0] != "" || records[2][2] != "" || records[2][10] != "" || records[2][16] != "false" || records[2][17] != "" {
 		t.Errorf("row 2 = %v", records[2])
 	}
 }
@@ -121,6 +122,7 @@ func TestVulnerabilityReportRejectsBadParams(t *testing.T) {
 		"/api/v1/reports/vulnerabilities?format=pdf",
 		"/api/v1/reports/vulnerabilities?format=CSV",
 		"/api/v1/reports/vulnerabilities?format=csv&scope=indirect",
+		"/api/v1/reports/vulnerabilities?format=csv&exploit=yes",
 	} {
 		called := false
 		h := vulnerabilityReportHandler(noParents, func(context.Context, string, clickhouse.VulnFilter) (vulnerabilityRows, error) {
@@ -175,5 +177,18 @@ func TestCSVSafe(t *testing.T) {
 		if got := csvSafe(in); got != want {
 			t.Errorf("csvSafe(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestVulnerabilityReportPassesExploitFilter(t *testing.T) {
+	var got clickhouse.VulnFilter
+	h := vulnerabilityReportHandler(noParents, func(_ context.Context, _ string, f clickhouse.VulnFilter) (vulnerabilityRows, error) {
+		got = f
+		return &fakeVulnRows{}, nil
+	}, fixedNow)
+	rec := httptest.NewRecorder()
+	h(rec, httptest.NewRequest(http.MethodGet, "/api/v1/reports/vulnerabilities?format=csv&exploit=available", nil))
+	if rec.Code != http.StatusOK || !got.ExploitAvailable {
+		t.Fatalf("status %d, filter %+v; want the exploit filter passed to the query", rec.Code, got)
 	}
 }
