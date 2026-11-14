@@ -110,6 +110,7 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
                   [title]="reachabilityTooltip(vuln)">
               {{ vuln.reachability === 'reachable' ? 'REACHABLE' : 'NOT REACHABLE' }}
             </span>
+            <span class="vex-origin-badge upstream" *ngIf="vuln.vex_role === 'upstream'" title="Upstream VEX advisory">upstream</span>
             <app-scope-badge [scope]="vuln.dependency_scope" [depth]="vuln.dependency_depth" [reason]="vuln.scope_reason"></app-scope-badge>
             <span class="purl">{{ vuln.purl }}</span>
           </div>
@@ -251,7 +252,8 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
                 {{ vulnLabel(stmt) }}
               </a>
               <app-vuln-aliases [vuln]="stmt"></app-vuln-aliases>
-              <span class="vex-origin-badge" *ngIf="isAutomated(stmt)" title="Produced by tooling">automated</span>
+              <span class="vex-origin-badge upstream" *ngIf="stmt.role === 'upstream'" title="Upstream VEX advisory">upstream</span>
+              <span class="vex-origin-badge" *ngIf="isAutomated(stmt) && stmt.role !== 'upstream'" title="Produced by tooling">automated</span>
               <span class="vex-ts">{{ stmt.vex_timestamp | date: 'medium' }}</span>
             </div>
             <div class="vex-row-body">
@@ -508,6 +510,9 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
     .vex-origin-badge {
       padding: 1px 6px; border-radius: 2px; font-size: 0.6rem; font-weight: 600;
       background: var(--bg); color: var(--text-secondary); cursor: help; flex-shrink: 0;
+    }
+    .vex-origin-badge.upstream {
+      border: 1px solid var(--border);
     }
     .vex-ts { margin-left: auto; font-size: 0.7rem; color: var(--text-muted); white-space: nowrap; }
     .vex-row-body { display: flex; gap: 12px; margin-top: 4px; overflow: hidden; }

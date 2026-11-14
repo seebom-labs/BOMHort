@@ -135,6 +135,8 @@ export interface VulnerabilityListItem {
   /** "sbom": the winning statement is scoped to this SBOM; unscoped
    *  statements never apply, so this is the only value (#350). */
   vex_scope?: 'sbom';
+  /** Provenance role of the winning VEX statement (#538). E.g. "upstream" when imported from an upstream VEX source. */
+  vex_role?: string;
   /**
    * On project-level listings only (#398): how many of the project's SBOMs
    * carry this (vuln_id, purl) pair. Absent on per-SBOM listings.

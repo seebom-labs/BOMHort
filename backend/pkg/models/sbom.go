@@ -308,3 +308,17 @@ const (
 	VEXStatusFixed              = "fixed"
 	VEXStatusUnderInvestigation = "under_investigation"
 )
+
+// VEX justification constants (OpenVEX / CSAF spec).
+const (
+	VEXJustificationComponentNotPresent              = "component_not_present"
+	VEXJustificationVulnerableCodeNotPresent         = "vulnerable_code_not_present"
+	VEXJustificationVulnerableCodeNotInExecutePath   = "vulnerable_code_not_in_execute_path"
+	VEXJustificationVulnerableCodeCannotBeControlled = "vulnerable_code_cannot_be_controlled_by_adversary"
+	VEXJustificationInlineMitigationsExist           = "inline_mitigations_already_exist"
+)
+
+// VEX role constants (#334, #538).
+const (
+	VEXRoleUpstream = "upstream"
+)

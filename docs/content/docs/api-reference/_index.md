@@ -654,6 +654,7 @@ All vulnerabilities found in a specific SBOM, including the effective VEX statem
     "vex_timestamp": "2026-09-01T12:00:00Z",
     "vex_statement_id": "b3f1c2d4-5678-90ab-cdef-1234567890ab",
     "vex_author": "Example Org Security Team",
+    "vex_role": "upstream",
     "vex_tooling": "VEXViper/0.1.0",
     "reachability": "not_reachable",
     "evidence_source": "govulncheck v1.1.3",
@@ -663,7 +664,7 @@ All vulnerabilities found in a specific SBOM, including the effective VEX statem
 ]
 ```
 
-`vex_justification`, `vex_timestamp`, `vex_statement_id`, `vex_author` and `vex_tooling` describe the **winning** statement and are omitted (like `vex_status`) when no VEX statement covers the pair. `vex_author`/`vex_tooling` carry the provenance captured by migration `017` (#334) and are empty for statements ingested before it. `vex_timestamp` enables re-triage policies such as "re-open `under_investigation` older than 30 days" without paging through `/api/v1/vex/statements`. `reachability` (`reachable`, `not_reachable`, or `unknown`), `evidence_source`, `evidence_ref`, and `evidence_at` carry the reachability evidence (#535).
+`vex_justification`, `vex_timestamp`, `vex_statement_id`, `vex_author`, `vex_role` and `vex_tooling` describe the **winning** statement and are omitted (like `vex_status`) when no VEX statement covers the pair. `vex_role` indicates the provenance role (`"upstream"` for subscriptions, #538). `vex_author`/`vex_tooling` carry the provenance captured by migration `017` (#334) and are empty for statements ingested before it. `vex_timestamp` enables re-triage policies such as "re-open `under_investigation` older than 30 days" without paging through `/api/v1/vex/statements`. `reachability` (`reachable`, `not_reachable`, or `unknown`), `evidence_source`, `evidence_ref`, and `evidence_at` carry the reachability evidence (#535).
 
 
 ### `POST /api/v1/sboms/{id}/evidence`
@@ -1428,6 +1429,25 @@ Paginated list of all ingested VEX statements with affected SBOM cross-reference
 ```
 
 `sbom_id` (#350) marks the SBOM the statement is scoped to; it is omitted for **unscoped** statements, whose product could not be resolved at ingest — those suppress findings in no SBOM. Unscoped statements are not permanently inert: the persisted product `@id` (`product_ref`, migration `020`) lets the parsing worker re-resolve and scope them after each later SBOM ingest (**VEX rescue**). `author`, `role`, `tooling` and `status_notes` (#334) carry the statement's provenance, taken from the OpenVEX document (`author`/`role`/`tooling`) and statement (`status_notes`) at ingest. All four are omitted when the source document does not set them — including every statement ingested before migration `017`. Automated producers (VEXViper, #338) set `tooling` and write confidence + reasoning into `status_notes`; a `role`/`tooling`-based automated-vs-human badge and a `?vex_source=` filter follow in Phase 3.
+
+### `POST /api/v1/vex/upstream/sync`
+
+Trigger an immediate on-demand synchronization of configured upstream VEX subscriptions (#538).
+
+The engine queries distinct package PURLs present across stored SBOMs, fetches matching advisories from configured OpenVEX hubs, CSAF providers, and OCI referrers, scopes them to the matching SBOMs, and inserts them into ClickHouse.
+
+**Request:** Empty body. Requires `AUTH_ENABLED=true` (returns `403 Forbidden` when authentication is disabled, preventing unauthenticated triggering of upstream fetches and database writes).
+
+**Response:** `200 OK`
+
+```json
+{
+  "applied": 14,
+  "status": "ok"
+}
+```
+
+If no upstream sources are configured in `VEX_SOURCES`, the endpoint returns `200 OK` with `"applied": 0` and `"status": "no upstream VEX sources configured"`.
 
 ---
 

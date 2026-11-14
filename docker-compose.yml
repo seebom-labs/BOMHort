@@ -95,6 +95,8 @@ services:
       # else the shared originals volume below.
       ORIGINAL_STORE_BACKEND: ${ORIGINAL_STORE_BACKEND:-auto}
       ORIGINAL_STORE_FS_PATH: /data/originals
+      VEX_SOURCES: ${VEX_SOURCES:-}
+      VEX_REFRESH_INTERVAL: ${VEX_REFRESH_INTERVAL:-1h}
     volumes:
       - ${SBOM_SOURCE_DIR:-./sboms}:/data/sboms:ro
       - ./sboms/license-exceptions.json:/data/config/license-exceptions.json:ro
@@ -207,6 +209,8 @@ services:
       # gateway; the worker needs the originals volume read-write.
       ORIGINAL_STORE_BACKEND: ${ORIGINAL_STORE_BACKEND:-auto}
       ORIGINAL_STORE_FS_PATH: /data/originals
+      VEX_SOURCES: ${VEX_SOURCES:-}
+      VEX_REFRESH_INTERVAL: ${VEX_REFRESH_INTERVAL:-1h}
     volumes:
       - ${SBOM_SOURCE_DIR:-./sboms}:/data/sboms:ro
       - ./sboms/license-exceptions.json:/data/config/license-exceptions.json:ro
@@ -249,6 +253,8 @@ services:
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: ""
       ADVISORY_SOURCES: ${ADVISORY_SOURCES:-}
+      VEX_SOURCES: ${VEX_SOURCES:-}
+      VEX_REFRESH_INTERVAL: ${VEX_REFRESH_INTERVAL:-1h}
     depends_on:
       clickhouse:
         condition: service_healthy
