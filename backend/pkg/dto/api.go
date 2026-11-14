@@ -759,3 +759,25 @@ type TagListItem struct {
 	// page rather than as a plain filter chip.
 	IsProject bool `json:"is_project"`
 }
+
+// ScanSummary reports aggregate counts for a stateless SBOM scan (#513).
+type ScanSummary struct {
+	PackageCount      uint64                    `json:"package_count"`
+	VulnCount         uint64                    `json:"vuln_count"`
+	CriticalVulns     uint64                    `json:"critical_vulns"`
+	HighVulns         uint64                    `json:"high_vulns"`
+	MediumVulns       uint64                    `json:"medium_vulns"`
+	LowVulns          uint64                    `json:"low_vulns"`
+	LicenseViolations uint64                    `json:"license_violations"`
+	LicenseExemptions uint64                    `json:"license_exemptions"`
+	ScopeBreakdown    map[string]SeverityCounts `json:"scope_breakdown,omitempty"`
+}
+
+// ScanResponse is the response DTO for POST /api/v1/scan (#513).
+type ScanResponse struct {
+	PolicyResult      string                     `json:"policy_result"`
+	PolicyReason      string                     `json:"policy_reason,omitempty"`
+	Summary           ScanSummary                `json:"summary"`
+	Vulnerabilities   []VulnerabilityListItem    `json:"vulnerabilities"`
+	LicenseCompliance []SBOMLicenseBreakdownItem `json:"license_compliance"`
+}

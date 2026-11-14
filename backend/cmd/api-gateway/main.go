@@ -29,10 +29,13 @@ import (
 	"github.com/seebom-labs/bomhort/backend/internal/config"
 	"github.com/seebom-labs/bomhort/backend/internal/depgraph"
 	"github.com/seebom-labs/bomhort/backend/internal/docstore"
+	"github.com/seebom-labs/bomhort/backend/internal/evaluate"
 	"github.com/seebom-labs/bomhort/backend/internal/evidence"
+	gh "github.com/seebom-labs/bomhort/backend/internal/github"
 	"github.com/seebom-labs/bomhort/backend/internal/imageid"
 	"github.com/seebom-labs/bomhort/backend/internal/license"
 	originpkg "github.com/seebom-labs/bomhort/backend/internal/origin"
+	"github.com/seebom-labs/bomhort/backend/internal/osv"
 	"github.com/seebom-labs/bomhort/backend/internal/repo"
 	"github.com/seebom-labs/bomhort/backend/internal/rulesource"
 	s3client "github.com/seebom-labs/bomhort/backend/internal/s3"
@@ -46,6 +49,9 @@ import (
 // uploadPath is the push-model SBOM/VEX upload route (#135). Defined once so
 // the mux registration and the CORS per-route method scoping can't drift.
 const uploadPath = "/api/v1/sboms/upload"
+
+// scanPath is the stateless SBOM evaluation route (#513).
+const scanPath = "/api/v1/scan"
 
 // uploadCleanupTimeout bounds the best-effort S3 RemoveObject issued when an
 // upload was already staged but its ingestion-job enqueue failed. Runs on a
@@ -155,6 +161,14 @@ func main() {
 		log.Printf("Using default license policy: %v", err)
 	}
 	applyLicenseExpressionMode(cfg.LicenseExpressionMode)
+
+	// OSV and license resolvers for stateless SBOM evaluation (#513).
+	osvClient := osv.NewClient()
+	var ghResolver *gh.Resolver
+	if !cfg.SkipGitHubResolve {
+		ghResolver = gh.NewResolver(cfg.GitHubToken)
+	}
+	registryResolvers := evaluate.NewRegistryResolvers(context.Background(), cfg, chClient, ghResolver)
 
 	mux := http.NewServeMux()
 
@@ -1035,6 +1049,16 @@ func main() {
 		localWritable:  localUploadWritable,
 	}))
 
+	// Stateless SBOM evaluation for pull-request gating (#513).
+	mux.HandleFunc("POST "+scanPath, scanHandler(scanDeps{
+		cfg:               cfg,
+		chClient:          chClient,
+		osvClient:         osvClient,
+		ghResolver:        ghResolver,
+		registryResolvers: registryResolvers,
+		exceptions:        func() *license.ExceptionIndex { return exceptions.Current().Value },
+	}))
+
 	// Manual source attribution override (#332): the escape hatch for SBOMs
 	// whose extraction yielded nothing (Syft dir: scans, pkg:generic roots).
 	mux.HandleFunc("PATCH /api/v1/sboms/{id}", patchSBOMSourceHandler(cfg, chClient, chClient))
@@ -1273,9 +1297,9 @@ func corsMiddleware(allowedOrigins string, next http.Handler) http.Handler {
 			}
 		}
 
-		// POST is valid on the upload route and evidence routes.
+		// POST is valid on upload, scan, and evidence routes.
 		allowedMethods := "GET, HEAD, OPTIONS"
-		if r.URL.Path == uploadPath || (strings.HasPrefix(r.URL.Path, "/api/v1/sboms/") && strings.HasSuffix(r.URL.Path, "/evidence")) {
+		if r.URL.Path == uploadPath || r.URL.Path == scanPath || (strings.HasPrefix(r.URL.Path, "/api/v1/sboms/") && strings.HasSuffix(r.URL.Path, "/evidence")) {
 			allowedMethods = "GET, POST, OPTIONS"
 		}
 		w.Header().Set("Access-Control-Allow-Methods", allowedMethods)
