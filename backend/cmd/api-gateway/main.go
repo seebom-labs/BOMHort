@@ -38,6 +38,7 @@ import (
 	s3client "github.com/seebom-labs/bomhort/backend/internal/s3"
 	"github.com/seebom-labs/bomhort/backend/internal/sourcerepo"
 	tagpkg "github.com/seebom-labs/bomhort/backend/internal/tags"
+	"github.com/seebom-labs/bomhort/backend/internal/tea"
 	"github.com/seebom-labs/bomhort/backend/internal/vex"
 	"github.com/seebom-labs/bomhort/backend/pkg/dto"
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
@@ -1039,6 +1040,21 @@ func main() {
 	// whose extraction yielded nothing (Syft dir: scans, pkg:generic roots).
 	mux.HandleFunc("PATCH /api/v1/sboms/{id}", patchSBOMSourceHandler(cfg, chClient, chClient))
 
+	// ── Transparency Exchange API (TEA Beta 2) (#534) ─────────────────
+	teaStore := newTEAStore(chClient, originals, s3c, cfg.SBOMDir)
+	teaSvc := tea.NewService(teaStore)
+	teaHandler := tea.NewHandler(teaSvc, cfg.TEABaseURL)
+	mux.Handle("GET /.well-known/tea", teaHandler)
+	mux.Handle("HEAD /.well-known/tea", teaHandler)
+	mux.Handle("GET /api/v1/tea/", teaHandler)
+	mux.Handle("HEAD /api/v1/tea/", teaHandler)
+	mux.Handle("GET /api/v1/tea", teaHandler)
+	mux.Handle("HEAD /api/v1/tea", teaHandler)
+	mux.Handle("GET /tea/", teaHandler)
+	mux.Handle("HEAD /tea/", teaHandler)
+	mux.Handle("GET /tea", teaHandler)
+	mux.Handle("HEAD /tea", teaHandler)
+
 	// CORS + security middleware for Angular dev server.
 	// Order (outermost first): security headers → rate limit → CORS → auth → mux.
 	// Auth sits closest to the mux so 401s still get CORS + security headers.
@@ -1349,10 +1365,12 @@ func rateLimitMiddleware(maxRequests int, next http.Handler) http.Handler {
 
 // authPublicPaths lists request paths that bypass authentication even when
 // AUTH_ENABLED=true. K8s probes and CORS preflight must always succeed.
+// /.well-known/tea is public per the TEA discovery specification (#534).
 var authPublicPaths = map[string]struct{}{
-	"/healthz": {},
-	"/livez":   {},
-	"/readyz":  {},
+	"/healthz":         {},
+	"/livez":           {},
+	"/readyz":          {},
+	"/.well-known/tea": {},
 }
 
 // isBadgePath checks if a request path strictly matches the public badge endpoints:

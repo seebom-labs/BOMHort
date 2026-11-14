@@ -424,6 +424,9 @@ apiGateway:
   # per-IP write budget. Lower it if the upload endpoint is exposed to
   # untrusted networks.
   maxUploadSizeMB: 50
+  # Transparency Exchange API (TEA Beta 2, #534).
+  # Advertised base URL in /.well-known/tea. Empty = auto-detected from request.
+  teaBaseUrl: ""
   # Reuse parsed SBOM data for repeated image digests (#457). Uploads must
   # provide ?image=<ref>@sha256:<digest>; disabled by default.
   dedupByImageDigest: false

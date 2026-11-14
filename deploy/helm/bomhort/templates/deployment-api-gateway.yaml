@@ -68,8 +68,12 @@ spec:
           {{- end }}
           {{- end }}
           {{- $exceptionsEnv := include "bomhort.licenseExceptions.env" . }}
-          {{- if or .Values.clickhouse.userPasswordSecret.enabled .Values.s3.credentialsSecret.enabled .Values.apiGateway.auth.enabled .Values.apiGateway.maxUploadSizeMB .Values.apiGateway.dedupByImageDigest $queryLimits $exceptionsEnv }}
+          {{- if or .Values.clickhouse.userPasswordSecret.enabled .Values.s3.credentialsSecret.enabled .Values.apiGateway.auth.enabled .Values.apiGateway.maxUploadSizeMB .Values.apiGateway.teaBaseUrl .Values.apiGateway.dedupByImageDigest $queryLimits $exceptionsEnv }}
           env:
+            {{- if .Values.apiGateway.teaBaseUrl }}
+            - name: TEA_BASE_URL
+              value: {{ .Values.apiGateway.teaBaseUrl | quote }}
+            {{- end }}
             {{- if .Values.clickhouse.userPasswordSecret.enabled }}
             - name: CLICKHOUSE_PASSWORD
               valueFrom:
