@@ -322,7 +322,7 @@ func TestSBOMListProjectFilterIsExact(t *testing.T) {
 
 	// ?project= is exact identity; the orphan shares a component with the
 	// child but is a different project and must not appear.
-	resp, err := c.QuerySBOMs(ctx, 1, 50, "", f.child, 0)
+	resp, err := c.QuerySBOMs(ctx, 1, 50, "", f.child, "", "", "", "", 0)
 	if err != nil {
 		t.Fatalf("QuerySBOMs(project): %v", err)
 	}
@@ -336,7 +336,7 @@ func TestSBOMListProjectFilterIsExact(t *testing.T) {
 	}
 
 	// project + search compose.
-	narrowed, err := c.QuerySBOMs(ctx, 1, 50, "1.1.0", f.child, 0)
+	narrowed, err := c.QuerySBOMs(ctx, 1, 50, "1.1.0", f.child, "", "", "", "", 0)
 	if err != nil {
 		t.Fatalf("QuerySBOMs(project+search): %v", err)
 	}
@@ -347,7 +347,7 @@ func TestSBOMListProjectFilterIsExact(t *testing.T) {
 	// Sanity: the substring search alone is what the UI used to do, and it
 	// is exactly the behaviour #398 complains about — the prefix "fx-" matches
 	// all three fixture projects.
-	loose, err := c.QuerySBOMs(ctx, 1, 50, "fx-", "", 0)
+	loose, err := c.QuerySBOMs(ctx, 1, 50, "fx-", "", "", "", "", "", 0)
 	if err != nil {
 		t.Fatalf("QuerySBOMs(search): %v", err)
 	}

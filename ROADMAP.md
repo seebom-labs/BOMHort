@@ -313,7 +313,7 @@ Everything that touches `db/migrations/` or a frozen response shape, in one plac
 | — (endpoint) ✅ | #266 | CSV export | **pre** (v0.8.0) | market (additive) |
 | `0xx_ingestion_queue_created_at_datetime64` | #446 | `MODIFY COLUMN created_at DateTime64(3)` on `ingestion_queue` | **pre** (v0.9.0) | **contract** — a column-type change, not allowed after 1.0. Number assigned at merge; the planned numbers below shift if it lands first. |
 | `0xx_add_origin` | #455 | `ADD COLUMN origin LowCardinality(String) DEFAULT ''` on the 7 data tables | **pre** (v0.9.0) | contract (upload param + filter), additive |
-| `0xx_add_workload_identity` | #458 | `ADD COLUMN workload_kind, workload_name, workload_uid` on `sboms` | **pre** (v0.9.0) | contract (upload params), additive |
+| `032_add_workload_identity` | #458 | `ADD COLUMN workload_kind, workload_name, workload_uid` on `sboms` | **pre** (v0.9.0) | contract (upload params), additive |
 | `0xx_add_image_identity` | #457 | `ADD COLUMN image_ref, image_digest` on `sboms` (+ skip index), `image_digest` on `sbom_packages`/`vulnerabilities` | **pre** (v0.9.0) | contract (`/images/{digest}`), additive |
 | `0xx_add_producer_identifiers` | #461 | `ADD COLUMN producer_identifiers Map(String,String)` on `sboms` | **pre** (v0.9.0) | additive (audit trail) |
 | `0xx_add_uploaded_by` | #456 | `ADD COLUMN uploaded_by` on `sboms` | **pre** (v0.9.0) | additive (attribution) |

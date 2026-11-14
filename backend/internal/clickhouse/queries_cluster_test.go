@@ -61,5 +61,5 @@ func TestQueryClusterMethodsExist(t *testing.T) {
 	var c *Client
 	var _ func(context.Context) ([]dto.ClusterListItem, error) = c.QueryClusters
 	var _ func(context.Context, string) (*dto.ClusterStats, error) = c.QueryClusterStats
-	var _ func(context.Context, string, uint64, uint64) (*dto.PaginatedResponse[dto.SBOMListItem], error) = c.QueryClusterSBOMs
+	var _ func(context.Context, string, uint64, uint64, string, string, string) (*dto.PaginatedResponse[dto.SBOMListItem], error) = c.QueryClusterSBOMs
 }

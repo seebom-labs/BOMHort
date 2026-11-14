@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/seebom-labs/bomhort/backend/pkg/dto"
@@ -140,20 +141,38 @@ func (c *Client) QueryClusterStats(ctx context.Context, cluster string) (*dto.Cl
 }
 
 // QueryClusterSBOMs returns a paginated list of SBOMs for a specific cluster.
-func (c *Client) QueryClusterSBOMs(ctx context.Context, cluster string, page, pageSize uint64) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
+func (c *Client) QueryClusterSBOMs(ctx context.Context, cluster string, page, pageSize uint64, workloadKind, workloadName, workloadUID string) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
 	if page == 0 {
 		page = 1
 	}
 	offset := (page - 1) * pageSize
 
+	var conds []string
+	var whereArgs []interface{}
+	conds = append(conds, "s.cluster = ?")
+	whereArgs = append(whereArgs, cluster)
+	if workloadKind != "" {
+		conds = append(conds, "s.workload_kind = ?")
+		whereArgs = append(whereArgs, workloadKind)
+	}
+	if workloadName != "" {
+		conds = append(conds, "s.workload_name = ?")
+		whereArgs = append(whereArgs, workloadName)
+	}
+	if workloadUID != "" {
+		conds = append(conds, "s.workload_uid = ?")
+		whereArgs = append(whereArgs, workloadUID)
+	}
+	whereClause := "WHERE " + strings.Join(conds, " AND ")
+
 	// Total count for this cluster.
 	var total uint64
-	if err := c.Conn.QueryRow(ctx,
-		"SELECT count() FROM sboms FINAL WHERE cluster = ?", cluster).Scan(&total); err != nil {
+	countQuery := "SELECT count() FROM (SELECT * FROM sboms FINAL) AS s " + whereClause
+	if err := c.Conn.QueryRow(ctx, countQuery, whereArgs...).Scan(&total); err != nil {
 		return nil, fmt.Errorf("failed to count cluster sboms: %w", err)
 	}
 
-	rows, err := c.Conn.Query(ctx, `
+	query := fmt.Sprintf(`
 		SELECT
 			s.sbom_id,
 			s.source_file,
@@ -166,7 +185,10 @@ func (c *Client) QueryClusterSBOMs(ctx context.Context, cluster string, page, pa
 			s.source_ref,
 			s.cluster,
 			s.namespace,
-			s.project
+			s.project,
+			s.workload_kind,
+			s.workload_name,
+			s.workload_uid
 		FROM (SELECT * FROM sboms FINAL) AS s
 		LEFT JOIN (
 			SELECT sbom_id, sum(length(package_names)) AS pkg_count
@@ -180,10 +202,14 @@ func (c *Client) QueryClusterSBOMs(ctx context.Context, cluster string, page, pa
 			WHERE cluster = ?
 			GROUP BY sbom_id
 		) v ON s.sbom_id = v.sbom_id
-		WHERE s.cluster = ?
+		%s
 		ORDER BY s.ingested_at DESC
 		LIMIT ? OFFSET ?
-	`, cluster, cluster, cluster, pageSize, offset)
+	`, whereClause)
+
+	args := append([]interface{}{cluster, cluster}, whereArgs...)
+	args = append(args, pageSize, offset)
+	rows, err := c.Conn.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query cluster sboms: %w", err)
 	}
@@ -196,7 +222,8 @@ func (c *Client) QueryClusterSBOMs(ctx context.Context, cluster string, page, pa
 		if err := rows.Scan(&item.SBOMID, &item.SourceFile, &item.SPDXVersion,
 			&item.DocumentName, &item.PackageCount, &item.VulnCount, &ingestedAt,
 			&item.SourceRepo, &item.SourceRef,
-			&item.Cluster, &item.Namespace, &item.Project); err != nil {
+			&item.Cluster, &item.Namespace, &item.Project,
+			&item.WorkloadKind, &item.WorkloadName, &item.WorkloadUID); err != nil {
 			return nil, fmt.Errorf("failed to scan cluster sbom row: %w", err)
 		}
 		item.IngestedAt = ingestedAt.Format(time.RFC3339)

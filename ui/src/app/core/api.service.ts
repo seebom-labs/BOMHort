@@ -75,8 +75,18 @@ export class ApiService {
    * SBOM list. `search` is a substring match on document name / source path;
    * `project` (#398) is the exact project identity and scopes the list to
    * one project's versions. They compose. `minQuality` filters by minimum quality score (#537).
+   * `workloadKind`, `workloadName`, `workloadUID` filter by runtime workload identity (#458).
    */
-  getSboms(page = 1, pageSize = 50, search = '', project = '', minQuality = 0): Observable<PaginatedResponse<SBOMListItem>> {
+  getSboms(
+    page = 1,
+    pageSize = 50,
+    search = '',
+    project = '',
+    workloadKind = '',
+    workloadName = '',
+    workloadUID = '',
+    minQuality = 0,
+  ): Observable<PaginatedResponse<SBOMListItem>> {
     let params = new HttpParams()
       .set('page', page.toString())
       .set('page_size', pageSize.toString());
@@ -85,6 +95,15 @@ export class ApiService {
     }
     if (project) {
       params = params.set('project', project);
+    }
+    if (workloadKind) {
+      params = params.set('workload_kind', workloadKind);
+    }
+    if (workloadName) {
+      params = params.set('workload_name', workloadName);
+    }
+    if (workloadUID) {
+      params = params.set('workload_uid', workloadUID);
     }
     if (minQuality > 0) {
       params = params.set('min_quality', minQuality.toString());

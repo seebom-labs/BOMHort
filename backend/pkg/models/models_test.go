@@ -115,3 +115,58 @@ func TestVEXStatement_ClusterField(t *testing.T) {
 		t.Errorf("expected Cluster=\"fleet-asia\", got %q", stmt.Cluster)
 	}
 }
+
+func TestSBOM_WorkloadIdentityFields(t *testing.T) {
+	sbom := SBOM{
+		IngestedAt:   time.Now(),
+		SBOMID:       uuid.New(),
+		SourceFile:   "test.spdx.json",
+		DocumentName: "test-doc",
+		WorkloadKind: "Deployment",
+		WorkloadName: "payment-service",
+		WorkloadUID:  "1234-5678-uid",
+	}
+
+	data, err := json.Marshal(sbom)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+
+	var m map[string]interface{}
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if m["workload_kind"] != "Deployment" {
+		t.Errorf("JSON workload_kind = %v, want Deployment", m["workload_kind"])
+	}
+	if m["workload_name"] != "payment-service" {
+		t.Errorf("JSON workload_name = %v, want payment-service", m["workload_name"])
+	}
+	if m["workload_uid"] != "1234-5678-uid" {
+		t.Errorf("JSON workload_uid = %v, want 1234-5678-uid", m["workload_uid"])
+	}
+}
+
+func TestSBOM_WorkloadIdentityOmitEmpty(t *testing.T) {
+	sbom := SBOM{
+		IngestedAt:   time.Now(),
+		SBOMID:       uuid.New(),
+		SourceFile:   "test.spdx.json",
+		DocumentName: "test-doc",
+	}
+
+	data, err := json.Marshal(sbom)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+
+	var m map[string]interface{}
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	for _, f := range []string{"workload_kind", "workload_name", "workload_uid"} {
+		if _, exists := m[f]; exists {
+			t.Errorf("expected %s to be omitted for empty value", f)
+		}
+	}
+}

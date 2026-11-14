@@ -158,3 +158,94 @@ func TestQueryOverride(t *testing.T) {
 		})
 	}
 }
+
+func TestUploadHandler_WorkloadIdentity(t *testing.T) {
+	cfg := ownershipUploadConfig(t)
+	// Clear default project so we test workload_name defaulting
+	cfg.Project = ""
+
+	t.Run("query parameters and project defaulting", func(t *testing.T) {
+		store := &fakeUploadStore{}
+		h := localUploadHandler(cfg, store)
+
+		resp := postSBOM(t, h, "/api/v1/sboms/upload?workload_kind=deployment&workload_name=payment-service&workload_uid=11111111-1111-1111-1111-111111111111")
+
+		if resp["workload_kind"] != "Deployment" {
+			t.Errorf("response workload_kind = %q, want Deployment", resp["workload_kind"])
+		}
+		if resp["workload_name"] != "payment-service" {
+			t.Errorf("response workload_name = %q, want payment-service", resp["workload_name"])
+		}
+		if resp["workload_uid"] != "11111111-1111-1111-1111-111111111111" {
+			t.Errorf("response workload_uid = %q, want 11111111-1111-1111-1111-111111111111", resp["workload_uid"])
+		}
+		if resp["project"] != "payment-service" {
+			t.Errorf("response project = %q, want payment-service (defaulted from workload_name)", resp["project"])
+		}
+
+		if len(store.enqueuedJobs) != 1 {
+			t.Fatalf("enqueued %d jobs, want 1", len(store.enqueuedJobs))
+		}
+		job := store.enqueuedJobs[0]
+		if job.WorkloadKind != "Deployment" || job.WorkloadName != "payment-service" || job.WorkloadUID != "11111111-1111-1111-1111-111111111111" {
+			t.Errorf("job workload fields = (%q, %q, %q), want (Deployment, payment-service, 11111111-1111-1111-1111-111111111111)",
+				job.WorkloadKind, job.WorkloadName, job.WorkloadUID)
+		}
+		if job.Project != "payment-service" {
+			t.Errorf("job.Project = %q, want payment-service", job.Project)
+		}
+	})
+
+	t.Run("headers", func(t *testing.T) {
+		store := &fakeUploadStore{}
+		h := localUploadHandler(cfg, store)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/sboms/upload", bytes.NewReader([]byte(`{"spdxVersion":"SPDX-2.3"}`)))
+		req.Header.Set("X-Filename", "app.spdx.json")
+		req.Header.Set("X-Workload-Kind", "StatefulSet")
+		req.Header.Set("X-Workload-Name", "redis-cluster")
+		req.Header.Set("X-Workload-UID", "22222222-2222-2222-2222-222222222222")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusAccepted {
+			t.Fatalf("expected 202, got %d: %s", rec.Code, rec.Body.String())
+		}
+		job := store.enqueuedJobs[0]
+		if job.WorkloadKind != "StatefulSet" || job.WorkloadName != "redis-cluster" || job.WorkloadUID != "22222222-2222-2222-2222-222222222222" {
+			t.Errorf("job workload fields = (%q, %q, %q), want (StatefulSet, redis-cluster, 22222222-2222-2222-2222-222222222222)",
+				job.WorkloadKind, job.WorkloadName, job.WorkloadUID)
+		}
+		if job.Project != "redis-cluster" {
+			t.Errorf("job.Project = %q, want redis-cluster (defaulted from Workload-Name)", job.Project)
+		}
+	})
+
+	t.Run("invalid workload kind rejected with 400", func(t *testing.T) {
+		store := &fakeUploadStore{}
+		h := localUploadHandler(cfg, store)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/sboms/upload?workload_kind=not-a-kind", bytes.NewReader([]byte(`{"spdxVersion":"SPDX-2.3"}`)))
+		req.Header.Set("X-Filename", "app.spdx.json")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("invalid workload uid rejected with 400", func(t *testing.T) {
+		store := &fakeUploadStore{}
+		h := localUploadHandler(cfg, store)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/sboms/upload?workload_uid=oops", bytes.NewReader([]byte(`{"spdxVersion":"SPDX-2.3"}`)))
+		req.Header.Set("X-Filename", "app.spdx.json")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+		}
+	})
+}

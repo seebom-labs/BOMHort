@@ -17,6 +17,7 @@ func (c *Client) InsertSBOM(ctx context.Context, sbom *models.SBOM) error {
 			ingested_at, sbom_id, source_file, spdx_version,
 			document_name, document_namespace, sha256_hash,
 			creation_date, creator_tools, cluster, namespace, project,
+			workload_kind, workload_name, workload_uid,
 			source_repo, source_ref, document_version, tags,
 			parent, root_purl, supplier,
 			quality_score, quality_flags
@@ -43,6 +44,9 @@ func (c *Client) InsertSBOM(ctx context.Context, sbom *models.SBOM) error {
 		sbom.Cluster,
 		sbom.Namespace,
 		sbom.Project,
+		sbom.WorkloadKind,
+		sbom.WorkloadName,
+		sbom.WorkloadUID,
 		sbom.SourceRepo,
 		sbom.SourceRef,
 		sbom.DocumentVersion,

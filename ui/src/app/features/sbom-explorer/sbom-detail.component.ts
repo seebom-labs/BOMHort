@@ -49,6 +49,12 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
         <span *ngIf="detail.source_ref" class="source-ref" title="Source ref (branch, tag or commit)">@ {{ detail.source_ref }}</span>
       </div>
 
+      <div class="source-row" *ngIf="detail.workload_name">
+        <span class="source-label">Workload:</span>
+        <span class="source-value">{{ detail.workload_kind ? detail.workload_kind + '/' : '' }}{{ detail.workload_name }}</span>
+        <span *ngIf="detail.workload_uid" class="source-ref" [title]="'UID: ' + detail.workload_uid">({{ detail.workload_uid }})</span>
+      </div>
+
       <div class="stats-row">
         <div class="stat"><strong>{{ detail.package_count | number }}</strong> packages</div>
         <div class="stat"><strong>{{ detail.vuln_count | number }}</strong> vulnerabilities</div>

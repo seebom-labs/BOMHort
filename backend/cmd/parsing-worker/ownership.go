@@ -13,9 +13,12 @@ import (
 // from "genuinely unassigned" and only fixable by re-ingesting. Centralising it
 // makes that class of bug a compile-or-test failure rather than a data one.
 type ownership struct {
-	cluster   string
-	namespace string
-	project   string
+	cluster      string
+	namespace    string
+	project      string
+	workloadKind string
+	workloadName string
+	workloadUID  string
 	// tags (#357) ride along on the same carrier because they arrive from the
 	// same place -- the job -- but they are stamped onto the sboms row only.
 	// The derived tables reach tags by joining on sbom_id, so denormalising an
@@ -31,17 +34,27 @@ type ownership struct {
 // ownershipOf reads the dimensions assigned to a job by the ingestion watcher
 // (or the upload endpoint).
 func ownershipOf(job models.IngestionJob) ownership {
+	project := job.Project
+	if project == "" && job.WorkloadName != "" {
+		project = job.WorkloadName
+	}
 	return ownership{
-		cluster:   job.Cluster,
-		namespace: job.Namespace,
-		project:   job.Project,
-		tags:      job.Tags,
-		parent:    job.Parent,
+		cluster:      job.Cluster,
+		namespace:    job.Namespace,
+		project:      project,
+		workloadKind: job.WorkloadKind,
+		workloadName: job.WorkloadName,
+		workloadUID:  job.WorkloadUID,
+		tags:         job.Tags,
+		parent:       job.Parent,
 	}
 }
 
 func (o ownership) applySBOM(m *models.SBOM) {
 	m.Cluster, m.Namespace, m.Project = o.cluster, o.namespace, o.project
+	m.WorkloadKind = o.workloadKind
+	m.WorkloadName = o.workloadName
+	m.WorkloadUID = o.workloadUID
 	m.Tags = o.tags
 	m.Parent = o.parent
 }
