@@ -56,6 +56,7 @@ Even when authentication is enabled, the following endpoints bypass auth so Kube
 | `/healthz` | K8s health check (legacy, always 200) |
 | `/livez` | Liveness probe (always 200 if process alive) |
 | `/readyz` | Readiness probe (pings ClickHouse, 503 if unavailable) |
+| `/.well-known/tea` | TEA automated service discovery ([RFC 8615](/docs/tea/)) |
 | `OPTIONS *` | CORS preflight |
 
 ### Responses
