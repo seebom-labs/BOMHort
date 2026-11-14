@@ -185,6 +185,26 @@ func TestQueriesExecute(t *testing.T) {
 			_, err := c.QueryProjectBadgeStats(ctx, "no-such-project", "")
 			return err
 		}},
+		// Transparency Exchange API (TEA Beta 2, #534).
+		{"QueryTEAProducts", func() error { _, _, err := c.QueryTEAProducts(ctx, 1, 10); return err }},
+		{"QueryTEAProductByName", func() error {
+			_, err := c.QueryTEAProductByName(ctx, "payment-api")
+			if errors.Is(err, ErrSBOMNotFound) {
+				return nil
+			}
+			return err
+		}},
+		{"QueryTEAAllReleases", func() error { _, _, err := c.QueryTEAAllReleases(ctx, 1, 10); return err }},
+		{"QueryTEAReleasesByProject", func() error { _, _, err := c.QueryTEAReleasesByProject(ctx, "payment-api", 1, 10); return err }},
+		{"QueryTEAReleaseBySBOMID", func() error {
+			_, err := c.QueryTEAReleaseBySBOMID(ctx, someID)
+			if errors.Is(err, ErrSBOMNotFound) {
+				return nil
+			}
+			return err
+		}},
+		{"QueryTEAReleasesByPURL", func() error { _, err := c.QueryTEAReleasesByPURL(ctx, "pkg:golang/test@1.0"); return err }},
+		{"QueryTEAVEXStatementsCount", func() error { _, err := c.QueryTEAVEXStatementsCount(ctx, someID); return err }},
 		{"QueryProjectVulnerabilities", func() error { _, err := c.QueryProjectVulnerabilities(ctx, "no-such-project", ""); return err }},
 		{"QueryProjectPackages", func() error { _, err := c.QueryProjectPackages(ctx, "no-such-project", 1, 10, ""); return err }},
 		{"QueryProjectPackages/search", func() error { _, err := c.QueryProjectPackages(ctx, "no-such-project", 1, 10, "curl"); return err }},

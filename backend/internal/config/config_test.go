@@ -492,3 +492,14 @@ func TestLoad_S3SharedSettingsInheritance(t *testing.T) {
 		t.Error("bucket-b.UseSSL should be false (own setting)")
 	}
 }
+
+func TestLoad_TEABaseURL(t *testing.T) {
+	t.Setenv("TEA_BASE_URL", "https://transparency.example.com/api/v1/tea/")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.TEABaseURL != "https://transparency.example.com/api/v1/tea" {
+		t.Errorf("TEABaseURL = %q, want 'https://transparency.example.com/api/v1/tea'", cfg.TEABaseURL)
+	}
+}

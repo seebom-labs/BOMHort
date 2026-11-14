@@ -174,6 +174,10 @@ type Config struct {
 	// Push-model upload (#135)
 	MaxUploadSizeMB int // Max accepted body size for POST /api/v1/sboms/upload, in MB (default 50)
 
+	// Transparency Exchange API (TEA Beta 2, #534).
+	// Base URL advertised in /.well-known/tea. Empty = auto-detected from request.
+	TEABaseURL string
+
 	// Tier-2 fidelity capture (#256): where the original SBOM bytes are kept.
 	//   OriginalStoreBackend: "auto" (default) | "s3" | "fs" | "none"
 	//     auto → "s3" when any S3 bucket is configured, else "fs" when
@@ -276,6 +280,7 @@ func Load() (*Config, error) {
 		BadgesPublic:          getEnvBool("BADGES_PUBLIC", false),
 		BrandName:             getEnv("BRAND_NAME", "BOMHort"),
 		MaxUploadSizeMB:       getEnvInt("MAX_UPLOAD_SIZE_MB", 50),
+		TEABaseURL:            strings.TrimRight(getEnv("TEA_BASE_URL", ""), "/"),
 
 		OriginalStoreBackend:  strings.ToLower(getEnv("ORIGINAL_STORE_BACKEND", OriginalStoreAuto)),
 		OriginalStoreS3Bucket: getEnv("ORIGINAL_STORE_S3_BUCKET", ""),
