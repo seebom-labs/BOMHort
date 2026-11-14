@@ -102,10 +102,19 @@ func TestQueriesExecute(t *testing.T) {
 	}{
 		{"QueryDashboardStats", func() error { _, err := c.QueryDashboardStats(ctx, VulnFilter{}); return err }},
 		{"QueryQualityStats", func() error { _, err := c.QueryQualityStats(ctx); return err }},
-		{"QuerySBOMs", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "", "", 0); return err }},
-		{"QuerySBOMs/search", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "test", "", 0); return err }},
-		{"QuerySBOMs/project", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "", "payment-api", 0); return err }},
-		{"QuerySBOMs/project+search", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "v1", "payment-api", 0); return err }},
+		{"QuerySBOMs", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "", "", 0, ""); return err }},
+		{"QuerySBOMs/search", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "test", "", 0, ""); return err }},
+		{"QuerySBOMs/project", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "", "payment-api", 0, ""); return err }},
+		{"QuerySBOMs/project+search", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "v1", "payment-api", 0, ""); return err }},
+		{"QuerySBOMs/digest", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "", "", 0, "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"); return err }},
+		{"ImageDigestExists", func() error { _, err := c.ImageDigestExists(ctx, "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"); return err }},
+		{"QueryImageDetail", func() error {
+			_, err := c.QueryImageDetail(ctx, "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+			if errors.Is(err, ErrImageNotFound) {
+				return nil
+			}
+			return err
+		}},
 		{"QuerySBOMDetail", func() error { _, err := c.QuerySBOMDetail(ctx, someID); return err }},
 		{"QuerySBOMVulnerabilities", func() error { _, err := c.QuerySBOMVulnerabilities(ctx, someID, "", ""); return err }},
 		{"QuerySBOMLicenses", func() error { _, err := c.QuerySBOMLicenses(ctx, someID); return err }},

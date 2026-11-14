@@ -28,6 +28,7 @@ import (
 	"github.com/seebom-labs/bomhort/backend/internal/depgraph"
 	"github.com/seebom-labs/bomhort/backend/internal/docstore"
 	"github.com/seebom-labs/bomhort/backend/internal/evidence"
+	"github.com/seebom-labs/bomhort/backend/internal/imagedigest"
 	"github.com/seebom-labs/bomhort/backend/internal/license"
 	"github.com/seebom-labs/bomhort/backend/internal/repo"
 	"github.com/seebom-labs/bomhort/backend/internal/rulesource"
@@ -177,25 +178,64 @@ func main() {
 		writeJSON(w, http.StatusOK, stats)
 	})
 
-	// List SBOMs with pagination and optional search / project filter (#398).
+	// List SBOMs with pagination and optional search / project filter (#398) / quality (#537) / digest (#457).
 	// ?project= is the exact project name as the project listing shows it;
 	// ?search= is a substring match on document name or source path. They
 	// compose, so a project page can offer a search box within the project.
 	// ?min_quality= filters for SBOMs with quality_score >= min_quality (0-100, #537).
+	// ?digest= filters for SBOMs with image_digest = digest (#457).
 	mux.HandleFunc("GET /api/v1/sboms", func(w http.ResponseWriter, r *http.Request) {
 		page := parseUint64(r.URL.Query().Get("page"), 1)
 		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
 		search := sanitizeSearchTerm(r.URL.Query().Get("search"))
 		project := sanitizeProjectName(r.URL.Query().Get("project"))
 		minQuality := parseUint8(r.URL.Query().Get("min_quality"), 0)
+		digest := imagedigest.NormalizeDigest(r.URL.Query().Get("digest"))
 
-		resp, err := chClient.QuerySBOMs(r.Context(), page, pageSize, search, project, minQuality)
+		resp, err := chClient.QuerySBOMs(r.Context(), page, pageSize, search, project, minQuality, digest)
 		if err != nil {
 			log.Printf("ERROR: list sboms: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch SBOMs")
 			return
 		}
 		writeJSON(w, http.StatusOK, resp)
+	})
+
+	// HEAD /api/v1/sboms checks whether SBOMs exist (optional ?digest= query param) (#457).
+	mux.HandleFunc("HEAD /api/v1/sboms", func(w http.ResponseWriter, r *http.Request) {
+		digest := imagedigest.NormalizeDigest(r.URL.Query().Get("digest"))
+		if digest != "" {
+			exists, err := chClient.ImageDigestExists(r.Context(), digest)
+			if err != nil {
+				log.Printf("ERROR: check image digest: %v", err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			if exists {
+				w.WriteHeader(http.StatusOK)
+			} else {
+				w.WriteHeader(http.StatusNotFound)
+			}
+			return
+		}
+
+		page := parseUint64(r.URL.Query().Get("page"), 1)
+		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
+		search := sanitizeSearchTerm(r.URL.Query().Get("search"))
+		project := sanitizeProjectName(r.URL.Query().Get("project"))
+		minQuality := parseUint8(r.URL.Query().Get("min_quality"), 0)
+
+		resp, err := chClient.QuerySBOMs(r.Context(), page, pageSize, search, project, minQuality, "")
+		if err != nil {
+			log.Printf("ERROR: head sboms: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if resp.Total > 0 {
+			w.WriteHeader(http.StatusOK)
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+		}
 	})
 
 	// List vulnerabilities with pagination. Every finding is returned with its
@@ -379,6 +419,46 @@ func main() {
 			return
 		}
 		writeJSON(w, http.StatusOK, licenses)
+	})
+
+	// Image details (#457)
+	mux.HandleFunc("GET /api/v1/images/{digest}", func(w http.ResponseWriter, r *http.Request) {
+		digest := imagedigest.NormalizeDigest(r.PathValue("digest"))
+		if !imagedigest.IsValidDigest(digest) {
+			writeError(w, http.StatusBadRequest, "Invalid image digest: must be algorithm:hex (e.g. sha256:...)")
+			return
+		}
+		detail, err := chClient.QueryImageDetail(r.Context(), digest)
+		if err != nil {
+			if errors.Is(err, clickhouse.ErrImageNotFound) {
+				writeError(w, http.StatusNotFound, "Image not found")
+				return
+			}
+			log.Printf("ERROR: get image detail for %s: %v", sanitizeLogParam(digest), err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch image detail")
+			return
+		}
+		writeJSON(w, http.StatusOK, detail)
+	})
+
+	// Check if an image digest exists (#457)
+	mux.HandleFunc("HEAD /api/v1/images/{digest}", func(w http.ResponseWriter, r *http.Request) {
+		digest := imagedigest.NormalizeDigest(r.PathValue("digest"))
+		if !imagedigest.IsValidDigest(digest) {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		exists, err := chClient.ImageDigestExists(r.Context(), digest)
+		if err != nil {
+			log.Printf("ERROR: check image digest for %s: %v", sanitizeLogParam(digest), err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if exists {
+			w.WriteHeader(http.StatusOK)
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+		}
 	})
 
 	// Projects with non-compliant licenses (filtered by exceptions).
@@ -1446,9 +1526,19 @@ func queryOverride(r *http.Request, param, fallback string) string {
 	return fallback
 }
 
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}
+
 // uploadStore is the minimal surface uploadHandler needs, kept small for testing.
 type uploadStore interface {
 	HashExists(ctx context.Context, hash string) (bool, error)
+	ImageDigestExists(ctx context.Context, digest string) (bool, error)
 	EnqueueJobs(ctx context.Context, jobs []models.IngestionJob) error
 }
 
@@ -1642,6 +1732,48 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			return
 		}
 
+		// Image identity (#457) from upload query parameters or headers.
+		imageDigest := imagedigest.NormalizeDigest(firstNonEmpty(
+			r.URL.Query().Get("digest"),
+			r.URL.Query().Get("image_digest"),
+			r.Header.Get("X-BOMHort-Image-Digest"),
+			r.Header.Get("X-Image-Digest"),
+		))
+		imageRef := strings.TrimSpace(firstNonEmpty(
+			r.URL.Query().Get("ref"),
+			r.URL.Query().Get("image_ref"),
+			r.Header.Get("X-BOMHort-Image-Ref"),
+			r.Header.Get("X-Image-Ref"),
+		))
+		if imageRef != "" && imageDigest == "" {
+			ref, dig := imagedigest.ExtractFromRef(imageRef)
+			if dig != "" {
+				imageRef = ref
+				imageDigest = dig
+			}
+		}
+		if imageDigest != "" && !imagedigest.IsValidDigest(imageDigest) {
+			writeError(w, http.StatusBadRequest, "Invalid image digest: must be algorithm:hex (e.g. sha256:...)")
+			return
+		}
+
+		if cfg.DedupByImageDigest && imageDigest != "" {
+			digExists, err := store.ImageDigestExists(r.Context(), imageDigest)
+			if err != nil {
+				log.Printf("ERROR: upload image digest check for %s: %v", sanitizeLogParam(filename), err)
+				writeError(w, http.StatusInternalServerError, "Failed to check for duplicate image digest")
+				return
+			}
+			if digExists {
+				writeJSON(w, http.StatusOK, map[string]string{
+					"status":       "duplicate",
+					"image_digest": imageDigest,
+					"message":      "Image digest already ingested, skipping",
+				})
+				return
+			}
+		}
+
 		// Validate content before persisting/enqueueing so bad uploads fail
 		// fast with a 400 instead of a 202 that silently fails in the worker
 		// minutes later. This intentionally stays lightweight: a full parse
@@ -1807,6 +1939,8 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			TargetSBOMID: targetSBOMID,
 			Tags:         uploadTags,
 			Parent:       parent,
+			ImageRef:     imageRef,
+			ImageDigest:  imageDigest,
 		}
 		// Single-row insert, deliberately: the API contract returns job_id
 		// synchronously, so the row has to be durable before we respond — there
@@ -1841,7 +1975,7 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			sanitizeLogParam(cluster), sanitizeLogParam(namespace), sanitizeLogParam(project),
 			sanitizeLogParam(sourceFile))
 
-		writeJSON(w, http.StatusAccepted, map[string]string{
+		respMap := map[string]string{
 			"status":      "pending",
 			"job_id":      job.JobID.String(),
 			"sha256_hash": hash,
@@ -1850,7 +1984,14 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			"namespace":   namespace,
 			"project":     project,
 			"parent":      parent,
-		})
+		}
+		if imageRef != "" {
+			respMap["image_ref"] = imageRef
+		}
+		if imageDigest != "" {
+			respMap["image_digest"] = imageDigest
+		}
+		writeJSON(w, http.StatusAccepted, respMap)
 	}
 }
 

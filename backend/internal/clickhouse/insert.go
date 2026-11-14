@@ -19,7 +19,8 @@ func (c *Client) InsertSBOM(ctx context.Context, sbom *models.SBOM) error {
 			creation_date, creator_tools, cluster, namespace, project,
 			source_repo, source_ref, document_version, tags,
 			parent, root_purl, supplier,
-			quality_score, quality_flags
+			quality_score, quality_flags,
+			image_ref, image_digest
 		)`)
 	if err != nil {
 		return fmt.Errorf("failed to prepare sbom batch: %w", err)
@@ -52,6 +53,8 @@ func (c *Client) InsertSBOM(ctx context.Context, sbom *models.SBOM) error {
 		sbom.Supplier,
 		sbom.QualityScore,
 		qualityFlags,
+		sbom.ImageRef,
+		sbom.ImageDigest,
 	); err != nil {
 		return fmt.Errorf("failed to append sbom: %w", err)
 	}
@@ -68,7 +71,8 @@ func (c *Client) InsertSBOMPackages(ctx context.Context, pkg *models.SBOMPackage
 			package_purls, package_licenses, package_license_sources,
 			rel_source_indices, rel_target_indices, rel_types,
 			package_depths,
-			cluster, namespace, project
+			cluster, namespace, project,
+			image_digest
 		)`)
 	if err != nil {
 		return fmt.Errorf("failed to prepare sbom_packages batch: %w", err)
@@ -91,6 +95,7 @@ func (c *Client) InsertSBOMPackages(ctx context.Context, pkg *models.SBOMPackage
 		pkg.Cluster,
 		pkg.Namespace,
 		pkg.Project,
+		pkg.ImageDigest,
 	); err != nil {
 		return fmt.Errorf("failed to append sbom_packages: %w", err)
 	}
@@ -131,7 +136,8 @@ func (c *Client) InsertVulnerabilities(ctx context.Context, vulns []models.Vulne
 			dependency_depth,
 			advisory_source, advisory_status, component_location,
 			cluster, namespace, project,
-			reachability, evidence_source, evidence_ref, evidence_at
+			reachability, evidence_source, evidence_ref, evidence_at,
+			image_digest
 		)`)
 	if err != nil {
 		return fmt.Errorf("failed to prepare vulnerabilities batch: %w", err)
@@ -169,6 +175,7 @@ func (c *Client) InsertVulnerabilities(ctx context.Context, vulns []models.Vulne
 			v.EvidenceSource,
 			v.EvidenceRef,
 			evidenceAt,
+			v.ImageDigest,
 		); err != nil {
 			return fmt.Errorf("failed to append vulnerability %s: %w", v.VulnID, err)
 		}

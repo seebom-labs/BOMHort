@@ -12,10 +12,12 @@ import (
 // "copied correctly" apart from "left at the zero value".
 func testJob() models.IngestionJob {
 	return models.IngestionJob{
-		JobID:     uuid.New(),
-		Cluster:   "prod-eu",
-		Namespace: "payments",
-		Project:   "payment-service",
+		JobID:       uuid.New(),
+		Cluster:     "prod-eu",
+		Namespace:   "payments",
+		Project:     "payment-service",
+		ImageRef:    "ghcr.io/org/app:v1",
+		ImageDigest: "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 	}
 }
 
@@ -44,18 +46,27 @@ func TestOwnershipAppliesToEveryRowType(t *testing.T) {
 		var m models.SBOM
 		own.applySBOM(&m)
 		assertOwnership(t, "SBOM", m.Cluster, m.Namespace, m.Project)
+		if m.ImageRef != "ghcr.io/org/app:v1" || m.ImageDigest != "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" {
+			t.Errorf("SBOM image identity mismatch: %v, %v", m.ImageRef, m.ImageDigest)
+		}
 	})
 
 	t.Run("SBOMPackages", func(t *testing.T) {
 		var m models.SBOMPackages
 		own.applyPackages(&m)
 		assertOwnership(t, "SBOMPackages", m.Cluster, m.Namespace, m.Project)
+		if m.ImageDigest != "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" {
+			t.Errorf("SBOMPackages image digest mismatch: %v", m.ImageDigest)
+		}
 	})
 
 	t.Run("Vulnerability", func(t *testing.T) {
 		var m models.Vulnerability
 		own.applyVulnerability(&m)
 		assertOwnership(t, "Vulnerability", m.Cluster, m.Namespace, m.Project)
+		if m.ImageDigest != "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" {
+			t.Errorf("Vulnerability image digest mismatch: %v", m.ImageDigest)
+		}
 	})
 
 	t.Run("LicenseCompliance", func(t *testing.T) {

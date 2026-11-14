@@ -49,6 +49,12 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
         <span *ngIf="detail.source_ref" class="source-ref" title="Source ref (branch, tag or commit)">@ {{ detail.source_ref }}</span>
       </div>
 
+      <div class="image-row" *ngIf="detail.image_ref || detail.image_digest">
+        <span class="image-label">Image:</span>
+        <span *ngIf="detail.image_ref" class="image-ref">{{ detail.image_ref }}</span>
+        <code *ngIf="detail.image_digest" class="image-digest" [title]="detail.image_digest">{{ detail.image_digest }}</code>
+      </div>
+
       <div class="stats-row">
         <div class="stat"><strong>{{ detail.package_count | number }}</strong> packages</div>
         <div class="stat"><strong>{{ detail.vuln_count | number }}</strong> vulnerabilities</div>
@@ -301,6 +307,17 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
       font-family: monospace; font-size: 0.7rem; color: var(--text-secondary);
       background: var(--bg); border: 1px solid var(--border); border-radius: 2px;
       padding: 1px 6px; flex-shrink: 0; cursor: help;
+    }
+    .image-row {
+      display: flex; align-items: center; gap: 8px; margin: -6px 0 12px;
+      font-size: 0.75rem; overflow: hidden;
+    }
+    .image-label { color: var(--text-secondary); font-weight: 500; flex-shrink: 0; }
+    .image-ref { font-family: monospace; font-size: 0.72rem; color: var(--text); }
+    .image-digest {
+      font-family: monospace; font-size: 0.68rem; color: var(--text-secondary);
+      background: var(--bg); border: 1px solid var(--border); border-radius: 2px;
+      padding: 1px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     .stats-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
     .stat { background: var(--surface-alt); padding: 6px 14px; border-radius: 2px; font-size: 0.8rem; border: 1px solid var(--border); }

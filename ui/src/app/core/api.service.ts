@@ -30,6 +30,7 @@ import {
   ProjectPackageItem,
   TagListItem,
   GlobalSearchResponse,
+  ImageDetail,
   FleetCluster,
   ClusterListItem,
   ClusterStats,
@@ -76,7 +77,7 @@ export class ApiService {
    * `project` (#398) is the exact project identity and scopes the list to
    * one project's versions. They compose. `minQuality` filters by minimum quality score (#537).
    */
-  getSboms(page = 1, pageSize = 50, search = '', project = '', minQuality = 0): Observable<PaginatedResponse<SBOMListItem>> {
+  getSboms(page = 1, pageSize = 50, search = '', project = '', minQuality = 0, digest = ''): Observable<PaginatedResponse<SBOMListItem>> {
     let params = new HttpParams()
       .set('page', page.toString())
       .set('page_size', pageSize.toString());
@@ -89,7 +90,14 @@ export class ApiService {
     if (minQuality > 0) {
       params = params.set('min_quality', minQuality.toString());
     }
+    if (digest) {
+      params = params.set('digest', digest);
+    }
     return this.http.get<PaginatedResponse<SBOMListItem>>(`${this.baseUrl}/sboms`, { params });
+  }
+
+  getImage(digest: string): Observable<ImageDetail> {
+    return this.http.get<ImageDetail>(`${this.baseUrl}/images/${encodeURIComponent(digest)}`);
   }
 
   getSbomDetail(sbomId: string): Observable<SBOMDetail> {

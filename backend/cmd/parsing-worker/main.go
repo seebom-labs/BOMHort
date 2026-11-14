@@ -443,6 +443,19 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 		len(result.Packages.PackageNames),
 		len(result.Packages.RelSourceIndices))
 
+	// 1a. Resolve container image identity (#457).
+	imageRef, imageDigest := resolveImageIdentity(job, &result.Packages, result.SBOM.DocumentName)
+	job.ImageRef = imageRef
+	job.ImageDigest = imageDigest
+
+	// If dedup by image digest is enabled and this image digest already exists in ClickHouse, skip.
+	if cfg.DedupByImageDigest && imageDigest != "" {
+		if exists, _ := chClient.ImageDigestExists(ctx, imageDigest); exists {
+			log.Printf("  Skipping %s (image digest %s already ingested, DEDUP_BY_IMAGE_DIGEST=true)", job.SourceFile, imageDigest)
+			return nil
+		}
+	}
+
 	// 1b. Skip if this SBOM was already fully ingested (idempotency guard).
 	if exists, _ := chClient.SBOMExists(ctx, result.SBOM.SBOMID); exists {
 		log.Printf("  Skipping %s (already ingested, sbom_id=%s)", job.SourceFile, result.SBOM.SBOMID)

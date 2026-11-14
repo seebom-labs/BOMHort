@@ -122,6 +122,9 @@ export type SbomViewMode = 'flat' | 'grouped';
             <span class="owner-badge" *ngIf="sbom.project && sbom.project !== projectScope" [title]="'Project: ' + sbom.project">
               {{ sbom.project }}
             </span>
+            <span class="owner-badge image-badge" *ngIf="sbom.image_digest" [title]="'Image: ' + (sbom.image_ref || sbom.image_digest)">
+              image
+            </span>
             <span class="packages">{{ sbom.package_count | number }} packages</span>
             <span class="vulns" [class.has-vulns]="sbom.vuln_count > 0">
               {{ sbom.vuln_count | number }} vulns
@@ -239,6 +242,7 @@ export type SbomViewMode = 'flat' | 'grouped';
       max-width: 140px; overflow: hidden; text-overflow: ellipsis;
     }
     .owner-badge.cluster-badge { background: var(--status-info-bg); color: var(--accent-hover); border-color: transparent; }
+    .owner-badge.image-badge { background: var(--surface); color: var(--accent); border-color: var(--accent); }
     .packages { color: var(--text-secondary); font-size: 0.8rem; width: 110px; }
     .vulns { font-size: 0.8rem; width: 80px; color: var(--text-secondary); }
     .has-vulns { color: var(--severity-critical); font-weight: 600; }

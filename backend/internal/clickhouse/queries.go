@@ -2,6 +2,7 @@ package clickhouse
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -10,6 +11,9 @@ import (
 	"github.com/seebom-labs/bomhort/backend/internal/depgraph"
 	"github.com/seebom-labs/bomhort/backend/pkg/dto"
 )
+
+// ErrImageNotFound is returned when an image digest is not present in sboms (#457).
+var ErrImageNotFound = errors.New("image not found")
 
 // QueryDashboardStats fetches aggregated dashboard statistics.
 func (c *Client) QueryDashboardStats(ctx context.Context, f VulnFilter) (*dto.DashboardStats, error) {
@@ -177,8 +181,9 @@ func (c *Client) QueryDashboardStats(ctx context.Context, f VulnFilter) (*dto.Da
 // rule the project listing and project page use, so "the SBOMs of
 // kubernetes" is eleven documents and not every path containing the word.
 // minQuality (#537), when > 0, restricts the list to SBOMs with quality_score >= minQuality.
+// digest (#457), when non-empty, restricts the list to SBOMs with image_digest = digest.
 // The filters compose.
-func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, project string, minQuality uint8) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
+func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, project string, minQuality uint8, digest string) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
 	if page == 0 {
 		page = 1
 	}
@@ -201,6 +206,10 @@ func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, 
 	if minQuality > 0 {
 		conds = append(conds, "s.quality_score >= ?")
 		whereArgs = append(whereArgs, minQuality)
+	}
+	if digest != "" {
+		conds = append(conds, "s.image_digest = ?")
+		whereArgs = append(whereArgs, digest)
 	}
 	whereClause := ""
 	if len(conds) > 0 {
@@ -230,7 +239,9 @@ func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, 
 			ifNull(p.pkg_count, 0) AS package_count,
 			ifNull(v.vuln_count, 0) AS vuln_count,
 			s.quality_score,
-			s.quality_flags
+			s.quality_flags,
+			s.image_ref,
+			s.image_digest
 		FROM (SELECT * FROM sboms FINAL) AS s
 		LEFT JOIN (
 			SELECT sbom_id, length(package_names) AS pkg_count
@@ -264,6 +275,7 @@ func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, 
 			&item.Cluster, &item.Namespace, &item.Project,
 			&item.PackageCount, &item.VulnCount,
 			&item.QualityScore, &item.QualityFlags,
+			&item.ImageRef, &item.ImageDigest,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan sbom row: %w", err)
 		}
@@ -421,7 +433,8 @@ func vulnerabilityListSQL(scopeWhere string) string {
 			v.advisory_source, v.advisory_status, v.component_location,
 			ifNull(vx.vex_status, '') AS vex_status,
 			ifNull(q.has_no_dep_graph, 0) AS has_no_dep_graph,
-			v.reachability, v.evidence_source, v.evidence_ref, v.evidence_at
+			v.reachability, v.evidence_source, v.evidence_ref, v.evidence_at,
+			v.image_digest
 		FROM (SELECT * FROM vulnerabilities FINAL` + scopeWhere + `) AS v
 		LEFT JOIN (
 			SELECT sbom_id, has(quality_flags, 'no-dependency-graph') AS has_no_dep_graph
@@ -466,6 +479,7 @@ func scanVulnerabilityListRow(rows driver.Rows) (dto.VulnerabilityListItem, erro
 		&item.VEXStatus,
 		&hasNoDepGraph,
 		&item.Reachability, &item.EvidenceSource, &item.EvidenceRef, &evidenceAt,
+		&item.ImageDigest,
 	); err != nil {
 		return item, fmt.Errorf("failed to scan vulnerability row: %w", err)
 	}
@@ -889,4 +903,48 @@ func (c *Client) QuerySBOMSourceFile(ctx context.Context, sbomID string) (string
 		return "", fmt.Errorf("failed to query source file for sbom %s: %w", sbomID, err)
 	}
 	return sourceFile, nil
+}
+
+// ImageDigestExists reports whether any SBOM is registered for digest (#457).
+func (c *Client) ImageDigestExists(ctx context.Context, digest string) (bool, error) {
+	if digest == "" {
+		return false, nil
+	}
+	var count uint64
+	if err := c.Conn.QueryRow(ctx, "SELECT count() FROM sboms FINAL WHERE image_digest = ?", digest).Scan(&count); err != nil {
+		return false, fmt.Errorf("failed to check image digest: %w", err)
+	}
+	return count > 0, nil
+}
+
+// QueryImageDetail returns all SBOMs and latest image reference for an image digest (#457).
+func (c *Client) QueryImageDetail(ctx context.Context, digest string) (*dto.ImageDetail, error) {
+	if digest == "" {
+		return nil, ErrImageNotFound
+	}
+	var detail dto.ImageDetail
+	var imageRef string
+	err := c.Conn.QueryRow(ctx, `
+		SELECT
+			image_digest,
+			argMax(image_ref, ingested_at) AS latest_ref
+		FROM sboms FINAL
+		WHERE image_digest = ?
+		GROUP BY image_digest
+	`, digest).Scan(&detail.ImageDigest, &imageRef)
+	if err != nil {
+		if isNoRows(err) {
+			return nil, ErrImageNotFound
+		}
+		return nil, fmt.Errorf("failed to query image detail: %w", err)
+	}
+	detail.ImageRef = imageRef
+
+	sboms, err := c.QuerySBOMs(ctx, 1, 1000, "", "", 0, digest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sboms for image: %w", err)
+	}
+	detail.TotalSBOMs = int(sboms.Total)
+	detail.SBOMs = sboms.Data
+	return &detail, nil
 }
