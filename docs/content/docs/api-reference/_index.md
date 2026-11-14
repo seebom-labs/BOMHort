@@ -718,6 +718,12 @@ VEX statements affecting one SBOM (#350): every statement **scoped to it**, newe
 |-----------|------|-------------|
 | `id` | UUID | SBOM identifier |
 
+**Query Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `format` | string | Optional. `openvex` returns the SBOM's effective decisions as one OpenVEX document instead of the listing — see [OpenVEX export](#openvex-export). Any other value → `400`. |
+
 **Response:** `200 OK` — array of `VEXStatementItem` (same shape as `/api/v1/vex/statements`, including provenance from #334). Every row carries this SBOM's `sbom_id`.
 
 **Why scoping matters:** a VEX statement asserts a vulnerability status **for a product**. `vulnerable_code_not_in_execute_path` is a reachability claim about one product — another project with the identical library version may be exploitable. A statement therefore only suppresses findings in its own SBOM; a statement whose product could not be resolved suppresses nothing at all — there is no global/fleet-wide VEX scope. (If the product's SBOM simply had not been ingested yet, the VEX rescue pass scopes the statement as soon as it arrives.)
@@ -1217,6 +1223,36 @@ among all statements scoped to any of the project's SBOMs that cover the pair,
 the newest wins. Same row shape as `GET /api/v1/vulnerabilities`; not paginated.
 `dependency_scope` is the shallowest depth the package has in any of the
 project's SBOMs. Accepts `?scope=` like `GET /api/v1/vulnerabilities`.
+
+### `GET /api/v1/projects/{name}/vex`
+
+The effective VEX decisions of every SBOM (version) of a project as one OpenVEX document — see [OpenVEX export](#openvex-export). Each decision stays under its own version's product: a `not_affected` for 1.2 says nothing about 1.1.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | Project name, URL-encoded |
+
+**Query Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `format` | string | Optional; `openvex` is the only format and the default. Any other value → `400`. |
+
+**Response:** `200 OK`, `Content-Type: application/json`, `Content-Disposition: attachment; filename="project-<name>.openvex.json"`. `404` when the project has no SBOMs.
+
+#### OpenVEX export {#openvex-export}
+
+Both export routes (#533) return an [OpenVEX v0.2.0](https://github.com/openvex/spec) document that scanners such as `trivy --vex` or `grype --vex` consume directly, and that BOMHort itself accepts again on `POST /api/v1/sboms/upload`:
+
+- **Which statements:** per SBOM, vulnerability and component, the newest statement scoped to that SBOM — the decision the UI shows. Unscoped statements apply to no SBOM and are not exported.
+- **Product:** each statement's product `@id` is its SBOM's `document_namespace` (SPDX namespace, CycloneDX `serialNumber`), or its `sbom_id` when it has none; both resolve back to the same SBOM on upload. A component-scoped statement lists the component purl under `subcomponents`; a product-wide one has none.
+- **Fields:** status, justification, impact and action statement, `status_notes` and the statement's timestamp are passed through unchanged; `vulnerability.aliases` lists the other ids of the flaw (GHSA ↔ CVE).
+- **Provenance:** OpenVEX records `author`, `role` and `tooling` per document. They are kept when every statement shares them; otherwise `author` is `BOMHort` and the others are left out. The per-statement values remain in the JSON listing.
+- **Stable output:** statements are sorted, `@id` is derived from their content and `timestamp` is the newest statement's, so exporting unchanged data yields the same bytes.
+
+Re-uploading an export changes no finding's status. It does add duplicate statement rows, which #336 (idempotent VEX upload) will avoid. The document is unsigned; CSAF output, signing and OCI publishing are planned separately.
 
 ### `GET /api/v1/projects/{name}/packages`
 

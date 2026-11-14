@@ -136,6 +136,9 @@ func TestQueriesExecute(t *testing.T) {
 		{"QuerySBOMVulnerabilities", func() error { _, err := c.QuerySBOMVulnerabilities(ctx, someID, "", ""); return err }},
 		{"QuerySBOMLicenses", func() error { _, err := c.QuerySBOMLicenses(ctx, someID); return err }},
 		{"QuerySBOMVEXStatements", func() error { _, err := c.QuerySBOMVEXStatements(ctx, someID); return err }},
+		// OpenVEX export (#533).
+		{"QuerySBOMVEXExport", func() error { _, _, err := c.QuerySBOMVEXExport(ctx, someID); return err }},
+		{"QueryProjectVEXExport", func() error { _, _, err := c.QueryProjectVEXExport(ctx, "payment-api"); return err }},
 		{"QuerySBOMDependencies", func() error { _, err := c.QuerySBOMDependencies(ctx, someID); return err }},
 		// License provenance (#439, migration 024) and the unapproved category.
 		{"QueryLicenseCompliance", func() error { _, err := c.QueryLicenseCompliance(ctx, ""); return err }},
