@@ -401,6 +401,7 @@ parsingWorker:
   skipDepsDevResolve: false # Skip deps.dev license resolution for unknown package licenses
   skipPackagistResolve: false # Skip Packagist license resolution for unknown Composer licenses
   skipPyPIResolve: false    # Skip PyPI license resolution for unknown Python licenses
+  dedupByImageDigest: false # Dedup ingested SBOMs by container image digest (#457)
   resources:
     requests:
       cpu: 250m

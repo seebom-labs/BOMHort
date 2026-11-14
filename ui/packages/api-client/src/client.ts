@@ -11,6 +11,7 @@ import type {
   DependencyStatsResponse,
   FleetCluster,
   GlobalSearchResponse,
+  ImageDetail,
   LicenseComplianceItem,
   LicenseExceptionsFile,
   LicenseSourceItem,
@@ -115,8 +116,18 @@ export class BomhortApiClient {
     return this.get('/stats/quality', signal);
   }
 
-  getSboms(page = 1, pageSize = 50, search = '', project = '', minQuality = 0, signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>> {
-    return this.get(`/sboms${query({ page, page_size: pageSize, search, project, min_quality: minQuality > 0 ? minQuality : undefined })}`, signal);
+  getSboms(page = 1, pageSize = 50, search = '', project = '', minQuality = 0, digest = '', signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>> {
+    return this.get(`/sboms${query({ page, page_size: pageSize, search, project, min_quality: minQuality > 0 ? minQuality : undefined, digest: digest || undefined })}`, signal);
+  }
+
+  getImage(digest: string, signal?: AbortSignal): Promise<ImageDetail> {
+    return this.get(`/images/${encodeURIComponent(digest)}`, signal);
+  }
+
+  async checkImage(digest: string, signal?: AbortSignal): Promise<boolean> {
+    const url = `${this.baseUrl}/images/${encodeURIComponent(digest)}`;
+    const res = await this.fetchFn(url, { method: 'HEAD', headers: this.headers, signal });
+    return res.status === 200;
   }
 
   getSbomDetail(sbomId: string, signal?: AbortSignal): Promise<SBOMDetail> {

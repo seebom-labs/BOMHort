@@ -40,6 +40,7 @@ data:
   SKIP_DEPSDEV_RESOLVE: {{ .Values.parsingWorker.skipDepsDevResolve | default false | quote }}
   SKIP_PACKAGIST_RESOLVE: {{ .Values.parsingWorker.skipPackagistResolve | default false | quote }}
   SKIP_PYPI_RESOLVE: {{ .Values.parsingWorker.skipPyPIResolve | default false | quote }}
+  DEDUP_BY_IMAGE_DIGEST: {{ .Values.parsingWorker.dedupByImageDigest | default false | quote }}
   SBOM_LIMIT: {{ .Values.ingestionWatcher.sbomLimit | quote }}
   {{- /* advisorySources may be absent on `helm upgrade --reuse-values` from
        a chart that predates it; that is "no feeds". Rendered as the

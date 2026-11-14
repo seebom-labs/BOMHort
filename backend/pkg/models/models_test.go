@@ -115,3 +115,27 @@ func TestVEXStatement_ClusterField(t *testing.T) {
 		t.Errorf("expected Cluster=\"fleet-asia\", got %q", stmt.Cluster)
 	}
 }
+
+func TestSBOM_ImageFields(t *testing.T) {
+	sbom := SBOM{
+		IngestedAt:  time.Now(),
+		SBOMID:      uuid.New(),
+		ImageRef:    "docker.io/library/nginx:1.25",
+		ImageDigest: "sha256:1111222233334444555566667777888899990000111122223333444455556666",
+	}
+
+	data, err := json.Marshal(sbom)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if m["image_ref"] != "docker.io/library/nginx:1.25" {
+		t.Errorf("JSON image_ref = %v", m["image_ref"])
+	}
+	if m["image_digest"] != "sha256:1111222233334444555566667777888899990000111122223333444455556666" {
+		t.Errorf("JSON image_digest = %v", m["image_digest"])
+	}
+}

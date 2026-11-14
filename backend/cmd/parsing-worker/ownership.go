@@ -26,17 +26,22 @@ type ownership struct {
 	// ?parent=). Like tags it lives on the sboms row only: the parent is
 	// resolved per project at query time, never per finding.
 	parent string
+	// imageRef and imageDigest (#457) identify the container image.
+	imageRef    string
+	imageDigest string
 }
 
 // ownershipOf reads the dimensions assigned to a job by the ingestion watcher
 // (or the upload endpoint).
 func ownershipOf(job models.IngestionJob) ownership {
 	return ownership{
-		cluster:   job.Cluster,
-		namespace: job.Namespace,
-		project:   job.Project,
-		tags:      job.Tags,
-		parent:    job.Parent,
+		cluster:     job.Cluster,
+		namespace:   job.Namespace,
+		project:     job.Project,
+		tags:        job.Tags,
+		parent:      job.Parent,
+		imageRef:    job.ImageRef,
+		imageDigest: job.ImageDigest,
 	}
 }
 
@@ -44,14 +49,18 @@ func (o ownership) applySBOM(m *models.SBOM) {
 	m.Cluster, m.Namespace, m.Project = o.cluster, o.namespace, o.project
 	m.Tags = o.tags
 	m.Parent = o.parent
+	m.ImageRef = o.imageRef
+	m.ImageDigest = o.imageDigest
 }
 
 func (o ownership) applyPackages(m *models.SBOMPackages) {
 	m.Cluster, m.Namespace, m.Project = o.cluster, o.namespace, o.project
+	m.ImageDigest = o.imageDigest
 }
 
 func (o ownership) applyVulnerability(m *models.Vulnerability) {
 	m.Cluster, m.Namespace, m.Project = o.cluster, o.namespace, o.project
+	m.ImageDigest = o.imageDigest
 }
 
 func (o ownership) applyLicenseCompliance(m *models.LicenseCompliance) {

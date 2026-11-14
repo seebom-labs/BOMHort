@@ -58,6 +58,9 @@ type SBOM struct {
 	// QualityFlags lists reasons for score deductions (e.g. no-dependency-graph,
 	// low-purl-coverage, missing-supplier).
 	QualityFlags []string `json:"quality_flags,omitempty"`
+	// ImageRef/ImageDigest (#457) name the container image reference and digest.
+	ImageRef    string `json:"image_ref,omitempty"`
+	ImageDigest string `json:"image_digest,omitempty"`
 }
 
 // SBOMPackages stores the full dependency tree of an SBOM as parallel arrays.
@@ -86,6 +89,7 @@ type SBOMPackages struct {
 	Cluster       string   `json:"cluster,omitempty"`
 	Namespace     string   `json:"namespace,omitempty"`
 	Project       string   `json:"project,omitempty"`
+	ImageDigest   string   `json:"image_digest,omitempty"`
 	// RootIndices marks the package(s) the SBOM DESCRIBES – the product itself,
 	// not a dependency. Kept in the arrays (index 0 is the dependency-tree root)
 	// but excluded from license compliance. Not persisted to ClickHouse.
@@ -132,6 +136,7 @@ type Vulnerability struct {
 	Cluster   string `json:"cluster,omitempty"`
 	Namespace string `json:"namespace,omitempty"`
 	Project   string `json:"project,omitempty"`
+	ImageDigest string `json:"image_digest,omitempty"`
 
 	// Reachability evidence (#535): reachable, not_reachable, or unknown.
 	Reachability   string    `json:"reachability,omitempty"`
@@ -178,6 +183,8 @@ type IngestionJob struct {
 	Cluster      string     `json:"cluster,omitempty"`
 	Namespace    string     `json:"namespace,omitempty"`
 	Project      string     `json:"project,omitempty"`
+	ImageRef     string     `json:"image_ref,omitempty"`
+	ImageDigest  string     `json:"image_digest,omitempty"`
 	// SourceRepo/SourceRef (#332) carry an explicit X-Source-Repo /
 	// X-Source-Ref upload override from the gateway to the parsing worker.
 	// Empty for watcher-enqueued jobs — the worker then keeps whatever the

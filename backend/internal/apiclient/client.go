@@ -327,3 +327,53 @@ func (c *Client) Health(ctx context.Context) error {
 	var out map[string]any
 	return c.get(ctx, "/healthz", nil, &out)
 }
+
+func (c *Client) head(ctx context.Context, path string, query url.Values) (bool, error) {
+	target := c.baseURL.String() + path
+	if len(query) > 0 {
+		target += "?" + query.Encode()
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, target, nil)
+	if err != nil {
+		return false, fmt.Errorf("bomhort api: build request for %s: %w", path, err)
+	}
+	req.Header.Set("User-Agent", c.userAgent)
+	if c.serviceToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.serviceToken)
+	}
+	if c.apiKey != "" {
+		req.Header.Set("X-API-Key", c.apiKey)
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("bomhort api: HEAD %s: %w", path, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		return true, nil
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return false, nil
+	}
+	return false, &StatusError{
+		StatusCode: resp.StatusCode,
+		Path:       path,
+	}
+}
+
+// GetImage fetches the details and SBOMs for an image digest (#457).
+func (c *Client) GetImage(ctx context.Context, digest string) (*dto.ImageDetail, error) {
+	var detail dto.ImageDetail
+	if err := c.get(ctx, "/api/v1/images/"+url.PathEscape(digest), nil, &detail); err != nil {
+		return nil, err
+	}
+	return &detail, nil
+}
+
+// CheckImage reports whether an image digest exists in the system (#457).
+func (c *Client) CheckImage(ctx context.Context, digest string) (bool, error) {
+	return c.head(ctx, "/api/v1/images/"+url.PathEscape(digest), nil)
+}

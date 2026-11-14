@@ -231,3 +231,42 @@ func TestContextCancellationIsPropagated(t *testing.T) {
 		t.Fatal("want error from cancelled context, got nil")
 	}
 }
+
+func TestGetImage(t *testing.T) {
+	var gotPath string
+	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		_, _ = w.Write([]byte(`{"image_digest":"sha256:abc","image_ref":"app:v1","total_sboms":1,"sboms":[]}`))
+	}), Options{})
+
+	img, err := c.GetImage(context.Background(), "sha256:abc")
+	if err != nil {
+		t.Fatalf("GetImage: %v", err)
+	}
+	if gotPath != "/api/v1/images/sha256:abc" {
+		t.Errorf("gotPath = %q", gotPath)
+	}
+	if img.ImageDigest != "sha256:abc" || img.ImageRef != "app:v1" || img.TotalSBOMs != 1 {
+		t.Errorf("decoded = %+v", img)
+	}
+}
+
+func TestCheckImage(t *testing.T) {
+	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/images/sha256:exists" {
+			w.WriteHeader(http.StatusOK)
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}), Options{})
+
+	exists, err := c.CheckImage(context.Background(), "sha256:exists")
+	if err != nil || !exists {
+		t.Errorf("CheckImage(exists) = %v, %v, want true, nil", exists, err)
+	}
+
+	missing, err := c.CheckImage(context.Background(), "sha256:missing")
+	if err != nil || missing {
+		t.Errorf("CheckImage(missing) = %v, %v, want false, nil", missing, err)
+	}
+}

@@ -83,6 +83,9 @@ export interface SBOMListItem {
   /** Quality evaluation score (0-100) and deduction flags (#537). */
   quality_score?: number;
   quality_flags?: string[];
+  /** Image reference and digest (#457). */
+  image_ref?: string;
+  image_digest?: string;
 }
 
 /** Status an advisory feed reports for a finding. */
@@ -155,6 +158,16 @@ export interface VulnerabilityListItem {
   evidence_source?: string;
   evidence_ref?: string;
   evidence_at?: string;
+  /** Image digest when finding is in a container image (#457). */
+  image_digest?: string;
+}
+
+/** Image details and list of SBOMs for an image digest (#457). */
+export interface ImageDetail {
+  image_digest: string;
+  image_ref?: string;
+  total_sboms: number;
+  sboms: SBOMListItem[];
 }
 
 /** ReachabilitySummary is returned by POST /api/v1/sboms/{id}/evidence (#535). */
@@ -263,6 +276,9 @@ export interface SBOMDetail {
   /** Quality evaluation score (0-100) and deduction flags (#537). */
   quality_score?: number;
   quality_flags?: string[];
+  /** Image reference and digest (#457). */
+  image_ref?: string;
+  image_digest?: string;
 }
 
 export interface ToolQualitySummary {

@@ -292,7 +292,8 @@ func (c *Client) QuerySBOMDetail(ctx context.Context, sbomID string) (*dto.SBOMD
 			s.sbom_id, s.source_file, s.spdx_version, s.document_name, s.document_version, s.ingested_at,
 			s.source_repo, s.source_ref,
 			ifNull(p.pkg_count, 0) AS package_count,
-			s.quality_score, s.quality_flags
+			s.quality_score, s.quality_flags,
+			s.image_ref, s.image_digest
 		FROM (SELECT * FROM sboms FINAL) AS s
 		LEFT JOIN (
 			SELECT sbom_id, length(package_names) AS pkg_count
@@ -305,6 +306,7 @@ func (c *Client) QuerySBOMDetail(ctx context.Context, sbomID string) (*dto.SBOMD
 		&detail.DocumentName, &detail.DocumentVersion, &ingestedAt,
 		&detail.SourceRepo, &detail.SourceRef, &detail.PackageCount,
 		&detail.QualityScore, &detail.QualityFlags,
+		&detail.ImageRef, &detail.ImageDigest,
 	)
 	if err != nil {
 		// An unknown sbom_id is a missing resource, not a server fault: report

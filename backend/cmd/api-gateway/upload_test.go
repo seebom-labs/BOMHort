@@ -20,14 +20,20 @@ import (
 // fakeUploadStore mirrors fakePinger (health_test.go) so uploadHandler can be
 // exercised without a live ClickHouse connection.
 type fakeUploadStore struct {
-	hashExists    bool
-	hashExistsErr error
-	enqueueErr    error
-	enqueuedJobs  []models.IngestionJob
+	hashExists        bool
+	hashExistsErr     error
+	imageDigestExists bool
+	digestExistsErr   error
+	enqueueErr        error
+	enqueuedJobs      []models.IngestionJob
 }
 
 func (f *fakeUploadStore) HashExists(ctx context.Context, hash string) (bool, error) {
 	return f.hashExists, f.hashExistsErr
+}
+
+func (f *fakeUploadStore) ImageDigestExists(ctx context.Context, digest string) (bool, error) {
+	return f.imageDigestExists, f.digestExistsErr
 }
 
 func (f *fakeUploadStore) EnqueueJobs(ctx context.Context, jobs []models.IngestionJob) error {
@@ -643,5 +649,64 @@ func TestUploadHandler_S3Push_EnqueueFailure_RemovesObject(t *testing.T) {
 	}
 	if got := s3Store.removedKeys[0]; got != "push-bucket/"+wantKey {
 		t.Errorf("RemoveObject target = %q, want push-bucket/%s", got, wantKey)
+	}
+}
+
+func TestUploadHandler_ImageParams(t *testing.T) {
+	cfg := testUploadConfig(t)
+	store := &fakeUploadStore{}
+	h := localUploadHandler(cfg, store)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/sboms/upload?digest=sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855&ref=ghcr.io/org/app:v1", bytes.NewReader([]byte(`{"spdxVersion":"SPDX-2.3"}`)))
+	req.Header.Set("X-Filename", "app.spdx.json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 Accepted, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(store.enqueuedJobs) != 1 {
+		t.Fatalf("expected 1 enqueued job, got %d", len(store.enqueuedJobs))
+	}
+	job := store.enqueuedJobs[0]
+	if job.ImageRef != "ghcr.io/org/app:v1" {
+		t.Errorf("job.ImageRef = %q, want ghcr.io/org/app:v1", job.ImageRef)
+	}
+	if job.ImageDigest != "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" {
+		t.Errorf("job.ImageDigest = %q", job.ImageDigest)
+	}
+
+	var resp map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp["image_ref"] != "ghcr.io/org/app:v1" || resp["image_digest"] != "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" {
+		t.Errorf("response image identity mismatch: %+v", resp)
+	}
+}
+
+func TestUploadHandler_ImageDedup(t *testing.T) {
+	cfg := testUploadConfig(t)
+	cfg.DedupByImageDigest = true
+	store := &fakeUploadStore{imageDigestExists: true}
+	h := localUploadHandler(cfg, store)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/sboms/upload?digest=sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", bytes.NewReader([]byte(`{"spdxVersion":"SPDX-2.3"}`)))
+	req.Header.Set("X-Filename", "app.spdx.json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for duplicate, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp["status"] != "duplicate" {
+		t.Errorf("status = %q, want duplicate", resp["status"])
+	}
+	if len(store.enqueuedJobs) != 0 {
+		t.Errorf("expected no enqueued jobs, got %d", len(store.enqueuedJobs))
 	}
 }

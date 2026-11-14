@@ -170,6 +170,9 @@ type Config struct {
 	// Push-model upload (#135)
 	MaxUploadSizeMB int // Max accepted body size for POST /api/v1/sboms/upload, in MB (default 50)
 
+	// Container image digest deduplication (#457)
+	DedupByImageDigest bool // Skip ingesting SBOMs whose image digest already exists (default false)
+
 	// Tier-2 fidelity capture (#256): where the original SBOM bytes are kept.
 	//   OriginalStoreBackend: "auto" (default) | "s3" | "fs" | "none"
 	//     auto → "s3" when any S3 bucket is configured, else "fs" when
@@ -270,6 +273,7 @@ func Load() (*Config, error) {
 		BadgesPublic:          getEnvBool("BADGES_PUBLIC", false),
 		BrandName:             getEnv("BRAND_NAME", "BOMHort"),
 		MaxUploadSizeMB:       getEnvInt("MAX_UPLOAD_SIZE_MB", 50),
+		DedupByImageDigest:    getEnvBool("DEDUP_BY_IMAGE_DIGEST", false),
 
 		OriginalStoreBackend:  strings.ToLower(getEnv("ORIGINAL_STORE_BACKEND", OriginalStoreAuto)),
 		OriginalStoreS3Bucket: getEnv("ORIGINAL_STORE_S3_BUCKET", ""),
