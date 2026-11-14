@@ -205,7 +205,7 @@ func (c *Client) QueryProjectBadgeStats(ctx context.Context, name, version strin
 	}
 
 	// Count unsuppressed vulnerabilities using the scope-aware VEX join.
-	vulns, err := c.QuerySBOMVulnerabilities(ctx, targetSBOMID, "", "")
+	vulns, err := c.QuerySBOMVulnerabilities(ctx, targetSBOMID, "", "", "")
 	if err != nil {
 		return nil, err
 	}
@@ -263,11 +263,19 @@ func (c *Client) QueryProjectBadgeStats(ctx context.Context, name, version strin
 // question. AffectedSBOMs tells the reader how many versions carry the pair.
 //
 // depScope ("" or a depgraph scope label) keeps only findings whose package
-// is pulled in that way in at least one of the project's SBOMs.
-func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, depScope string) ([]dto.VulnerabilityListItem, error) {
+// is pulled in that way in at least one of the project's SBOMs; kind ("" or
+// "vulnerability" / "malicious") restricts the listing by finding kind.
+func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, depScope string, kind string) ([]dto.VulnerabilityListItem, error) {
 	scopeAnd := ""
 	if pred := depthPredicate(depScope, "v.dependency_depth"); pred != "" {
 		scopeAnd = " AND " + pred
+	}
+	kindAnd := ""
+	var args []any
+	args = append(args, name)
+	if kind == "vulnerability" || kind == "malicious" {
+		kindAnd = " AND v.finding_kind = ?"
+		args = append(args, kind)
 	}
 	rows, err := c.Conn.Query(ctx, fmt.Sprintf(`
 		WITH scope AS (
@@ -285,6 +293,7 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 			ifNull(vx.vex_statement_id, '')      AS vex_statement_id,
 			ifNull(vx.vex_author, '')            AS vex_author,
 			ifNull(vx.vex_tooling, '')           AS vex_tooling,
+			f.finding_kind,
 			f.has_no_dep_graph                   AS has_no_dep_graph,
 			f.reachability, f.evidence_source, f.evidence_ref, f.evidence_at
 		FROM (
@@ -298,6 +307,7 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 				uniqExact(v.sbom_id)                     AS affected_sboms,
 				min(v.dependency_depth)                  AS dependency_depth,
 				groupUniqArrayArray(v.aliases)           AS aliases,
+				argMax(v.finding_kind, v.discovered_at)       AS finding_kind,
 				argMax(v.advisory_source, v.discovered_at)    AS advisory_source,
 				argMax(v.advisory_status, v.discovered_at)    AS advisory_status,
 				argMax(v.component_location, v.discovered_at) AS component_location,
@@ -308,7 +318,7 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 				max(v.evidence_at)                       AS evidence_at
 			FROM (SELECT * FROM vulnerabilities FINAL) AS v
 			INNER JOIN scope AS sc ON sc.sbom_id = v.sbom_id
-			WHERE 1=1%s
+			WHERE 1=1%s%s
 			GROUP BY v.vuln_id, v.purl
 		) AS f
 		LEFT JOIN (
@@ -321,19 +331,21 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 				argMax(st.tooling, st.vex_timestamp)         AS vex_tooling,
 				max(st.vex_timestamp)                        AS winning_timestamp
 			FROM (
-				SELECT DISTINCT vuln_id, purl,
+				SELECT DISTINCT vuln_id, purl, finding_kind,
 					arrayJoin(arrayConcat([vuln_id], aliases)) AS match_id
 				FROM vulnerabilities FINAL WHERE sbom_id IN (SELECT sbom_id FROM scope)
 			) AS m
 			INNER JOIN (SELECT * FROM vex_statements FINAL WHERE sbom_id IN (SELECT sbom_id FROM scope)) AS st
 				ON st.vuln_id = m.match_id
-			WHERE st.product_purl = m.purl OR st.product_purl = '*'
+			WHERE (m.finding_kind != 'malicious' AND (st.product_purl = m.purl OR st.product_purl = '*'))
+			   OR (m.finding_kind = 'malicious' AND st.product_purl = m.purl)
 			GROUP BY m.vuln_id, m.purl
 		) AS vx ON vx.vuln_id = f.vuln_id AND vx.purl = f.purl
 		ORDER BY
+			(f.finding_kind = 'malicious') DESC,
 			multiIf(f.severity = 'CRITICAL', 0, f.severity = 'HIGH', 1, f.severity = 'MEDIUM', 2, f.severity = 'LOW', 3, 4) ASC,
 			f.affected_sboms DESC, f.vuln_id ASC
-	`, projectSBOMs, scopeAnd), name)
+	`, projectSBOMs, scopeAnd, kindAnd), args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query vulnerabilities of project %q: %w", name, err)
 	}
@@ -353,6 +365,7 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 			&item.AdvisorySource, &item.AdvisoryStatus, &components,
 			&item.VEXStatus, &item.VEXJustification, &vexTimestamp,
 			&item.VEXStatementID, &item.VEXAuthor, &item.VEXTooling,
+			&item.FindingKind,
 			&hasNoDepGraph,
 			&item.Reachability, &item.EvidenceSource, &item.EvidenceRef, &evidenceAt,
 		); err != nil {

@@ -86,7 +86,7 @@ func TestFindingsCarryCVEAndAliases(t *testing.T) {
 	wantAliases := []string{f.cveID, f.ghsaID}
 	slices.Sort(wantAliases)
 
-	sbomVulns, err := c.QuerySBOMVulnerabilities(ctx, f.sbomID, "", "")
+	sbomVulns, err := c.QuerySBOMVulnerabilities(ctx, f.sbomID, "", "", "")
 	if err != nil {
 		t.Fatalf("QuerySBOMVulnerabilities: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestFindingsCarryCVEAndAliases(t *testing.T) {
 		t.Errorf("VEX written against the CVE alias must still apply, got %q", v.VEXStatus)
 	}
 
-	projectVulns, err := c.QueryProjectVulnerabilities(ctx, f.project, "")
+	projectVulns, err := c.QueryProjectVulnerabilities(ctx, f.project, "", "")
 	if err != nil {
 		t.Fatalf("QueryProjectVulnerabilities: %v", err)
 	}

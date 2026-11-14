@@ -222,6 +222,7 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
             <span class="dep-name" [title]="node.purl || node.name">
               {{ node.name }}
               <span class="archived-tag" *ngIf="isArchivedPurl(node.purl)" title="This package uses an archived GitHub repository"> ARCHIVED</span>
+              <span class="lookalike-tag" *ngIf="node.lookalikeOf?.length" [title]="'Look-alike of popular package(s): ' + node.lookalikeOf.join(', ')">look-alike: {{ node.lookalikeOf.join(', ') }}</span>
             </span>
             <span class="dep-scope"><app-scope-badge [scope]="node.scope" [depth]="node.depth"></app-scope-badge></span>
             <span class="dep-version">{{ node.version }}</span>
@@ -457,8 +458,8 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
     }
     .dep-col-name { flex: 1; min-width: 0; }
     .dep-col-scope, .dep-scope { width: 90px; flex-shrink: 0; }
-    .dep-col-version { width: 140px; flex-shrink: 0; }
-    .dep-col-license { width: 180px; flex-shrink: 0; }
+    .dep-col-version, .dep-version { width: 140px; flex-shrink: 0; }
+    .dep-col-license, .dep-license { width: 180px; flex-shrink: 0; }
     .dep-row {
       height: 42px; display: flex; align-items: center; gap: 16px;
       padding: 0 12px; border-bottom: 1px solid var(--border); font-size: 0.82rem;
@@ -470,18 +471,18 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       display: flex; align-items: center; gap: 8px;
     }
-    .archived-tag {
-      background: var(--severity-high); color: #fff;
+    .archived-tag, .lookalike-tag {
       padding: 1px 6px; border-radius: 2px; font-size: 0.6rem; font-weight: 600;
       flex-shrink: 0;
     }
+    .archived-tag { background: var(--severity-high); color: #fff; }
+    .lookalike-tag { background: var(--severity-high-bg); color: var(--status-warning); border: 1px solid; }
     .dep-version {
-      color: var(--text-secondary); width: 140px; flex-shrink: 0;
-      font-family: monospace; font-size: 0.78rem;
+      color: var(--text-secondary); font-family: monospace; font-size: 0.78rem;
     }
     .dep-license {
       color: var(--status-success); font-size: 0.75rem;
-      width: 180px; flex-shrink: 0; display: flex; align-items: center; gap: 4px;
+      display: flex; align-items: center; gap: 4px;
     }
     .copyleft { color: var(--severity-critical); }
     .exempted { color: var(--status-warning); }
@@ -679,6 +680,7 @@ export class SbomDetailComponent implements OnInit {
         licenseTitle: licenseSourceTooltip(node.license_source),
         purl: node.purl, level, index: node.index,
         scope: node.dependency_scope, depth: node.dependency_depth,
+        lookalikeOf: node.lookalike_of,
       });
     }
     return result;
@@ -695,5 +697,6 @@ interface FlatDep {
   index: number;
   scope: DependencyScope;
   depth?: number;
+  lookalikeOf?: string[];
 }
 

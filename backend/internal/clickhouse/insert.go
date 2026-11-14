@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/seebom-labs/bomhort/backend/internal/advisory"
@@ -70,7 +71,7 @@ func (c *Client) InsertSBOMPackages(ctx context.Context, pkg *models.SBOMPackage
 			package_spdx_ids, package_names, package_versions,
 			package_purls, package_licenses, package_license_sources,
 			rel_source_indices, rel_target_indices, rel_types,
-			package_depths,
+			package_depths, lookalike_of,
 			cluster, namespace, project, image_digest
 		)`)
 	if err != nil {
@@ -91,6 +92,7 @@ func (c *Client) InsertSBOMPackages(ctx context.Context, pkg *models.SBOMPackage
 		pkg.RelTargetIndices,
 		pkg.RelTypes,
 		depthsFor(pkg),
+		lookalikesFor(pkg),
 		pkg.Cluster,
 		pkg.Namespace,
 		pkg.Project,
@@ -122,6 +124,14 @@ func depthsFor(pkg *models.SBOMPackages) []uint16 {
 	return out
 }
 
+// lookalikesFor returns the lookalike hints padded or trimmed to one entry
+// per package, so the parallel arrays never disagree in length.
+func lookalikesFor(pkg *models.SBOMPackages) []string {
+	out := make([]string, len(pkg.PackageNames))
+	copy(out, pkg.LookalikeOf)
+	return out
+}
+
 // InsertVulnerabilities batch-inserts vulnerability rows for an SBOM.
 func (c *Client) InsertVulnerabilities(ctx context.Context, vulns []models.Vulnerability) error {
 	if len(vulns) == 0 {
@@ -132,7 +142,7 @@ func (c *Client) InsertVulnerabilities(ctx context.Context, vulns []models.Vulne
 		`INSERT INTO vulnerabilities (
 			discovered_at, sbom_id, source_file, purl, vuln_id,
 			severity, summary, affected_versions, fixed_version, osv_json, aliases,
-			dependency_depth,
+			dependency_depth, finding_kind,
 			advisory_source, advisory_status, component_location,
 			cluster, namespace, project,
 			image_digest,
@@ -143,6 +153,13 @@ func (c *Client) InsertVulnerabilities(ctx context.Context, vulns []models.Vulne
 	}
 
 	for _, v := range vulns {
+		kind := v.FindingKind
+		if kind == "" {
+			kind = models.FindingKindVulnerability
+			if strings.HasPrefix(v.VulnID, "MAL-") {
+				kind = models.FindingKindMalicious
+			}
+		}
 		reachability := v.Reachability
 		if reachability == "" {
 			reachability = models.ReachabilityUnknown
@@ -164,6 +181,7 @@ func (c *Client) InsertVulnerabilities(ctx context.Context, vulns []models.Vulne
 			v.OSVJSON,
 			v.Aliases,
 			v.DependencyDepth,
+			kind,
 			advisorySourceOrOSV(v.AdvisorySource),
 			v.AdvisoryStatus,
 			v.ComponentLocation,

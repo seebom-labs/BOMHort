@@ -11,10 +11,15 @@ import (
 
 // ClassifySeverity maps OSV severity data to a simple category (CRITICAL/HIGH/MEDIUM/LOW).
 // It tries multiple strategies in order:
+//  0. Malicious package IDs (MAL-* from OpenSSF) are always CRITICAL
 //  1. CVSS_V3 score (numeric or vector string)
 //  2. database_specific.severity (GHSA entries often have this)
 //  3. Fallback: MEDIUM if any severity data exists, LOW otherwise
 func ClassifySeverity(v osv.VulnEntry) string {
+	if strings.HasPrefix(v.ID, "MAL-") {
+		return "CRITICAL"
+	}
+
 	for _, s := range v.Severity {
 		if s.Type == "CVSS_V3" {
 			score := ParseCVSSScore(s.Score)

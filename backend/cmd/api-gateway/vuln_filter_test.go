@@ -19,14 +19,26 @@ var noParents = newVulnFilter(func(context.Context) (map[string]projectgroup.Ass
 })
 
 func TestVulnFilterParsing(t *testing.T) {
-	r := httptest.NewRequest(http.MethodGet, "/x?cluster=a,%20b,,&namespace=ns&project=p&tag=Sandbox,cncf", nil)
+	r := httptest.NewRequest(http.MethodGet, "/x?cluster=a,%20b,,&namespace=ns&project=p&tag=Sandbox,cncf&kind=malicious", nil)
 	f, status, _ := noParents(r)
 	if status != 0 {
 		t.Fatalf("status = %d", status)
 	}
-	want := clickhouse.VulnFilter{Clusters: []string{"a", "b"}, Namespaces: []string{"ns"}, Projects: []string{"p"}, Tags: []string{"cncf", "sandbox"}}
+	want := clickhouse.VulnFilter{Clusters: []string{"a", "b"}, Namespaces: []string{"ns"}, Projects: []string{"p"}, Tags: []string{"cncf", "sandbox"}, Kind: "malicious"}
 	if !reflect.DeepEqual(f, want) {
 		t.Fatalf("got %+v, want %+v", f, want)
+	}
+
+	rVuln := httptest.NewRequest(http.MethodGet, "/x?kind=vulnerability", nil)
+	fVuln, status, _ := noParents(rVuln)
+	if status != 0 || fVuln.Kind != "vulnerability" {
+		t.Fatalf("got status = %d, kind = %s, want vulnerability", status, fVuln.Kind)
+	}
+
+	rInvalid := httptest.NewRequest(http.MethodGet, "/x?kind=invalid", nil)
+	_, status, msg := noParents(rInvalid)
+	if status != http.StatusBadRequest || !strings.Contains(msg, "Invalid kind") {
+		t.Fatalf("got status = %d, msg = %q, want 400 with Invalid kind", status, msg)
 	}
 
 	long := strings.Repeat("x", maxOwnerNameLen+1)

@@ -37,6 +37,17 @@ func (c *Client) QueryDashboardStats(ctx context.Context, f VulnFilter) (*dto.Da
 		return nil, fmt.Errorf("failed to query total vulnerabilities: %w", err)
 	}
 
+	// Compromised packages (distinct PURLs affected by malicious findings).
+	compWhere := " WHERE finding_kind = 'malicious'"
+	var compArgs []any
+	if w != "" {
+		compWhere = w + " AND finding_kind = 'malicious'"
+		compArgs = args
+	}
+	if err := c.Conn.QueryRow(ctx, "SELECT uniqExact(purl) FROM vulnerabilities FINAL"+compWhere, compArgs...).Scan(&stats.CompromisedPackages); err != nil {
+		return nil, fmt.Errorf("failed to query compromised packages: %w", err)
+	}
+
 	rows, err := c.Conn.Query(ctx,
 		"SELECT severity, "+scopeExpr("dependency_depth")+" AS scope, count() FROM vulnerabilities FINAL"+w+" GROUP BY severity, scope", args...)
 	if err != nil {
@@ -113,7 +124,7 @@ func (c *Client) QueryDashboardStats(ctx context.Context, f VulnFilter) (*dto.Da
 				v.sbom_id AS sbom_id, v.vuln_id AS vuln_id, v.purl AS purl,
 				argMax(vx.status, vx.vex_timestamp) AS winning_status
 			FROM (
-				SELECT sbom_id, vuln_id, purl,
+				SELECT sbom_id, vuln_id, purl, finding_kind,
 					arrayJoin(arrayConcat([vuln_id], aliases)) AS match_id
 				FROM vulnerabilities FINAL`+w+`
 			) AS v
@@ -123,7 +134,8 @@ func (c *Client) QueryDashboardStats(ctx context.Context, f VulnFilter) (*dto.Da
 				WHERE sbom_id != ''
 			) AS vx ON vx.vuln_id = v.match_id
 				AND vx.sbom_id = toString(v.sbom_id)
-			WHERE vx.product_purl = v.purl OR vx.product_purl = '*'
+			WHERE (v.finding_kind != 'malicious' AND (vx.product_purl = v.purl OR vx.product_purl = '*'))
+			   OR (v.finding_kind = 'malicious' AND vx.product_purl = v.purl)
 			GROUP BY v.sbom_id, v.vuln_id, v.purl
 		)
 		WHERE winning_status = 'not_affected'
@@ -368,6 +380,8 @@ type VulnFilter struct {
 	ParentMembers []string
 	// Reachability filters findings by evidence ("reachable", "not_reachable", "unknown").
 	Reachability string
+	// Kind narrows findings to a specific kind: "vulnerability" or "malicious".
+	Kind string
 }
 
 // ownerPredicate restricts sbom_id to the SBOMs matching f, or returns ""
@@ -410,7 +424,7 @@ func ownerWhere(f VulnFilter, asString bool) (string, []any) {
 	return " WHERE " + pred, args
 }
 
-// vulnWhere combines the scope and ownership predicates into a WHERE clause
+// vulnWhere combines the scope, kind and ownership predicates into a WHERE clause
 // over vulnerabilities, with its placeholder args.
 func vulnWhere(scope string, f VulnFilter) (string, []any) {
 	var preds []string
@@ -421,6 +435,10 @@ func vulnWhere(scope string, f VulnFilter) (string, []any) {
 	if f.Reachability != "" {
 		preds = append(preds, "reachability = ?")
 		args = append(args, f.Reachability)
+	}
+	if f.Kind != "" {
+		preds = append(preds, "finding_kind = ?")
+		args = append(args, f.Kind)
 	}
 	owner, ownerArgs := ownerPredicate(f, false)
 	if owner != "" {
@@ -441,6 +459,7 @@ func vulnerabilityListSQL(scopeWhere string) string {
 			v.dependency_depth, v.aliases,
 			v.advisory_source, v.advisory_status, v.component_location,
 			ifNull(vx.vex_status, '') AS vex_status,
+			v.finding_kind,
 			ifNull(q.has_no_dep_graph, 0) AS has_no_dep_graph,
 			v.reachability, v.evidence_source, v.evidence_ref, v.evidence_at
 		FROM (SELECT * FROM vulnerabilities FINAL` + scopeWhere + `) AS v
@@ -453,7 +472,7 @@ func vulnerabilityListSQL(scopeWhere string) string {
 				toString(f.sbom_id) AS sbom_id, f.vuln_id AS vuln_id, f.purl AS purl,
 				argMax(s.status, s.vex_timestamp) AS vex_status
 			FROM (
-				SELECT DISTINCT sbom_id, vuln_id, purl,
+				SELECT DISTINCT sbom_id, vuln_id, purl, finding_kind,
 					arrayJoin(arrayConcat([vuln_id], aliases)) AS match_id
 				FROM vulnerabilities FINAL
 			) AS f
@@ -462,12 +481,13 @@ func vulnerabilityListSQL(scopeWhere string) string {
 				FROM vex_statements FINAL
 				WHERE sbom_id != ''
 			) AS s ON s.vuln_id = f.match_id AND s.sbom_id = toString(f.sbom_id)
-			WHERE s.product_purl = f.purl OR s.product_purl = '*'
+			WHERE (f.finding_kind != 'malicious' AND (s.product_purl = f.purl OR s.product_purl = '*'))
+			   OR (f.finding_kind = 'malicious' AND s.product_purl = f.purl)
 			GROUP BY f.sbom_id, f.vuln_id, f.purl
 		) AS vx ON vx.vuln_id = v.vuln_id
 			AND vx.purl = v.purl
 			AND vx.sbom_id = toString(v.sbom_id)
-		ORDER BY v.severity ASC, v.discovered_at DESC, v.vuln_id ASC, v.purl ASC, v.sbom_id ASC
+		ORDER BY (v.finding_kind = 'malicious') DESC, v.severity ASC, v.discovered_at DESC, v.vuln_id ASC, v.purl ASC, v.sbom_id ASC
 `
 }
 
@@ -485,6 +505,7 @@ func scanVulnerabilityListRow(rows driver.Rows) (dto.VulnerabilityListItem, erro
 		&discoveredAt, &depth, &aliases,
 		&item.AdvisorySource, &item.AdvisoryStatus, &components,
 		&item.VEXStatus,
+		&item.FindingKind,
 		&hasNoDepGraph,
 		&item.Reachability, &item.EvidenceSource, &item.EvidenceRef, &evidenceAt,
 	); err != nil {
@@ -712,6 +733,7 @@ func (c *Client) QuerySBOMDependencies(ctx context.Context, sbomID string) ([]dt
 		relTargets []uint32
 		relTypes   []string
 		depths     []uint16
+		lookalikes []string
 	)
 
 	err := c.Conn.QueryRow(ctx, `
@@ -719,13 +741,13 @@ func (c *Client) QuerySBOMDependencies(ctx context.Context, sbomID string) ([]dt
 			package_spdx_ids, package_names, package_versions,
 			package_purls, package_licenses, package_license_sources,
 			rel_source_indices, rel_target_indices, rel_types,
-			package_depths
+			package_depths, lookalike_of
 		FROM sbom_packages
 		WHERE sbom_id = ?
 		LIMIT 1
 	`, sbomID).Scan(
 		&spdxIDs, &names, &versions, &purls, &licenses, &sources,
-		&relSources, &relTargets, &relTypes, &depths,
+		&relSources, &relTargets, &relTypes, &depths, &lookalikes,
 	)
 	if isNoRows(err) {
 		// No package row is not necessarily an error: the sboms row is
@@ -782,6 +804,15 @@ func (c *Client) QuerySBOMDependencies(ctx context.Context, sbomID string) ([]dt
 			children = []uint32{}
 		}
 
+		var nodeLookalikes []string
+		if i < len(lookalikes) && lookalikes[i] != "" {
+			for _, part := range strings.Split(lookalikes[i], ",") {
+				if s := strings.TrimSpace(part); s != "" {
+					nodeLookalikes = append(nodeLookalikes, s)
+				}
+			}
+		}
+
 		scope, depth := scopeFields(depgraph.DepthOf(depths, i))
 		nodes[i] = dto.DependencyNode{
 			Index:           idx,
@@ -794,6 +825,7 @@ func (c *Client) QuerySBOMDependencies(ctx context.Context, sbomID string) ([]dt
 			Children:        children,
 			DependencyScope: scope,
 			DependencyDepth: depth,
+			LookalikeOf:     nodeLookalikes,
 		}
 	}
 

@@ -61,7 +61,7 @@ func TestAdvisoryRecordsRoundTrip(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	items, err := c.QuerySBOMVulnerabilities(ctx, sbomID.String(), "", "")
+	items, err := c.QuerySBOMVulnerabilities(ctx, sbomID.String(), "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestAdvisoryRecordsRoundTrip(t *testing.T) {
 	if err := c.CloseFindings(ctx, []string{fmt.Sprintf("FX-%d", n) + "\x00" + purl}); err != nil {
 		t.Fatal(err)
 	}
-	if items, _ := c.QuerySBOMVulnerabilities(ctx, sbomID.String(), "", ""); len(items) != 0 {
+	if items, _ := c.QuerySBOMVulnerabilities(ctx, sbomID.String(), "", "", ""); len(items) != 0 {
 		t.Errorf("closed finding still listed: %+v", items)
 	}
 
