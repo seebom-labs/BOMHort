@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/seebom-labs/bomhort/backend/internal/config"
+	"math"
 	"os"
 	"strings"
 	"testing"
@@ -101,7 +102,23 @@ func TestQueriesExecute(t *testing.T) {
 		run  func() error
 	}{
 		{"QueryDashboardStats", func() error { _, err := c.QueryDashboardStats(ctx, VulnFilter{}); return err }},
-		{"QueryQualityStats", func() error { _, err := c.QueryQualityStats(ctx); return err }},
+		// A scope without SBOMs must not average to NaN: avg over no rows is
+		// NaN in ClickHouse, and encoding/json cannot encode it, which left
+		// the dashboard with an empty 200 response.
+		{"QueryDashboardStats/no matching SBOM", func() error {
+			s, err := c.QueryDashboardStats(ctx, VulnFilter{Clusters: []string{"no-such-cluster-" + someID}})
+			if err == nil && math.IsNaN(s.AverageQualityScore) {
+				return errors.New("average_quality_score is NaN for an empty scope")
+			}
+			return err
+		}},
+		{"QueryQualityStats", func() error {
+			s, err := c.QueryQualityStats(ctx)
+			if err == nil && math.IsNaN(s.AverageQualityScore) {
+				return errors.New("average_quality_score is NaN")
+			}
+			return err
+		}},
 		{"QueryOrigins", func() error { _, err := c.QueryOrigins(ctx); return err }},
 		{"QuerySBOMs", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "", "", "", 0); return err }},
 		{"QuerySBOMs/search", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "test", "", "", 0); return err }},

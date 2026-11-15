@@ -1263,12 +1263,20 @@ func archivedPackagesHandler(query func(context.Context, string) ([]clickhouse.A
 	}
 }
 
+// writeJSON encodes v before writing anything, so a value that cannot be
+// encoded (a NaN, for instance) becomes a 500 instead of the given status
+// with an empty body. The bytes are the same as json.Encoder writes,
+// trailing newline included.
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
+	body, err := json.Marshal(v)
+	if err != nil {
+		log.Printf("ERROR: Failed to encode JSON response: %v", err)
+		writeError(w, http.StatusInternalServerError, "Failed to encode response")
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		log.Printf("ERROR: Failed to encode JSON response: %v", err)
-	}
+	_, _ = w.Write(append(body, '\n'))
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {

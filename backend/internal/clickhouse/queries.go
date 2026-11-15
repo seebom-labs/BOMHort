@@ -161,8 +161,10 @@ func (c *Client) QueryDashboardStats(ctx context.Context, f VulnFilter) (*dto.Da
 		stats.ArchivedReposCount = archived
 	}
 
-	// Low quality SBOMs and average score (#537).
-	if err := c.Conn.QueryRow(ctx, "SELECT countIf(quality_score < 60), round(ifNull(avg(quality_score), 0), 1) FROM sboms FINAL"+w, args...).Scan(&stats.LowQualitySBOMs, &stats.AverageQualityScore); err != nil {
+	// Low quality SBOMs and average score (#537). avgOrNull, not avg: avg over
+	// no rows (an empty instance, a filter matching no SBOM) is NaN rather than
+	// NULL, so ifNull never applied, and encoding/json cannot encode NaN.
+	if err := c.Conn.QueryRow(ctx, "SELECT countIf(quality_score < 60), round(ifNull(avgOrNull(quality_score), 0), 1) FROM sboms FINAL"+w, args...).Scan(&stats.LowQualitySBOMs, &stats.AverageQualityScore); err != nil {
 		return nil, fmt.Errorf("failed to query quality stats: %w", err)
 	}
 
@@ -336,7 +338,7 @@ func (c *Client) QueryQualityStats(ctx context.Context) (*dto.QualityStatsRespon
 
 	err := c.Conn.QueryRow(ctx, `
 		SELECT
-			round(ifNull(avg(quality_score), 0), 1),
+			round(ifNull(avgOrNull(quality_score), 0), 1), -- avg is NaN over no rows
 			count(),
 			countIf(quality_score < 60)
 		FROM sboms FINAL
