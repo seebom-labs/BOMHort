@@ -123,32 +123,7 @@ func Compute(n int, relSources, relTargets []uint32, relTypes []string, roots, d
 		return depths
 	}
 
-	adj := make(map[uint32][]uint32)
-	inDegree := make([]int, n)
-	edges := 0
-	for i := range relSources {
-		if i >= len(relTargets) {
-			break
-		}
-		src, tgt := relSources[i], relTargets[i]
-		if int(src) >= n || int(tgt) >= n || src == tgt {
-			continue
-		}
-		relType := ""
-		if i < len(relTypes) {
-			relType = relTypes[i]
-		}
-		switch classifyRelationship(relType) {
-		case forward:
-			adj[src] = append(adj[src], tgt)
-			inDegree[tgt]++
-			edges++
-		case backward:
-			adj[tgt] = append(adj[tgt], src)
-			inDegree[src]++
-			edges++
-		}
-	}
+	adj, inDegree, edges := dependencyEdges(n, relSources, relTargets, relTypes)
 
 	var queue []uint32
 	for _, r := range roots {
@@ -215,4 +190,61 @@ func MinDepthForPURL(purls []string, depths []uint16, purl string) uint16 {
 		}
 	}
 	return best
+}
+
+// Children returns, for each of n packages, the packages it depends on:
+// the same edges the depth walk follows, with reverse relationship types
+// (DEPENDENCY_OF, CONTAINED_BY, …) turned around and non-dependency types
+// (DESCRIBES, GENERATED_FROM, …) left out. Each list keeps the order of the
+// relationships in the document and names a child once.
+//
+// This is the parent→child structure a dependency tree is drawn from; it
+// agrees with Compute by construction.
+func Children(n int, relSources, relTargets []uint32, relTypes []string) [][]uint32 {
+	out := make([][]uint32, n)
+	adj, _, _ := dependencyEdges(n, relSources, relTargets, relTypes)
+	for parent, children := range adj {
+		seen := make(map[uint32]struct{}, len(children))
+		for _, c := range children {
+			if _, dup := seen[c]; dup {
+				continue
+			}
+			seen[c] = struct{}{}
+			out[parent] = append(out[parent], c)
+		}
+	}
+	return out
+}
+
+// dependencyEdges normalises the relationship arrays to "depends on" edges:
+// adj[parent] lists its dependencies in document order, inDegree counts the
+// edges into each package and edges is their total. Self-references and
+// out-of-range indices are dropped.
+func dependencyEdges(n int, relSources, relTargets []uint32, relTypes []string) (adj map[uint32][]uint32, inDegree []int, edges int) {
+	adj = make(map[uint32][]uint32)
+	inDegree = make([]int, n)
+	for i := range relSources {
+		if i >= len(relTargets) {
+			break
+		}
+		src, tgt := relSources[i], relTargets[i]
+		if int(src) >= n || int(tgt) >= n || src == tgt {
+			continue
+		}
+		relType := ""
+		if i < len(relTypes) {
+			relType = relTypes[i]
+		}
+		switch classifyRelationship(relType) {
+		case forward:
+			adj[src] = append(adj[src], tgt)
+			inDegree[tgt]++
+			edges++
+		case backward:
+			adj[tgt] = append(adj[tgt], src)
+			inDegree[src]++
+			edges++
+		}
+	}
+	return adj, inDegree, edges
 }

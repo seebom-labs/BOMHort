@@ -830,7 +830,9 @@ Dependency tree reconstructed as a flat array with parent→child index referenc
 ]
 ```
 
-The UI reconstructs the tree by following `children` indices. Root nodes are those not referenced as children by any other node. `dependency_scope` / `dependency_depth` are the stored [dependency scope](#dependency-scope) of each node — a package reachable through several paths carries the shortest.
+`children` lists the packages a node depends on: the same edges the [dependency scope](#dependency-scope) is computed from. Reverse relationship types (`DEPENDENCY_OF`, `CONTAINED_BY`, …) are turned around, and relationships that are not dependencies (`DESCRIBES`, `GENERATED_FROM`, …) are not included, so a tree drawn from `children` agrees with `dependency_scope`. Each child is listed once. The graph may share packages between parents and may contain cycles.
+
+The UI's tree view (#56) starts from the `root` nodes (or, without one, the nodes no other node depends on) and lists packages it cannot reach from there separately. `dependency_scope` / `dependency_depth` are the stored [dependency scope](#dependency-scope) of each node — a package reachable through several paths carries the shortest.
 
 `license_source` says where `license` came from (`declared`, `github`, `npm`, `nuget`, `depsdev`, `packagist`, `pypi`, optionally with `+latest` / `+normalized`) or, when the license is still unknown, why (`first-party`, `not-published`, `no-license-upstream`, `no-purl`, `unsupported-ecosystem`, `unresolved`). It is omitted for SBOMs ingested before BOMHort recorded it. See [License Resolution](/docs/license-resolution/).
 
