@@ -1040,12 +1040,14 @@ func main() {
 	mux.HandleFunc("PATCH /api/v1/sboms/{id}", patchSBOMSourceHandler(cfg, chClient, chClient))
 
 	// CORS + security middleware for Angular dev server.
-	// Order (outermost first): security headers → rate limit → CORS → auth → mux.
-	// Auth sits closest to the mux so 401s still get CORS + security headers.
-	handler := securityHeadersMiddleware(
-		rateLimitMiddleware(cfg.RateLimitMax,
-			corsMiddleware(cfg.CORSAllowedOrigins,
-				authMiddleware(cfg.AuthEnabled, cfg.BadgesPublic, cfg.ServiceToken, cfg.APIKeys, mux),
+	// Order (outermost first): request logging/ID → security headers → rate limit → CORS → auth → mux.
+	// Auth sits closest to the mux so 401s still get CORS + security headers + request tracking.
+	handler := loggingAndRequestIDMiddleware(
+		securityHeadersMiddleware(
+			rateLimitMiddleware(cfg.RateLimitMax,
+				corsMiddleware(cfg.CORSAllowedOrigins,
+					authMiddleware(cfg.AuthEnabled, cfg.BadgesPublic, cfg.ServiceToken, cfg.APIKeys, mux),
+				),
 			),
 		),
 	)
@@ -1241,6 +1243,51 @@ func sanitizeLogParam(s string) string {
 		s = s[:200] + "..."
 	}
 	return s
+}
+
+// responseRecorder wraps http.ResponseWriter to capture the HTTP status code.
+type responseRecorder struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rec *responseRecorder) WriteHeader(code int) {
+	rec.statusCode = code
+	rec.ResponseWriter.WriteHeader(code)
+}
+
+// loggingAndRequestIDMiddleware injects or propagates X-Request-ID, tags the
+// request context, and writes a redacted access log entry upon completion.
+// Authorization headers and request/response bodies are never logged.
+func loggingAndRequestIDMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqID := strings.TrimSpace(r.Header.Get("X-Request-ID"))
+		if reqID == "" || len(reqID) > 64 {
+			reqID = uuid.NewString()
+		} else {
+			reqID = sanitizeLogParam(reqID)
+		}
+
+		w.Header().Set("X-Request-ID", reqID)
+
+		rec := &responseRecorder{
+			ResponseWriter: w,
+			statusCode:     http.StatusOK,
+		}
+
+		start := time.Now()
+		next.ServeHTTP(rec, r)
+		duration := time.Since(start)
+
+		log.Printf("ACCESS: %s %s status=%d duration=%s ip=%s req_id=%s",
+			sanitizeLogParam(r.Method),
+			sanitizeLogParam(r.URL.Path),
+			rec.statusCode,
+			duration,
+			clientIP(r),
+			reqID,
+		)
+	})
 }
 
 // securityHeadersMiddleware adds standard security headers to every response.
