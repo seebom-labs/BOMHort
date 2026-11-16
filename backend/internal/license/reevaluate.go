@@ -27,9 +27,10 @@ func Reevaluate(r Result, exceptions *ExceptionIndex, project string) Result {
 	names = append(names, r.NonCompliantPackages...)
 	names = append(names, r.ExemptedPackages...)
 
+	cat := Categorize(r.LicenseID)
 	out := Result{
 		LicenseID:    r.LicenseID,
-		Category:     r.Category,
+		Category:     cat,
 		PackageCount: r.PackageCount,
 	}
 
@@ -40,7 +41,7 @@ func Reevaluate(r Result, exceptions *ExceptionIndex, project string) Result {
 			return out
 		}
 	}
-	if r.Category == CategoryPermissive {
+	if cat == CategoryPermissive {
 		return out
 	}
 	for _, name := range names {
@@ -53,11 +54,12 @@ func Reevaluate(r Result, exceptions *ExceptionIndex, project string) Result {
 	return out
 }
 
-// SameOutcome reports whether two results split their packages identically.
+// SameOutcome reports whether two results have identical category and package split.
 // Package order is not significant: Reevaluate regroups the stored lists, so
 // an unchanged outcome usually comes back in a different order.
 func SameOutcome(a, b Result) bool {
-	return a.ExemptionReason == b.ExemptionReason &&
+	return a.Category == b.Category &&
+		a.ExemptionReason == b.ExemptionReason &&
 		sameMultiset(a.NonCompliantPackages, b.NonCompliantPackages) &&
 		sameMultiset(a.ExemptedPackages, b.ExemptedPackages)
 }
