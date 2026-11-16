@@ -514,6 +514,9 @@ apiGateway:
 # For Gateway API support, use a dedicated Gateway/HTTPRoute instead.
 ingress:
   enabled: false
+  # When requireAuth is enabled (or true), rendering fails if ingress is enabled
+  # but apiGateway.auth.enabled is false. Useful in CI or hardened environments.
+  requireAuth: false
   className: ""   # e.g. "envoy", "contour", "alb"
   annotations: {}
     # cert-manager.io/cluster-issuer: letsencrypt-prod
