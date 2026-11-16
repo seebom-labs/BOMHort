@@ -63,11 +63,16 @@ type S3BucketConfig struct {
 // Config holds all configuration values, read from environment variables.
 type Config struct {
 	// ClickHouse connection
-	ClickHouseHost     string
-	ClickHousePort     int
-	ClickHouseDatabase string
-	ClickHouseUser     string
-	ClickHousePassword string
+	ClickHouseHost       string
+	ClickHousePort       int
+	ClickHouseDatabase   string
+	ClickHouseUser       string
+	ClickHousePassword   string
+	ClickHouseSecure     bool   // Enable TLS for ClickHouse connection (CLICKHOUSE_SECURE)
+	ClickHouseSkipVerify bool   // Skip TLS certificate verification (CLICKHOUSE_SKIP_VERIFY)
+	ClickHouseCAFile     string // Path to custom CA cert file (CLICKHOUSE_CA_FILE)
+	ClickHouseCertFile   string // Path to client certificate file (CLICKHOUSE_CERT_FILE)
+	ClickHouseKeyFile    string // Path to client private key file (CLICKHOUSE_KEY_FILE)
 
 	// Per-query limits sent as ClickHouse session settings on every query of
 	// this process (#344-I). 0 means "not set": the server or user profile
@@ -242,6 +247,11 @@ func Load() (*Config, error) {
 		ClickHouseDatabase:    getEnv("CLICKHOUSE_DATABASE", "bomhort"),
 		ClickHouseUser:        getEnv("CLICKHOUSE_USER", "default"),
 		ClickHousePassword:    getEnv("CLICKHOUSE_PASSWORD", ""),
+		ClickHouseSecure:      getEnvBool("CLICKHOUSE_SECURE", false),
+		ClickHouseSkipVerify:  getEnvBool("CLICKHOUSE_SKIP_VERIFY", false),
+		ClickHouseCAFile:      getEnv("CLICKHOUSE_CA_FILE", ""),
+		ClickHouseCertFile:    getEnv("CLICKHOUSE_CERT_FILE", ""),
+		ClickHouseKeyFile:     getEnv("CLICKHOUSE_KEY_FILE", ""),
 		SBOMDir:               getEnv("SBOM_DIR", "./sboms"),
 		APIPort:               getEnvInt("API_PORT", 8080),
 		CORSAllowedOrigins:    getEnv("CORS_ALLOWED_ORIGINS", "*"),
@@ -505,9 +515,16 @@ func (c *Config) OriginalStoreBucket() string {
 
 // ClickHouseDSN returns the ClickHouse connection string.
 func (c *Config) ClickHouseDSN() string {
-	return fmt.Sprintf("clickhouse://%s:%s@%s:%d/%s",
+	secureParam := ""
+	if c.ClickHouseSecure {
+		secureParam = "?secure=true"
+		if c.ClickHouseSkipVerify {
+			secureParam += "&skip_verify=true"
+		}
+	}
+	return fmt.Sprintf("clickhouse://%s:%s@%s:%d/%s%s",
 		c.ClickHouseUser, c.ClickHousePassword,
-		c.ClickHouseHost, c.ClickHousePort, c.ClickHouseDatabase)
+		c.ClickHouseHost, c.ClickHousePort, c.ClickHouseDatabase, secureParam)
 }
 
 // deduplicateBuckets removes duplicate bucket entries by name.
