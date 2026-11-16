@@ -67,7 +67,8 @@ s3:
 
 # ─── SBOM Source via PVC (alternative to S3) ─────────────────────────────────
 # Only needed if S3 is not configured above. The chart creates the PVC empty;
-# copy SBOMs into it (kubectl cp) or enable git-sync instead.
+# copy SBOMs into it (kubectl cp) or enable git-sync instead. With S3 only,
+# set sbomSource.enabled: false to drop the PVC and its pod affinity.
 gitSync:
   enabled: false
 

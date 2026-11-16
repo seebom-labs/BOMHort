@@ -121,7 +121,8 @@ bomhort/
         ├── cronjob-cve-refresher.yaml      # Daily CVE refresh (configurable)
         ├── job-migrate.yaml                # DB migration job, named after a hash of its migrations (re-runs when they change)
         ├── validate-removed-values.yaml    # Fails the render on removed values (seedJob, #391)
-        ├── pvc-sbom-data.yaml              # PVC for SBOM storage
+        ├── _sbom-source.tpl                # sbom-data volume modes: git-sync emptyDir, PVC, or none (#590)
+        ├── pvc-sbom-data.yaml              # PVC for SBOM storage (not with git-sync or sbomSource.enabled=false)
         ├── service-api-gateway.yaml
         ├── service-mcp-server.yaml         # Only rendered for mcp.transport=http
         ├── service-ui.yaml
