@@ -115,8 +115,24 @@ s3:
   secretKey: "minioadmin"
 ```
 
+**S3 only: run without the `sbom-data` volume.** With `gitSync.enabled: false` the chart still creates the `sbomSource` PVC and mounts it into the ingestion watcher, the parsing workers and the API gateway, so that local files can be ingested next to S3. That PVC is `ReadWriteOnce`, so the chart also adds a required pod affinity that places all of those pods on one node. If every SBOM comes from S3, switch the volume off:
+
+```yaml
+gitSync:
+  enabled: false
+
+sbomSource:
+  enabled: false   # no PVC, no sbom-data mount, no pod affinity
+```
+
+- `s3.buckets` must be set. The render fails otherwise, because nothing could be ingested.
+- Push uploads need a `"skipScan"` bucket ([Option E](#option-e-push-model-uploads-cicd)). The `SBOM_DIR/pushed/` fallback has no volume to write to, and `sbomSource.writable: true` is refused.
+- The pod affinity stays while `originalStore.fs.enabled` is `true`, because the workers and the gateway share that PVC the same way. With originals in S3, which is the default once `s3.buckets` is set, it goes too.
+- A `license-exceptions.json` kept on the volume is no longer read. Provide exceptions through `licenseExceptions` instead.
+- **On an existing release, Helm deletes the PVC** when you switch this off, and with the usual `Delete` reclaim policy its data. Check that it holds nothing you ingest from (files copied in, or push uploads stored with `sbomSource.writable`) before upgrading. SBOMs already ingested from the volume stay in the database, but their source files are gone with it.
+
 **Advantages:**
-- No PVC, no volume scheduling, no pod affinity constraints
+- No PVC, no volume scheduling, no pod affinity constraints (with `sbomSource.enabled: false`, see above)
 - Streams object listings — handles 100k+ SBOMs without memory issues
 - Works with any S3-compatible storage (AWS, GCS, MinIO, Ceph, DigitalOcean Spaces)
 

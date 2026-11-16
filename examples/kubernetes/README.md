@@ -85,6 +85,16 @@ s3:
   secretKey: ""
 ```
 
+With `gitSync.enabled: false` the chart still creates the `sbom-data` PVC and pins the watcher, the workers and the gateway to one node for it. To run S3-only without either, as `values-cncf.yaml` does, add:
+
+```yaml
+gitSync:
+  enabled: false
+
+sbomSource:
+  enabled: false
+```
+
 Supports any S3-compatible storage: AWS S3, MinIO, GCS, Ceph, DigitalOcean Spaces.
 
 Supported file patterns: `*.spdx.json`, `*_spdx.json`, `*.openvex.json`, `*.vex.json`.

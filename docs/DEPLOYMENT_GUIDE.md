@@ -84,8 +84,20 @@ s3:
   secretKey: "minioadmin"
 ```
 
+**S3 only: run without the `sbom-data` volume.** With `gitSync.enabled: false` the chart still creates the `sbomSource` PVC, mounts it into the ingestion watcher, the parsing workers and the API gateway, and co-schedules them on one node for it (see the note under Option B). If every SBOM comes from S3, switch the volume off:
+
+```yaml
+gitSync:
+  enabled: false
+
+sbomSource:
+  enabled: false   # no PVC, no sbom-data mount, no pod affinity
+```
+
+This requires `s3.buckets`, and push uploads then need a `"skipScan"` bucket; the render fails on `sbomSource.writable: true`. The pod affinity stays while `originalStore.fs.enabled` is `true`. A `SBOM_DIR/license-exceptions.json` fallback file is no longer read. On an existing release Helm deletes the PVC when you switch this off, so check first that it holds nothing you ingest from.
+
 **Advantages:**
-- No PVC, no volume scheduling, no pod affinity constraints
+- No PVC, no volume scheduling, no pod affinity constraints (with `sbomSource.enabled: false`, see above)
 - Streams object listings — handles 100k+ SBOMs without memory issues
 - Jobs are enqueued in batches of 500 for efficient ClickHouse inserts
 - SHA256 deduplication via streaming hash (object is never fully loaded into memory)

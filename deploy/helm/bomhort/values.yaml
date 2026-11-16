@@ -98,7 +98,9 @@ ownership:
 
 # S3 bucket ingestion (default, recommended)
 # Ingest SBOMs directly from S3-compatible buckets (AWS S3, MinIO, GCS).
-# No PVC or git-sync required. Streams object listings with pagination.
+# No PVC or git-sync required: set gitSync.enabled=false and
+# sbomSource.enabled=false to run without the sbom-data volume.
+# Streams object listings with pagination.
 # The Parsing Workers fetch objects on-demand via s3:// URIs.
 # Set s3.buckets to a JSON array of bucket configs. Leave empty to use volume-based alternatives.
 s3:
@@ -182,6 +184,22 @@ clickhouse:
 # With gitSync.enabled=false the chart creates this PVC empty; filling it
 # (a CI job, kubectl cp, push uploads with sbomSource.writable) is up to you.
 sbomSource:
+  # Create the PVC and mount it into the ingestion watcher, the parsing
+  # workers and the API gateway. Ignored with gitSync.enabled=true, which
+  # mounts an emptyDir instead.
+  #
+  # Set to false for an S3-only deployment (#590): no PVC, no sbom-data mount,
+  # and no pod affinity. That affinity exists only because the PVC is
+  # ReadWriteOnce, and it pins every worker and gateway replica to one node;
+  # without it they schedule freely. It stays in place while
+  # originalStore.fs.enabled is true, because that PVC is shared the same way.
+  # Requires s3.buckets; push uploads then need a "skipScan" bucket, as the
+  # SBOM_DIR/pushed/ fallback has nowhere to write.
+  #
+  # Turning this off on an existing release makes Helm delete the PVC. Check
+  # it holds nothing you ingest from (files copied in, or push uploads stored
+  # with sbomSource.writable) before you do.
+  enabled: true
   pvcName: bomhort-sbom-data
   mountPath: /data/sboms
   storageSize: 1Gi
