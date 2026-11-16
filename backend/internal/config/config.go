@@ -172,7 +172,8 @@ type Config struct {
 	BrandName    string   // Brand label for badges, resolved from ui-config.json or BRAND_NAME
 
 	// Push-model upload (#135)
-	MaxUploadSizeMB int // Max accepted body size for POST /api/v1/sboms/upload, in MB (default 50)
+	MaxUploadSizeMB       int // Max accepted body size for POST /api/v1/sboms/upload, in MB (default 50)
+	MaxConcurrentUploads  int // Max concurrent uploads allowed (default 10; 0 = unlimited)
 
 	// Tier-2 fidelity capture (#256): where the original SBOM bytes are kept.
 	//   OriginalStoreBackend: "auto" (default) | "s3" | "fs" | "none"
@@ -276,6 +277,7 @@ func Load() (*Config, error) {
 		BadgesPublic:          getEnvBool("BADGES_PUBLIC", false),
 		BrandName:             getEnv("BRAND_NAME", "BOMHort"),
 		MaxUploadSizeMB:       getEnvInt("MAX_UPLOAD_SIZE_MB", 50),
+		MaxConcurrentUploads:  getEnvInt("MAX_CONCURRENT_UPLOADS", 10),
 
 		OriginalStoreBackend:  strings.ToLower(getEnv("ORIGINAL_STORE_BACKEND", OriginalStoreAuto)),
 		OriginalStoreS3Bucket: getEnv("ORIGINAL_STORE_S3_BUCKET", ""),
