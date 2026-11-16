@@ -307,7 +307,7 @@ func processJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Cl
 	// Branch on job type.
 	switch job.JobType {
 	case models.JobTypeVEX:
-		return processVEXJob(ctx, chClient, openFile, job)
+		return processVEXJob(ctx, cfg, chClient, openFile, job)
 	case models.JobTypeLicenseRecheck:
 		return runLicenseRecheckJob(ctx, chClient, job, rules.Current(), recheckPollInterval(cfg.ExceptionsRefreshInterval))
 	}
@@ -319,14 +319,45 @@ func processJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Cl
 	return processSBOMJob(ctx, cfg, chClient, osvClient, exceptions, ghResolver, registryResolvers, openFile, originals, job)
 }
 
-func processVEXJob(ctx context.Context, chClient *clickhouse.Client, openFile func() (io.ReadCloser, error), job models.IngestionJob) error {
+// maxDocumentBytes returns the maximum byte limit for worker document processing.
+// Returns 0 if no limit is configured.
+func maxDocumentBytes(cfg *config.Config) int64 {
+	if cfg == nil || cfg.MaxDocumentSizeMB <= 0 {
+		return 0
+	}
+	return int64(cfg.MaxDocumentSizeMB) * 1024 * 1024
+}
+
+// readBounded reads from rc up to maxBytes. If maxBytes > 0 and the stream exceeds
+// maxBytes, it returns an error.
+func readBounded(rc io.Reader, maxBytes int64) ([]byte, error) {
+	if maxBytes <= 0 {
+		return io.ReadAll(rc)
+	}
+	lr := io.LimitReader(rc, maxBytes+1)
+	data, err := io.ReadAll(lr)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, fmt.Errorf("document exceeds maximum allowed size of %d MB", maxBytes/(1024*1024))
+	}
+	return data, nil
+}
+
+func processVEXJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, openFile func() (io.ReadCloser, error), job models.IngestionJob) error {
 	rc, err := openFile()
 	if err != nil {
 		return fmt.Errorf("failed to open VEX source %s: %w", job.SourceFile, err)
 	}
 	defer rc.Close()
 
-	result, err := vex.Parse(rc, job.SourceFile)
+	raw, err := readBounded(rc, maxDocumentBytes(cfg))
+	if err != nil {
+		return fmt.Errorf("failed to read VEX source %s: %w", job.SourceFile, err)
+	}
+
+	result, err := vex.Parse(bytes.NewReader(raw), job.SourceFile)
 	if err != nil {
 		return err
 	}
@@ -427,7 +458,7 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 	if err != nil {
 		return fmt.Errorf("failed to open SBOM source %s: %w", job.SourceFile, err)
 	}
-	raw, err := io.ReadAll(rc)
+	raw, err := readBounded(rc, maxDocumentBytes(cfg))
 	rc.Close()
 	if err != nil {
 		return fmt.Errorf("failed to read SBOM source %s: %w", job.SourceFile, err)

@@ -93,6 +93,7 @@ type Config struct {
 	// Worker
 	WorkerID        string
 	WorkerBatchSize int
+	MaxDocumentSizeMB int // Max accepted document size for worker parsing, in MB (default 50; 0 = unlimited)
 
 	// AdvisorySources are the OSV-format advisory feeds from ADVISORY_SOURCES
 	// ("name|index[|purl-prefix…]", comma-separated). The cve-refresher
@@ -248,6 +249,7 @@ func Load() (*Config, error) {
 		RateLimitMax:          getEnvInt("RATE_LIMIT_MAX", 100),
 		WorkerID:              getEnv("WORKER_ID", ""),
 		WorkerBatchSize:       getEnvInt("WORKER_BATCH_SIZE", 10),
+		MaxDocumentSizeMB:     getEnvInt("MAX_DOCUMENT_SIZE_MB", 50),
 		SkipOSV:               getEnvBool("SKIP_OSV", false),
 		DedupByImageDigest:    getEnvBool("DEDUP_BY_IMAGE_DIGEST", false),
 		SkipGitHubResolve:     getEnvBool("SKIP_GITHUB_RESOLVE", false),
