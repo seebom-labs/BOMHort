@@ -176,6 +176,10 @@ clickhouse:
     volumeClaimTemplate:
       dataStorage: 1Gi
       logStorage: 100Mi
+  # NetworkPolicy for ClickHouse ingress
+  # Restricts TCP port 9000 access to only BOMHort release pods (gateway, workers, migrations).
+  networkPolicy:
+    enabled: false
 
 # SBOM source via PVC (alternative to S3, for environments without S3 access)
 # With gitSync.enabled=false the chart creates this PVC empty; filling it

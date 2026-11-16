@@ -1,0 +1,26 @@
+{{- if .Values.clickhouse.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-clickhouse-access
+  labels:
+    app.kubernetes.io/name: bomhort
+    app.kubernetes.io/component: clickhouse
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: bomhort
+      clickhouse.altinity.com/chi: {{ .Release.Name }}-clickhouse
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/name: bomhort
+      ports:
+        - protocol: TCP
+          port: {{ .Values.clickhouse.port | default 9000 }}
+{{- end }}
