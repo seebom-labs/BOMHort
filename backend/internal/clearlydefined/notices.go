@@ -18,45 +18,56 @@ type NoticePackage struct {
 }
 
 // GenerateNotice creates a plain-text attribution NOTICE file containing every
-// package with a resolved license, real upstream copyright notices where available,
+// package with a resolved or unresolved license, real upstream copyright notices where available,
 // explicit flags for packages requiring manual attribution review, and complete SPDX texts (#530, #62).
 func GenerateNotice(targetName string, pkgs []NoticePackage) string {
 	var b strings.Builder
 
-	// Filter out packages with no resolved license and deduplicate by package name + version + license.
-	type key struct {
-		name    string
-		version string
-		license string
-	}
-	dedup := make(map[key]*NoticePackage)
-	var orderedKeys []key
+	// Deduplicate by PURL when present, falling back to name + version + license when PURL is absent.
+	// Distinct packages with the same name across different scopes (e.g. @team-a/core vs @team-b/core)
+	// retain their distinct package identities (#530).
+	dedup := make(map[string]*NoticePackage)
+	var orderedKeys []string
 
 	for _, p := range pkgs {
 		lic := strings.TrimSpace(p.License)
-		if lic == "" || lic == "NOASSERTION" || lic == "NONE" {
-			continue
+		if lic == "" || lic == "NONE" {
+			lic = "NOASSERTION"
 		}
-		k := key{name: p.Name, version: p.Version, license: lic}
+		purl := strings.TrimSpace(p.PURL)
+		var k string
+		if purl != "" {
+			k = "purl:" + purl
+		} else {
+			k = fmt.Sprintf("pkg:%s|%s|%s", p.Name, p.Version, lic)
+		}
+
 		if existing, found := dedup[k]; found {
 			existing.CopyrightParties = mergeStrings(existing.CopyrightParties, p.CopyrightParties)
 		} else {
 			cp := p
+			cp.License = lic
 			dedup[k] = &cp
 			orderedKeys = append(orderedKeys, k)
 		}
 	}
 
 	sort.Slice(orderedKeys, func(i, j int) bool {
-		if orderedKeys[i].name != orderedKeys[j].name {
-			return orderedKeys[i].name < orderedKeys[j].name
+		pi := dedup[orderedKeys[i]]
+		pj := dedup[orderedKeys[j]]
+		if pi.Name != pj.Name {
+			return pi.Name < pj.Name
 		}
-		return orderedKeys[i].version < orderedKeys[j].version
+		if pi.Version != pj.Version {
+			return pi.Version < pj.Version
+		}
+		return pi.PURL < pj.PURL
 	})
 
 	totalComponents := len(orderedKeys)
 	recordedAttributions := 0
 	missingAttributions := 0
+	unresolvedLicenses := 0
 	referencedLicenses := make(map[string]bool)
 
 	for _, k := range orderedKeys {
@@ -66,7 +77,9 @@ func GenerateNotice(targetName string, pkgs []NoticePackage) string {
 		} else {
 			missingAttributions++
 		}
-		if p.License != "" {
+		if p.License == "NOASSERTION" {
+			unresolvedLicenses++
+		} else if p.License != "" {
 			referencedLicenses[p.License] = true
 		}
 	}
@@ -83,6 +96,9 @@ func GenerateNotice(targetName string, pkgs []NoticePackage) string {
 	if missingAttributions > 0 {
 		b.WriteString(fmt.Sprintf("  Components missing upstream copyright notice: %d (flagged for manual review)\n", missingAttributions))
 	}
+	if unresolvedLicenses > 0 {
+		b.WriteString(fmt.Sprintf("  Components with unresolved licenses: %d (flagged for manual review)\n", unresolvedLicenses))
+	}
 	b.WriteString("========================================================================\n\n")
 
 	b.WriteString("This product contains third-party software components subject to the\n")
@@ -98,7 +114,11 @@ func GenerateNotice(targetName string, pkgs []NoticePackage) string {
 		if p.PURL != "" {
 			b.WriteString(fmt.Sprintf("PURL: %s\n", p.PURL))
 		}
-		b.WriteString(fmt.Sprintf("License: %s\n", p.License))
+		if p.License == "NOASSERTION" {
+			b.WriteString("License: NOASSERTION [Unresolved license; manual review required]\n")
+		} else {
+			b.WriteString(fmt.Sprintf("License: %s\n", p.License))
+		}
 
 		b.WriteString("\nCopyright Notices:\n")
 		if len(p.CopyrightParties) > 0 {
