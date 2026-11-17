@@ -28,6 +28,7 @@ const (
 
 	defaultRate     = 5.0
 	defaultBurst    = 10
+	maxBatchSize    = 250
 	maxResponseSize = 10 << 20
 )
 
@@ -85,6 +86,15 @@ func CoordinateFromPURL(purl string) (Coordinate, bool) {
 	}
 	namePart := rest[:atIdx]
 	version := rest[atIdx+1:]
+
+	// URL-decode name and version components before ecosystem inspection, so
+	// percent-encoded characters like %40 (@) in scoped npm packages are decoded (#530).
+	if decoded, err := url.PathUnescape(namePart); err == nil && decoded != "" {
+		namePart = decoded
+	}
+	if decoded, err := url.PathUnescape(version); err == nil && decoded != "" {
+		version = decoded
+	}
 
 	switch strings.ToLower(typ) {
 	case "npm":
@@ -165,14 +175,23 @@ type definitionResponse struct {
 	} `json:"licensed"`
 }
 
+// cachedRecord represents a serialized ClearlyDefined record for persistence in
+// registry_license_cache across worker restarts (#530).
+type cachedRecord struct {
+	License    string   `json:"lic,omitempty"`
+	Reason     string   `json:"reason,omitempty"`
+	Discovered []string `json:"discovered,omitempty"`
+	Parties    []string `json:"parties,omitempty"`
+}
+
 // Resolver resolves licenses and discrepancies using ClearlyDefined definitions.
 type Resolver struct {
-	baseURL    string
-	httpClient *http.Client
-	license.ResolverCache
+	baseURL      string
+	httpClient   *http.Client
 	limiter      *ratelimit.TokenBucket
+	licenseCache sync.Map // cacheKey -> string (lic or NegativeCacheValue)
 	attributions sync.Map // cacheKey -> []string
-	discovered   sync.Map // cacheKey -> string (first discovered expression)
+	discovered   sync.Map // cacheKey -> []string (all discovered expressions)
 }
 
 // NewResolver creates a resolver against the public ClearlyDefined service.
@@ -194,8 +213,107 @@ func CacheKey(coord Coordinate) string {
 	return coord.String()
 }
 
-// Resolve returns the license expression for the package identified by purl,
-// or "" if not found or the request fails.
+// PreloadCache seeds the cache from registry_license_cache across worker restarts (#530).
+func (r *Resolver) PreloadCache(entries map[string]string) {
+	for k, v := range entries {
+		if strings.HasPrefix(v, "{") {
+			var rec cachedRecord
+			if err := json.Unmarshal([]byte(v), &rec); err == nil {
+				if rec.License != "" {
+					r.licenseCache.Store(k, rec.License)
+				} else if rec.Reason != "" {
+					r.licenseCache.Store(k, license.NegativeCacheValue(rec.Reason))
+				}
+				if len(rec.Discovered) > 0 {
+					r.discovered.Store(k, rec.Discovered)
+				}
+				if len(rec.Parties) > 0 {
+					r.attributions.Store(k, rec.Parties)
+				}
+				continue
+			}
+		}
+		// Plain legacy encoding or standard NegativeCacheValue
+		r.licenseCache.Store(k, v)
+	}
+}
+
+// CacheEntries exports the in-memory cache for persistence in registry_license_cache (#530).
+func (r *Resolver) CacheEntries() map[string]string {
+	out := make(map[string]string)
+	keys := make(map[string]bool)
+
+	r.licenseCache.Range(func(k, v any) bool {
+		keys[k.(string)] = true
+		return true
+	})
+	r.discovered.Range(func(k, v any) bool {
+		keys[k.(string)] = true
+		return true
+	})
+	r.attributions.Range(func(k, v any) bool {
+		keys[k.(string)] = true
+		return true
+	})
+
+	for k := range keys {
+		lic, reason := "", ""
+		if v, ok := r.licenseCache.Load(k); ok {
+			lic, reason = license.SplitCacheValue(v.(string))
+		}
+		var disc, parties []string
+		if dv, ok := r.discovered.Load(k); ok {
+			disc = dv.([]string)
+		}
+		if pv, ok := r.attributions.Load(k); ok {
+			parties = pv.([]string)
+		}
+
+		if len(disc) > 0 || len(parties) > 0 {
+			rec := cachedRecord{
+				License:    lic,
+				Reason:     reason,
+				Discovered: disc,
+				Parties:    parties,
+			}
+			if b, err := json.Marshal(rec); err == nil {
+				out[k] = string(b)
+				continue
+			}
+		}
+
+		if lic != "" {
+			out[k] = lic
+		} else if reason != "" {
+			out[k] = license.NegativeCacheValue(reason)
+		}
+	}
+	return out
+}
+
+// Load checks the in-memory license cache for a key.
+func (r *Resolver) Load(key string) (lic, reason string, ok bool) {
+	v, ok := r.licenseCache.Load(key)
+	if !ok {
+		return "", "", false
+	}
+	lic, reason = license.SplitCacheValue(v.(string))
+	return lic, reason, true
+}
+
+// StoreResult stores a license or negative reason in the in-memory cache.
+func (r *Resolver) StoreResult(key, lic, reason string) {
+	if lic != "" {
+		r.licenseCache.Store(key, lic)
+		return
+	}
+	if reason != "" {
+		r.licenseCache.Store(key, license.NegativeCacheValue(reason))
+	}
+}
+
+// Resolve returns the declared license expression for the package identified by purl,
+// or "" if not found, unresolved upstream, or the request fails.
 func (r *Resolver) Resolve(ctx context.Context, purl string) string {
 	coord, ok := CoordinateFromPURL(purl)
 	if !ok {
@@ -220,6 +338,48 @@ func (r *Resolver) Resolve(ctx context.Context, purl string) string {
 	return lic
 }
 
+// ResolveBatch resolves multiple PURLs in bulk using ClearlyDefined's definitions endpoint.
+func (r *Resolver) ResolveBatch(ctx context.Context, purls []string) map[string]string {
+	out := make(map[string]string, len(purls))
+	var uncached []Coordinate
+	purlByCoord := make(map[string][]string)
+
+	for _, p := range purls {
+		coord, ok := CoordinateFromPURL(p)
+		if !ok {
+			continue
+		}
+		key := CacheKey(coord)
+		if lic, reason, found := r.Load(key); found {
+			if lic != "" {
+				out[p] = lic
+			} else if reason != "" {
+				out[p] = license.NegativeCacheValue(reason)
+			}
+			continue
+		}
+		purlByCoord[key] = append(purlByCoord[key], p)
+		if len(purlByCoord[key]) == 1 {
+			uncached = append(uncached, coord)
+		}
+	}
+
+	if len(uncached) > 0 {
+		_ = r.fetchDefinitionsBatch(ctx, uncached)
+		for key, plist := range purlByCoord {
+			lic, reason, _ := r.Load(key)
+			for _, p := range plist {
+				if lic != "" {
+					out[p] = lic
+				} else if reason != "" {
+					out[p] = license.NegativeCacheValue(reason)
+				}
+			}
+		}
+	}
+	return out
+}
+
 // Explain reports why a package stayed unresolved in ClearlyDefined.
 func (r *Resolver) Explain(purl string) (handled bool, reason string, latest bool) {
 	coord, ok := CoordinateFromPURL(purl)
@@ -227,12 +387,13 @@ func (r *Resolver) Explain(purl string) (handled bool, reason string, latest boo
 		return false, "", false
 	}
 	key := CacheKey(coord)
-	return true, r.Reason(key), false
+	_, reason, _ = r.Load(key)
+	return true, reason, false
 }
 
 // CheckDiscrepancy compares ClearlyDefined discovered scan expressions with the
 // package's declared license. If discovered expressions exist and conflict with
-// declaredLicense, returns the discovered expression and true.
+// declaredLicense, returns the conflicting expression and true (#530).
 func (r *Resolver) CheckDiscrepancy(ctx context.Context, purl, declaredLicense string) (string, bool) {
 	declaredLicense = strings.TrimSpace(declaredLicense)
 	if declaredLicense == "" || declaredLicense == "NOASSERTION" || declaredLicense == "NONE" {
@@ -245,16 +406,21 @@ func (r *Resolver) CheckDiscrepancy(ctx context.Context, purl, declaredLicense s
 	}
 
 	key := CacheKey(coord)
-	// Check if already fetched and cached.
+
+	// Check if discovered expressions are already cached.
 	if discVal, ok := r.discovered.Load(key); ok {
-		discovered := discVal.(string)
-		if discovered != "" && !licensesAgree(declaredLicense, discovered) {
-			return discovered, true
+		discovered := discVal.([]string)
+		if conflict, found := hasDiscrepancy(declaredLicense, discovered); found {
+			return conflict, true
 		}
 		return "", false
 	}
 
-	// Not yet loaded, fetch definition.
+	// Reuse definitive cached negative results (e.g. not-harvested) without re-querying.
+	if _, reason, found := r.Load(key); found && reason != "" {
+		return "", false
+	}
+
 	if err := r.limiter.Wait(ctx); err != nil {
 		return "", false
 	}
@@ -262,10 +428,86 @@ func (r *Resolver) CheckDiscrepancy(ctx context.Context, purl, declaredLicense s
 	r.StoreResult(key, lic, reason)
 
 	if discVal, ok := r.discovered.Load(key); ok {
-		discovered := discVal.(string)
-		if discovered != "" && !licensesAgree(declaredLicense, discovered) {
-			return discovered, true
+		discovered := discVal.([]string)
+		if conflict, found := hasDiscrepancy(declaredLicense, discovered); found {
+			return conflict, true
 		}
+	}
+	return "", false
+}
+
+// CheckDiscrepanciesBatch checks discrepancies for multiple packages in bulk (#530).
+func (r *Resolver) CheckDiscrepanciesBatch(ctx context.Context, purls, declaredLicenses []string) []string {
+	discrepancies := make([]string, len(declaredLicenses))
+	var uncached []Coordinate
+	coordIndices := make(map[string][]int)
+
+	for i, purl := range purls {
+		if i >= len(declaredLicenses) {
+			break
+		}
+		declared := strings.TrimSpace(declaredLicenses[i])
+		if declared == "" || declared == "NOASSERTION" || declared == "NONE" {
+			continue
+		}
+		coord, ok := CoordinateFromPURL(purl)
+		if !ok {
+			continue
+		}
+		key := CacheKey(coord)
+
+		// Check if discovered expressions already cached:
+		if discVal, ok := r.discovered.Load(key); ok {
+			if conflict, found := hasDiscrepancy(declared, discVal.([]string)); found {
+				discrepancies[i] = conflict
+			}
+			continue
+		}
+
+		// Definitive negative cache (not harvested): skip immediately!
+		if _, reason, found := r.Load(key); found && reason != "" {
+			continue
+		}
+
+		coordIndices[key] = append(coordIndices[key], i)
+		if len(coordIndices[key]) == 1 {
+			uncached = append(uncached, coord)
+		}
+	}
+
+	if len(uncached) > 0 {
+		_ = r.fetchDefinitionsBatch(ctx, uncached)
+		for key, indices := range coordIndices {
+			if discVal, ok := r.discovered.Load(key); ok {
+				for _, idx := range indices {
+					declared := declaredLicenses[idx]
+					if conflict, found := hasDiscrepancy(declared, discVal.([]string)); found {
+						discrepancies[idx] = conflict
+					}
+				}
+			}
+		}
+	}
+
+	return discrepancies
+}
+
+// hasDiscrepancy checks if any discovered expression conflicts with the declared license (#530).
+func hasDiscrepancy(declaredLicense string, discovered []string) (string, bool) {
+	var conflicts []string
+	seen := make(map[string]bool)
+	for _, disc := range discovered {
+		disc = strings.TrimSpace(disc)
+		if disc == "" || seen[disc] {
+			continue
+		}
+		seen[disc] = true
+		if !licensesAgree(declaredLicense, disc) {
+			conflicts = append(conflicts, disc)
+		}
+	}
+	if len(conflicts) > 0 {
+		return strings.Join(conflicts, " AND "), true
 	}
 	return "", false
 }
@@ -282,8 +524,9 @@ func (r *Resolver) GetAttributionParties(purl string) []string {
 	return nil
 }
 
-// fetchDefinition queries the ClearlyDefined API for a coordinate's definition.
+// fetchDefinition queries ClearlyDefined for a single coordinate's definition.
 func (r *Resolver) fetchDefinition(ctx context.Context, coord Coordinate) (string, string) {
+	key := CacheKey(coord)
 	u := fmt.Sprintf("%s/definitions/%s", r.baseURL, coord.Path())
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
@@ -310,25 +553,32 @@ func (r *Resolver) fetchDefinition(ctx context.Context, coord Coordinate) (strin
 		return "", ""
 	}
 
-	key := CacheKey(coord)
-	parties := def.Licensed.Facets.Core.Attribution.Parties
-	if len(parties) > 0 {
-		r.attributions.Store(key, parties)
+	// Capture attribution parties
+	if len(def.Licensed.Facets.Core.Attribution.Parties) > 0 {
+		r.attributions.Store(key, def.Licensed.Facets.Core.Attribution.Parties)
 	}
 
-	// Capture discovered expressions.
-	var discoveredExprs []string
-	discoveredExprs = append(discoveredExprs, def.Licensed.Facets.Core.Discovered.Expressions...)
-	discoveredExprs = append(discoveredExprs, def.Licensed.Discovered.Expressions...)
-	if len(discoveredExprs) > 0 {
-		firstDisc := strings.TrimSpace(discoveredExprs[0])
-		if norm := license.Normalize(firstDisc); norm != "" {
-			firstDisc = norm
+	// Capture all discovered expressions (deduplicated)
+	var discovered []string
+	seenDisc := make(map[string]bool)
+	for _, expr := range append(def.Licensed.Facets.Core.Discovered.Expressions, def.Licensed.Discovered.Expressions...) {
+		expr = strings.TrimSpace(expr)
+		if expr == "" {
+			continue
 		}
-		r.discovered.Store(key, firstDisc)
+		if norm := license.Normalize(expr); norm != "" {
+			expr = norm
+		}
+		if !seenDisc[expr] {
+			seenDisc[expr] = true
+			discovered = append(discovered, expr)
+		}
+	}
+	if len(discovered) > 0 {
+		r.discovered.Store(key, discovered)
 	}
 
-	// Return declared license if available, otherwise discovered expression.
+	// Return declared license ONLY if upstream actually declared one (never promote file scans).
 	declared := strings.TrimSpace(def.Licensed.Declared)
 	if declared != "" && declared != "OTHER" && declared != "NOASSERTION" {
 		if norm := license.Normalize(declared); norm != "" {
@@ -337,15 +587,157 @@ func (r *Resolver) fetchDefinition(ctx context.Context, coord Coordinate) (strin
 		return declared, ""
 	}
 
-	if len(discoveredExprs) > 0 {
-		firstDisc := strings.TrimSpace(discoveredExprs[0])
-		if norm := license.Normalize(firstDisc); norm != "" {
-			return norm, ""
+	return "", license.ReasonNoLicenseUpstream
+}
+
+// fetchDefinitionsBatch queries ClearlyDefined in bulk using POST /definitions (#530).
+func (r *Resolver) fetchDefinitionsBatch(ctx context.Context, coords []Coordinate) error {
+	for start := 0; start < len(coords); start += maxBatchSize {
+		end := start + maxBatchSize
+		if end > len(coords) {
+			end = len(coords)
 		}
-		return firstDisc, ""
+		chunk := coords[start:end]
+		coordStrings := make([]string, len(chunk))
+		for i, c := range chunk {
+			coordStrings[i] = c.String()
+		}
+
+		if err := r.limiter.Wait(ctx); err != nil {
+			return err
+		}
+
+		u := fmt.Sprintf("%s/definitions", r.baseURL)
+		body, err := json.Marshal(coordStrings)
+		if err != nil {
+			continue
+		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, strings.NewReader(string(body)))
+		if err != nil {
+			continue
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("User-Agent", "bomhort-clearlydefined-resolver")
+
+		resp, err := r.httpClient.Do(req)
+		if err != nil {
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			continue
+		}
+
+		var res map[string]definitionResponse
+		err = json.NewDecoder(io.LimitReader(resp.Body, maxResponseSize)).Decode(&res)
+		resp.Body.Close()
+		if err != nil {
+			continue
+		}
+
+		for _, c := range chunk {
+			key := CacheKey(c)
+			def, ok := res[key]
+			if !ok {
+				def, ok = res[c.String()]
+			}
+			if !ok {
+				r.StoreResult(key, "", license.ReasonNotHarvested)
+				continue
+			}
+
+			// Capture parties
+			if len(def.Licensed.Facets.Core.Attribution.Parties) > 0 {
+				r.attributions.Store(key, def.Licensed.Facets.Core.Attribution.Parties)
+			}
+
+			// Capture discovered expressions
+			var discovered []string
+			seenDisc := make(map[string]bool)
+			for _, expr := range append(def.Licensed.Facets.Core.Discovered.Expressions, def.Licensed.Discovered.Expressions...) {
+				expr = strings.TrimSpace(expr)
+				if expr == "" {
+					continue
+				}
+				if norm := license.Normalize(expr); norm != "" {
+					expr = norm
+				}
+				if !seenDisc[expr] {
+					seenDisc[expr] = true
+					discovered = append(discovered, expr)
+				}
+			}
+			if len(discovered) > 0 {
+				r.discovered.Store(key, discovered)
+			}
+
+			// Declared license
+			declared := strings.TrimSpace(def.Licensed.Declared)
+			if declared != "" && declared != "OTHER" && declared != "NOASSERTION" {
+				if norm := license.Normalize(declared); norm != "" {
+					declared = norm
+				}
+				r.StoreResult(key, declared, "")
+			} else {
+				r.StoreResult(key, "", license.ReasonNoLicenseUpstream)
+			}
+		}
+	}
+	return nil
+}
+
+// PopulateAttributions populates copyright parties for packages from ClearlyDefined (#530).
+func (r *Resolver) PopulateAttributions(ctx context.Context, pkgs []NoticePackage) {
+	if r == nil {
+		return
+	}
+	var uncached []Coordinate
+	for i := range pkgs {
+		if len(pkgs[i].CopyrightParties) > 0 {
+			continue
+		}
+		coord, ok := CoordinateFromPURL(pkgs[i].PURL)
+		if !ok {
+			continue
+		}
+		key := CacheKey(coord)
+		if parties, ok := r.attributions.Load(key); ok {
+			pkgs[i].CopyrightParties = parties.([]string)
+			continue
+		}
+		uncached = append(uncached, coord)
 	}
 
-	return "", license.ReasonNoLicenseUpstream
+	if len(uncached) > 0 {
+		_ = r.fetchDefinitionsBatch(ctx, uncached)
+		for i := range pkgs {
+			if len(pkgs[i].CopyrightParties) > 0 {
+				continue
+			}
+			coord, ok := CoordinateFromPURL(pkgs[i].PURL)
+			if !ok {
+				continue
+			}
+			if parties, ok := r.attributions.Load(CacheKey(coord)); ok {
+				pkgs[i].CopyrightParties = parties.([]string)
+			}
+		}
+	}
+}
+
+// GenerateNoticeWithFallback generates an attribution NOTICE file with complete
+// component coverage, real ClearlyDefined copyright attribution where available,
+// explicit missing copyright flags for manual review, and complete SPDX texts (#530).
+func (r *Resolver) GenerateNoticeWithFallback(ctx context.Context, targetName string, pkgs []NoticePackage) string {
+	if r != nil {
+		fetchCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+		r.PopulateAttributions(fetchCtx, pkgs)
+	}
+	return GenerateNotice(targetName, pkgs)
 }
 
 // licensesAgree checks if two license expressions are equivalent.
@@ -358,73 +750,4 @@ func licensesAgree(a, b string) bool {
 	normA := license.Normalize(a)
 	normB := license.Normalize(b)
 	return strings.EqualFold(normA, normB)
-}
-
-type noticeRequest struct {
-	Coordinates []string `json:"coordinates"`
-}
-
-type noticeResponse struct {
-	Content string `json:"content"`
-}
-
-// FetchNotice calls ClearlyDefined's POST /notices endpoint to generate a notice file
-// for the given canonical coordinates (#530).
-func (r *Resolver) FetchNotice(ctx context.Context, coordinates []string) (string, error) {
-	if len(coordinates) == 0 {
-		return "", fmt.Errorf("no coordinates provided")
-	}
-	u := fmt.Sprintf("%s/notices", r.baseURL)
-	body, err := json.Marshal(noticeRequest{Coordinates: coordinates})
-	if err != nil {
-		return "", err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, strings.NewReader(string(body)))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "bomhort-clearlydefined-resolver")
-
-	resp, err := r.httpClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("clearlydefined notices returned status %d", resp.StatusCode)
-	}
-
-	var res noticeResponse
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseSize)).Decode(&res); err != nil {
-		return "", err
-	}
-	if strings.TrimSpace(res.Content) == "" {
-		return "", fmt.Errorf("empty notice content returned")
-	}
-	return res.Content, nil
-}
-
-// GenerateNoticeWithFallback attempts to fetch the notice from ClearlyDefined's
-// notice endpoint for packages with valid coordinates, falling back to local
-// generation using embedded SPDX license texts and attribution parties (#530).
-func (r *Resolver) GenerateNoticeWithFallback(ctx context.Context, targetName string, pkgs []NoticePackage) string {
-	if r != nil && r.baseURL != "" {
-		var coords []string
-		for _, p := range pkgs {
-			if coord, ok := CoordinateFromPURL(p.PURL); ok {
-				coords = append(coords, coord.String())
-			}
-		}
-		if len(coords) > 0 && len(coords) <= 100 {
-			fetchCtx, cancel := context.WithTimeout(ctx, 2500*time.Millisecond)
-			defer cancel()
-			if content, err := r.FetchNotice(fetchCtx, coords); err == nil && strings.TrimSpace(content) != "" {
-				return content
-			}
-		}
-	}
-	return GenerateNotice(targetName, pkgs)
 }
