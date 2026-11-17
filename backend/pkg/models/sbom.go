@@ -117,7 +117,11 @@ type Vulnerability struct {
 	// (GHSA-… ↔ CVE-… ↔ GO-…). VEX matching accepts any of them: a
 	// statement written about the CVE must hit the finding stored under
 	// its GHSA id.
-	Aliases      []string `json:"aliases,omitempty"`
+	Aliases []string `json:"aliases,omitempty"`
+	// CWEIDs are the weakness classes of the flaw (#409), extracted from
+	// OSV database_specific.cwe_ids. Empty for NVD-sourced entries that
+	// carry none; backfilled from osv_json (migration 034).
+	CWEIDs       []string `json:"cwe_ids,omitempty"`
 	FixedVersion string   `json:"fixed_version"`
 	OSVJSON      string   `json:"osv_json"`
 	// DependencyDepth is the smallest depth of the affected PURL in the SBOM

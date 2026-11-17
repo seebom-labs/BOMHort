@@ -172,11 +172,14 @@ func (c *Client) searchProjectsFacet(ctx context.Context, pattern string, limit 
 }
 
 func (c *Client) searchVulnerabilitiesFacet(ctx context.Context, pattern string, limit uint64, resp *dto.GlobalSearchResponse) error {
+	// The weakness class matches too (#409): "CWE-79" finds every finding of
+	// that class.
 	if err := c.Conn.QueryRow(ctx, `
 		SELECT count(DISTINCT vuln_id)
 		FROM (SELECT * FROM vulnerabilities FINAL)
 		WHERE vuln_id ILIKE ? OR summary ILIKE ? OR arrayExists(a -> a ILIKE ?, aliases)
-	`, pattern, pattern, pattern).Scan(&resp.TotalVulnerabilities); err != nil {
+			OR arrayExists(a -> a ILIKE ?, cwe_ids)
+	`, pattern, pattern, pattern, pattern).Scan(&resp.TotalVulnerabilities); err != nil {
 		return fmt.Errorf("failed to count vulnerability search results: %w", err)
 	}
 
@@ -186,13 +189,15 @@ func (c *Client) searchVulnerabilitiesFacet(ctx context.Context, pattern string,
 			any(severity) AS vuln_severity,
 			any(summary) AS vuln_summary,
 			count(DISTINCT sbom_id) AS affected_sboms,
-			groupUniqArrayArray(aliases) AS vuln_aliases
+			groupUniqArrayArray(aliases) AS vuln_aliases,
+			groupUniqArrayArray(cwe_ids) AS vuln_cwe_ids
 		FROM (SELECT * FROM vulnerabilities FINAL)
 		WHERE vuln_id ILIKE ? OR summary ILIKE ? OR arrayExists(a -> a ILIKE ?, aliases)
+			OR arrayExists(a -> a ILIKE ?, cwe_ids)
 		GROUP BY vuln_id
 		ORDER BY affected_sboms DESC, vuln_id ASC
 		LIMIT ?
-	`, pattern, pattern, pattern, limit)
+	`, pattern, pattern, pattern, pattern, limit)
 	if err != nil {
 		return fmt.Errorf("failed to search vulnerabilities: %w", err)
 	}
@@ -200,11 +205,12 @@ func (c *Client) searchVulnerabilitiesFacet(ctx context.Context, pattern string,
 
 	for rows.Next() {
 		var item dto.GlobalSearchVulnerability
-		var aliases []string
-		if err := rows.Scan(&item.VulnID, &item.Severity, &item.Summary, &item.AffectedSBOMs, &aliases); err != nil {
+		var aliases, cweIDs []string
+		if err := rows.Scan(&item.VulnID, &item.Severity, &item.Summary, &item.AffectedSBOMs, &aliases, &cweIDs); err != nil {
 			return fmt.Errorf("failed to scan vulnerability search row: %w", err)
 		}
 		item.Aliases, item.CVEID = identify(item.VulnID, aliases)
+		item.CWEIDs = cweIDs
 		resp.Vulnerabilities = append(resp.Vulnerabilities, item)
 	}
 	return rows.Err()

@@ -393,7 +393,12 @@ func main() {
 			writeError(w, http.StatusBadRequest, invalidExploitMsg)
 			return
 		}
-		vulns, err := chClient.QuerySBOMVulnerabilities(r.Context(), sbomID, scope, reachability)
+		cwe, ok := parseCWE(r.URL.Query().Get("cwe"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Invalid cwe (expected CWE-<number>)")
+			return
+		}
+		vulns, err := chClient.QuerySBOMVulnerabilities(r.Context(), sbomID, scope, reachability, cwe)
 		if err != nil {
 			log.Printf("ERROR: sbom vulns for %s: %v", sanitizeLogParam(sbomID), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch SBOM vulnerabilities")

@@ -135,7 +135,7 @@ func TestQueriesExecute(t *testing.T) {
 			return err
 		}},
 		{"QuerySBOMDetail", func() error { _, err := c.QuerySBOMDetail(ctx, someID); return err }},
-		{"QuerySBOMVulnerabilities", func() error { _, err := c.QuerySBOMVulnerabilities(ctx, someID, "", ""); return err }},
+		{"QuerySBOMVulnerabilities", func() error { _, err := c.QuerySBOMVulnerabilities(ctx, someID, "", "", ""); return err }},
 		{"QuerySBOMLicenses", func() error { _, err := c.QuerySBOMLicenses(ctx, someID); return err }},
 		{"QuerySBOMVEXStatements", func() error { _, err := c.QuerySBOMVEXStatements(ctx, someID); return err }},
 		{"QuerySBOMDependencies", func() error { _, err := c.QuerySBOMDependencies(ctx, someID); return err }},
@@ -264,7 +264,7 @@ func TestSBOMDetailProjectionMatchesScan(t *testing.T) {
 // "aggregate function ... is found inside another aggregate function".
 func TestSBOMVulnerabilitiesVEXJoin(t *testing.T) {
 	c := testClient(t)
-	_, err := c.QuerySBOMVulnerabilities(context.Background(), uuid.New().String(), "", "")
+	_, err := c.QuerySBOMVulnerabilities(context.Background(), uuid.New().String(), "", "", "")
 	if err != nil && !isEmptyResult(err) {
 		t.Fatalf("SBOM vulnerabilities query broken: %v", err)
 	}

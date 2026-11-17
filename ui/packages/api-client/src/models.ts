@@ -137,6 +137,9 @@ export interface VulnerabilityListItem {
   vex_statement_id?: string;
   vex_author?: string;
   vex_tooling?: string;
+  /** Weakness classes of the flaw (#409), from OSV database_specific.cwe_ids,
+   *  sorted; absent for findings without CWEs. */
+  cwe_ids?: string[];
   /** "sbom": the winning statement is scoped to this SBOM; unscoped
    *  statements never apply, so this is the only value (#350). */
   vex_scope?: 'sbom';
@@ -660,6 +663,8 @@ export interface GlobalSearchVulnerability {
   cve_id?: string;
   /** Other OSV ids of the same flaw (GHSA <-> CVE <-> GO-…), sorted (#412). */
   aliases?: string[];
+  /** Weakness classes of the flaw (#409), sorted; absent when none are known. */
+  cwe_ids?: string[];
   severity: string;
   summary: string;
   affected_sboms: number;

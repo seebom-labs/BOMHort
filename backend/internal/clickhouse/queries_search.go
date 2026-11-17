@@ -35,8 +35,9 @@ import (
 //
 // scope ("" or a depgraph scope label) keeps only findings whose package is
 // pulled in that way. reachability ("" or "reachable", "not_reachable", "unknown")
-// filters by reachability evidence (#535).
-func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, scope string, reachability string) ([]dto.VulnerabilityListItem, error) {
+// filters by reachability evidence (#535). cwe ("", or "CWE-79", case-normalised
+// by the handler) keeps only findings of that weakness class (#409).
+func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, scope string, reachability string, cwe string) ([]dto.VulnerabilityListItem, error) {
 	scopeAnd := ""
 	if pred := depthPredicate(scope, "v.dependency_depth"); pred != "" {
 		scopeAnd = " AND " + pred
@@ -46,11 +47,15 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 		scopeAnd += " AND v.reachability = ?"
 		args = append(args, reachability)
 	}
+	if cwe != "" {
+		scopeAnd += " AND has(v.cwe_ids, ?)"
+		args = append(args, cwe)
+	}
 	rows, err := c.Conn.Query(ctx, `
 		SELECT
 			v.vuln_id, v.severity, v.purl, v.summary,
 			v.fixed_version, v.source_file, v.discovered_at,
-			v.dependency_depth, v.aliases,
+			v.dependency_depth, v.aliases, v.cwe_ids,
 			v.advisory_source, v.advisory_status, v.component_location,
 			ifNull(vx.vex_status, '') AS vex_status,
 			ifNull(vx.vex_justification, '') AS vex_justification,
@@ -104,7 +109,7 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 		if err := rows.Scan(
 			&item.VulnID, &item.Severity, &item.PURL,
 			&item.Summary, &item.FixedVersion, &item.SourceFile,
-			&discoveredAt, &depth, &aliases,
+			&discoveredAt, &depth, &aliases, &item.CWEIDs,
 			&item.AdvisorySource, &item.AdvisoryStatus, &components,
 			&item.VEXStatus,
 			&item.VEXJustification, &vexTimestamp, &item.VEXStatementID,
