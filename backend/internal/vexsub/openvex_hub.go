@@ -19,6 +19,19 @@ import (
 
 const maxHubDocsPerSync = 500
 
+var (
+	hubCursorsMu sync.Mutex
+	hubCursors   = make(map[string]int)
+)
+
+// ResetHubCursors resets the in-memory pagination cursor for all OpenVEX hubs.
+// Primarily used by tests to guarantee clean, deterministic state.
+func ResetHubCursors() {
+	hubCursorsMu.Lock()
+	defer hubCursorsMu.Unlock()
+	hubCursors = make(map[string]int)
+}
+
 type vexHubIndex struct {
 	Packages []struct {
 		ID       string `json:"id"`
@@ -44,7 +57,7 @@ func FetchOpenVEXHub(ctx context.Context, client *http.Client, sourceURL string,
 	if docURLs, ok, capped, err := fetchHubIndexURLs(ctx, client, sourceURL, indexURL, knownPURLs); err != nil {
 		return SourceResult{}, err
 	} else if ok {
-		stmts, hasErrors, err := fetchOpenVEXDocumentsConcurrently(ctx, client, sourceURL, docURLs)
+		stmts, hasErrors, err := fetchOpenVEXDocumentsConcurrently(ctx, client, sourceURL, docURLs, true)
 		if err != nil {
 			return SourceResult{}, err
 		}
@@ -80,7 +93,7 @@ func FetchOpenVEXHub(ctx context.Context, client *http.Client, sourceURL string,
 		}
 	}
 
-	stmts, hasErrors, err := fetchOpenVEXDocumentsConcurrently(ctx, client, sourceURL, candidateURLs)
+	stmts, hasErrors, err := fetchOpenVEXDocumentsConcurrently(ctx, client, sourceURL, candidateURLs, false)
 	if err != nil {
 		return SourceResult{}, err
 	}
@@ -95,16 +108,20 @@ func fetchHubIndexURLs(ctx context.Context, client *http.Client, baseURL, indexU
 	if err != nil {
 		var he *httpError
 		if errors.As(err, &he) && (he.StatusCode == http.StatusNotFound || he.StatusCode == http.StatusMethodNotAllowed) {
+			// Legacy hub without an index.json; fall back to candidate PURL paths.
 			return nil, false, false, nil
 		}
-		// Some test/legacy servers serve a generic 404/400/3xx or non-index on unknown paths;
-		// only surface 5xx or transport errors when probing fails completely.
-		return nil, false, false, nil
+		// Server errors (5xx) or transport/network failures must be propagated so
+		// that an outage is not misinterpreted as an empty legacy hub (#538).
+		return nil, false, false, fmt.Errorf("fetching hub index %s: %w", indexURL, err)
 	}
 
 	var idx vexHubIndex
-	if err := json.Unmarshal(body, &idx); err != nil || len(idx.Packages) == 0 {
-		return nil, false, false, nil
+	if err := json.Unmarshal(body, &idx); err != nil {
+		return nil, false, false, fmt.Errorf("parsing hub index %s: %w", indexURL, err)
+	}
+	if len(idx.Packages) == 0 {
+		return nil, true, false, nil
 	}
 
 	knownByCore := make(map[string][]ParsedPURL, len(knownPURLs))
@@ -118,8 +135,7 @@ func fetchHubIndexURLs(ctx context.Context, client *http.Client, baseURL, indexU
 	}
 
 	seen := make(map[string]struct{})
-	var docURLs []string
-	capped := false
+	var allMatchingURLs []string
 	for _, entry := range idx.Packages {
 		loc := strings.TrimSpace(entry.Location)
 		if loc == "" {
@@ -147,13 +163,42 @@ func fetchHubIndexURLs(ctx context.Context, client *http.Client, baseURL, indexU
 			continue
 		}
 		seen[docURL] = struct{}{}
-		docURLs = append(docURLs, docURL)
-		if len(docURLs) >= maxHubDocsPerSync {
-			capped = true
-			break
-		}
+		allMatchingURLs = append(allMatchingURLs, docURL)
 	}
-	return docURLs, true, capped, nil
+
+	total := len(allMatchingURLs)
+	if total == 0 {
+		return nil, true, false, nil
+	}
+
+	if total <= maxHubDocsPerSync {
+		hubCursorsMu.Lock()
+		delete(hubCursors, baseURL)
+		hubCursorsMu.Unlock()
+		return allMatchingURLs, true, false, nil
+	}
+
+	// More than maxHubDocsPerSync matching documents exist.
+	// Progress across subsequent refreshes using an offset cursor, while keeping
+	// capped = true so reconciliation remains disabled until a complete snapshot is obtained (#538).
+	hubCursorsMu.Lock()
+	offset := hubCursors[baseURL]
+	if offset >= total {
+		offset = 0
+	}
+	end := offset + maxHubDocsPerSync
+	if end > total {
+		end = total
+	}
+	docURLs := allMatchingURLs[offset:end]
+	if end >= total {
+		hubCursors[baseURL] = 0
+	} else {
+		hubCursors[baseURL] = end
+	}
+	hubCursorsMu.Unlock()
+
+	return docURLs, true, true, nil
 }
 
 func matchesAnyCandidate(stmt ParsedPURL, candidates []ParsedPURL) bool {
@@ -176,7 +221,7 @@ func dedupeHubLookupKey(rawPURL string) string {
 	return p.Core()
 }
 
-func fetchOpenVEXDocumentsConcurrently(ctx context.Context, client *http.Client, sourceURL string, docURLs []string) ([]models.VEXStatement, bool, error) {
+func fetchOpenVEXDocumentsConcurrently(ctx context.Context, client *http.Client, sourceURL string, docURLs []string, isIndexed bool) ([]models.VEXStatement, bool, error) {
 	if len(docURLs) == 0 {
 		return nil, false, nil
 	}
@@ -213,6 +258,15 @@ func fetchOpenVEXDocumentsConcurrently(ctx context.Context, client *http.Client,
 				if err != nil {
 					var he *httpError
 					if errors.As(err, &he) && he.StatusCode == http.StatusNotFound {
+						if isIndexed {
+							// An indexed document returned 404: an advertised document is missing from the hub.
+							// Treat this missing indexed document as an error so the snapshot is marked incomplete (#538).
+							mu.Lock()
+							results = append(results, fetchResult{reachable: true, err: err})
+							mu.Unlock()
+							continue
+						}
+						// For legacy candidate URL probing, 404 simply means no statement exists for this candidate.
 						mu.Lock()
 						results = append(results, fetchResult{reachable: true})
 						mu.Unlock()

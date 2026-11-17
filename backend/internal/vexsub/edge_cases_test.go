@@ -370,3 +370,123 @@ func TestFetchOpenVEXHub_CappedAtLimit(t *testing.T) {
 		t.Errorf("expected Complete == false when hub exceeds maxHubDocsPerSync, got true")
 	}
 }
+
+func TestFetchOpenVEXHub_Index500DoesNotFallbackToLegacy404(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/index.json" {
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		// Legacy candidate paths return 404
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	known := []string{"pkg:golang/github.com/gin-gonic/gin@v1.9.0"}
+	res, err := FetchOpenVEXHub(context.Background(), srv.Client(), srv.URL, known)
+	// Server error on index.json must be propagated, never silently fallen back to legacy 404
+	// which would incorrectly report Complete == true (#538).
+	if err == nil && res.Complete {
+		t.Fatalf("expected error or incomplete result when index.json returns 500, got Complete=true with 0 stmts")
+	}
+}
+
+func TestFetchOpenVEXHub_MissingIndexedDocumentMarksIncomplete(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/index.json":
+			_, _ = w.Write([]byte(`{
+				"packages": [
+					{"id": "pkg:golang/pkg1@1.0.0", "location": "doc1.json"},
+					{"id": "pkg:golang/pkg2@1.0.0", "location": "doc2.json"}
+				]
+			}`))
+		case "/doc1.json":
+			_, _ = w.Write([]byte(`{
+				"@context": "https://openvex.dev/ns/v0.2.0",
+				"@id": "https://example.com/doc1",
+				"statements": [
+					{"vulnerability": {"name": "CVE-2026-0001"}, "products": [{"@id": "pkg:golang/pkg1@1.0.0"}], "status": "not_affected", "justification": "component_not_present"}
+				]
+			}`))
+		case "/doc2.json":
+			// Missing indexed document returns 404
+			http.NotFound(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	known := []string{"pkg:golang/pkg1@1.0.0", "pkg:golang/pkg2@1.0.0"}
+	res, err := FetchOpenVEXHub(context.Background(), srv.Client(), srv.URL, known)
+	if err != nil {
+		t.Fatalf("expected partial fetch to succeed without fatal error, got %v", err)
+	}
+	if len(res.Statements) != 1 {
+		t.Fatalf("expected 1 statement from reachable doc, got %d", len(res.Statements))
+	}
+	// A 404 on an indexed document indicates an advertised document was not found;
+	// the snapshot must be treated as incomplete to prevent deleting previously stored records (#538).
+	if res.Complete {
+		t.Errorf("expected Complete == false when indexed document returns 404, got true")
+	}
+}
+
+func TestFetchOpenVEXHub_SubsequentRefreshesFetchRemainingDocs(t *testing.T) {
+	ResetHubCursors()
+	defer ResetHubCursors()
+
+	const extraDocs = 10
+	totalDocs := maxHubDocsPerSync + extraDocs
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/index.json":
+			var pkgs []string
+			for i := 0; i < totalDocs; i++ {
+				pkgs = append(pkgs, fmt.Sprintf(`{"id": "pkg:golang/pkg%d@1.0.0", "location": "doc%d.json"}`, i, i))
+			}
+			_, _ = w.Write([]byte(`{"packages": [` + strings.Join(pkgs, ",") + `]}`))
+		default:
+			if strings.HasPrefix(r.URL.Path, "/doc") {
+				_, _ = w.Write([]byte(`{
+					"@context": "https://openvex.dev/ns/v0.2.0",
+					"@id": "https://example.com/doc",
+					"statements": [
+						{"vulnerability": {"name": "CVE-2026-9999"}, "products": [{"@id": "pkg:golang/pkg@1.0.0"}], "status": "not_affected", "justification": "component_not_present"}
+					]
+				}`))
+				return
+			}
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	ctx := context.Background()
+
+	// Refresh 1: fetches first batch (up to maxHubDocsPerSync)
+	res1, err := FetchOpenVEXHub(ctx, srv.Client(), srv.URL, nil)
+	if err != nil {
+		t.Fatalf("first refresh failed: %v", err)
+	}
+	if res1.Complete {
+		t.Errorf("expected Complete == false on capped first refresh, got true")
+	}
+	if len(res1.Statements) != maxHubDocsPerSync {
+		t.Fatalf("expected %d statements in first batch, got %d", maxHubDocsPerSync, len(res1.Statements))
+	}
+
+	// Refresh 2: advances cursor and fetches remaining extraDocs
+	res2, err := FetchOpenVEXHub(ctx, srv.Client(), srv.URL, nil)
+	if err != nil {
+		t.Fatalf("second refresh failed: %v", err)
+	}
+	if res2.Complete {
+		t.Errorf("expected Complete == false on partial second refresh while traversing chunks, got true")
+	}
+	if len(res2.Statements) != extraDocs {
+		t.Fatalf("expected remaining %d statements in second batch, got %d", extraDocs, len(res2.Statements))
+	}
+}
