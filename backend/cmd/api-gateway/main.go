@@ -118,20 +118,20 @@ func main() {
 	// Push-model upload storage (#135): either a dedicated skipScan S3 bucket,
 	// or a writable local SBOM_DIR as a fallback. Resolved once at startup —
 	// uploadHandler uses this instead of re-probing on every request.
-	pushBucket, hasPushBucket := findS3PushBucket(cfg.S3Buckets)
+	pushBucket, hasPushBucket, localUploadWritable := resolveUploadStorage(cfg, s3c != nil)
 	var uploadS3Store uploadObjectStore
-	if hasPushBucket && s3c != nil {
+	if hasPushBucket {
 		uploadS3Store = s3c
-	} else {
-		hasPushBucket = false // S3 client failed to initialize — fall back to local only
 	}
-	localUploadWritable := isDirWritable(filepath.Join(cfg.SBOMDir, "pushed"))
-	if !hasPushBucket && !localUploadWritable {
-		log.Printf("WARNING: no upload storage available — POST %s will return 503 until either S3_BUCKETS has a skipScan bucket or SBOM_DIR (%s) is writable", uploadPath, cfg.SBOMDir)
-	} else if hasPushBucket {
+	switch {
+	case hasPushBucket:
 		log.Printf("Push-model upload storage: S3 bucket %q (skipScan)", pushBucket.Name)
-	} else {
+	case localUploadWritable:
 		log.Printf("Push-model upload storage: local filesystem (%s/pushed)", cfg.SBOMDir)
+	case !cfg.HasLocalSBOMDir():
+		log.Printf("WARNING: no upload storage available — POST %s will return 503 until S3_BUCKETS has a skipScan bucket (SBOM_DIR_DISABLED: there is no shared SBOM directory to fall back to)", uploadPath)
+	default:
+		log.Printf("WARNING: no upload storage available — POST %s will return 503 until either S3_BUCKETS has a skipScan bucket or SBOM_DIR (%s) is writable", uploadPath, cfg.SBOMDir)
 	}
 
 	var exceptionsS3 rulesource.ObjectGetter
@@ -1635,9 +1635,27 @@ func isDirWritable(dir string) bool {
 	return true
 }
 
+// resolveUploadStorage decides where push uploads (#135) are stored: the
+// skipScan S3 bucket when there is one and the S3 client is usable, else
+// SBOM_DIR/pushed/ when that is writable.
+//
+// The local fallback is only offered when SBOM_DIR is a directory the parsing
+// workers share (cfg.HasLocalSBOMDir). Writability alone does not show that:
+// with no volume mounted the gateway can still create SBOM_DIR in its own
+// container filesystem, would answer 202 and would queue a file no worker can
+// ever open (#590).
+func resolveUploadStorage(cfg *config.Config, s3Available bool) (pushBucket config.S3BucketConfig, useS3Push, localWritable bool) {
+	pushBucket, useS3Push = findS3PushBucket(cfg.S3Buckets)
+	if !s3Available {
+		useS3Push = false // S3 client failed to initialize — fall back to local only
+	}
+	localWritable = cfg.HasLocalSBOMDir() && isDirWritable(filepath.Join(cfg.SBOMDir, "pushed"))
+	return pushBucket, useS3Push, localWritable
+}
+
 // uploadDeps bundles uploadHandler's runtime dependencies and the storage-
-// routing decision resolved once at startup (see findS3PushBucket and
-// isDirWritable in main()), instead of six positional constructor
+// routing decision resolved once at startup (see resolveUploadStorage),
+// instead of six positional constructor
 // parameters — two of them bools, which read ambiguously and are easy to
 // transpose by accident at the call site.
 type uploadDeps struct {
@@ -1653,8 +1671,9 @@ type uploadDeps struct {
 	// useS3Push is true when pushBucket is a valid push target and s3Store
 	// is usable — uploads route to S3 instead of the local fallback.
 	useS3Push bool
-	// localWritable is true when cfg.SBOMDir/pushed is writable — the
-	// local-filesystem fallback used when useS3Push is false.
+	// localWritable is true when cfg.SBOMDir/pushed is a shared directory
+	// (see resolveUploadStorage) and writable — the local-filesystem
+	// fallback used when useS3Push is false.
 	localWritable bool
 }
 
@@ -1686,7 +1705,11 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 		}
 
 		if !useS3Push && !localWritable {
-			writeError(w, http.StatusServiceUnavailable, "No upload storage configured — set S3_BUCKETS with a skipScan bucket, or ensure SBOM_DIR is writable")
+			msg := "No upload storage configured — set S3_BUCKETS with a skipScan bucket, or ensure SBOM_DIR is writable"
+			if !cfg.HasLocalSBOMDir() {
+				msg = "No upload storage configured — set S3_BUCKETS with a skipScan bucket (this instance has no shared SBOM_DIR to fall back to)"
+			}
+			writeError(w, http.StatusServiceUnavailable, msg)
 			return
 		}
 

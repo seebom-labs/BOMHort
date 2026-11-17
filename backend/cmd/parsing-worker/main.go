@@ -9,7 +9,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -300,7 +299,10 @@ func processJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Cl
 			return s3c.GetObject(ctx, bucket, key)
 		}
 		// Local file.
-		absPath := filepath.Join(cfg.SBOMDir, job.SourceFile)
+		absPath, err := cfg.LocalSBOMPath(job.SourceFile)
+		if err != nil {
+			return nil, err
+		}
 		return os.Open(absPath)
 	}
 

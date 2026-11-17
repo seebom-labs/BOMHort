@@ -321,7 +321,7 @@ Push an SBOM or VEX document directly instead of relying on a filesystem/S3 scan
 
 **Storage backend:** the upload is routed to whichever push-storage backend is configured, resolved once at API Gateway startup:
 - If one of the configured `S3_BUCKETS` entries has `"skipScan": true`, the upload is written there (`s3://<bucket>/<prefix>/pushed/<uuid>-<filename>`). That bucket is excluded from the ingestion watcher's periodic scan so the same object is never rediscovered and re-enqueued under a different dedup hash.
-- Otherwise, it falls back to the local filesystem under `SBOM_DIR/pushed/` — this requires the API Gateway's `SBOM_DIR` mount to be writable (see the [Deployment Guide](/docs/deployment/) for the Helm `sbomSource.writable` flag).
+- Otherwise, it falls back to the local filesystem under `SBOM_DIR/pushed/` — this requires the API Gateway's `SBOM_DIR` mount to be writable (see the [Deployment Guide](/docs/deployment/) for the Helm `sbomSource.writable` flag). The fallback is off when `SBOM_DIR_DISABLED=true`, which the Helm chart sets for deployments without the `sbom-data` volume (`sbomSource.enabled: false`): `SBOM_DIR` is then not shared with the parsing workers, so a file stored there could never be ingested.
 - If neither is available, every request gets `503 Service Unavailable` rather than a confusing storage error.
 
 {{% alert title="Requires authentication" color="warning" %}}
@@ -389,7 +389,7 @@ With `DEDUP_BY_IMAGE_DIGEST=true` (Helm: `apiGateway.dedupByImageDigest`, defaul
 - `413` — Body exceeds `MAX_UPLOAD_SIZE_MB`
 - `409` — Image digest reuse is enabled but identical content is still queued and has not been ingested yet
 - `500` — Storage (S3 or local) or ingestion-queue failure
-- `503` — No push-storage backend is configured (no `skipScan` S3 bucket, and `SBOM_DIR` isn't writable)
+- `503` — No push-storage backend is configured (no `skipScan` S3 bucket, and `SBOM_DIR` isn't writable or is disabled with `SBOM_DIR_DISABLED=true`)
 
 {{% alert title="Content validation" color="info" %}}
 VEX uploads are validated with the same OpenVEX parser the worker uses (a `@context` or at least one `statements` entry must be present) before anything is written to disk or enqueued. SBOM uploads must be a **single, well-formed JSON object** — bare scalars, `null`, top-level arrays, concatenated documents, and trailing data after the document are all rejected with `400`. Beyond that the shape is not constrained: format detection (`bomFormat`/`spdxVersion`/in-toto `predicateType`) and full parsing (package/component extraction) still happen in the parsing worker, so an unrecognized-but-well-formed object is accepted here and resolved downstream.

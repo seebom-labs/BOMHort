@@ -94,7 +94,7 @@ sbomSource:
   enabled: false   # no PVC, no sbom-data mount, no pod affinity
 ```
 
-This requires `s3.buckets`, and push uploads then need a `"skipScan"` bucket; the render fails on `sbomSource.writable: true`. The pod affinity stays while `originalStore.fs.enabled` is `true`. A `SBOM_DIR/license-exceptions.json` fallback file is no longer read. On an existing release Helm deletes the PVC when you switch this off, so check first that it holds nothing you ingest from.
+This requires `s3.buckets` to hold at least one bucket (an empty list, `'[]'` included, or malformed JSON fails the render), and push uploads then need a `"skipScan"` bucket; the render fails on `sbomSource.writable: true`. The chart sets `SBOM_DIR_DISABLED=true` for the pods, so the API gateway never falls back to `SBOM_DIR/pushed/` — not even when `sbomSource.mountPath` is writable inside its own container, where no parsing worker could read the upload — and the ingestion watcher skips its local scan. The pod affinity stays while `originalStore.fs.enabled` is `true`. A `SBOM_DIR/license-exceptions.json` fallback file is no longer read. On an existing release Helm deletes the PVC when you switch this off, so check first that it holds nothing you ingest from.
 
 **Advantages:**
 - No PVC, no volume scheduling, no pod affinity constraints (with `sbomSource.enabled: false`, see above)

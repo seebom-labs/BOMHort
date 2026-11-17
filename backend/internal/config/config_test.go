@@ -492,3 +492,32 @@ func TestLoad_S3SharedSettingsInheritance(t *testing.T) {
 		t.Error("bucket-b.UseSSL should be false (own setting)")
 	}
 }
+
+// SBOM_DIR_DISABLED is how the Helm chart says no volume backs SBOM_DIR
+// (#590). The path stays configured, but nothing may resolve a file under it.
+func TestLoad_SBOMDirDisabled(t *testing.T) {
+	t.Setenv("SBOM_DIR", "/tmp/sboms")
+	t.Setenv("SBOM_DIR_DISABLED", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if got, err := cfg.LocalSBOMPath("pushed/a.spdx.json"); err != nil || got != "/tmp/sboms/pushed/a.spdx.json" {
+		t.Errorf("LocalSBOMPath = %q, %v; want /tmp/sboms/pushed/a.spdx.json", got, err)
+	}
+
+	t.Setenv("SBOM_DIR_DISABLED", "true")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.SBOMDir != "/tmp/sboms" {
+		t.Errorf("SBOMDir = %q, want it left as configured", cfg.SBOMDir)
+	}
+	if cfg.HasLocalSBOMDir() {
+		t.Error("HasLocalSBOMDir() = true with SBOM_DIR_DISABLED=true")
+	}
+	if got, err := cfg.LocalSBOMPath("pushed/a.spdx.json"); err == nil {
+		t.Errorf("LocalSBOMPath = %q, want an error without a shared directory", got)
+	}
+}

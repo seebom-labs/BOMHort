@@ -113,7 +113,9 @@ func main() {
 	log.Printf("Loaded %d known content hashes", len(known))
 
 	// ── Source 1: Local filesystem ─────────────────────────────────────
-	if cfg.SBOMDir != "" {
+	if cfg.SBOMDirDisabled {
+		log.Println("Local: no shared SBOM directory (SBOM_DIR_DISABLED), skipping local scan")
+	} else if cfg.SBOMDir != "" {
 		if info, err := os.Stat(cfg.SBOMDir); err == nil && info.IsDir() {
 			localEnqueued, _ := ingestLocalFiles(ctx, cfg, chClient, known, &sbomCount)
 			totalEnqueued += localEnqueued

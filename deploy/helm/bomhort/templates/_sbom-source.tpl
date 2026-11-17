@@ -35,10 +35,30 @@ together when the sbomSource PVC is gone. git-sync mode never had the rule.
 {{- if and (not .Values.gitSync.enabled) (or (include "bomhort.sbomSource.pvc" .) .Values.originalStore.fs.enabled) }}true{{ end -}}
 {{- end -}}
 
+{{- /*
+Without a volume S3 is the only source, so s3.buckets has to hold at least one
+bucket. It is checked as data, not as a truthy string: '[]' and broken JSON
+are non-empty strings too. fromJsonArray reports a parse error as a list with
+the message as its one element, which the "every entry is an object" check
+catches along with arrays of anything else.
+*/ -}}
 {{- define "bomhort.sbomSource.validate" -}}
 {{- if not (include "bomhort.sbomSource.mounted" .) -}}
-{{- if not .Values.s3.buckets -}}
-{{- fail "sbomSource.enabled=false leaves BOMHort without an SBOM source: set s3.buckets, or keep the volume (sbomSource.enabled=true) or use gitSync.enabled=true" -}}
+{{- $buckets := .Values.s3.buckets -}}
+{{- if kindIs "string" $buckets -}}
+{{- $buckets = ternary list (fromJsonArray (trim $buckets)) (eq (trim $buckets) "") -}}
+{{- end -}}
+{{- if not $buckets -}}
+{{- fail "sbomSource.enabled=false leaves BOMHort without an SBOM source: set s3.buckets to at least one bucket, or keep the volume (sbomSource.enabled=true) or use gitSync.enabled=true" -}}
+{{- end -}}
+{{- $example := "[{\"name\":\"my-sboms\",\"region\":\"us-east-1\"}]" -}}
+{{- if not (kindIs "slice" $buckets) -}}
+{{- fail (printf "s3.buckets must be a JSON array of bucket objects such as %s; sbomSource.enabled=false relies on it as the only SBOM source" $example) -}}
+{{- end -}}
+{{- range $buckets -}}
+{{- if not (and (kindIs "map" .) .name) -}}
+{{- fail (printf "s3.buckets must be a JSON array of bucket objects with a name, such as %s (found: %v); sbomSource.enabled=false relies on it as the only SBOM source" $example .) -}}
+{{- end -}}
 {{- end -}}
 {{- if .Values.sbomSource.writable -}}
 {{- fail "sbomSource.writable=true needs the sbom-data volume, which sbomSource.enabled=false removes: drop sbomSource.writable and send push uploads to an s3.buckets entry marked \"skipScan\": true, or set sbomSource.enabled=true" -}}

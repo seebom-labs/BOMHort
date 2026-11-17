@@ -53,9 +53,21 @@ class SbomSourceVolumeTest(unittest.TestCase):
         watcher = self.workload(out, "CronJob", "ingestion-watcher")
         self.assertNotIn("volumes:", watcher)
         self.assertNotIn("volumeMounts:", watcher)
-        # Still told where local files would be; the binaries skip a
-        # directory that does not exist.
-        self.assertIn('SBOM_DIR: "/data/sboms"', out)
+
+    def test_no_volume_tells_the_binaries_sbom_dir_is_not_shared(self):
+        """The gateway probes SBOM_DIR for writability; a custom mountPath such
+        as /tmp/sboms is writable in its own container without any volume, and
+        an upload stored there is one no worker can read."""
+        out = self.render({**S3_ONLY, "sbomSource": {"enabled": False,
+                                                    "mountPath": "/tmp/sboms"}})
+        self.assertIn('SBOM_DIR: "/tmp/sboms"', out)
+        self.assertIn('SBOM_DIR_DISABLED: "true"', out)
+        for name, values in {
+            "pvc": {"gitSync": {"enabled": False}},
+            "git-sync": {"gitSync": {"enabled": True}, "sbomSource": {"enabled": False}},
+        }.items():
+            with self.subTest(mode=name):
+                self.assertNotIn("SBOM_DIR_DISABLED", self.render(values))
 
     def test_missing_enabled_key_keeps_the_pvc(self):
         """`helm upgrade --reuse-values` from a chart without the key must not
@@ -85,10 +97,40 @@ class SbomSourceVolumeTest(unittest.TestCase):
         self.assertNotIn("kind: PersistentVolumeClaim", out)
 
     def test_no_volume_and_no_buckets_is_refused(self):
-        error = self.render({"gitSync": {"enabled": False},
-                             "sbomSource": {"enabled": False}}, success=False)
-        self.assertIn("without an SBOM source", error)
-        self.assertIn("s3.buckets", error)
+        """'[]' is a non-empty string, so the buckets are checked as data."""
+        for name, buckets in {"unset": None, "empty string": "", "string list": "[]",
+                              "native list": []}.items():
+            with self.subTest(buckets=name):
+                values = {"gitSync": {"enabled": False}, "sbomSource": {"enabled": False}}
+                if buckets is not None:
+                    values["s3"] = {"buckets": buckets}
+                error = self.render(values, success=False)
+                self.assertIn("without an SBOM source", error)
+                self.assertIn("s3.buckets", error)
+
+    def test_no_volume_and_unusable_buckets_is_refused(self):
+        for name, buckets in {
+            "malformed JSON": '[{"name":"sboms"',
+            "JSON object": '{"name":"sboms"}',
+            "string entries": '["sboms"]',
+            "native string entries": ["sboms"],
+            "entry without a name": [{"region": "us-east-1"}],
+            "native map": {"name": "sboms"},
+        }.items():
+            with self.subTest(buckets=name):
+                error = self.render({**S3_ONLY, "s3": {"buckets": buckets}}, success=False)
+                self.assertIn("s3.buckets must be a JSON array of bucket objects", error)
+
+    def test_no_volume_accepts_a_native_bucket_list(self):
+        out = self.render({**S3_ONLY, "s3": {"buckets": [
+            {"name": "sboms", "region": "us-east-1"},
+            {"name": "pushed", "skipScan": True}]}})
+        self.assertNotIn("kind: PersistentVolumeClaim", out)
+        self.assertIn(r'S3_BUCKETS: "[{\"name\":\"sboms\",\"region\":\"us-east-1\"},'
+                      r'{\"name\":\"pushed\",\"skipScan\":true}]"', out)
+
+    def test_bucket_checks_only_apply_without_a_volume(self):
+        self.render({"gitSync": {"enabled": False}, "s3": {"buckets": "[]"}})
 
     def test_writable_without_a_volume_is_refused(self):
         error = self.render({**S3_ONLY, "sbomSource": {"enabled": False, "writable": True}},
