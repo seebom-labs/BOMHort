@@ -125,8 +125,8 @@ sbomSource:
   enabled: false   # no PVC, no sbom-data mount, no pod affinity
 ```
 
-- `s3.buckets` must be set. The render fails otherwise, because nothing could be ingested.
-- Push uploads need a `"skipScan"` bucket ([Option E](#option-e-push-model-uploads-cicd)). The `SBOM_DIR/pushed/` fallback has no volume to write to, and `sbomSource.writable: true` is refused.
+- `s3.buckets` must hold at least one bucket. The render fails otherwise, because nothing could be ingested: on an empty value, on an empty list (`'[]'` included), and on anything that is not a JSON array of bucket objects with a `name`.
+- Push uploads need a `"skipScan"` bucket ([Option E](#option-e-push-model-uploads-cicd)), and `sbomSource.writable: true` is refused. The chart sets `SBOM_DIR_DISABLED=true` for the pods, which switches the `SBOM_DIR/pushed/` fallback off: without a `skipScan` bucket the upload endpoint answers `503`. It does not depend on whether `sbomSource.mountPath` happens to be writable inside the gateway container, where an upload would be stored out of reach of every parsing worker. The ingestion watcher skips its local scan for the same reason.
 - The pod affinity stays while `originalStore.fs.enabled` is `true`, because the workers and the gateway share that PVC the same way. With originals in S3, which is the default once `s3.buckets` is set, it goes too.
 - A `license-exceptions.json` kept on the volume is no longer read. Provide exceptions through `licenseExceptions` instead.
 - **On an existing release, Helm deletes the PVC** when you switch this off, and with the usual `Delete` reclaim policy its data. Check that it holds nothing you ingest from (files copied in, or push uploads stored with `sbomSource.writable`) before upgrading. SBOMs already ingested from the volume stay in the database, but their source files are gone with it.
@@ -262,7 +262,7 @@ sbomSource:
   accessMode: ReadWriteMany
 ```
 
-If neither a `skipScan` bucket nor a writable `SBOM_DIR` is configured, the API Gateway logs a startup warning and `POST /api/v1/sboms/upload` returns `503 Service Unavailable` for every request rather than failing with a confusing storage error.
+If neither a `skipScan` bucket nor a writable `SBOM_DIR` is configured, the API Gateway logs a startup warning and `POST /api/v1/sboms/upload` returns `503 Service Unavailable` for every request rather than failing with a confusing storage error. With `sbomSource.enabled: false` there is no shared `SBOM_DIR` at all (`SBOM_DIR_DISABLED=true`), so only a `skipScan` bucket enables uploads.
 
 **Sizing the write budget.** The gateway's rate limit is request-based (100 requests / 10s per IP), not byte-based, so the effective per-IP write budget is `100 × MAX_UPLOAD_SIZE_MB` per 10 seconds — 5 GB at the 50 MB default. Set `apiGateway.maxUploadSizeMB` to the smallest value that fits your largest SBOM, especially if the endpoint is reachable from untrusted networks:
 

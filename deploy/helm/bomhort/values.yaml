@@ -192,8 +192,14 @@ sbomSource:
   # ReadWriteOnce, and it pins every worker and gateway replica to one node;
   # without it they schedule freely. It stays in place while
   # originalStore.fs.enabled is true, because that PVC is shared the same way.
-  # Requires s3.buckets; push uploads then need a "skipScan" bucket, as the
-  # SBOM_DIR/pushed/ fallback has nowhere to write.
+  #
+  # Requires s3.buckets to hold at least one bucket; the render fails on an
+  # empty list ('[]' included) and on anything that is not a JSON array of
+  # bucket objects. Push uploads then need a "skipScan" bucket: the chart sets
+  # SBOM_DIR_DISABLED=true, which switches the SBOM_DIR/pushed/ fallback off
+  # in the API gateway. Without it the gateway would accept uploads into its
+  # own container filesystem whenever mountPath happens to be writable there
+  # (/tmp/sboms, say), where no parsing worker can read them.
   #
   # Turning this off on an existing release makes Helm delete the PVC. Check
   # it holds nothing you ingest from (files copied in, or push uploads stored

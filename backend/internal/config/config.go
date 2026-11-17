@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -81,6 +82,15 @@ type Config struct {
 
 	// SBOM source directory (local filesystem)
 	SBOMDir string
+	// SBOMDirDisabled (SBOM_DIR_DISABLED) says SBOMDir is not a directory the
+	// ingestion watcher, the parsing workers and the API gateway share. The
+	// Helm chart sets it when it mounts no sbom-data volume
+	// (sbomSource.enabled=false, #590). SBOMDir is then only a path in each
+	// pod's own filesystem, where a file one pod writes is invisible to the
+	// others — so the watcher does not scan it, the workers do not open job
+	// files from it and the gateway does not store push uploads in it, however
+	// writable it happens to be.
+	SBOMDirDisabled bool
 
 	// S3 bucket sources (multiple buckets supported)
 	S3Buckets []S3BucketConfig
@@ -243,6 +253,7 @@ func Load() (*Config, error) {
 		ClickHouseUser:        getEnv("CLICKHOUSE_USER", "default"),
 		ClickHousePassword:    getEnv("CLICKHOUSE_PASSWORD", ""),
 		SBOMDir:               getEnv("SBOM_DIR", "./sboms"),
+		SBOMDirDisabled:       getEnvBool("SBOM_DIR_DISABLED", false),
 		APIPort:               getEnvInt("API_PORT", 8080),
 		CORSAllowedOrigins:    getEnv("CORS_ALLOWED_ORIGINS", "*"),
 		RateLimitMax:          getEnvInt("RATE_LIMIT_MAX", 100),
@@ -466,6 +477,23 @@ func (c *Config) BucketIngestLayout(b S3BucketConfig) ingestpath.Layout {
 // HasS3Sources returns true if any S3 buckets are configured.
 func (c *Config) HasS3Sources() bool {
 	return len(c.S3Buckets) > 0
+}
+
+// HasLocalSBOMDir reports whether SBOMDir is a directory shared between the
+// pods (see SBOMDirDisabled). Check it before treating SBOMDir as storage;
+// that the path exists or is writable says nothing about who else can see it.
+func (c *Config) HasLocalSBOMDir() bool {
+	return !c.SBOMDirDisabled && c.SBOMDir != ""
+}
+
+// LocalSBOMPath resolves a job's relative source file to its path under
+// SBOMDir. Without a shared directory it fails instead of pointing into the
+// pod's own filesystem.
+func (c *Config) LocalSBOMPath(sourceFile string) (string, error) {
+	if !c.HasLocalSBOMDir() {
+		return "", fmt.Errorf("%s is a local file, but this instance has no shared SBOM directory (SBOM_DIR_DISABLED)", sourceFile)
+	}
+	return filepath.Join(c.SBOMDir, sourceFile), nil
 }
 
 // ResolvedOriginalStoreBackend resolves "auto" to a concrete backend:

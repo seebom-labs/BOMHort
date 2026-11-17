@@ -225,7 +225,7 @@ S3 project grouping continues to use the source path. See the
 | GET | `/healthz` | Health check |
 | GET | `/livez` | Liveness probe (always 200 if process alive) |
 | GET | `/readyz` | Readiness probe (checks ClickHouse connectivity) |
-| POST | `/api/v1/sboms/upload` | Push-model SBOM/VEX ingestion for CI/CD. Requires `AUTH_ENABLED=true` (self-enforced). Stages to a `skipScan` S3 bucket or `SBOM_DIR/pushed/`, then enqueues a normal ingestion job |
+| POST | `/api/v1/sboms/upload` | Push-model SBOM/VEX ingestion for CI/CD. Requires `AUTH_ENABLED=true` (self-enforced). Stages to a `skipScan` S3 bucket or `SBOM_DIR/pushed/` (the latter only when `SBOM_DIR` is shared with the workers, never with `SBOM_DIR_DISABLED=true`), then enqueues a normal ingestion job |
 | GET | `/api/v1/stats/dashboard` | Dashboard statistics (incl. VEX effective/suppressed, license breakdown) |
 | GET | `/api/v1/stats/dependencies?limit=N` | Top-N dependencies cross-project with vuln count |
 | GET | `/api/v1/stats/version-skew?page=&page_size=&search=` | Packages with inconsistent versions across projects (paginated, searchable) |
