@@ -41,6 +41,12 @@ type discrepancyChecker interface {
 	CheckDiscrepancy(ctx context.Context, purl, declaredLicense string) (discovered string, hasDiscrepancy bool)
 }
 
+// batchDiscrepancyChecker is implemented by resolvers that compare discovered license
+// expressions with declared licenses in bulk batches (#530).
+type batchDiscrepancyChecker interface {
+	CheckDiscrepanciesBatch(ctx context.Context, purls, declaredLicenses []string) []string
+}
+
 // registryResolver couples a resolver with its cache namespace in registry_license_cache.
 type registryResolver struct {
 	name     string
@@ -211,27 +217,52 @@ func isUnknownLicense(lic string) bool {
 // detectLicenseDiscrepancies runs discrepancy checking across enabled resolvers (#530).
 // Declared license wins and remains authoritative for compliance; discovered
 // expressions are stored in LicenseDiscrepancy and surfaced in the license discrepancies view.
+// First-party and private packages are excluded from external discrepancy lookups to avoid leaking identifiers.
 func detectLicenseDiscrepancies(ctx context.Context, resolvers []registryResolver, purls, licenses []string) []string {
-	var checker discrepancyChecker
+	var batchChecker batchDiscrepancyChecker
+	var singleChecker discrepancyChecker
 	for _, rr := range resolvers {
-		if c, ok := rr.resolver.(discrepancyChecker); ok {
-			checker = c
+		if b, ok := rr.resolver.(batchDiscrepancyChecker); ok {
+			batchChecker = b
+			break
+		}
+		if s, ok := rr.resolver.(discrepancyChecker); ok {
+			singleChecker = s
 			break
 		}
 	}
-	if checker == nil {
+	if batchChecker == nil && singleChecker == nil {
 		return nil
 	}
 
-	discrepancies := make([]string, len(licenses))
-	count := 0
+	// Filter out first-party/private packages so private identifiers are never sent to external services (#530).
+	safePURLs := make([]string, len(purls))
 	for i, purl := range purls {
-		if i >= len(licenses) {
-			break
+		if isFirstPartyPURL(purl) {
+			safePURLs[i] = ""
+		} else {
+			safePURLs[i] = purl
 		}
-		declared := licenses[i]
-		if disc, found := checker.CheckDiscrepancy(ctx, purl, declared); found {
-			discrepancies[i] = disc
+	}
+
+	var discrepancies []string
+	if batchChecker != nil {
+		discrepancies = batchChecker.CheckDiscrepanciesBatch(ctx, safePURLs, licenses)
+	} else {
+		discrepancies = make([]string, len(licenses))
+		for i, purl := range safePURLs {
+			if purl == "" || i >= len(licenses) {
+				continue
+			}
+			if disc, found := singleChecker.CheckDiscrepancy(ctx, purl, licenses[i]); found {
+				discrepancies[i] = disc
+			}
+		}
+	}
+
+	count := 0
+	for _, d := range discrepancies {
+		if d != "" {
 			count++
 		}
 	}

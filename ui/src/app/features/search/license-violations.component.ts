@@ -112,36 +112,43 @@ type Tab = 'non-compliant' | 'exceptions' | 'discrepancies';
           is never overridden and continues to govern compliance.
         </div>
 
-        <input type="search" class="search-box" placeholder="Filter discrepancies by package or license…"
-               aria-label="Filter discrepancies by package or license"
-               [value]="discrepancySearch" (input)="discrepancySearch = $any($event.target).value">
+        <p *ngIf="discrepanciesError" role="alert" class="load-error">{{ discrepanciesError }}</p>
+        <p *ngIf="discrepanciesLoading" class="loading-hint">Loading license discrepancies…</p>
 
-        <div *ngFor="let d of filteredDiscrepancies; trackBy: trackByDiscrepancy" class="discrepancy-card">
-          <div class="disc-header">
-            <span class="pkg-name">{{ d.package_name }}</span>
-            <span class="pkg-ver" *ngIf="d.package_version">{{ d.package_version }}</span>
-            <a *ngIf="d.sbom_id" [routerLink]="['/sboms', d.sbom_id]" class="disc-sbom" [title]="d.document_name">
-              {{ d.document_name || d.sbom_id }}
-            </a>
-            <span class="disc-source" *ngIf="d.source">{{ d.source }}</span>
-          </div>
-          <div class="disc-licenses">
-            <span class="disc-tag declared" title="Declared license (authoritative for compliance)">
-              Declared: <strong>{{ d.declared_license }}</strong>
-            </span>
-            <span class="disc-arrow">≠</span>
-            <span class="disc-tag discovered" title="Discovered by automated scan">
-              Discovered: <strong>{{ d.discovered_license }}</strong>
-            </span>
-          </div>
-          <div class="disc-purl" *ngIf="d.purl">
-            <code>{{ d.purl }}</code>
-          </div>
-        </div>
+        <ng-container *ngIf="!discrepanciesLoading && !discrepanciesError">
+          <input type="search" class="search-box" placeholder="Filter discrepancies by package or license…"
+                 aria-label="Filter discrepancies by package or license"
+                 [value]="discrepancySearch" (input)="discrepancySearch = $any($event.target).value">
 
-        <p *ngIf="loaded && filteredDiscrepancies.length === 0" class="empty">
-          {{ discrepancySearch ? 'No discrepancy matches "' + discrepancySearch + '".' : 'No license discrepancies found in stored results.' }}
-        </p>
+          <cdk-virtual-scroll-viewport *ngIf="filteredDiscrepancies.length > 0" itemSize="80" class="viewport">
+            <div *cdkVirtualFor="let d of filteredDiscrepancies; trackBy: trackByDiscrepancy" class="discrepancy-card">
+              <div class="disc-header">
+                <span class="pkg-name">{{ d.package_name }}</span>
+                <span class="pkg-ver" *ngIf="d.package_version">{{ d.package_version }}</span>
+                <a *ngIf="d.sbom_id" [routerLink]="['/sboms', d.sbom_id]" class="disc-sbom" [title]="d.document_name">
+                  {{ d.document_name || d.sbom_id }}
+                </a>
+                <span class="disc-source" *ngIf="d.source">{{ d.source }}</span>
+              </div>
+              <div class="disc-licenses">
+                <span class="disc-tag declared" title="Declared license (authoritative for compliance)">
+                  Declared: <strong>{{ d.declared_license }}</strong>
+                </span>
+                <span class="disc-arrow">≠</span>
+                <span class="disc-tag discovered" title="Discovered by automated scan">
+                  Discovered: <strong>{{ d.discovered_license }}</strong>
+                </span>
+              </div>
+              <div class="disc-purl" *ngIf="d.purl">
+                <code>{{ d.purl }}</code>
+              </div>
+            </div>
+          </cdk-virtual-scroll-viewport>
+
+          <p *ngIf="filteredDiscrepancies.length === 0" class="empty">
+            {{ discrepancySearch ? 'No discrepancy matches "' + discrepancySearch + '".' : 'No license discrepancies found in stored results.' }}
+          </p>
+        </ng-container>
       </div>
     </div>
   `,
@@ -205,20 +212,22 @@ type Tab = 'non-compliant' | 'exceptions' | 'discrepancies';
     .exc-detail { font-size: 0.72rem; color: var(--text-secondary); margin-top: 3px; }
     .exc-comment { font-size: 0.75rem; color: var(--text-secondary); margin-top: 2px; font-style: italic; }
 
+    .loading-hint { font-size: 0.85rem; color: var(--text-secondary); margin: 12px 0; }
     .discrepancy-card {
-      padding: 12px 14px; border: 1px solid var(--border); border-radius: 2px; margin-bottom: 8px;
+      height: 80px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center;
+      padding: 0 14px; border-bottom: 1px solid var(--border);
     }
-    .disc-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+    .disc-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
     .disc-header .pkg-name { font-weight: 600; font-size: 0.9rem; color: var(--text); }
     .disc-header .pkg-ver { font-size: 0.8rem; color: var(--text-secondary); }
     .disc-sbom { font-size: 0.75rem; color: var(--accent); text-decoration: none; margin-left: auto; }
     .disc-source { font-size: 0.65rem; background: var(--bg); padding: 1px 6px; border-radius: 2px; color: var(--text-muted); }
-    .disc-licenses { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; margin-bottom: 4px; }
+    .disc-licenses { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; margin-bottom: 3px; }
     .disc-arrow { color: var(--severity-high); font-weight: bold; }
     .disc-tag { padding: 2px 8px; border-radius: 3px; }
     .disc-tag.declared { background: var(--status-success-bg); color: var(--status-success); }
     .disc-tag.discovered { background: var(--severity-high-bg); color: var(--severity-high); }
-    .disc-purl { font-size: 0.7rem; color: var(--text-muted); word-break: break-all; }
+    .disc-purl { font-size: 0.72rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   `],
 })
 export class LicenseViolationsComponent implements OnInit {
@@ -232,6 +241,8 @@ export class LicenseViolationsComponent implements OnInit {
 
   violations: ProjectLicenseViolationSummary[] = [];
   discrepancies: LicenseDiscrepancyItem[] = [];
+  discrepanciesLoading = false;
+  discrepanciesError = '';
   search = '';
   discrepancySearch = '';
   exceptionsFile: LicenseExceptionsFile = {
@@ -253,12 +264,19 @@ export class LicenseViolationsComponent implements OnInit {
       next: (exceptions) => { this.exceptionsFile = exceptions; this.cdr.markForCheck(); },
       error: () => this.fail(),
     });
-    this.api.getLicenseDiscrepancies().subscribe({
+    this.discrepanciesLoading = true;
+    this.discrepanciesError = '';
+    this.api.getLicenseDiscrepancies({ page: 1, page_size: 500 }).subscribe({
       next: (discrepancies) => {
         this.discrepancies = discrepancies;
+        this.discrepanciesLoading = false;
         this.cdr.markForCheck();
       },
-      error: () => {},
+      error: () => {
+        this.discrepanciesLoading = false;
+        this.discrepanciesError = 'Could not load license discrepancies. Check API availability.';
+        this.cdr.markForCheck();
+      },
     });
     // The search term is filtered server-side (#492): the unfiltered summary
     // is ~8 MB on a large instance, too much to pull and filter in the browser.

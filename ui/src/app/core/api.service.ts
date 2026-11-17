@@ -204,13 +204,15 @@ export class ApiService {
     return this.http.get<LicenseSourceItem[]>(`${this.baseUrl}/licenses/sources`);
   }
 
-  getLicenseDiscrepancies(filter?: { sbom_id?: string; project?: string; cluster?: string; namespace?: string }): Observable<LicenseDiscrepancyItem[]> {
+  getLicenseDiscrepancies(filter?: { sbom_id?: string; project?: string; cluster?: string; namespace?: string; page?: number; page_size?: number }): Observable<LicenseDiscrepancyItem[]> {
     let params = new HttpParams();
     if (filter) {
       if (filter.sbom_id) params = params.set('sbom_id', filter.sbom_id);
       if (filter.project) params = params.set('project', filter.project);
       if (filter.cluster) params = params.set('cluster', filter.cluster);
       if (filter.namespace) params = params.set('namespace', filter.namespace);
+      if (filter.page != null) params = params.set('page', filter.page.toString());
+      if (filter.page_size != null) params = params.set('page_size', filter.page_size.toString());
     }
     return this.http.get<LicenseDiscrepancyItem[]>(`${this.baseUrl}/licenses/discrepancies`, { params });
   }

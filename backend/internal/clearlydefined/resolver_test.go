@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/seebom-labs/bomhort/backend/internal/license"
@@ -25,6 +26,10 @@ func TestCoordinateFromPURL(t *testing.T) {
 		},
 		{
 			purl:     "pkg:npm/@angular/core@17.0.0",
+			wantType: "npm", wantProv: "npmjs", wantNS: "@angular", wantName: "core", wantRev: "17.0.0", wantOK: true,
+		},
+		{
+			purl:     "pkg:npm/%40angular/core@17.0.0",
 			wantType: "npm", wantProv: "npmjs", wantNS: "@angular", wantName: "core", wantRev: "17.0.0", wantOK: true,
 		},
 		{
@@ -152,5 +157,171 @@ func TestResolver_ResolveAndDiscrepancy(t *testing.T) {
 	if !handled || reason != license.ReasonNotHarvested || latest {
 		t.Errorf("Explain = handled:%v, reason:%q, latest:%v; want true, %q, false",
 			handled, reason, latest, license.ReasonNotHarvested)
+	}
+}
+
+func TestResolver_DiscrepancyRetainsAllDiscoveredExpressions(t *testing.T) {
+	// A package declaring MIT with scan expressions ["MIT", "GPL-2.0-only"]
+	// must retain all discovered expressions and detect the conflict with GPL-2.0-only (#530).
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /definitions/npm/npmjs/-/bundled-gpl-pkg/1.0.0", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{
+			"licensed": {
+				"declared": "MIT",
+				"facets": {
+					"core": {
+						"discovered": {"expressions": ["MIT", "GPL-2.0-only"]}
+					}
+				}
+			}
+		}`))
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	r := NewResolverWithRegistry(srv.URL)
+	ctx := context.Background()
+
+	disc, has := r.CheckDiscrepancy(ctx, "pkg:npm/bundled-gpl-pkg@1.0.0", "MIT")
+	if !has {
+		t.Fatalf("expected discrepancy for bundled GPL file, got none")
+	}
+	if !strings.Contains(disc, "GPL-2.0-only") {
+		t.Errorf("expected discovered conflict to include GPL-2.0-only, got %q", disc)
+	}
+}
+
+func TestResolver_DoesNotTreatScannedFileAsDeclaredLicense(t *testing.T) {
+	// When ClearlyDefined has no declared license and its scan returns MIT followed by GPL-2.0-only,
+	// Resolve must leave the package unresolved rather than promoting the first scanned file to MIT (#530).
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /definitions/npm/npmjs/-/scanned-only-pkg/1.0.0", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{
+			"licensed": {
+				"declared": "",
+				"facets": {
+					"core": {
+						"discovered": {"expressions": ["MIT", "GPL-2.0-only"]}
+					}
+				}
+			}
+		}`))
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	r := NewResolverWithRegistry(srv.URL)
+	ctx := context.Background()
+
+	lic := r.Resolve(ctx, "pkg:npm/scanned-only-pkg@1.0.0")
+	if lic != "" {
+		t.Errorf("Resolve() = %q, want empty string (must not promote file scan to declared license)", lic)
+	}
+	_, reason, _ := r.Explain("pkg:npm/scanned-only-pkg@1.0.0")
+	if reason != license.ReasonNoLicenseUpstream {
+		t.Errorf("Explain() reason = %q, want %q", reason, license.ReasonNoLicenseUpstream)
+	}
+}
+
+func TestResolver_BatchColdCacheAndRestartPersistence(t *testing.T) {
+	// Verifies batch definition fetching via POST /definitions, negative caching,
+	// and full persistence/preloading across worker restarts (#530).
+	batchCalled := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /definitions", func(w http.ResponseWriter, r *http.Request) {
+		batchCalled++
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{
+			"npm/npmjs/-/pkg-a/1.0.0": {
+				"licensed": {
+					"declared": "MIT",
+					"facets": {
+						"core": {
+							"attribution": {"parties": ["Copyright 2024 Author A"]},
+							"discovered": {"expressions": ["MIT"]}
+						}
+					}
+				}
+			},
+			"npm/npmjs/-/pkg-b/2.0.0": {
+				"licensed": {
+					"declared": "Apache-2.0",
+					"facets": {
+						"core": {
+							"discovered": {"expressions": ["GPL-3.0-only"]}
+						}
+					}
+				}
+			}
+		}`))
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	r1 := NewResolverWithRegistry(srv.URL)
+	ctx := context.Background()
+
+	purls := []string{
+		"pkg:npm/pkg-a@1.0.0",
+		"pkg:npm/pkg-b@2.0.0",
+		"pkg:npm/unharvested@3.0.0",
+	}
+	declared := []string{
+		"MIT",
+		"Apache-2.0",
+		"BSD-3-Clause",
+	}
+
+	// 1. Run batch discrepancy check
+	discs := r1.CheckDiscrepanciesBatch(ctx, purls, declared)
+	if len(discs) != 3 {
+		t.Fatalf("expected 3 discrepancy results, got %d", len(discs))
+	}
+	if discs[0] != "" {
+		t.Errorf("expected no discrepancy for pkg-a, got %q", discs[0])
+	}
+	if discs[1] != "GPL-3.0-only" {
+		t.Errorf("expected GPL-3.0-only discrepancy for pkg-b, got %q", discs[1])
+	}
+	if discs[2] != "" {
+		t.Errorf("expected no discrepancy for unharvested, got %q", discs[2])
+	}
+	if batchCalled != 1 {
+		t.Errorf("expected exactly 1 POST /definitions batch call, got %d", batchCalled)
+	}
+
+	// 2. Export cache entries and simulate worker restart
+	entries := r1.CacheEntries()
+	srv.Close() // Shut down server completely!
+
+	r2 := NewResolverWithRegistry("http://127.0.0.1:9999") // dead server URL
+	r2.PreloadCache(entries)
+
+	// Verify preloaded state without network:
+	// pkg-a attribution and resolved license:
+	licA := r2.Resolve(context.Background(), "pkg:npm/pkg-a@1.0.0")
+	if licA != "MIT" {
+		t.Errorf("preloaded Resolve(pkg-a) = %q, want MIT", licA)
+	}
+	partiesA := r2.GetAttributionParties("pkg:npm/pkg-a@1.0.0")
+	if len(partiesA) != 1 || partiesA[0] != "Copyright 2024 Author A" {
+		t.Errorf("preloaded GetAttributionParties(pkg-a) = %v, want ['Copyright 2024 Author A']", partiesA)
+	}
+
+	// pkg-b discrepancy check:
+	discB, hasB := r2.CheckDiscrepancy(context.Background(), "pkg:npm/pkg-b@2.0.0", "Apache-2.0")
+	if !hasB || discB != "GPL-3.0-only" {
+		t.Errorf("preloaded CheckDiscrepancy(pkg-b) = %q, %v; want GPL-3.0-only, true", discB, hasB)
+	}
+
+	// unharvested negative cache reuse:
+	discU, hasU := r2.CheckDiscrepancy(context.Background(), "pkg:npm/unharvested@3.0.0", "BSD-3-Clause")
+	if hasU || discU != "" {
+		t.Errorf("preloaded CheckDiscrepancy(unharvested) = %q, %v; want false", discU, hasU)
 	}
 }
