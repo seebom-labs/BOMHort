@@ -130,6 +130,7 @@ type Config struct {
 	SkipPackagistResolve bool   // Skip Packagist (Composer) license resolution for unknown licenses
 	SkipPyPIResolve      bool   // Skip PyPI license resolution for unknown licenses
 	SkipClearlyDefinedResolve bool // Skip ClearlyDefined license resolution and discrepancy check
+	PrivatePackagePrefixes []string // PURL or scope prefixes for internal/private packages (never queried externally)
 	SBOMLimit            int    // Max number of SBOMs to enqueue (0 = unlimited)
 	IgnorePrefix         string // Files with this prefix are skipped during local scan (default "_")
 	ExceptionsFile       string // Path to license-exceptions.json
@@ -285,6 +286,7 @@ func Load() (*Config, error) {
 		SkipPackagistResolve:  getEnvBool("SKIP_PACKAGIST_RESOLVE", false),
 		SkipPyPIResolve:       getEnvBool("SKIP_PYPI_RESOLVE", false),
 		SkipClearlyDefinedResolve: getEnvBool("SKIP_CLEARLYDEFINED_RESOLVE", false),
+		PrivatePackagePrefixes: parseCSV(getEnv("PRIVATE_PACKAGE_PREFIXES", "")),
 		SBOMLimit:             getEnvInt("SBOM_LIMIT", 0),
 		IgnorePrefix:          getEnv("SBOM_IGNORE_PREFIX", "_"),
 		ExceptionsFile:        getEnv("EXCEPTIONS_FILE", "/data/config/license-exceptions.json"),

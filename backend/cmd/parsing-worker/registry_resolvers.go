@@ -114,7 +114,9 @@ func buildRegistryResolvers(cfg *config.Config, ghResolver *gh.Resolver) []regis
 
 	// ClearlyDefined runs after the registry resolvers (#530).
 	if !cfg.SkipClearlyDefinedResolve {
-		out = append(out, registryResolver{name: "clearlydefined", resolver: clearlydefined.NewResolver()})
+		cd := clearlydefined.NewResolver()
+		cd.SetPrivatePrefixes(cfg.PrivatePackagePrefixes)
+		out = append(out, registryResolver{name: "clearlydefined", resolver: cd})
 		log.Println("ClearlyDefined license resolver enabled (api.clearlydefined.io)")
 	} else {
 		log.Println("ClearlyDefined license resolver disabled (SKIP_CLEARLYDEFINED_RESOLVE=true)")
@@ -140,14 +142,20 @@ func persistRegistryCaches(ctx context.Context, store cachePersister, resolvers 
 	}
 }
 
+type privateFilter interface {
+	IsPrivate(purl string) bool
+}
+
 // applyRegistryResolvers offers every package with an unknown license to each
 // resolver in order and writes resolved expressions back into licenses, and
 // the resolver's name into sources (when sources is non-nil). Resolvers ignore
 // purls of other ecosystems, so all packages can be offered to all resolvers.
+// Private and first-party packages are never sent to external resolvers (#530).
 // Returns the number of packages resolved per resolver name.
 func applyRegistryResolvers(ctx context.Context, resolvers []registryResolver, purls, licenses, sources []string) map[string]int {
 	counts := make(map[string]int, len(resolvers))
 	for _, rr := range resolvers {
+		pf, hasPF := rr.resolver.(privateFilter)
 		if batch, ok := rr.resolver.(batchLicenseResolver); ok {
 			unknownPURLs := make([]string, 0, len(licenses))
 			for i, lic := range licenses {
@@ -155,6 +163,9 @@ func applyRegistryResolvers(ctx context.Context, resolvers []registryResolver, p
 					continue
 				}
 				if i >= len(purls) || purls[i] == "" {
+					continue
+				}
+				if hasPF && pf.IsPrivate(purls[i]) {
 					continue
 				}
 				unknownPURLs = append(unknownPURLs, purls[i])
@@ -183,6 +194,9 @@ func applyRegistryResolvers(ctx context.Context, resolvers []registryResolver, p
 				continue
 			}
 			if i >= len(purls) || purls[i] == "" {
+				continue
+			}
+			if hasPF && pf.IsPrivate(purls[i]) {
 				continue
 			}
 			if spdx := rr.resolver.Resolve(ctx, purls[i]); spdx != "" {
@@ -235,10 +249,28 @@ func detectLicenseDiscrepancies(ctx context.Context, resolvers []registryResolve
 		return nil
 	}
 
+	var privFilters []privateFilter
+	for _, rr := range resolvers {
+		if pf, ok := rr.resolver.(privateFilter); ok {
+			privFilters = append(privFilters, pf)
+		}
+	}
+	isPrivate := func(purl string) bool {
+		if isFirstPartyPURL(purl) {
+			return true
+		}
+		for _, pf := range privFilters {
+			if pf.IsPrivate(purl) {
+				return true
+			}
+		}
+		return false
+	}
+
 	// Filter out first-party/private packages so private identifiers are never sent to external services (#530).
 	safePURLs := make([]string, len(purls))
 	for i, purl := range purls {
-		if isFirstPartyPURL(purl) {
+		if isPrivate(purl) {
 			safePURLs[i] = ""
 		} else {
 			safePURLs[i] = purl

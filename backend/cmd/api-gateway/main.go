@@ -161,6 +161,7 @@ func main() {
 	var cdResolver *clearlydefined.Resolver
 	if !cfg.SkipClearlyDefinedResolve {
 		cdResolver = clearlydefined.NewResolver()
+		cdResolver.SetPrivatePrefixes(cfg.PrivatePackagePrefixes)
 	}
 
 	mux := http.NewServeMux()
@@ -343,17 +344,17 @@ func main() {
 		project := r.URL.Query().Get("project")
 		cluster := r.URL.Query().Get("cluster")
 		namespace := r.URL.Query().Get("namespace")
+		search := sanitizeSearchTerm(r.URL.Query().Get("search"))
 		page := parseUint64(r.URL.Query().Get("page"), 1)
-		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 100))
-		offset := (page - 1) * pageSize
+		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
 
-		items, err := chClient.QueryLicenseDiscrepancies(r.Context(), sbomID, project, cluster, namespace, pageSize, offset)
+		resp, err := chClient.QueryLicenseDiscrepancies(r.Context(), sbomID, project, cluster, namespace, search, page, pageSize)
 		if err != nil {
 			log.Printf("ERROR: license discrepancies: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch license discrepancies")
 			return
 		}
-		writeJSON(w, http.StatusOK, items)
+		writeJSON(w, http.StatusOK, resp)
 	})
 
 	// SBOM dependency tree.
