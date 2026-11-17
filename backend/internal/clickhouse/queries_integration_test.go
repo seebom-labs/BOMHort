@@ -225,7 +225,7 @@ func TestQueriesExecute(t *testing.T) {
 			return err
 		}},
 		// License discrepancies and attribution notices (#530).
-		{"QueryLicenseDiscrepancies", func() error { _, err := c.QueryLicenseDiscrepancies(ctx, "", "", "", ""); return err }},
+		{"QueryLicenseDiscrepancies", func() error { _, err := c.QueryLicenseDiscrepancies(ctx, "", "", "", "", 10, 0); return err }},
 		{"QuerySBOMPackagesForNotice", func() error { _, _, err := c.QuerySBOMPackagesForNotice(ctx, someID); return err }},
 		{"QueryProjectPackagesForNotice", func() error { _, _, err := c.QueryProjectPackagesForNotice(ctx, "no-such-project", ""); return err }},
 	}

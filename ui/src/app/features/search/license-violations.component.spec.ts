@@ -163,7 +163,8 @@ describe('LicenseViolationsComponent', () => {
     });
   });
 
-  it('displays license discrepancies tab and cards', () => {
+  it('displays license discrepancies tab and cards', async () => {
+    vi.spyOn(CdkVirtualScrollViewport.prototype, 'getViewportSize').mockReturnValue(2000);
     const api = TestBed.inject(ApiService);
     vi.spyOn(api, 'getProjectLicenseViolationSummaries').mockReturnValue(of([]));
     vi.spyOn(api, 'getLicenseExceptions').mockReturnValue(of({
@@ -183,17 +184,61 @@ describe('LicenseViolationsComponent', () => {
     ]));
 
     const fixture = TestBed.createComponent(LicenseViolationsComponent);
-    fixture.detectChanges();
+    fixture.autoDetectChanges();
+    await fixture.whenStable();
     const element = fixture.nativeElement as HTMLElement;
     expect(element.textContent).toContain('Discrepancies (1)');
 
     const buttons = element.querySelectorAll('.tabs button');
     (buttons[2] as HTMLButtonElement).click();
-    fixture.detectChanges();
+    await fixture.whenStable();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    await fixture.whenStable();
 
     expect(element.textContent).toContain('discrepant-lib');
     expect(element.textContent).toContain('Declared: MIT');
     expect(element.textContent).toContain('Discovered: GPL-2.0-only');
     expect(element.textContent).toContain('clearlydefined');
+  });
+
+  it('displays error state when fetching discrepancies fails', () => {
+    const api = TestBed.inject(ApiService);
+    vi.spyOn(api, 'getProjectLicenseViolationSummaries').mockReturnValue(of([]));
+    vi.spyOn(api, 'getLicenseExceptions').mockReturnValue(of({
+      version: '1.0.0', lastUpdated: '', blanketExceptions: [], exceptions: [],
+    }));
+    vi.spyOn(api, 'getLicenseDiscrepancies').mockReturnValue(throwError(() => new Error('Server error')));
+
+    const fixture = TestBed.createComponent(LicenseViolationsComponent);
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+
+    const buttons = element.querySelectorAll('.tabs button');
+    (buttons[2] as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const alert = element.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain('Could not load license discrepancies');
+    expect(element.textContent).not.toContain('No license discrepancies found in stored results.');
+  });
+
+  it('displays empty state when discrepancies list is empty', () => {
+    const api = TestBed.inject(ApiService);
+    vi.spyOn(api, 'getProjectLicenseViolationSummaries').mockReturnValue(of([]));
+    vi.spyOn(api, 'getLicenseExceptions').mockReturnValue(of({
+      version: '1.0.0', lastUpdated: '', blanketExceptions: [], exceptions: [],
+    }));
+    vi.spyOn(api, 'getLicenseDiscrepancies').mockReturnValue(of([]));
+
+    const fixture = TestBed.createComponent(LicenseViolationsComponent);
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+
+    const buttons = element.querySelectorAll('.tabs button');
+    (buttons[2] as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(element.textContent).toContain('No license discrepancies found in stored results.');
+    expect(element.querySelector('[role="alert"]')).toBeNull();
   });
 });

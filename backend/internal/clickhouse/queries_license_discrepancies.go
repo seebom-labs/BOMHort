@@ -10,8 +10,8 @@ import (
 
 // QueryLicenseDiscrepancies returns packages where the discovered license differs
 // from the declared license. The declared license remains authoritative for
-// compliance (#530).
-func (c *Client) QueryLicenseDiscrepancies(ctx context.Context, sbomID, project, cluster, namespace string) ([]dto.LicenseDiscrepancyItem, error) {
+// compliance (#530). Results are bounded by limit and offset.
+func (c *Client) QueryLicenseDiscrepancies(ctx context.Context, sbomID, project, cluster, namespace string, limit, offset uint64) ([]dto.LicenseDiscrepancyItem, error) {
 	var innerConditions []string
 	var args []any
 
@@ -36,6 +36,14 @@ func (c *Client) QueryLicenseDiscrepancies(ctx context.Context, sbomID, project,
 	if len(innerConditions) > 0 {
 		whereClause = "AND " + strings.Join(innerConditions, " AND ")
 	}
+
+	if limit == 0 {
+		limit = 100
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+	args = append(args, limit, offset)
 
 	q := fmt.Sprintf(`
 		SELECT
@@ -82,6 +90,7 @@ func (c *Client) QueryLicenseDiscrepancies(ctx context.Context, sbomID, project,
 		) AS s ON p.sbom_id = s.sbom_id
 		WHERE disc != ''
 		ORDER BY s.document_name, name, ver
+		LIMIT ? OFFSET ?
 	`, whereClause)
 
 	rows, err := c.Conn.Query(ctx, q, args...)

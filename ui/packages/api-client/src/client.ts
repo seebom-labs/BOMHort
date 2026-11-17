@@ -279,7 +279,7 @@ export class BomhortApiClient {
     return this.get('/licenses/sources', signal);
   }
 
-  getLicenseDiscrepancies(filter?: { sbom_id?: string; project?: string; cluster?: string; namespace?: string }, signal?: AbortSignal): Promise<LicenseDiscrepancyItem[]> {
+  getLicenseDiscrepancies(filter?: { sbom_id?: string; project?: string; cluster?: string; namespace?: string; page?: number; page_size?: number }, signal?: AbortSignal): Promise<LicenseDiscrepancyItem[]> {
     return this.get(`/licenses/discrepancies${query(filter || {})}`, signal);
   }
 
