@@ -2,10 +2,13 @@ package clearlydefined
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	json "github.com/goccy/go-json"
 
 	"github.com/seebom-labs/bomhort/backend/internal/license"
 )
@@ -325,3 +328,155 @@ func TestResolver_BatchColdCacheAndRestartPersistence(t *testing.T) {
 		t.Errorf("preloaded CheckDiscrepancy(unharvested) = %q, %v; want false", discU, hasU)
 	}
 }
+
+func TestResolver_NegativeCacheNeverReturnedAsLicense(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /definitions", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// Empty response: none of the coordinates are harvested
+		w.Write([]byte(`{}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	r := NewResolverWithRegistry(srv.URL)
+	ctx := context.Background()
+
+	purls := []string{"pkg:npm/unharvested-lib@1.0.0"}
+	res := r.ResolveBatch(ctx, purls)
+
+	// Result map must not contain negative cache markers as licenses (#530).
+	if lic := res["pkg:npm/unharvested-lib@1.0.0"]; lic != "" {
+		t.Fatalf("ResolveBatch returned negative cache marker as license: %q", lic)
+	}
+
+	// Cache must still retain reason for Explain
+	handled, reason, _ := r.Explain("pkg:npm/unharvested-lib@1.0.0")
+	if !handled || reason != license.ReasonNotHarvested {
+		t.Errorf("Explain() = (%v, %q), want (true, %q)", handled, reason, license.ReasonNotHarvested)
+	}
+}
+
+func TestResolver_PrivatePackagesNeverQueried(t *testing.T) {
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		t.Errorf("unexpected external request to ClearlyDefined for private package: %s %s", r.Method, r.URL.Path)
+		http.Error(w, "should not be called", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	r := NewResolverWithRegistry(srv.URL)
+	r.SetPrivatePrefixes([]string{
+		"pkg:npm/%40acme-private/",
+		"com.acme.private",
+		"@internal/",
+	})
+	ctx := context.Background()
+
+	privatePURLs := []string{
+		"pkg:npm/%40acme-private/billing@1.0.0",
+		"pkg:npm/@acme-private/auth@2.0.0",
+		"pkg:maven/com.acme.private/billing@1.0.0",
+		"pkg:npm/%40internal/utils@1.0.0",
+		"pkg:npm/@golden/web@0.0.0-use.local",
+		"pkg:maven/${project.groupId}/core@1",
+	}
+
+	for _, p := range privatePURLs {
+		if !r.IsPrivate(p) {
+			t.Errorf("IsPrivate(%q) = false, want true", p)
+		}
+		if lic := r.Resolve(ctx, p); lic != "" {
+			t.Errorf("Resolve(%q) = %q, want empty", p, lic)
+		}
+		if disc, found := r.CheckDiscrepancy(ctx, p, "MIT"); found || disc != "" {
+			t.Errorf("CheckDiscrepancy(%q) = (%q, %v), want empty, false", p, disc, found)
+		}
+	}
+
+	// Batch resolve & discrepancy
+	res := r.ResolveBatch(ctx, privatePURLs)
+	if len(res) != 0 {
+		t.Errorf("ResolveBatch on private packages returned %d items, want 0", len(res))
+	}
+
+	discs := r.CheckDiscrepanciesBatch(ctx, privatePURLs, []string{"MIT", "MIT", "MIT", "MIT", "MIT", "MIT"})
+	for i, d := range discs {
+		if d != "" {
+			t.Errorf("discs[%d] = %q, want empty", i, d)
+		}
+	}
+
+	pkgs := []NoticePackage{
+		{Name: "billing", Version: "1.0.0", PURL: "pkg:npm/%40acme-private/billing@1.0.0"},
+	}
+	r.PopulateAttributions(ctx, pkgs)
+	if len(pkgs[0].CopyrightParties) != 0 {
+		t.Errorf("PopulateAttributions populated private package")
+	}
+
+	if requests != 0 {
+		t.Fatalf("expected 0 requests to external service for private packages, got %d", requests)
+	}
+}
+
+func TestResolveBatch_OversizedResponse_SplitsGracefully(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /definitions", func(w http.ResponseWriter, r *http.Request) {
+		var reqCoords []string
+		if err := json.NewDecoder(r.Body).Decode(&reqCoords); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// When batch has > 25 coordinates, return response exceeding 10 MiB to trigger LimitReader truncation (#530).
+		if len(reqCoords) > 25 {
+			w.Header().Set("Content-Type", "application/json")
+			// Write > 10 MiB of JSON payload
+			w.Write([]byte(`{"npm/npmjs/-/pkg-0/1.0.0":{"licensed":{"declared":"MIT"}}`))
+			// Padding > 10 MiB
+			padding := strings.Repeat(" ", 11<<20)
+			w.Write([]byte(padding))
+			w.Write([]byte(`}`))
+			return
+		}
+
+		// Small chunks (<= 25): return valid JSON definition map
+		respMap := make(map[string]any, len(reqCoords))
+		for _, coord := range reqCoords {
+			respMap[coord] = map[string]any{
+				"licensed": map[string]any{
+					"declared": "Apache-2.0",
+				},
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(respMap)
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	r := NewResolverWithRegistry(srv.URL)
+	ctx := context.Background()
+
+	// Generate 50 coordinates
+	purls := make([]string, 50)
+	for i := 0; i < 50; i++ {
+		purls[i] = fmt.Sprintf("pkg:npm/pkg-%d@1.0.0", i)
+	}
+
+	got := r.ResolveBatch(ctx, purls)
+
+	// All 50 coordinates should be resolved to Apache-2.0 after recursive split
+	if len(got) != 50 {
+		t.Fatalf("ResolveBatch resolved %d coordinates, want 50", len(got))
+	}
+	for _, p := range purls {
+		if got[p] != "Apache-2.0" {
+			t.Errorf("ResolveBatch[%s] = %q, want Apache-2.0", p, got[p])
+		}
+	}
+}
+

@@ -10,8 +10,19 @@ import (
 
 // QueryLicenseDiscrepancies returns packages where the discovered license differs
 // from the declared license. The declared license remains authoritative for
-// compliance (#530). Results are bounded by limit and offset.
-func (c *Client) QueryLicenseDiscrepancies(ctx context.Context, sbomID, project, cluster, namespace string, limit, offset uint64) ([]dto.LicenseDiscrepancyItem, error) {
+// compliance (#530). Results are bounded by limit and offset and support server-side search.
+func (c *Client) QueryLicenseDiscrepancies(ctx context.Context, sbomID, project, cluster, namespace, search string, page, pageSize uint64) (*dto.PaginatedResponse[dto.LicenseDiscrepancyItem], error) {
+	if page == 0 {
+		page = 1
+	}
+	if pageSize == 0 {
+		pageSize = 50
+	}
+	if pageSize > 500 {
+		pageSize = 500
+	}
+	offset := (page - 1) * pageSize
+
 	var innerConditions []string
 	var args []any
 
@@ -37,27 +48,16 @@ func (c *Client) QueryLicenseDiscrepancies(ctx context.Context, sbomID, project,
 		whereClause = "AND " + strings.Join(innerConditions, " AND ")
 	}
 
-	if limit == 0 {
-		limit = 100
+	search = strings.TrimSpace(search)
+	searchWhere := ""
+	var searchArgs []any
+	if search != "" {
+		pattern := "%" + search + "%"
+		searchWhere = "AND (name ILIKE ? OR ver ILIKE ? OR purl ILIKE ? OR coalesce(s.document_name, '') ILIKE ? OR lic ILIKE ? OR disc ILIKE ?)"
+		searchArgs = append(searchArgs, pattern, pattern, pattern, pattern, pattern, pattern)
 	}
-	if limit > 1000 {
-		limit = 1000
-	}
-	args = append(args, limit, offset)
 
-	q := fmt.Sprintf(`
-		SELECT
-			toString(p.sbom_id) AS sbom_id,
-			coalesce(s.document_name, '') AS document_name,
-			p.project AS project,
-			p.cluster AS cluster,
-			p.namespace AS namespace,
-			name,
-			ver,
-			purl,
-			lic,
-			disc,
-			src
+	baseQuery := fmt.Sprintf(`
 		FROM (
 			SELECT
 				sbom_id,
@@ -89,11 +89,40 @@ func (c *Client) QueryLicenseDiscrepancies(ctx context.Context, sbomID, project,
 			SELECT sbom_id, document_name FROM sboms FINAL
 		) AS s ON p.sbom_id = s.sbom_id
 		WHERE disc != ''
+		  %s
+	`, whereClause, searchWhere)
+
+	countArgs := append([]any(nil), args...)
+	countArgs = append(countArgs, searchArgs...)
+
+	var total uint64
+	countQuery := "SELECT count() " + baseQuery
+	if err := c.Conn.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
+		return nil, fmt.Errorf("failed to count license discrepancies: %w", err)
+	}
+
+	selectQuery := fmt.Sprintf(`
+		SELECT
+			toString(p.sbom_id) AS sbom_id,
+			coalesce(s.document_name, '') AS document_name,
+			p.project AS project,
+			p.cluster AS cluster,
+			p.namespace AS namespace,
+			name,
+			ver,
+			purl,
+			lic,
+			disc,
+			src
+		%s
 		ORDER BY s.document_name, name, ver
 		LIMIT ? OFFSET ?
-	`, whereClause)
+	`, baseQuery)
 
-	rows, err := c.Conn.Query(ctx, q, args...)
+	queryArgs := append([]any(nil), countArgs...)
+	queryArgs = append(queryArgs, pageSize, offset)
+
+	rows, err := c.Conn.Query(ctx, selectQuery, queryArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query license discrepancies: %w", err)
 	}
@@ -119,5 +148,14 @@ func (c *Client) QueryLicenseDiscrepancies(ctx context.Context, sbomID, project,
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return &dto.PaginatedResponse[dto.LicenseDiscrepancyItem]{
+		Data:     items,
+		Total:    total,
+		Page:     page,
+		PageSize: pageSize,
+	}, nil
 }

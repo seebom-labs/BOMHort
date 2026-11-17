@@ -27,7 +27,7 @@ type Tab = 'non-compliant' | 'exceptions' | 'discrepancies';
           Configured Exceptions ({{ totalExceptions | number }})
         </button>
         <button [class.active]="activeTab === 'discrepancies'" (click)="activeTab = 'discrepancies'">
-          Discrepancies ({{ discrepancies.length | number }})
+          Discrepancies ({{ totalDiscrepancies | number }})
         </button>
       </div>
 
@@ -118,10 +118,10 @@ type Tab = 'non-compliant' | 'exceptions' | 'discrepancies';
         <ng-container *ngIf="!discrepanciesLoading && !discrepanciesError">
           <input type="search" class="search-box" placeholder="Filter discrepancies by package or license…"
                  aria-label="Filter discrepancies by package or license"
-                 [value]="discrepancySearch" (input)="discrepancySearch = $any($event.target).value">
+                 [value]="discrepancySearch" (input)="onDiscrepancySearch($any($event.target).value)">
 
-          <cdk-virtual-scroll-viewport *ngIf="filteredDiscrepancies.length > 0" itemSize="80" class="viewport">
-            <div *cdkVirtualFor="let d of filteredDiscrepancies; trackBy: trackByDiscrepancy" class="discrepancy-card">
+          <cdk-virtual-scroll-viewport *ngIf="discrepancies.length > 0" itemSize="80" class="viewport">
+            <div *cdkVirtualFor="let d of discrepancies; trackBy: trackByDiscrepancy" class="discrepancy-card">
               <div class="disc-header">
                 <span class="pkg-name">{{ d.package_name }}</span>
                 <span class="pkg-ver" *ngIf="d.package_version">{{ d.package_version }}</span>
@@ -145,7 +145,13 @@ type Tab = 'non-compliant' | 'exceptions' | 'discrepancies';
             </div>
           </cdk-virtual-scroll-viewport>
 
-          <p *ngIf="filteredDiscrepancies.length === 0" class="empty">
+          <div class="pagination" *ngIf="totalDiscrepancies > discrepancyPageSize">
+            <button [disabled]="discrepancyPage <= 1" (click)="setDiscrepancyPage(discrepancyPage - 1)">Previous</button>
+            <span>Page {{ discrepancyPage }} of {{ totalDiscrepancyPages }} ({{ totalDiscrepancies | number }} findings)</span>
+            <button [disabled]="discrepancyPage >= totalDiscrepancyPages" (click)="setDiscrepancyPage(discrepancyPage + 1)">Next</button>
+          </div>
+
+          <p *ngIf="discrepancies.length === 0" class="empty">
             {{ discrepancySearch ? 'No discrepancy matches "' + discrepancySearch + '".' : 'No license discrepancies found in stored results.' }}
           </p>
         </ng-container>
@@ -228,6 +234,16 @@ type Tab = 'non-compliant' | 'exceptions' | 'discrepancies';
     .disc-tag.declared { background: var(--status-success-bg); color: var(--status-success); }
     .disc-tag.discovered { background: var(--severity-high-bg); color: var(--severity-high); }
     .disc-purl { font-size: 0.72rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pagination {
+      display: flex; align-items: center; justify-content: center; gap: 1rem;
+      margin-top: 1rem; margin-bottom: 1rem; font-size: 0.85rem; color: var(--text-secondary);
+    }
+    .pagination button {
+      padding: 0.35rem 0.75rem; border: 1px solid var(--border); border-radius: 4px;
+      background: var(--surface); color: var(--text); cursor: pointer;
+    }
+    .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .pagination button:not(:disabled):hover { border-color: var(--accent); }
   `],
 })
 export class LicenseViolationsComponent implements OnInit {
@@ -241,6 +257,9 @@ export class LicenseViolationsComponent implements OnInit {
 
   violations: ProjectLicenseViolationSummary[] = [];
   discrepancies: LicenseDiscrepancyItem[] = [];
+  totalDiscrepancies = 0;
+  discrepancyPage = 1;
+  discrepancyPageSize = 50;
   discrepanciesLoading = false;
   discrepanciesError = '';
   search = '';
@@ -259,16 +278,36 @@ export class LicenseViolationsComponent implements OnInit {
     private readonly router: Router,
   ) {}
 
-  ngOnInit(): void {
-    this.api.getLicenseExceptions().subscribe({
-      next: (exceptions) => { this.exceptionsFile = exceptions; this.cdr.markForCheck(); },
-      error: () => this.fail(),
-    });
+  get totalDiscrepancyPages(): number {
+    return Math.max(1, Math.ceil(this.totalDiscrepancies / this.discrepancyPageSize));
+  }
+
+  setDiscrepancyPage(page: number): void {
+    if (page < 1 || page > this.totalDiscrepancyPages || page === this.discrepancyPage) {
+      return;
+    }
+    this.discrepancyPage = page;
+    this.loadDiscrepancies();
+  }
+
+  onDiscrepancySearch(term: string): void {
+    this.discrepancySearch = term;
+    this.discrepancyPage = 1;
+    this.loadDiscrepancies();
+  }
+
+  loadDiscrepancies(): void {
     this.discrepanciesLoading = true;
     this.discrepanciesError = '';
-    this.api.getLicenseDiscrepancies({ page: 1, page_size: 500 }).subscribe({
-      next: (discrepancies) => {
-        this.discrepancies = discrepancies;
+    this.cdr.markForCheck();
+    this.api.getLicenseDiscrepancies({
+      page: this.discrepancyPage,
+      page_size: this.discrepancyPageSize,
+      search: this.discrepancySearch.trim(),
+    }).subscribe({
+      next: (resp) => {
+        this.discrepancies = resp.data || [];
+        this.totalDiscrepancies = resp.total || 0;
         this.discrepanciesLoading = false;
         this.cdr.markForCheck();
       },
@@ -278,6 +317,14 @@ export class LicenseViolationsComponent implements OnInit {
         this.cdr.markForCheck();
       },
     });
+  }
+
+  ngOnInit(): void {
+    this.api.getLicenseExceptions().subscribe({
+      next: (exceptions) => { this.exceptionsFile = exceptions; this.cdr.markForCheck(); },
+      error: () => this.fail(),
+    });
+    this.loadDiscrepancies();
     // The search term is filtered server-side (#492): the unfiltered summary
     // is ~8 MB on a large instance, too much to pull and filter in the browser.
     this.route.queryParamMap.pipe(
@@ -301,21 +348,6 @@ export class LicenseViolationsComponent implements OnInit {
 
   get totalExceptions(): number {
     return this.exceptionsFile.blanketExceptions.length + this.exceptionsFile.exceptions.length;
-  }
-
-  get filteredDiscrepancies(): LicenseDiscrepancyItem[] {
-    if (!this.discrepancySearch.trim()) {
-      return this.discrepancies;
-    }
-    const q = this.discrepancySearch.toLowerCase();
-    return this.discrepancies.filter((d) =>
-      d.package_name.toLowerCase().includes(q) ||
-      (d.package_version && d.package_version.toLowerCase().includes(q)) ||
-      (d.document_name && d.document_name.toLowerCase().includes(q)) ||
-      d.declared_license.toLowerCase().includes(q) ||
-      d.discovered_license.toLowerCase().includes(q) ||
-      (d.purl && d.purl.toLowerCase().includes(q))
-    );
   }
 
   onSearch(value: string): void {

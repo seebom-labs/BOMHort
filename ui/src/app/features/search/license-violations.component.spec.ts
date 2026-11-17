@@ -170,18 +170,23 @@ describe('LicenseViolationsComponent', () => {
     vi.spyOn(api, 'getLicenseExceptions').mockReturnValue(of({
       version: '1.0.0', lastUpdated: '', blanketExceptions: [], exceptions: [],
     }));
-    vi.spyOn(api, 'getLicenseDiscrepancies').mockReturnValue(of([
-      {
-        sbom_id: 'sbom-1',
-        document_name: 'test-app',
-        package_name: 'discrepant-lib',
-        package_version: '1.0.0',
-        purl: 'pkg:npm/discrepant-lib@1.0.0',
-        declared_license: 'MIT',
-        discovered_license: 'GPL-2.0-only',
-        source: 'clearlydefined',
-      },
-    ]));
+    vi.spyOn(api, 'getLicenseDiscrepancies').mockReturnValue(of({
+      data: [
+        {
+          sbom_id: 'sbom-1',
+          document_name: 'test-app',
+          package_name: 'discrepant-lib',
+          package_version: '1.0.0',
+          purl: 'pkg:npm/discrepant-lib@1.0.0',
+          declared_license: 'MIT',
+          discovered_license: 'GPL-2.0-only',
+          source: 'clearlydefined',
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 50,
+    }));
 
     const fixture = TestBed.createComponent(LicenseViolationsComponent);
     fixture.autoDetectChanges();
@@ -228,7 +233,12 @@ describe('LicenseViolationsComponent', () => {
     vi.spyOn(api, 'getLicenseExceptions').mockReturnValue(of({
       version: '1.0.0', lastUpdated: '', blanketExceptions: [], exceptions: [],
     }));
-    vi.spyOn(api, 'getLicenseDiscrepancies').mockReturnValue(of([]));
+    vi.spyOn(api, 'getLicenseDiscrepancies').mockReturnValue(of({
+      data: [],
+      total: 0,
+      page: 1,
+      page_size: 50,
+    }));
 
     const fixture = TestBed.createComponent(LicenseViolationsComponent);
     fixture.detectChanges();
@@ -240,5 +250,56 @@ describe('LicenseViolationsComponent', () => {
 
     expect(element.textContent).toContain('No license discrepancies found in stored results.');
     expect(element.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('supports pagination and server-side search across discrepancies', async () => {
+    const api = TestBed.inject(ApiService);
+    vi.spyOn(api, 'getProjectLicenseViolationSummaries').mockReturnValue(of([]));
+    vi.spyOn(api, 'getLicenseExceptions').mockReturnValue(of({
+      version: '1.0.0', lastUpdated: '', blanketExceptions: [], exceptions: [],
+    }));
+    const spy = vi.spyOn(api, 'getLicenseDiscrepancies').mockReturnValue(of({
+      data: [
+        {
+          sbom_id: 'sbom-501',
+          document_name: 'huge-fleet-app',
+          package_name: 'lib-501',
+          package_version: '1.0.0',
+          purl: 'pkg:npm/lib-501@1.0.0',
+          declared_license: 'MIT',
+          discovered_license: 'Apache-2.0',
+          source: 'clearlydefined',
+        },
+      ],
+      total: 501,
+      page: 1,
+      page_size: 50,
+    }));
+
+    const fixture = TestBed.createComponent(LicenseViolationsComponent);
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+
+    // Tab badge must show full count 501, not capped at 50 or 500 (#530).
+    expect(element.textContent).toContain('Discrepancies (501)');
+
+    const buttons = element.querySelectorAll('.tabs button');
+    (buttons[2] as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    // Pagination bar must be displayed
+    const pagination = element.querySelector('.pagination');
+    expect(pagination?.textContent).toContain('Page 1 of 11 (501 findings)');
+
+    // Triggering search requests server-side search
+    const searchInput = element.querySelector('input.search-box[placeholder*="discrepancies"]') as HTMLInputElement;
+    searchInput.value = 'lib-501';
+    searchInput.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({
+      search: 'lib-501',
+      page: 1,
+    }));
   });
 });

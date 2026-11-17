@@ -50,3 +50,23 @@ func TestLoad_ResolverSwitches(t *testing.T) {
 		})
 	}
 }
+
+func TestLoad_PrivatePackagePrefixes(t *testing.T) {
+	t.Setenv("S3_BUCKETS", "")
+	t.Setenv("S3_BUCKET", "")
+	t.Setenv("PRIVATE_PACKAGE_PREFIXES", "pkg:npm/%40acme-private/,com.acme.private, @internal/ ")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"pkg:npm/%40acme-private/", "com.acme.private", "@internal/"}
+	if len(cfg.PrivatePackagePrefixes) != len(want) {
+		t.Fatalf("got %v, want %v", cfg.PrivatePackagePrefixes, want)
+	}
+	for i, w := range want {
+		if cfg.PrivatePackagePrefixes[i] != w {
+			t.Errorf("[%d] = %q, want %q", i, cfg.PrivatePackagePrefixes[i], w)
+		}
+	}
+}
+

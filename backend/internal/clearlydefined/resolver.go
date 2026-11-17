@@ -28,7 +28,7 @@ const (
 
 	defaultRate     = 5.0
 	defaultBurst    = 10
-	maxBatchSize    = 250
+	maxBatchSize    = 50
 	maxResponseSize = 10 << 20
 )
 
@@ -186,12 +186,13 @@ type cachedRecord struct {
 
 // Resolver resolves licenses and discrepancies using ClearlyDefined definitions.
 type Resolver struct {
-	baseURL      string
-	httpClient   *http.Client
-	limiter      *ratelimit.TokenBucket
-	licenseCache sync.Map // cacheKey -> string (lic or NegativeCacheValue)
-	attributions sync.Map // cacheKey -> []string
-	discovered   sync.Map // cacheKey -> []string (all discovered expressions)
+	baseURL         string
+	httpClient      *http.Client
+	limiter         *ratelimit.TokenBucket
+	licenseCache    sync.Map // cacheKey -> string (lic or NegativeCacheValue)
+	attributions    sync.Map // cacheKey -> []string
+	discovered      sync.Map // cacheKey -> []string (all discovered expressions)
+	privatePrefixes []string
 }
 
 // NewResolver creates a resolver against the public ClearlyDefined service.
@@ -211,6 +212,137 @@ func NewResolverWithRegistry(baseURL string) *Resolver {
 // CacheKey returns the cache key for a ClearlyDefined coordinate.
 func CacheKey(coord Coordinate) string {
 	return coord.String()
+}
+
+// SetPrivatePrefixes configures operator-controlled prefixes for internal/private packages.
+func (r *Resolver) SetPrivatePrefixes(prefixes []string) {
+	if r == nil {
+		return
+	}
+	r.privatePrefixes = append([]string(nil), prefixes...)
+}
+
+// IsPrivate reports whether a PURL represents an internal or private package
+// that must not be queried from external public services.
+func (r *Resolver) IsPrivate(purl string) bool {
+	if r == nil {
+		return false
+	}
+	return IsPrivatePackage(purl, r.privatePrefixes)
+}
+
+// IsPrivatePackage reports whether a PURL represents a private package that must
+// not be queried from external public services. It matches:
+//  1. Yarn Berry workspace modules (*@0.0.0-use.local)
+//  2. Maven project modules (unexpanded ${project.groupId} or ${project.*})
+//  3. Any PURL or package prefix listed in operator-configured prefixes.
+func IsPrivatePackage(purl string, prefixes []string) bool {
+	if purl == "" {
+		return false
+	}
+	if isYarnWorkspace(purl) {
+		return true
+	}
+	if isMavenProjectModule(purl) {
+		return true
+	}
+	if len(prefixes) == 0 {
+		return false
+	}
+
+	unescaped, err := url.PathUnescape(purl)
+	if err != nil {
+		unescaped = purl
+	}
+
+	for _, prefix := range prefixes {
+		prefix = strings.TrimSpace(prefix)
+		if prefix == "" {
+			continue
+		}
+		if matchesPackagePrefix(purl, unescaped, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func isYarnWorkspace(purl string) bool {
+	if !strings.HasPrefix(purl, "pkg:npm/") {
+		return false
+	}
+	base := purl
+	if i := strings.IndexAny(base, "?#"); i >= 0 {
+		base = base[:i]
+	}
+	return strings.HasSuffix(base, "@0.0.0-use.local")
+}
+
+func isMavenProjectModule(purl string) bool {
+	if !strings.HasPrefix(purl, "pkg:maven/") {
+		return false
+	}
+	rest := strings.TrimPrefix(purl, "pkg:maven/")
+	rest = strings.ReplaceAll(rest, "%7B", "{")
+	rest = strings.ReplaceAll(rest, "%7D", "}")
+	rest = strings.ReplaceAll(rest, "%24", "$")
+	return strings.HasPrefix(rest, "${project.")
+}
+
+func matchesPackagePrefix(rawPURL, unescapedPURL, prefix string) bool {
+	unescapedPrefix, _ := url.PathUnescape(prefix)
+
+	if strings.HasPrefix(prefix, "pkg:") || strings.HasPrefix(unescapedPrefix, "pkg:") {
+		return hasPURLPrefix(rawPURL, prefix) ||
+			hasPURLPrefix(unescapedPURL, prefix) ||
+			hasPURLPrefix(rawPURL, unescapedPrefix) ||
+			hasPURLPrefix(unescapedPURL, unescapedPrefix)
+	}
+
+	if strings.HasPrefix(prefix, "@") || strings.HasPrefix(prefix, "%40") || strings.HasPrefix(unescapedPrefix, "@") {
+		cleanScope := strings.Trim(unescapedPrefix, "/")
+		if !strings.HasPrefix(cleanScope, "@") {
+			cleanScope = "@" + cleanScope
+		}
+		scopeInPURL := "pkg:npm/" + cleanScope + "/"
+		scopeEncoded := "pkg:npm/%40" + strings.TrimPrefix(cleanScope, "@") + "/"
+		return hasPURLPrefix(unescapedPURL, scopeInPURL) ||
+			hasPURLPrefix(rawPURL, scopeEncoded) ||
+			hasPURLPrefix(rawPURL, scopeInPURL)
+	}
+
+	cleanPrefix := strings.Trim(unescapedPrefix, "/")
+	mavenPURL := "pkg:maven/" + cleanPrefix + "/"
+	if hasPURLPrefix(rawPURL, mavenPURL) || hasPURLPrefix(unescapedPURL, mavenPURL) {
+		return true
+	}
+	if strings.Contains(unescapedPURL, "/"+cleanPrefix+"/") || strings.Contains(rawPURL, "/"+cleanPrefix+"/") {
+		return true
+	}
+
+	return hasPURLPrefix(rawPURL, prefix) || hasPURLPrefix(unescapedPURL, unescapedPrefix)
+}
+
+func hasPURLPrefix(p, prefix string) bool {
+	if p == prefix {
+		return true
+	}
+	if strings.HasPrefix(p, prefix) {
+		if len(prefix) == 0 {
+			return false
+		}
+		last := prefix[len(prefix)-1]
+		if last == '/' || last == '@' || last == ':' || last == '?' || last == '#' {
+			return true
+		}
+		if len(p) > len(prefix) {
+			next := p[len(prefix)]
+			if next == '/' || next == '@' || next == '?' || next == '#' || next == ':' {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // PreloadCache seeds the cache from registry_license_cache across worker restarts (#530).
@@ -315,6 +447,9 @@ func (r *Resolver) StoreResult(key, lic, reason string) {
 // Resolve returns the declared license expression for the package identified by purl,
 // or "" if not found, unresolved upstream, or the request fails.
 func (r *Resolver) Resolve(ctx context.Context, purl string) string {
+	if r.IsPrivate(purl) {
+		return ""
+	}
 	coord, ok := CoordinateFromPURL(purl)
 	if !ok {
 		return ""
@@ -339,22 +474,25 @@ func (r *Resolver) Resolve(ctx context.Context, purl string) string {
 }
 
 // ResolveBatch resolves multiple PURLs in bulk using ClearlyDefined's definitions endpoint.
+// Only actual resolved licenses are returned in the result map; negative cache markers
+// remain in the cache for Explain so callers never write '!reason' into ClickHouse (#530).
 func (r *Resolver) ResolveBatch(ctx context.Context, purls []string) map[string]string {
 	out := make(map[string]string, len(purls))
 	var uncached []Coordinate
 	purlByCoord := make(map[string][]string)
 
 	for _, p := range purls {
+		if r.IsPrivate(p) {
+			continue
+		}
 		coord, ok := CoordinateFromPURL(p)
 		if !ok {
 			continue
 		}
 		key := CacheKey(coord)
-		if lic, reason, found := r.Load(key); found {
+		if lic, _, found := r.Load(key); found {
 			if lic != "" {
 				out[p] = lic
-			} else if reason != "" {
-				out[p] = license.NegativeCacheValue(reason)
 			}
 			continue
 		}
@@ -367,12 +505,10 @@ func (r *Resolver) ResolveBatch(ctx context.Context, purls []string) map[string]
 	if len(uncached) > 0 {
 		_ = r.fetchDefinitionsBatch(ctx, uncached)
 		for key, plist := range purlByCoord {
-			lic, reason, _ := r.Load(key)
-			for _, p := range plist {
-				if lic != "" {
+			lic, _, _ := r.Load(key)
+			if lic != "" {
+				for _, p := range plist {
 					out[p] = lic
-				} else if reason != "" {
-					out[p] = license.NegativeCacheValue(reason)
 				}
 			}
 		}
@@ -395,6 +531,9 @@ func (r *Resolver) Explain(purl string) (handled bool, reason string, latest boo
 // package's declared license. If discovered expressions exist and conflict with
 // declaredLicense, returns the conflicting expression and true (#530).
 func (r *Resolver) CheckDiscrepancy(ctx context.Context, purl, declaredLicense string) (string, bool) {
+	if r.IsPrivate(purl) {
+		return "", false
+	}
 	declaredLicense = strings.TrimSpace(declaredLicense)
 	if declaredLicense == "" || declaredLicense == "NOASSERTION" || declaredLicense == "NONE" {
 		return "", false
@@ -445,6 +584,9 @@ func (r *Resolver) CheckDiscrepanciesBatch(ctx context.Context, purls, declaredL
 	for i, purl := range purls {
 		if i >= len(declaredLicenses) {
 			break
+		}
+		if r.IsPrivate(purl) {
+			continue
 		}
 		declared := strings.TrimSpace(declaredLicenses[i])
 		if declared == "" || declared == "NOASSERTION" || declared == "NONE" {
@@ -591,6 +733,7 @@ func (r *Resolver) fetchDefinition(ctx context.Context, coord Coordinate) (strin
 }
 
 // fetchDefinitionsBatch queries ClearlyDefined in bulk using POST /definitions (#530).
+// Batches are chunked by maxBatchSize (50 coordinates) to avoid giant payloads.
 func (r *Resolver) fetchDefinitionsBatch(ctx context.Context, coords []Coordinate) error {
 	for start := 0; start < len(coords); start += maxBatchSize {
 		end := start + maxBatchSize
@@ -598,92 +741,124 @@ func (r *Resolver) fetchDefinitionsBatch(ctx context.Context, coords []Coordinat
 			end = len(coords)
 		}
 		chunk := coords[start:end]
-		coordStrings := make([]string, len(chunk))
-		for i, c := range chunk {
-			coordStrings[i] = c.String()
-		}
-
-		if err := r.limiter.Wait(ctx); err != nil {
+		if err := r.fetchDefinitionsChunk(ctx, chunk); err != nil {
 			return err
 		}
+	}
+	return nil
+}
 
-		u := fmt.Sprintf("%s/definitions", r.baseURL)
-		body, err := json.Marshal(coordStrings)
-		if err != nil {
+// fetchDefinitionsChunk requests a batch of definitions from POST /definitions.
+// If the payload exceeds maxResponseSize (10 MiB) or fails to parse, it splits
+// the chunk recursively into smaller slices (or falls back to single-definition GET)
+// instead of silently dropping all definitions (#530).
+func (r *Resolver) fetchDefinitionsChunk(ctx context.Context, chunk []Coordinate) error {
+	if len(chunk) == 0 {
+		return nil
+	}
+	if err := r.limiter.Wait(ctx); err != nil {
+		return err
+	}
+
+	coordStrings := make([]string, len(chunk))
+	for i, c := range chunk {
+		coordStrings[i] = c.String()
+	}
+
+	u := fmt.Sprintf("%s/definitions", r.baseURL)
+	body, err := json.Marshal(coordStrings)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, strings.NewReader(string(body)))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "bomhort-clearlydefined-resolver")
+
+	resp, err := r.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		if len(chunk) > 1 {
+			mid := len(chunk) / 2
+			_ = r.fetchDefinitionsChunk(ctx, chunk[:mid])
+			_ = r.fetchDefinitionsChunk(ctx, chunk[mid:])
+			return nil
+		}
+		if resp.StatusCode == http.StatusNotFound && len(chunk) == 1 {
+			r.StoreResult(CacheKey(chunk[0]), "", license.ReasonNotHarvested)
+		}
+		return nil
+	}
+
+	var res map[string]definitionResponse
+	err = json.NewDecoder(io.LimitReader(resp.Body, maxResponseSize)).Decode(&res)
+	if err != nil {
+		// Body was truncated by LimitReader (>10 MiB) or JSON was malformed.
+		// Split recursively if multiple coordinates; fall back to per-coordinate GET if single.
+		if len(chunk) > 1 {
+			mid := len(chunk) / 2
+			_ = r.fetchDefinitionsChunk(ctx, chunk[:mid])
+			_ = r.fetchDefinitionsChunk(ctx, chunk[mid:])
+			return nil
+		}
+		lic, reason := r.fetchDefinition(ctx, chunk[0])
+		r.StoreResult(CacheKey(chunk[0]), lic, reason)
+		return nil
+	}
+
+	for _, c := range chunk {
+		key := CacheKey(c)
+		def, ok := res[key]
+		if !ok {
+			def, ok = res[c.String()]
+		}
+		if !ok {
+			r.StoreResult(key, "", license.ReasonNotHarvested)
 			continue
 		}
 
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, strings.NewReader(string(body)))
-		if err != nil {
-			continue
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Accept", "application/json")
-		req.Header.Set("User-Agent", "bomhort-clearlydefined-resolver")
-
-		resp, err := r.httpClient.Do(req)
-		if err != nil {
-			continue
+		// Capture parties
+		if len(def.Licensed.Facets.Core.Attribution.Parties) > 0 {
+			r.attributions.Store(key, def.Licensed.Facets.Core.Attribution.Parties)
 		}
 
-		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
-			continue
-		}
-
-		var res map[string]definitionResponse
-		err = json.NewDecoder(io.LimitReader(resp.Body, maxResponseSize)).Decode(&res)
-		resp.Body.Close()
-		if err != nil {
-			continue
-		}
-
-		for _, c := range chunk {
-			key := CacheKey(c)
-			def, ok := res[key]
-			if !ok {
-				def, ok = res[c.String()]
-			}
-			if !ok {
-				r.StoreResult(key, "", license.ReasonNotHarvested)
+		// Capture discovered expressions
+		var discovered []string
+		seenDisc := make(map[string]bool)
+		for _, expr := range append(def.Licensed.Facets.Core.Discovered.Expressions, def.Licensed.Discovered.Expressions...) {
+			expr = strings.TrimSpace(expr)
+			if expr == "" {
 				continue
 			}
+			if norm := license.Normalize(expr); norm != "" {
+				expr = norm
+			}
+			if !seenDisc[expr] {
+				seenDisc[expr] = true
+				discovered = append(discovered, expr)
+			}
+		}
+		if len(discovered) > 0 {
+			r.discovered.Store(key, discovered)
+		}
 
-			// Capture parties
-			if len(def.Licensed.Facets.Core.Attribution.Parties) > 0 {
-				r.attributions.Store(key, def.Licensed.Facets.Core.Attribution.Parties)
+		// Declared license
+		declared := strings.TrimSpace(def.Licensed.Declared)
+		if declared != "" && declared != "OTHER" && declared != "NOASSERTION" {
+			if norm := license.Normalize(declared); norm != "" {
+				declared = norm
 			}
-
-			// Capture discovered expressions
-			var discovered []string
-			seenDisc := make(map[string]bool)
-			for _, expr := range append(def.Licensed.Facets.Core.Discovered.Expressions, def.Licensed.Discovered.Expressions...) {
-				expr = strings.TrimSpace(expr)
-				if expr == "" {
-					continue
-				}
-				if norm := license.Normalize(expr); norm != "" {
-					expr = norm
-				}
-				if !seenDisc[expr] {
-					seenDisc[expr] = true
-					discovered = append(discovered, expr)
-				}
-			}
-			if len(discovered) > 0 {
-				r.discovered.Store(key, discovered)
-			}
-
-			// Declared license
-			declared := strings.TrimSpace(def.Licensed.Declared)
-			if declared != "" && declared != "OTHER" && declared != "NOASSERTION" {
-				if norm := license.Normalize(declared); norm != "" {
-					declared = norm
-				}
-				r.StoreResult(key, declared, "")
-			} else {
-				r.StoreResult(key, "", license.ReasonNoLicenseUpstream)
-			}
+			r.StoreResult(key, declared, "")
+		} else {
+			r.StoreResult(key, "", license.ReasonNoLicenseUpstream)
 		}
 	}
 	return nil
@@ -697,6 +872,9 @@ func (r *Resolver) PopulateAttributions(ctx context.Context, pkgs []NoticePackag
 	var uncached []Coordinate
 	for i := range pkgs {
 		if len(pkgs[i].CopyrightParties) > 0 {
+			continue
+		}
+		if r.IsPrivate(pkgs[i].PURL) {
 			continue
 		}
 		coord, ok := CoordinateFromPURL(pkgs[i].PURL)
