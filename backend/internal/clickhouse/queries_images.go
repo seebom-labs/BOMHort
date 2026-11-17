@@ -335,12 +335,14 @@ func (c *Client) cloneScopedVEX(ctx context.Context, sourceID, targetID uuid.UUI
 			INSERT INTO vex_statements (
 				ingested_at, vex_id, document_id, source_file, sbom_id, product_ref,
 				product_purl, vuln_id, status, justification, impact_statement,
-				action_statement, vex_timestamp, author, role, tooling, status_notes,
+				action_statement, action_statement_timestamp, vex_timestamp,
+				author, role, tooling, status_notes,
 				cluster, namespace, project
 			)
 			SELECT now(), ?, document_id, source_file, ?, product_ref, product_purl,
 			       vuln_id, status, justification, impact_statement, action_statement,
-			       vex_timestamp, author, role, tooling, status_notes, ?, ?, ?
+			       action_statement_timestamp, vex_timestamp,
+			       author, role, tooling, status_notes, ?, ?, ?
 			FROM vex_statements FINAL WHERE vex_id = ? AND sbom_id = ?`,
 			newID, targetID.String(), cluster, namespace, project, oldID, sourceID.String()); err != nil {
 			return fmt.Errorf("failed to clone scoped VEX statement: %w", err)
