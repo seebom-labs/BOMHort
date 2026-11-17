@@ -172,6 +172,15 @@ type VulnerabilityListItem struct {
 	VEXStatementID   string `json:"vex_statement_id,omitempty"`
 	VEXAuthor        string `json:"vex_author,omitempty"`
 	VEXTooling       string `json:"vex_tooling,omitempty"`
+	// Remediation record (#413): the winning statement's action statement —
+	// "we know, here is what we do about it" — and its impact note. Omitted
+	// when the statement carries none.
+	VEXActionStatement string `json:"vex_action_statement,omitempty"`
+	VEXImpactStatement string `json:"vex_impact_statement,omitempty"`
+	// VEXActionStatementTimestamp (#413) is when the action statement was
+	// issued (OpenVEX action_statement_timestamp). Omitted for statements
+	// ingested before migration 033, which store the zero time.
+	VEXActionStatementTimestamp string `json:"vex_action_statement_timestamp,omitempty"`
 	// VEXScope (#350): "sbom" when the winning statement is scoped to this
 	// SBOM, "global" for unscoped legacy statements. Omitted without VEX.
 	VEXScope string `json:"vex_scope,omitempty"`

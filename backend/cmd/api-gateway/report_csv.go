@@ -40,13 +40,17 @@ type vulnerabilityStreamFunc func(ctx context.Context, scope string, f clickhous
 var reportFormats = map[string]bool{"csv": true}
 
 // vulnerabilityCSVHeader: cve_id first — the id an auditor's questionnaire
-// asks for (#412) — then OSV's id and every other alias.
+// asks for (#412) — then OSV's id and every other alias. The remediation
+// record (#413) sits at the end: what is being done, decided when, by whom.
+// vex_status is renamed remediation_status, its register meaning; the column
+// position is unchanged.
 var vulnerabilityCSVHeader = []string{
 	"cve_id", "vuln_id", "aliases", "severity", "purl", "summary",
 	"fixed_version", "source_file", "discovered_at",
-	"dependency_scope", "dependency_depth", "vex_status",
+	"dependency_scope", "dependency_depth", "remediation_status",
 	"reachability", "evidence_source", "evidence_ref", "evidence_at",
 	"exploit_available", "exploit_sources",
+	"action_statement", "action_statement_timestamp", "vex_author",
 }
 
 func vulnerabilityCSVRecord(v dto.VulnerabilityListItem) []string {
@@ -60,6 +64,7 @@ func vulnerabilityCSVRecord(v dto.VulnerabilityListItem) []string {
 		v.DependencyScope, depth, v.VEXStatus,
 		v.Reachability, v.EvidenceSource, v.EvidenceRef, v.EvidenceAt,
 		strconv.FormatBool(v.ExploitAvailable), strings.Join(v.ExploitSources, ";"),
+		v.VEXActionStatement, v.VEXActionStatementTimestamp, v.VEXAuthor,
 	}
 	for i := range rec {
 		rec[i] = csvSafe(rec[i])

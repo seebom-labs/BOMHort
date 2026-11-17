@@ -3,6 +3,7 @@ package vex
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 const testOpenVEXJSON = `{
@@ -168,5 +169,68 @@ func TestParse_VulnIDFromURL(t *testing.T) {
 	}
 	if result.Statements[0].VulnID != "GO-2025-9999" {
 		t.Errorf("expected normalized vuln ID GO-2025-9999, got %q", result.Statements[0].VulnID)
+	}
+}
+
+// #413: OpenVEX statements can carry action_statement_timestamp, the time the
+// action statement was issued. It must survive parsing next to
+// action_statement, stay optional, and fall back to the zero time when it is
+// absent or not RFC 3339 — the same tolerance the statement timestamp gets.
+// The statement timestamp itself must stay untouched by the new field.
+func TestParseActionStatementTimestamp(t *testing.T) {
+	doc := `{
+		"@context": "https://openvex.dev/ns/v0.2.0",
+		"@id": "https://example.com/vex/ast",
+		"author": "Vendor",
+		"timestamp": "2025-06-15T10:00:00Z",
+		"version": 1,
+		"statements": [
+			{
+				"vulnerability": {"name": "CVE-2025-1000"},
+				"products": [{"@id": "pkg:npm/pkg-a@1.0.0"}],
+				"status": "affected",
+				"action_statement": "Upgrade to 1.0.1",
+				"action_statement_timestamp": "2025-06-20T12:30:00Z"
+			},
+			{
+				"vulnerability": {"name": "CVE-2025-1001"},
+				"products": [{"@id": "pkg:npm/pkg-b@1.0.0"}],
+				"status": "affected",
+				"action_statement": "Investigating"
+			},
+			{
+				"vulnerability": {"name": "CVE-2025-1002"},
+				"products": [{"@id": "pkg:npm/pkg-c@1.0.0"}],
+				"status": "affected",
+				"action_statement": "Upgrade to 2.0.0",
+				"action_statement_timestamp": "not-a-timestamp"
+			}
+		]
+	}`
+
+	result, err := Parse(strings.NewReader(doc), "ast.openvex.json")
+	if err != nil {
+		t.Fatalf("Parse() error: %v", err)
+	}
+	if len(result.Statements) != 3 {
+		t.Fatalf("expected 3 statements, got %d", len(result.Statements))
+	}
+
+	want := time.Date(2025, 6, 20, 12, 30, 0, 0, time.UTC)
+	if got := result.Statements[0].ActionStatementTimestamp.UTC(); !got.Equal(want) {
+		t.Errorf("statement 0: ActionStatementTimestamp = %v, want %v", got, want)
+	}
+	if !result.Statements[1].ActionStatementTimestamp.IsZero() {
+		t.Errorf("statement 1: ActionStatementTimestamp = %v, want zero (field absent)",
+			result.Statements[1].ActionStatementTimestamp)
+	}
+	if !result.Statements[2].ActionStatementTimestamp.IsZero() {
+		t.Errorf("statement 2: ActionStatementTimestamp = %v, want zero (not RFC 3339)",
+			result.Statements[2].ActionStatementTimestamp)
+	}
+	// The statement timestamp keeps its own meaning; the new field never
+	// overwrites it.
+	if got := result.Statements[0].VEXTimestamp.UTC(); !got.Equal(time.Date(2025, 6, 15, 10, 0, 0, 0, time.UTC)) {
+		t.Errorf("statement 0: VEXTimestamp = %v, want 2025-06-15T10:00:00Z", got)
 	}
 }
