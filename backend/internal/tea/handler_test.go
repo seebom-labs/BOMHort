@@ -104,6 +104,23 @@ func (m *mockStore) QueryVEXStatements(_ context.Context, _ string) ([]models.VE
 	return m.vexStmts, nil
 }
 
+func (m *mockStore) QueryStoredDocumentInfo(_ context.Context, sbomID string) (*StoredDocumentInfo, error) {
+	raw, ok := m.rawArtifact[sbomID]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	h := sha256.Sum256(raw)
+	shaHex := hex.EncodeToString(h[:])
+	mediaType, isInToto := ProbeFormat(raw, sbomID+".json")
+	return &StoredDocumentInfo{
+		SHA256Hash:  shaHex,
+		ContentType: mediaType,
+		IsInToto:    isInToto,
+		Filename:    sbomID + ".spdx.json",
+		SizeBytes:   uint64(len(raw)),
+	}, nil
+}
+
 func (m *mockStore) GetArtifactData(_ context.Context, sbomID string) (*ArtifactData, error) {
 	raw, ok := m.rawArtifact[sbomID]
 	if !ok {

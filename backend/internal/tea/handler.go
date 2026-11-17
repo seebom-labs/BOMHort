@@ -220,7 +220,7 @@ func (h *Handler) handleProductReleaseRoute(w http.ResponseWriter, r *http.Reque
 
 	if parts[1] == "collections" {
 		// GET /productRelease/{uuid}/collections
-		col, err := h.svc.GetCollection(r.Context(), releaseUUID, 1)
+		col, err := h.svc.GetCollection(r.Context(), releaseUUID, 1, true)
 		if err != nil {
 			if errors.Is(err, ErrNotFound) {
 				writeTEAError(w, http.StatusNotFound, ErrCodeObjectUnknown, "release not found")
@@ -238,14 +238,22 @@ func (h *Handler) handleProductReleaseRoute(w http.ResponseWriter, r *http.Reque
 
 	if parts[1] == "collection" {
 		version := 1
-		if len(parts) >= 3 && parts[2] != "latest" {
-			v, err := strconv.Atoi(parts[2])
-			if err == nil && v > 0 {
+		isLatest := true
+		if len(parts) >= 3 {
+			if parts[2] == "latest" {
+				isLatest = true
+			} else {
+				isLatest = false
+				v, err := strconv.Atoi(parts[2])
+				if err != nil || v <= 0 {
+					writeTEAError(w, http.StatusBadRequest, ErrCodeInvalidRequest, "invalid collection version")
+					return
+				}
 				version = v
 			}
 		}
 
-		col, err := h.svc.GetCollection(r.Context(), releaseUUID, version)
+		col, err := h.svc.GetCollection(r.Context(), releaseUUID, version, isLatest)
 		if err != nil {
 			if errors.Is(err, ErrNotFound) {
 				writeTEAError(w, http.StatusNotFound, ErrCodeObjectUnknown, "collection not found")
@@ -321,9 +329,16 @@ func (h *Handler) handleAllComponentReleases(w http.ResponseWriter, r *http.Requ
 	}
 	results := make([]ComponentRelease, 0, len(resp.Results))
 	for _, pr := range resp.Results {
+		compUUID := ""
+		if len(pr.Components) > 0 {
+			compUUID = pr.Components[0].UUID
+		}
+		if compUUID == "" {
+			compUUID = ComponentUUID("", pr.ProductName)
+		}
 		results = append(results, ComponentRelease{
 			UUID:        ComponentReleaseUUID(pr.UUID),
-			Component:   ComponentUUID("", pr.ProductName),
+			Component:   compUUID,
 			Version:     pr.Version,
 			CreatedDate: pr.CreatedDate,
 			ReleaseDate: pr.ReleaseDate,
@@ -364,7 +379,7 @@ func (h *Handler) handleComponentReleaseRoute(w http.ResponseWriter, r *http.Req
 			writeTEAError(w, http.StatusNotFound, ErrCodeObjectUnknown, "component release not found")
 			return
 		}
-		col, err := h.svc.GetCollection(r.Context(), rel.SBOMID.String(), 1)
+		col, err := h.svc.GetCollection(r.Context(), rel.SBOMID.String(), 1, true)
 		if err != nil {
 			writeTEAError(w, http.StatusInternalServerError, ErrCodeObjectUnknown, err.Error())
 			return
@@ -398,9 +413,12 @@ func (h *Handler) handleArtifactRoute(w http.ResponseWriter, r *http.Request, ta
 	version := 1
 	isLatest := versionStr == "latest"
 	if !isLatest {
-		if v, err := strconv.Atoi(versionStr); err == nil && v > 0 {
-			version = v
+		v, err := strconv.Atoi(versionStr)
+		if err != nil || v <= 0 {
+			writeTEAError(w, http.StatusBadRequest, ErrCodeInvalidRequest, "invalid artifact version")
+			return
 		}
+		version = v
 	}
 
 	isDownload := len(parts) >= 3 && parts[2] == "download"
@@ -417,7 +435,7 @@ func (h *Handler) handleArtifactRoute(w http.ResponseWriter, r *http.Request, ta
 	}
 
 	// GET /artifact/{uuid}/latest or /artifact/{uuid}/{version}
-	art, err := h.svc.GetArtifact(r.Context(), artifactUUID, version)
+	art, err := h.svc.GetArtifact(r.Context(), artifactUUID, version, isLatest)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			writeTEAError(w, http.StatusNotFound, ErrCodeObjectUnknown, "artifact not found")
@@ -431,7 +449,7 @@ func (h *Handler) handleArtifactRoute(w http.ResponseWriter, r *http.Request, ta
 }
 
 func (h *Handler) downloadArtifact(w http.ResponseWriter, r *http.Request, artifactUUID string, version int, isLatest bool) {
-	data, err := h.svc.GetArtifactData(r.Context(), artifactUUID, version)
+	data, err := h.svc.GetArtifactData(r.Context(), artifactUUID, version, isLatest)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			writeTEAError(w, http.StatusNotFound, ErrCodeObjectUnknown, "artifact not found")
@@ -463,11 +481,18 @@ func (h *Handler) downloadArtifact(w http.ResponseWriter, r *http.Request, artif
 		w.Header().Set("Repr-Digest", fmt.Sprintf("sha-256=:%s:", base64.StdEncoding.EncodeToString(rawHash)))
 	}
 
-	if isLatest {
+	hasAuth := r.Header.Get("Authorization") != "" || r.Header.Get("X-API-Key") != ""
+	if hasAuth {
+		// Authenticated downloads must never be cached publicly by shared reverse proxies (#534)
+		w.Header().Set("Cache-Control", "private, no-store, no-cache")
+		w.Header().Set("Vary", "Authorization, X-API-Key, Accept, Accept-Encoding")
+	} else if isLatest {
 		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Content-Location", fmt.Sprintf("%s/artifact/%s/%d/download", h.effectiveBaseURL(r), artifactUUID, version))
 	} else {
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	}
+	if isLatest {
+		w.Header().Set("Content-Location", fmt.Sprintf("%s/artifact/%s/%d/download", h.effectiveBaseURL(r), artifactUUID, version))
 	}
 
 	if data.SizeBytes > 0 {

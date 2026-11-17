@@ -66,6 +66,16 @@ class UIProxyAuthTest(unittest.TestCase):
     def test_image_template_injects_token_on_reads_only(self):
         self.assert_read_only_injection(IMAGE_TEMPLATE.read_text())
 
+    def assert_well_known_tea_proxied(self, conf):
+        self.assertIn("location = /.well-known/tea", conf)
+        self.assertRegex(conf, r"location\s*=\s*/\.well-known/tea\s*\{[^}]*proxy_pass\s+\$backend;")
+
+    def test_chart_configmap_proxies_well_known_tea(self):
+        self.assert_well_known_tea_proxied(chart_config())
+
+    def test_image_template_proxies_well_known_tea(self):
+        self.assert_well_known_tea_proxied(IMAGE_TEMPLATE.read_text())
+
     def test_badges_public_defaults_to_false(self):
         result = subprocess.run(
             ["helm", "template", "test", str(CHART), "--show-only", "templates/configmap.yaml"],

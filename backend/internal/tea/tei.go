@@ -166,3 +166,41 @@ func CleanPURL(raw string) string {
 	}
 	return raw
 }
+
+// ExtractAuthority extracts the host authority (hostname[:port]) from a base URL.
+// If rawURL is empty or unparseable, it falls back to "bomhort.local".
+func ExtractAuthority(rawURL string) string {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return "bomhort.local"
+	}
+	if !strings.Contains(rawURL, "://") {
+		rawURL = "http://" + rawURL
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return "bomhort.local"
+	}
+	return u.Host
+}
+
+// UnversionedPURL strips version, qualifiers, and subpath from a Package URL,
+// leaving canonical pkg:type/namespace/name.
+func UnversionedPURL(rawPURL string) string {
+	rawPURL = strings.TrimSpace(rawPURL)
+	if rawPURL == "" {
+		return ""
+	}
+	base := rawPURL
+	if idx := strings.IndexAny(base, "?#"); idx != -1 {
+		base = base[:idx]
+	}
+	colonIdx := strings.Index(base, ":")
+	if colonIdx != -1 {
+		remainder := base[colonIdx+1:]
+		if atIdx := strings.LastIndex(remainder, "@"); atIdx != -1 {
+			base = base[:colonIdx+1+atIdx]
+		}
+	}
+	return base
+}
