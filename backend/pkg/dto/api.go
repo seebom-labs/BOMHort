@@ -139,7 +139,11 @@ type VulnerabilityListItem struct {
 	CVEID string `json:"cve_id,omitempty"`
 	// Aliases are the OSV alias ids of VulnID (GHSA <-> CVE <-> GO-…),
 	// sorted. Omitted when OSV lists none.
-	Aliases      []string `json:"aliases,omitempty"`
+	Aliases []string `json:"aliases,omitempty"`
+	// CWEIDs are the weakness classes of the flaw (#409), from OSV
+	// database_specific.cwe_ids, sorted. Omitted for findings without CWEs
+	// (e.g. NVD-sourced entries that list none).
+	CWEIDs       []string `json:"cwe_ids,omitempty"`
 	Severity     string   `json:"severity"`
 	PURL         string   `json:"purl"`
 	Summary      string   `json:"summary"`
@@ -537,6 +541,7 @@ type GlobalSearchVulnerability struct {
 	// matches on any alias.
 	CVEID         string   `json:"cve_id,omitempty"`
 	Aliases       []string `json:"aliases,omitempty"`
+	CWEIDs        []string `json:"cwe_ids,omitempty"`
 	Severity      string   `json:"severity"`
 	Summary       string   `json:"summary"`
 	AffectedSBOMs uint64   `json:"affected_sboms"`

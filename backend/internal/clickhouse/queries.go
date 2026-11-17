@@ -395,6 +395,9 @@ type VulnFilter struct {
 	ExploitAvailable bool
 	// Origin (#455) restricts to findings from SBOMs produced under that origin.
 	Origin string
+	// CWE filters findings by weakness class (#409): ?cwe=CWE-79. Exact
+	// match against the stored cwe_ids.
+	CWE string
 }
 
 // ownerPredicate restricts sbom_id to the SBOMs matching f, or returns ""
@@ -453,6 +456,10 @@ func vulnWhere(scope string, f VulnFilter) (string, []any) {
 		preds = append(preds, "reachability = ?")
 		args = append(args, f.Reachability)
 	}
+	if f.CWE != "" {
+		preds = append(preds, "has(cwe_ids, ?)")
+		args = append(args, f.CWE)
+	}
 	owner, ownerArgs := ownerPredicate(f, false)
 	if owner != "" {
 		preds = append(preds, owner)
@@ -472,7 +479,7 @@ func vulnerabilityListSQL(scopeWhere string) string {
 		SELECT
 			v.vuln_id, v.severity, v.purl, v.summary,
 			v.fixed_version, v.source_file, v.discovered_at,
-			v.dependency_depth, v.aliases,
+			v.dependency_depth, v.aliases, v.cwe_ids,
 			v.advisory_source, v.advisory_status, v.component_location,
 			ifNull(vx.vex_status, '') AS vex_status,
 			ifNull(q.has_no_dep_graph, 0) AS has_no_dep_graph,
@@ -516,7 +523,7 @@ func scanVulnerabilityListRow(rows driver.Rows) (dto.VulnerabilityListItem, erro
 	if err := rows.Scan(
 		&item.VulnID, &item.Severity, &item.PURL,
 		&item.Summary, &item.FixedVersion, &item.SourceFile,
-		&discoveredAt, &depth, &aliases,
+		&discoveredAt, &depth, &aliases, &item.CWEIDs,
 		&item.AdvisorySource, &item.AdvisoryStatus, &components,
 		&item.VEXStatus,
 		&hasNoDepGraph,

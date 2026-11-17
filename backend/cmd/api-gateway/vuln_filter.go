@@ -82,6 +82,11 @@ func newVulnFilter(assignments func(context.Context) (map[string]projectgroup.As
 			return f, http.StatusBadRequest, "Invalid origin (expected cluster-scan, ci, registry, vendor, manual)"
 		}
 		f.Origin = originVal
+		cwe, cweOK := parseCWE(q.Get("cwe"))
+		if !cweOK {
+			return f, http.StatusBadRequest, "Invalid cwe (expected CWE-<number>)"
+		}
+		f.CWE = cwe
 		if len(parents) > 0 {
 			a, err := assignments(r.Context())
 			if err != nil {
@@ -194,4 +199,28 @@ func onlyExploitable(items []dto.VulnerabilityListItem) []dto.VulnerabilityListI
 		}
 	}
 	return out
+}
+
+// parseCWE validates and normalises the ?cwe= parameter (#409): one weakness
+// class, case-insensitive, stored as CWE-<number> — the form ExtractCWEs
+// writes and the SQL backfill kept from the OSV records.
+func parseCWE(raw string) (string, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", true
+	}
+	upper := strings.ToUpper(raw)
+	if !strings.HasPrefix(upper, "CWE-") {
+		upper = "CWE-" + upper
+	}
+	number := strings.TrimPrefix(upper, "CWE-")
+	if number == "" {
+		return "", false
+	}
+	for _, r := range number {
+		if r < '0' || r > '9' {
+			return "", false
+		}
+	}
+	return upper, true
 }

@@ -661,6 +661,7 @@ All vulnerabilities found in a specific SBOM, including the effective VEX statem
 | `scope` | string | all | Only `root`, `direct`, `transitive` or `unknown` findings (see [Dependency scope](#dependency-scope)) |
 | `reachability` | string | all | Filter by reachability evidence: `reachable`, `not_reachable`, or `unknown` (#535) |
 | `exploit` | string | all | `available`: only findings with [public exploit code](#exploit-code) |
+| `cwe` | string | all | Only findings of this weakness class, e.g. `CWE-79` (#409). Case-insensitive; normalised to `CWE-<number>`. |
 
 **Response:** `200 OK`
 ```json
@@ -669,6 +670,7 @@ All vulnerabilities found in a specific SBOM, including the effective VEX statem
     "vuln_id": "GHSA-xyz-abc-123",
     "cve_id": "CVE-2023-44487",
     "aliases": ["CVE-2023-44487", "GO-2023-2102"],
+    "cwe_ids": ["CWE-755"],
     "severity": "HIGH",
     "purl": "pkg:golang/golang.org/x/net@v0.17.0",
     "summary": "HTTP/2 rapid reset vulnerability",
@@ -693,7 +695,7 @@ All vulnerabilities found in a specific SBOM, including the effective VEX statem
 ]
 ```
 
-`vex_justification`, `vex_timestamp`, `vex_statement_id`, `vex_author` and `vex_tooling` describe the **winning** statement and are omitted (like `vex_status`) when no VEX statement covers the pair. `vex_author`/`vex_tooling` carry the provenance captured by migration `017` (#334) and are empty for statements ingested before it. `vex_timestamp` enables re-triage policies such as "re-open `under_investigation` older than 30 days" without paging through `/api/v1/vex/statements`. `reachability` (`reachable`, `not_reachable`, or `unknown`), `evidence_source`, `evidence_ref`, and `evidence_at` carry the reachability evidence (#535).
+`vex_justification`, `vex_timestamp`, `vex_statement_id`, `vex_author` and `vex_tooling` describe the **winning** statement and are omitted (like `vex_status`) when no VEX statement covers the pair. `vex_author`/`vex_tooling` carry the provenance captured by migration `017` (#334) and are empty for statements ingested before it. `vex_timestamp` enables re-triage policies such as "re-open `under_investigation` older than 30 days" without paging through `/api/v1/vex/statements`. `cwe_ids` are the weakness classes of the flaw (#409), read from OSV `database_specific.cwe_ids` (migration `034` backfilled existing rows from the stored OSV documents) and omitted for findings without CWEs. `reachability` (`reachable`, `not_reachable`, or `unknown`), `evidence_source`, `evidence_ref`, and `evidence_at` carry the reachability evidence (#535).
 
 
 ### `POST /api/v1/sboms/{id}/evidence`
@@ -860,6 +862,7 @@ Paginated list of all discovered vulnerabilities across all SBOMs. Each item car
 | `tag` | string | — | Only findings of SBOMs carrying any of these tags |
 | `reachability` | string | all | Filter by reachability evidence: `reachable`, `not_reachable`, or `unknown` (#535) |
 | `exploit` | string | — | `available`: only findings with [public exploit code](#exploit-code) |
+| `cwe` | string | all | Only findings of this weakness class, e.g. `CWE-79` (#409). Case-insensitive; normalised to `CWE-<number>`. |
 
 The ownership filters (#459) take comma-separated values: values within one parameter are ORed, parameters are ANDed (`?cluster=prod-eu,prod-us&tag=sandbox` = SBOMs in either cluster that carry `sandbox`). Ownership is read from the SBOM, so it matches the project and fleet views. A value longer than 200 characters is a `400`.
 
@@ -869,10 +872,11 @@ The ownership filters (#459) take comma-separated values: values within one para
 {
   "data": [
     {
-      "vuln_id": "GO-2024-3333",
-      "cve_id": "CVE-2024-45338",
-      "aliases": ["CVE-2024-45338", "GHSA-w32m-9786-jp63"],
-      "severity": "CRITICAL",
+    "vuln_id": "GO-2024-3333",
+    "cve_id": "CVE-2024-45338",
+    "aliases": ["CVE-2024-45338", "GHSA-w32m-9786-jp63"],
+    "cwe_ids": ["CWE-776"],
+    "severity": "CRITICAL",
       "purl": "pkg:golang/golang.org/x/net@v0.21.0",
       "summary": "Denial of service in net/http",
       "fixed_version": "v0.23.0",
@@ -970,6 +974,7 @@ Every finding of [`GET /api/v1/vulnerabilities`](#get-apiv1vulnerabilities) as a
 | `tag` | string | — | Only findings of SBOMs carrying any of these tags |
 | `reachability` | string | all | Filter by reachability evidence: `reachable`, `not_reachable`, or `unknown` (#535) |
 | `exploit` | string | — | `available`: only findings with [public exploit code](#exploit-code) |
+| `cwe` | string | all | Only findings of this weakness class, e.g. `CWE-79` (#409). Case-insensitive; normalised to `CWE-<number>`. |
 
 The ownership filters work as on the JSON listing.
 

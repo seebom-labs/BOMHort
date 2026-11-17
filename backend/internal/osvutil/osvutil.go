@@ -4,6 +4,7 @@ package osvutil
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 
 	"github.com/seebom-labs/bomhort/backend/internal/osv"
@@ -197,6 +198,66 @@ func privilegesRequiredScore(value, scope string) (float64, bool) {
 
 var impactScore = map[string]float64{
 	"H": 0.56, "L": 0.22, "N": 0.00,
+}
+
+// ExtractCWEs reads the weakness classes from an OSV entry's
+// database_specific.cwe_ids — what GitHub Advisory Database fills in and what
+// NVD-sourced entries often lack (#409). Entries in the wild arrive as an
+// array or a single string; anything else is ignored. Values are normalised
+// to CWE-<number> (case, missing prefix), deduplicated and sorted so the
+// stored order is stable for the register views. nil means "no CWEs known",
+// matching the column default.
+func ExtractCWEs(v osv.VulnEntry) []string {
+	if v.DatabaseSpecific == nil {
+		return nil
+	}
+	raw, ok := v.DatabaseSpecific["cwe_ids"]
+	if !ok {
+		return nil
+	}
+
+	var items []interface{}
+	switch typed := raw.(type) {
+	case []interface{}:
+		items = typed
+	case string:
+		items = []interface{}{typed}
+	default:
+		return nil
+	}
+
+	seen := make(map[string]bool, len(items))
+	var out []string
+	for _, item := range items {
+		s, ok := item.(string)
+		if !ok {
+			continue
+		}
+		s = strings.TrimSpace(s)
+		s = strings.ToUpper(s)
+		if !strings.HasPrefix(s, "CWE-") {
+			s = "CWE-" + s
+		}
+		number := strings.TrimPrefix(s, "CWE-")
+		if number == "" {
+			continue
+		}
+		for _, r := range number {
+			if r < '0' || r > '9' {
+				number = ""
+				break
+			}
+		}
+		if number == "" {
+			continue
+		}
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // ExtractFixedVersion finds the first "fixed" version from OSV affected data.

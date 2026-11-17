@@ -21,9 +21,15 @@ import { ScopeMatrixComponent } from '../../shared/scope-matrix/scope-matrix.com
 import { VulnAliasesComponent } from '../../shared/vuln-aliases/vuln-aliases.component';
 import { AdvisoryBadgeComponent } from '../../shared/advisory-badge/advisory-badge.component';
 import { ExploitBadgeComponent } from '../../shared/exploit-badge/exploit-badge.component';
+import { CweChipsComponent } from '../../shared/cwe-chips/cwe-chips.component';
+import { topCwes } from '../../shared/cwe-ids';
 import { primaryVulnId } from '../../shared/vuln-identity';
 
 type Tab = 'overview' | 'versions' | 'vulns' | 'packages' | 'subprojects';
+
+// Segment colors for the top-weakness-classes donut (#409); cycled when a
+// project has more classes than colors.
+const CWE_COLORS = ['#C43030', '#C07012', '#0D6B5E', '#7c3aed', '#9ca3af'];
 
 type VulnRow = VulnerabilityListItem & { pkg_name: string; pkg_version: string };
 
@@ -63,7 +69,7 @@ export function splitPurl(purl: string): { pkg_name: string; pkg_version: string
 @Component({
   selector: 'app-project-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule, ScrollingModule, RouterModule, DonutChartComponent, HorizontalBarChartComponent, ScopeBadgeComponent, VulnAliasesComponent, ExploitBadgeComponent, ScopeMatrixComponent, AdvisoryBadgeComponent],
+  imports: [CommonModule, FormsModule, ScrollingModule, RouterModule, DonutChartComponent, HorizontalBarChartComponent, ScopeBadgeComponent, VulnAliasesComponent, ExploitBadgeComponent, ScopeMatrixComponent, AdvisoryBadgeComponent, CweChipsComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="project-detail" *ngIf="detail">
@@ -210,6 +216,12 @@ export function splitPurl(purl: string): { pkg_name: string; pkg_version: string
               </div>
             }
           </div>
+          @if (cweSegments.length > 0) {
+            <div class="chart-card">
+              <h3>Top Weakness Classes</h3>
+              <app-donut-chart [segments]="cweSegments" centerLabel="Findings" />
+            </div>
+          }
         </div>
 
         <div class="charts-row">
@@ -304,6 +316,7 @@ export function splitPurl(purl: string): { pkg_name: string; pkg_version: string
               <span class="id-line">
                 <a [routerLink]="['/cve-impact']" [queryParams]="{vuln: vulnLabel(vuln)}" class="vuln-id">{{ vulnLabel(vuln) }}</a>
                 <app-vuln-aliases [vuln]="vuln"></app-vuln-aliases>
+              <app-cwe-chips [cwes]="vuln.cwe_ids"></app-cwe-chips>
               <app-advisory-badge [vuln]="vuln"></app-advisory-badge>
               <app-exploit-badge [vuln]="vuln"></app-exploit-badge>
               </span>
@@ -653,6 +666,9 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
   licenseSegments: DonutSegment[] = [];
   licenseBars: BarItem[] = [];
   vexSegments: DonutSegment[] = [];
+  // Top weakness classes across the loaded findings (#409), client-side —
+  // the tab already holds every finding row, so no extra query is needed.
+  cweSegments: DonutSegment[] = [];
   suppressedVulns = 0;
   effectiveVulns = 0;
   licenseViolations = 0;
@@ -756,6 +772,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
           { label: 'Suppressed', value: this.suppressedVulns, color: '#0D6B5E' },
         ]
       : [];
+    this.cweSegments = topCwes(vulns).map((s, i) => ({ ...s, color: CWE_COLORS[i % CWE_COLORS.length] }));
   }
 
   /** Tags that are groupings rather than parents. */
@@ -883,7 +900,6 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
   trackByPackage(_i: number, p: ProjectPackageItem): string { return p.purl || p.name + '@' + p.version; }
   trackByProject(_i: number, p: ProjectListItem): string { return p.project_name; }
 }
-
 
 
 
