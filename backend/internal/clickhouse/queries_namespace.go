@@ -212,21 +212,21 @@ func (c *Client) QueryNamespaceSBOMs(ctx context.Context, namespace, clusterFilt
 		LEFT JOIN (
 			SELECT sbom_id, sum(length(package_names)) AS pkg_count
 			FROM sbom_packages FINAL
-			WHERE namespace = ? AND (? = '' OR cluster = ?) AND (? = '' OR origin = ?)
+			WHERE namespace = ? AND (? = '' OR cluster = ?)
 			GROUP BY sbom_id
 		) p ON s.sbom_id = p.sbom_id
 		LEFT JOIN (
 			SELECT sbom_id, count() AS vuln_count
 			FROM vulnerabilities FINAL
-			WHERE namespace = ? AND (? = '' OR cluster = ?) AND (? = '' OR origin = ?)
+			WHERE namespace = ? AND (? = '' OR cluster = ?)
 			GROUP BY sbom_id
 		) v ON s.sbom_id = v.sbom_id
 		WHERE s.namespace = ? AND (? = '' OR s.cluster = ?) AND (? = '' OR s.origin = ?)
 		ORDER BY s.ingested_at DESC
 		LIMIT ? OFFSET ?
 	`,
-		namespace, clusterFilter, clusterFilter, originFilter, originFilter,
-		namespace, clusterFilter, clusterFilter, originFilter, originFilter,
+		namespace, clusterFilter, clusterFilter,
+		namespace, clusterFilter, clusterFilter,
 		namespace, clusterFilter, clusterFilter, originFilter, originFilter,
 		pageSize, offset)
 	if err != nil {
@@ -285,7 +285,7 @@ func (c *Client) QueryFleetTree(ctx context.Context, originFilter string) ([]dto
 		LEFT JOIN (
 			SELECT cluster, namespace, project, count() AS vuln_count
 			FROM vulnerabilities FINAL
-			WHERE ? = '' OR origin = ?
+			WHERE ? = '' OR sbom_id IN (SELECT sbom_id FROM sboms FINAL WHERE origin = ?)
 			GROUP BY cluster, namespace, project
 		) v ON s.cluster = v.cluster AND s.namespace = v.namespace AND s.project = v.project
 		ORDER BY s.cluster, s.namespace, s.project
