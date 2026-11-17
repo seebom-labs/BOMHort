@@ -306,9 +306,13 @@ func (c *Client) QueryTEAReleaseBySBOMID(ctx context.Context, sbomID string) (*m
 }
 
 // QueryTEAReleasesByPURL finds all releases matching a package URL (#534).
-// It checks root_purl first, then falls back to sbom_packages.package_purls.
+// It returns both root_purl and sbom_packages.package_purls matches, deduplicated,
+// using delimiter-safe matching to prevent prefix collisions (e.g. foo@1 vs foo@10).
 func (c *Client) QueryTEAReleasesByPURL(ctx context.Context, purl string) ([]models.SBOM, error) {
-	// 1. Direct root_purl check
+	seen := make(map[uuid.UUID]bool)
+	var out []models.SBOM
+
+	// 1. Direct root_purl check with delimiter safety
 	queryRoot := fmt.Sprintf(`
 		SELECT
 			s.sbom_id,
@@ -321,17 +325,18 @@ func (c *Client) QueryTEAReleasesByPURL(ctx context.Context, purl string) ([]mod
 			s.sha256_hash,
 			s.document_name
 		FROM (SELECT * FROM sboms FINAL) AS s
-		WHERE s.root_purl = ? OR startsWith(s.root_purl, ?)
+		WHERE s.root_purl = ?
+		   OR startsWith(s.root_purl, concat(?, '@'))
+		   OR startsWith(s.root_purl, concat(?, '?'))
+		   OR startsWith(s.root_purl, concat(?, '#'))
 		ORDER BY s.ingested_at DESC
-		LIMIT 50
 	`, projectKeyExpr)
 
-	rows, err := c.Conn.Query(ctx, queryRoot, purl, purl)
+	rows, err := c.Conn.Query(ctx, queryRoot, purl, purl, purl, purl)
 	if err != nil {
 		return nil, fmt.Errorf("querying tea releases by root purl: %w", err)
 	}
 
-	var out []models.SBOM
 	for rows.Next() {
 		var r models.SBOM
 		if err := rows.Scan(
@@ -344,18 +349,23 @@ func (c *Client) QueryTEAReleasesByPURL(ctx context.Context, purl string) ([]mod
 			&r.SourceFile,
 			&r.SHA256Hash,
 			&r.DocumentName,
-		); err == nil {
-			r.CreationDate = r.IngestedAt
+		); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("scanning root purl release: %w", err)
+		}
+		r.CreationDate = r.IngestedAt
+		if !seen[r.SBOMID] {
+			seen[r.SBOMID] = true
 			out = append(out, r)
 		}
 	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, fmt.Errorf("iterating root purl releases: %w", err)
+	}
 	rows.Close()
 
-	if len(out) > 0 {
-		return out, nil
-	}
-
-	// 2. Transitive / package check in sbom_packages
+	// 2. Transitive / package check in sbom_packages with delimiter safety
 	queryPackages := fmt.Sprintf(`
 		SELECT
 			s.sbom_id,
@@ -369,15 +379,17 @@ func (c *Client) QueryTEAReleasesByPURL(ctx context.Context, purl string) ([]mod
 			s.document_name
 		FROM (SELECT * FROM sboms FINAL) AS s
 		JOIN (
-			SELECT sbom_id
+			SELECT DISTINCT sbom_id
 			FROM sbom_packages FINAL
-			WHERE has(package_purls, ?)
+			WHERE arrayExists(x -> x = ?
+				OR startsWith(x, concat(?, '@'))
+				OR startsWith(x, concat(?, '?'))
+				OR startsWith(x, concat(?, '#')), package_purls)
 		) AS p ON s.sbom_id = p.sbom_id
 		ORDER BY s.ingested_at DESC
-		LIMIT 50
 	`, projectKeyExpr)
 
-	rows2, err := c.Conn.Query(ctx, queryPackages, purl)
+	rows2, err := c.Conn.Query(ctx, queryPackages, purl, purl, purl, purl)
 	if err != nil {
 		return nil, fmt.Errorf("querying tea releases by package purl: %w", err)
 	}
@@ -395,13 +407,21 @@ func (c *Client) QueryTEAReleasesByPURL(ctx context.Context, purl string) ([]mod
 			&r.SourceFile,
 			&r.SHA256Hash,
 			&r.DocumentName,
-		); err == nil {
-			r.CreationDate = r.IngestedAt
+		); err != nil {
+			return nil, fmt.Errorf("scanning package purl release: %w", err)
+		}
+		r.CreationDate = r.IngestedAt
+		if !seen[r.SBOMID] {
+			seen[r.SBOMID] = true
 			out = append(out, r)
 		}
 	}
 
-	return out, rows2.Err()
+	if err := rows2.Err(); err != nil {
+		return nil, fmt.Errorf("iterating package purl releases: %w", err)
+	}
+
+	return out, nil
 }
 
 // QueryTEAVEXStatementsCount returns the number of VEX statements scoped to an SBOM (#534).

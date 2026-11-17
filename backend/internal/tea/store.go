@@ -30,6 +30,15 @@ type ArtifactData struct {
 	Body        io.ReadCloser
 }
 
+// StoredDocumentInfo holds validated document metadata for an SBOM.
+type StoredDocumentInfo struct {
+	SHA256Hash  string
+	ContentType string
+	IsInToto    bool
+	Filename    string
+	SizeBytes   uint64
+}
+
 // Store defines the read-only data operations required by the TEA service.
 type Store interface {
 	QueryProducts(ctx context.Context, page, pageSize uint64) ([]ProductSummary, uint64, error)
@@ -40,5 +49,6 @@ type Store interface {
 	QueryReleasesByPURL(ctx context.Context, purl string) ([]models.SBOM, error)
 	QueryVEXStatementsCount(ctx context.Context, sbomID string) (int, error)
 	QueryVEXStatements(ctx context.Context, sbomID string) ([]models.VEXStatement, error)
+	QueryStoredDocumentInfo(ctx context.Context, sbomID string) (*StoredDocumentInfo, error)
 	GetArtifactData(ctx context.Context, sbomID string) (*ArtifactData, error)
 }

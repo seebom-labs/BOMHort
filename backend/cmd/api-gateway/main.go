@@ -1098,7 +1098,7 @@ func main() {
 
 	// ── Transparency Exchange API (TEA Beta 2) (#534) ─────────────────
 	teaStore := newTEAStore(chClient, originals, s3c, cfg.SBOMDir)
-	teaSvc := tea.NewService(teaStore)
+	teaSvc := tea.NewService(teaStore, cfg.TEABaseURL)
 	teaHandler := tea.NewHandler(teaSvc, cfg.TEABaseURL)
 	mux.Handle("GET /.well-known/tea", teaHandler)
 	mux.Handle("HEAD /.well-known/tea", teaHandler)

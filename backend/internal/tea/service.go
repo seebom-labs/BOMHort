@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
+	json "github.com/goccy/go-json"
 	"github.com/google/uuid"
 
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
@@ -21,14 +23,53 @@ var (
 	ErrInvalidRequest = errors.New("invalid tea request")
 )
 
+// Salt masks for reversible disjoint UUID derivation from sbom_id.
+// These salts preserve RFC 4122 version 4 and variant bits (salt[6] & 0xf0 == 0, salt[8] & 0xc0 == 0).
+var (
+	saltComponentRelease = [16]byte{
+		0x1a, 0x2b, 0x3c, 0x4d,
+		0x5e, 0x6f, 0x07, 0x89,
+		0x12, 0x34, 0x56, 0x78,
+		0x9a, 0xbc, 0xde, 0xf0,
+	}
+	saltVEXArtifact = [16]byte{
+		0xfe, 0xdc, 0xba, 0x98,
+		0x76, 0x54, 0x03, 0x21,
+		0x23, 0x45, 0x67, 0x89,
+		0xab, 0xcd, 0xef, 0x01,
+	}
+	saltAttestationArtifact = [16]byte{
+		0x45, 0x67, 0x89, 0xab,
+		0xcd, 0xef, 0x01, 0x23,
+		0x34, 0x56, 0x78, 0x9a,
+		0xbc, 0xde, 0xf0, 0x12,
+	}
+)
+
 // Service implements the core business logic of the Transparency Exchange API.
 type Service struct {
-	store Store
+	store        Store
+	baseURL      string
+	mu           sync.RWMutex
+	projectIndex map[string]string // UUID -> projectName
 }
 
-// NewService creates a new TEA service backed by the provided Store.
-func NewService(store Store) *Service {
-	return &Service{store: store}
+// NewService creates a new TEA service backed by the provided Store and optional baseURL.
+func NewService(store Store, baseURL ...string) *Service {
+	var b string
+	if len(baseURL) > 0 {
+		b = baseURL[0]
+	}
+	return &Service{
+		store:        store,
+		baseURL:      b,
+		projectIndex: make(map[string]string),
+	}
+}
+
+// Authority returns the host authority extracted from the configured baseURL.
+func (s *Service) Authority() string {
+	return ExtractAuthority(s.baseURL)
 }
 
 // ProductUUID returns a deterministic UUID for a product based on its project name.
@@ -36,33 +77,133 @@ func ProductUUID(projectName string) string {
 	return uuid.NewSHA1(uuid.NameSpaceDNS, []byte("bomhort:tea:product:"+projectName)).String()
 }
 
-// ComponentUUID returns a deterministic UUID for a component based on its root PURL or name.
+// ComponentUUID returns a deterministic UUID for a component based on its canonical
+// unversioned root PURL or fallback project name.
 func ComponentUUID(purl, fallbackName string) string {
-	if purl != "" {
-		return uuid.NewSHA1(uuid.NameSpaceDNS, []byte("bomhort:tea:component:"+purl)).String()
+	unversioned := UnversionedPURL(purl)
+	if unversioned != "" {
+		return uuid.NewSHA1(uuid.NameSpaceDNS, []byte("bomhort:tea:component:"+unversioned)).String()
 	}
 	return uuid.NewSHA1(uuid.NameSpaceDNS, []byte("bomhort:tea:component:name:"+fallbackName)).String()
 }
 
-// ComponentReleaseUUID returns a deterministic UUID for a component release distinct
-// from product release UUIDs per the disjoint namespace requirement in doc/tea-uuid-scope.md.
+// ComponentReleaseUUID returns a deterministic, disjoint, reversible UUID for a component release.
 func ComponentReleaseUUID(sbomID string) string {
-	return uuid.NewSHA1(uuid.NameSpaceDNS, []byte("bomhort:tea:component-release:"+sbomID)).String()
+	u, err := uuid.Parse(sbomID)
+	if err != nil {
+		return uuid.NewSHA1(uuid.NameSpaceDNS, []byte("bomhort:tea:component-release:"+sbomID)).String()
+	}
+	var derived [16]byte
+	for i := 0; i < 16; i++ {
+		derived[i] = u[i] ^ saltComponentRelease[i]
+	}
+	return uuid.UUID(derived).String()
 }
 
-// ArtifactVEXUUID returns a deterministic UUID for an SBOM's consolidated VEX artifact.
+// ReverseComponentReleaseUUID recovers the original sbomID from a derived component-release UUID.
+func ReverseComponentReleaseUUID(derivedUUID string) (string, bool) {
+	u, err := uuid.Parse(derivedUUID)
+	if err != nil {
+		return "", false
+	}
+	var orig [16]byte
+	for i := 0; i < 16; i++ {
+		orig[i] = u[i] ^ saltComponentRelease[i]
+	}
+	return uuid.UUID(orig).String(), true
+}
+
+// ArtifactVEXUUID returns a deterministic, disjoint, reversible UUID for an SBOM's consolidated VEX artifact.
 func ArtifactVEXUUID(sbomID string) string {
-	return uuid.NewSHA1(uuid.NameSpaceDNS, []byte("bomhort:tea:artifact:vex:"+sbomID)).String()
+	u, err := uuid.Parse(sbomID)
+	if err != nil {
+		return uuid.NewSHA1(uuid.NameSpaceDNS, []byte("bomhort:tea:artifact:vex:"+sbomID)).String()
+	}
+	var derived [16]byte
+	for i := 0; i < 16; i++ {
+		derived[i] = u[i] ^ saltVEXArtifact[i]
+	}
+	return uuid.UUID(derived).String()
 }
 
-// ArtifactAttestationUUID returns a deterministic UUID for an SBOM's attestation artifact.
+// ReverseArtifactVEXUUID recovers the original sbomID from a derived VEX artifact UUID.
+func ReverseArtifactVEXUUID(derivedUUID string) (string, bool) {
+	u, err := uuid.Parse(derivedUUID)
+	if err != nil {
+		return "", false
+	}
+	var orig [16]byte
+	for i := 0; i < 16; i++ {
+		orig[i] = u[i] ^ saltVEXArtifact[i]
+	}
+	return uuid.UUID(orig).String(), true
+}
+
+// ArtifactAttestationUUID returns a deterministic, disjoint, reversible UUID for an SBOM's attestation artifact.
 func ArtifactAttestationUUID(sbomID string) string {
-	return uuid.NewSHA1(uuid.NameSpaceDNS, []byte("bomhort:tea:artifact:attestation:"+sbomID)).String()
+	u, err := uuid.Parse(sbomID)
+	if err != nil {
+		return uuid.NewSHA1(uuid.NameSpaceDNS, []byte("bomhort:tea:artifact:attestation:"+sbomID)).String()
+	}
+	var derived [16]byte
+	for i := 0; i < 16; i++ {
+		derived[i] = u[i] ^ saltAttestationArtifact[i]
+	}
+	return uuid.UUID(derived).String()
+}
+
+// ReverseArtifactAttestationUUID recovers the original sbomID from a derived attestation artifact UUID.
+func ReverseArtifactAttestationUUID(derivedUUID string) (string, bool) {
+	u, err := uuid.Parse(derivedUUID)
+	if err != nil {
+		return "", false
+	}
+	var orig [16]byte
+	for i := 0; i < 16; i++ {
+		orig[i] = u[i] ^ saltAttestationArtifact[i]
+	}
+	return uuid.UUID(orig).String(), true
 }
 
 // ArtifactBOMDerivedUUID returns the derived UUID for an SBOM BOM artifact.
 func ArtifactBOMDerivedUUID(sbomID string) string {
-	return uuid.NewSHA1(uuid.NameSpaceDNS, []byte("bomhort:tea:artifact:bom:"+sbomID)).String()
+	return sbomID
+}
+
+// ProbeFormat inspects raw document bytes and filename to determine its media type
+// and whether it represents an in-toto attestation envelope (#534).
+func ProbeFormat(data []byte, filename string) (mediaType string, isInToto bool) {
+	type formatProbe struct {
+		BomFormat     string `json:"bomFormat"`
+		SPDXVersion   string `json:"spdxVersion"`
+		PredicateType string `json:"predicateType"`
+	}
+
+	var probe formatProbe
+	_ = jsonUnmarshal(data, &probe)
+
+	if probe.PredicateType != "" {
+		return MediaTypeInTotoJSON, true
+	}
+	if probe.BomFormat == "CycloneDX" {
+		return MediaTypeCycloneDXJSON, false
+	}
+	if probe.SPDXVersion != "" {
+		return MediaTypeSPDXJSON, false
+	}
+
+	lower := strings.ToLower(filename)
+	if strings.HasSuffix(lower, ".cdx.json") || strings.Contains(lower, "cyclonedx") {
+		return MediaTypeCycloneDXJSON, false
+	}
+	return MediaTypeSPDXJSON, false
+}
+
+func jsonUnmarshal(data []byte, v interface{}) error {
+	if len(data) == 0 {
+		return errors.New("empty data")
+	}
+	return json.Unmarshal(data, v)
 }
 
 // GetWellKnown constructs the discovery document for /.well-known/tea.
@@ -192,9 +333,10 @@ func (s *Service) ListProductReleases(ctx context.Context, idOrUUID string, page
 		return nil, err
 	}
 
+	authority := s.Authority()
 	results := make([]ProductRelease, 0, len(releases))
 	for _, r := range releases {
-		results = append(results, toProductRelease(r, sum.ProjectName))
+		results = append(results, toProductRelease(r, sum.ProjectName, authority))
 	}
 
 	hasNext := (page * pageSize) < total
@@ -217,9 +359,10 @@ func (s *Service) ListAllProductReleases(ctx context.Context, page, pageSize uin
 		return nil, err
 	}
 
+	authority := s.Authority()
 	results := make([]ProductRelease, 0, len(releases))
 	for _, r := range releases {
-		results = append(results, toProductRelease(r, r.Project))
+		results = append(results, toProductRelease(r, r.Project, authority))
 	}
 
 	hasNext := (page * pageSize) < total
@@ -241,32 +384,58 @@ func (s *Service) GetProductRelease(ctx context.Context, releaseUUID string) (*P
 	if err != nil || r == nil {
 		return nil, ErrNotFound
 	}
-	pr := toProductRelease(*r, r.Project)
+	pr := toProductRelease(*r, r.Project, s.Authority())
 	return &pr, nil
 }
 
 // GetCollection returns the artifact collection for a product release.
 // Per doc/tea-uuid-scope.md, a Collection uses the same UUID as its parent Product Release.
-func (s *Service) GetCollection(ctx context.Context, releaseUUID string, _ int) (*Collection, error) {
+func (s *Service) GetCollection(ctx context.Context, releaseUUID string, version int, isLatest bool) (*Collection, error) {
+	if !isLatest && version != 1 {
+		return nil, ErrNotFound
+	}
+
 	rel, err := s.store.QueryReleaseBySBOMID(ctx, releaseUUID)
 	if err != nil || rel == nil {
 		return nil, ErrNotFound
 	}
 
-	vexCount, _ := s.store.QueryVEXStatementsCount(ctx, releaseUUID)
+	// Surface errors when loading VEX instead of returning an incomplete collection (#534)
+	vexCount, err := s.store.QueryVEXStatementsCount(ctx, releaseUUID)
+	if err != nil {
+		return nil, fmt.Errorf("querying vex statements count: %w", err)
+	}
 
-	// Format mediaType from source file extension
+	// Retrieve real 64-char document sha256 and content-based format probe
+	sha256Hex := rel.SHA256Hash
 	mediaType := MediaTypeSPDXJSON
-	lowerFile := strings.ToLower(rel.SourceFile)
-	if strings.HasSuffix(lowerFile, ".cdx.json") || strings.Contains(lowerFile, "cyclonedx") {
-		mediaType = MediaTypeCycloneDXJSON
+	isInToto := false
+	docName := filepath.Base(rel.SourceFile)
+
+	if docInfo, dErr := s.store.QueryStoredDocumentInfo(ctx, releaseUUID); dErr == nil && docInfo != nil {
+		if docInfo.SHA256Hash != "" {
+			sha256Hex = docInfo.SHA256Hash
+		}
+		if docInfo.ContentType != "" {
+			mediaType = docInfo.ContentType
+		}
+		isInToto = docInfo.IsInToto
+		if docInfo.Filename != "" {
+			docName = docInfo.Filename
+		}
+	} else {
+		// Fallback detection from file extension
+		lowerFile := strings.ToLower(rel.SourceFile)
+		if strings.HasSuffix(lowerFile, ".cdx.json") || strings.Contains(lowerFile, "cyclonedx") {
+			mediaType = MediaTypeCycloneDXJSON
+		}
 	}
 
 	// 1. Original SBOM artifact
 	bomArtifact := Artifact{
 		UUID:        rel.SBOMID.String(),
 		Version:     1,
-		Name:        filepath.Base(rel.SourceFile),
+		Name:        docName,
 		Type:        ArtifactTypeBOM,
 		CreatedDate: formatTime(rel.CreationDate, rel.IngestedAt),
 		Formats: []ArtifactFormat{
@@ -276,7 +445,7 @@ func (s *Service) GetCollection(ctx context.Context, releaseUUID string, _ int) 
 				Checksums: []Checksum{
 					{
 						AlgType:  ChecksumAlgSHA256,
-						AlgValue: rel.SHA256Hash,
+						AlgValue: sha256Hex,
 					},
 				},
 			},
@@ -286,7 +455,31 @@ func (s *Service) GetCollection(ctx context.Context, releaseUUID string, _ int) 
 	artifacts := []Artifact{bomArtifact}
 	updateReasonType := UpdateReasonInitialRelease
 
-	// 2. OpenVEX artifact if VEX statements exist
+	// 2. In-toto attestation envelope artifact if captured
+	if isInToto {
+		attestationArtifact := Artifact{
+			UUID:        ArtifactAttestationUUID(releaseUUID),
+			Version:     1,
+			Name:        docName,
+			Type:        ArtifactTypeAttestation,
+			CreatedDate: formatTime(rel.CreationDate, rel.IngestedAt),
+			Formats: []ArtifactFormat{
+				{
+					MediaType:   MediaTypeInTotoJSON,
+					Description: "In-toto Attestation Envelope",
+					Checksums: []Checksum{
+						{
+							AlgType:  ChecksumAlgSHA256,
+							AlgValue: sha256Hex,
+						},
+					},
+				},
+			},
+		}
+		artifacts = append(artifacts, attestationArtifact)
+	}
+
+	// 3. OpenVEX artifact if VEX statements exist
 	if vexCount > 0 {
 		updateReasonType = UpdateReasonVEXUpdated
 		vexArtifact := Artifact{
@@ -397,13 +590,17 @@ func (s *Service) GetComponentRelease(ctx context.Context, releaseUUID string) (
 }
 
 // GetArtifact retrieves artifact metadata.
-func (s *Service) GetArtifact(ctx context.Context, artifactUUID string, version int) (*Artifact, error) {
-	rel, isVEX, err := s.resolveArtifactTarget(ctx, artifactUUID)
+func (s *Service) GetArtifact(ctx context.Context, artifactUUID string, version int, isLatest bool) (*Artifact, error) {
+	rel, isVEX, isAttestation, err := s.resolveArtifactTarget(ctx, artifactUUID)
 	if err != nil || rel == nil {
 		return nil, ErrNotFound
 	}
 
-	col, err := s.GetCollection(ctx, rel.SBOMID.String(), version)
+	if !isLatest && version != 1 {
+		return nil, ErrNotFound
+	}
+
+	col, err := s.GetCollection(ctx, rel.SBOMID.String(), 1, true)
 	if err != nil {
 		return nil, err
 	}
@@ -412,7 +609,10 @@ func (s *Service) GetArtifact(ctx context.Context, artifactUUID string, version 
 		if isVEX && a.Type == ArtifactTypeVulnerabilities {
 			return &a, nil
 		}
-		if !isVEX && a.Type == ArtifactTypeBOM {
+		if isAttestation && a.Type == ArtifactTypeAttestation {
+			return &a, nil
+		}
+		if !isVEX && !isAttestation && a.Type == ArtifactTypeBOM {
 			return &a, nil
 		}
 	}
@@ -421,9 +621,13 @@ func (s *Service) GetArtifact(ctx context.Context, artifactUUID string, version 
 }
 
 // GetArtifactData retrieves the raw bytes and metadata for artifact download.
-func (s *Service) GetArtifactData(ctx context.Context, artifactUUID string, _ int) (*ArtifactData, error) {
-	rel, isVEX, err := s.resolveArtifactTarget(ctx, artifactUUID)
+func (s *Service) GetArtifactData(ctx context.Context, artifactUUID string, version int, isLatest bool) (*ArtifactData, error) {
+	rel, isVEX, _, err := s.resolveArtifactTarget(ctx, artifactUUID)
 	if err != nil || rel == nil {
+		return nil, ErrNotFound
+	}
+
+	if !isLatest && version != 1 {
 		return nil, ErrNotFound
 	}
 
@@ -432,7 +636,7 @@ func (s *Service) GetArtifactData(ctx context.Context, artifactUUID string, _ in
 		if err != nil {
 			return nil, err
 		}
-		return buildOpenVEXArtifactData(rel.SBOMID.String(), stmts)
+		return buildOpenVEXArtifactData(rel.SBOMID.String(), stmts, s.Authority(), version)
 	}
 
 	return s.store.GetArtifactData(ctx, rel.SBOMID.String())
@@ -442,66 +646,113 @@ func (s *Service) GetArtifactData(ctx context.Context, artifactUUID string, _ in
 
 func (s *Service) findProduct(ctx context.Context, idOrUUID string) (*ProductSummary, error) {
 	idOrUUID = strings.TrimSpace(idOrUUID)
-	// Try direct project name query
+
+	// 1. Try direct project name query
 	if sum, err := s.store.QueryProductByName(ctx, idOrUUID); err == nil && sum != nil {
 		return sum, nil
 	}
 
-	// Try matching by UUID across all products
-	summaries, _, err := s.store.QueryProducts(ctx, 1, 1000)
-	if err != nil {
+	// 2. Check in-memory index
+	s.mu.RLock()
+	projectName, found := s.projectIndex[idOrUUID]
+	s.mu.RUnlock()
+
+	if found {
+		if sum, err := s.store.QueryProductByName(ctx, projectName); err == nil && sum != nil {
+			return sum, nil
+		}
+	}
+
+	// 3. Populate index across full catalogue without 1,000 ceiling (#534)
+	if err := s.refreshProjectIndex(ctx); err != nil {
 		return nil, err
 	}
-	for _, sum := range summaries {
-		if ProductUUID(sum.ProjectName) == idOrUUID || ComponentUUID(sum.RootPURL, sum.ProjectName) == idOrUUID {
-			return &sum, nil
+
+	s.mu.RLock()
+	projectName, found = s.projectIndex[idOrUUID]
+	s.mu.RUnlock()
+
+	if found {
+		if sum, err := s.store.QueryProductByName(ctx, projectName); err == nil && sum != nil {
+			return sum, nil
 		}
 	}
 
 	return nil, ErrNotFound
 }
 
+func (s *Service) refreshProjectIndex(ctx context.Context) error {
+	var page uint64 = 1
+	const pageSize = 1000
+
+	newIndex := make(map[string]string)
+	for {
+		summaries, total, err := s.store.QueryProducts(ctx, page, pageSize)
+		if err != nil {
+			return err
+		}
+		for _, sum := range summaries {
+			newIndex[sum.ProjectName] = sum.ProjectName
+			newIndex[ProductUUID(sum.ProjectName)] = sum.ProjectName
+			newIndex[ComponentUUID(sum.RootPURL, sum.ProjectName)] = sum.ProjectName
+		}
+		if page*pageSize >= total || len(summaries) == 0 {
+			break
+		}
+		page++
+	}
+
+	s.mu.Lock()
+	s.projectIndex = newIndex
+	s.mu.Unlock()
+	return nil
+}
+
 func (s *Service) findReleaseByComponentReleaseUUID(ctx context.Context, targetUUID string) (*models.SBOM, error) {
+	targetUUID = strings.TrimSpace(targetUUID)
 	// 1. Direct sbom_id match
 	if rel, err := s.store.QueryReleaseBySBOMID(ctx, targetUUID); err == nil && rel != nil {
 		return rel, nil
 	}
 
-	// 2. Derived component-release UUID match
-	releases, _, err := s.store.QueryAllReleases(ctx, 1, 1000)
-	if err != nil {
-		return nil, err
-	}
-	for _, r := range releases {
-		if ComponentReleaseUUID(r.SBOMID.String()) == targetUUID {
-			return &r, nil
+	// 2. Reversible component-release derivation match (O(1) direct lookup, no ceiling #534)
+	if origID, ok := ReverseComponentReleaseUUID(targetUUID); ok {
+		if rel, err := s.store.QueryReleaseBySBOMID(ctx, origID); err == nil && rel != nil {
+			if ComponentReleaseUUID(rel.SBOMID.String()) == targetUUID {
+				return rel, nil
+			}
 		}
 	}
+
 	return nil, ErrNotFound
 }
 
-func (s *Service) resolveArtifactTarget(ctx context.Context, artifactUUID string) (*models.SBOM, bool, error) {
-	// 1. Try direct SBOM ID
-	if rel, err := s.store.QueryReleaseBySBOMID(ctx, artifactUUID); err == nil && rel != nil {
-		return rel, false, nil
+func (s *Service) resolveArtifactTarget(ctx context.Context, artifactUUID string) (rel *models.SBOM, isVEX bool, isAttestation bool, err error) {
+	artifactUUID = strings.TrimSpace(artifactUUID)
+	// 1. Try direct SBOM ID (BOM artifact)
+	if r, err := s.store.QueryReleaseBySBOMID(ctx, artifactUUID); err == nil && r != nil {
+		return r, false, false, nil
 	}
 
-	// 2. Check all recent releases to resolve derived BOM or VEX UUIDs
-	releases, _, err := s.store.QueryAllReleases(ctx, 1, 1000)
-	if err != nil {
-		return nil, false, err
-	}
-	for _, r := range releases {
-		idStr := r.SBOMID.String()
-		if ArtifactBOMDerivedUUID(idStr) == artifactUUID {
-			return &r, false, nil
-		}
-		if ArtifactVEXUUID(idStr) == artifactUUID {
-			return &r, true, nil
+	// 2. Reversible VEX artifact match (O(1) direct lookup, no ceiling #534)
+	if origID, ok := ReverseArtifactVEXUUID(artifactUUID); ok {
+		if r, err := s.store.QueryReleaseBySBOMID(ctx, origID); err == nil && r != nil {
+			if ArtifactVEXUUID(r.SBOMID.String()) == artifactUUID {
+				return r, true, false, nil
+			}
 		}
 	}
 
-	return nil, false, ErrNotFound
+	// 3. Reversible Attestation artifact match (O(1) direct lookup, no ceiling #534)
+	if origID, ok := ReverseArtifactAttestationUUID(artifactUUID); ok {
+		if r, err := s.store.QueryReleaseBySBOMID(ctx, origID); err == nil && r != nil {
+			if ArtifactAttestationUUID(r.SBOMID.String()) == artifactUUID {
+				return r, false, true, nil
+			}
+		}
+	}
+
+	return nil, false, false, ErrNotFound
 }
 
 func toProduct(sum ProductSummary) Product {
@@ -520,14 +771,14 @@ func toProduct(sum ProductSummary) Product {
 	}
 }
 
-func toProductRelease(r models.SBOM, projectName string) ProductRelease {
+func toProductRelease(r models.SBOM, projectName, authority string) ProductRelease {
 	compUUID := ComponentUUID(r.RootPURL, projectName)
 	compRelUUID := ComponentReleaseUUID(r.SBOMID.String())
 
 	var idents []Identifier
 	if r.RootPURL != "" {
 		idents = append(idents, Identifier{IDType: "PURL", IDValue: r.RootPURL})
-		idents = append(idents, Identifier{IDType: "TEI", IDValue: EncodePURLTEI("bomhort.local", r.RootPURL)})
+		idents = append(idents, Identifier{IDType: "TEI", IDValue: EncodePURLTEI(authority, r.RootPURL)})
 	}
 
 	version := r.DocumentVersion

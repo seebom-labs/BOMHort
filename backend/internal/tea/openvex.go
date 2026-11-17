@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"sort"
+	"strings"
 	"time"
 
 	json "github.com/goccy/go-json"
@@ -24,34 +26,106 @@ type openVEXDoc struct {
 }
 
 type openVEXStatement struct {
-	Vulnerability   openVEXVuln `json:"vulnerability"`
-	Products        []string    `json:"products"`
-	Status          string      `json:"status"`
-	Justification   string      `json:"justification,omitempty"`
-	ImpactStatement string      `json:"impact_statement,omitempty"`
-	ActionStatement string      `json:"action_statement,omitempty"`
-	StatusNotes     string      `json:"status_notes,omitempty"`
+	Vulnerability   openVEXVuln  `json:"vulnerability"`
+	Products        []vexProduct `json:"products"`
+	Status          string       `json:"status"`
+	Justification   string       `json:"justification,omitempty"`
+	ImpactStatement string       `json:"impact_statement,omitempty"`
+	ActionStatement string       `json:"action_statement,omitempty"`
+	StatusNotes     string       `json:"status_notes,omitempty"`
 }
 
 type openVEXVuln struct {
 	Name string `json:"name"`
 }
 
-func buildOpenVEXArtifactData(sbomID string, stmts []models.VEXStatement) (*ArtifactData, error) {
+type vexProduct struct {
+	ID            string            `json:"@id"`
+	Identifiers   map[string]string `json:"identifiers,omitempty"`
+	Subcomponents []vexSubcomponent `json:"subcomponents,omitempty"`
+}
+
+type vexSubcomponent struct {
+	ID          string            `json:"@id"`
+	Identifiers map[string]string `json:"identifiers,omitempty"`
+}
+
+func buildOpenVEXArtifactData(sbomID string, stmts []models.VEXStatement, authority string, version int) (*ArtifactData, error) {
+	if authority == "" {
+		authority = "bomhort.local"
+	}
+	if version <= 0 {
+		version = 1
+	}
+
+	// Deterministic timestamp from stored statements (never time.Now() so hashes are stable #534)
+	var maxTime time.Time
+	for _, s := range stmts {
+		if s.VEXTimestamp.After(maxTime) {
+			maxTime = s.VEXTimestamp
+		}
+		if s.IngestedAt.After(maxTime) {
+			maxTime = s.IngestedAt
+		}
+	}
+	if maxTime.IsZero() {
+		maxTime = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	}
+
 	doc := openVEXDoc{
 		Context:    "https://openvex.dev/ns/v0.2.0",
-		ID:         fmt.Sprintf("https://bomhort.local/vex/%s", sbomID),
+		ID:         fmt.Sprintf("https://%s/vex/%s", authority, sbomID),
 		Author:     "BOMHort",
-		Timestamp:  time.Now().UTC().Format(time.RFC3339),
-		Version:    1,
+		Timestamp:  maxTime.UTC().Format(time.RFC3339),
+		Version:    version,
 		Tooling:    "BOMHort TEA Server",
 		Statements: make([]openVEXStatement, 0, len(stmts)),
 	}
 
-	for _, s := range stmts {
+	// Stable sort statements to guarantee identical serialization across downloads
+	sorted := make([]models.VEXStatement, len(stmts))
+	copy(sorted, stmts)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].VulnID != sorted[j].VulnID {
+			return sorted[i].VulnID < sorted[j].VulnID
+		}
+		if sorted[i].ProductPURL != sorted[j].ProductPURL {
+			return sorted[i].ProductPURL < sorted[j].ProductPURL
+		}
+		return sorted[i].Status < sorted[j].Status
+	})
+
+	for _, s := range sorted {
+		prodRef := strings.TrimSpace(s.ProductRef)
+		if prodRef == "" {
+			prodRef = fmt.Sprintf("https://%s/sbom/%s", authority, sbomID)
+		}
+
+		var products []vexProduct
+		if s.ProductWide || s.ProductPURL == models.VEXProductWide || s.ProductPURL == "*" || s.ProductPURL == prodRef {
+			// Product-wide scope without subcomponents
+			products = []vexProduct{
+				{
+					ID: prodRef,
+				},
+			}
+		} else {
+			// Deliverable product with specific vulnerable subcomponent
+			products = []vexProduct{
+				{
+					ID: prodRef,
+					Subcomponents: []vexSubcomponent{
+						{
+							ID: s.ProductPURL,
+						},
+					},
+				},
+			}
+		}
+
 		stmt := openVEXStatement{
 			Vulnerability:   openVEXVuln{Name: s.VulnID},
-			Products:        []string{s.ProductPURL},
+			Products:        products,
 			Status:          s.Status,
 			Justification:   s.Justification,
 			ImpactStatement: s.ImpactStatement,

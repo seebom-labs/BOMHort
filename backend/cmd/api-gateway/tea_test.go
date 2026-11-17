@@ -103,6 +103,22 @@ func (f *fakeTEAStore) QueryVEXStatements(_ context.Context, _ string) ([]models
 	return nil, nil
 }
 
+func (f *fakeTEAStore) QueryStoredDocumentInfo(_ context.Context, sbomID string) (*tea.StoredDocumentInfo, error) {
+	raw, ok := f.rawBlobs[sbomID]
+	if !ok {
+		return nil, tea.ErrNotFound
+	}
+	h := sha256.Sum256(raw)
+	mediaType, isInToto := tea.ProbeFormat(raw, sbomID+".json")
+	return &tea.StoredDocumentInfo{
+		SHA256Hash:  hex.EncodeToString(h[:]),
+		ContentType: mediaType,
+		IsInToto:    isInToto,
+		Filename:    sbomID + ".spdx.json",
+		SizeBytes:   uint64(len(raw)),
+	}, nil
+}
+
 func (f *fakeTEAStore) GetArtifactData(_ context.Context, sbomID string) (*tea.ArtifactData, error) {
 	raw, ok := f.rawBlobs[sbomID]
 	if !ok {
