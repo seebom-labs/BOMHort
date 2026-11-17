@@ -174,6 +174,10 @@ type Config struct {
 	// Push-model upload (#135)
 	MaxUploadSizeMB int // Max accepted body size for POST /api/v1/sboms/upload, in MB (default 50)
 
+	// Stateless evaluation (#513)
+	ScanTimeout  int // Timeout for POST /api/v1/scan in seconds (default 60)
+	ScanMaxPURLs int // Max PURLs accepted in one scan request (default 2000)
+
 	// Tier-2 fidelity capture (#256): where the original SBOM bytes are kept.
 	//   OriginalStoreBackend: "auto" (default) | "s3" | "fs" | "none"
 	//     auto → "s3" when any S3 bucket is configured, else "fs" when
@@ -276,6 +280,8 @@ func Load() (*Config, error) {
 		BadgesPublic:          getEnvBool("BADGES_PUBLIC", false),
 		BrandName:             getEnv("BRAND_NAME", "BOMHort"),
 		MaxUploadSizeMB:       getEnvInt("MAX_UPLOAD_SIZE_MB", 50),
+		ScanTimeout:           getEnvInt("SCAN_TIMEOUT", 60),
+		ScanMaxPURLs:          getEnvInt("SCAN_MAX_PURLS", 2000),
 
 		OriginalStoreBackend:  strings.ToLower(getEnv("ORIGINAL_STORE_BACKEND", OriginalStoreAuto)),
 		OriginalStoreS3Bucket: getEnv("ORIGINAL_STORE_S3_BUCKET", ""),
