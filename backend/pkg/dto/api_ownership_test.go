@@ -19,6 +19,7 @@ func TestSBOMListItem_OwnershipFieldsSerialized(t *testing.T) {
 		Namespace:    "payments",
 		Project:      "payment-service",
 		Origin:       "cluster-scan",
+		UploadedBy:   "ci-builder",
 	}
 
 	b, err := json.Marshal(item)
@@ -32,6 +33,7 @@ func TestSBOMListItem_OwnershipFieldsSerialized(t *testing.T) {
 		`"namespace":"payments"`,
 		`"project":"payment-service"`,
 		`"origin":"cluster-scan"`,
+		`"uploaded_by":"ci-builder"`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %s in %s", want, out)

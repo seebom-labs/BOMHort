@@ -27,18 +27,22 @@ type ownership struct {
 	// resolved per project at query time, never per finding.
 	parent string
 	origin string
+	// uploadedBy (#456) records which named API key uploaded the document.
+	// Carried on sboms only.
+	uploadedBy string
 }
 
 // ownershipOf reads the dimensions assigned to a job by the ingestion watcher
 // (or the upload endpoint).
 func ownershipOf(job models.IngestionJob) ownership {
 	return ownership{
-		cluster:   job.Cluster,
-		namespace: job.Namespace,
-		project:   job.Project,
-		tags:      job.Tags,
-		parent:    job.Parent,
-		origin:    job.Origin,
+		cluster:    job.Cluster,
+		namespace:  job.Namespace,
+		project:    job.Project,
+		tags:       job.Tags,
+		parent:     job.Parent,
+		origin:     job.Origin,
+		uploadedBy: job.UploadedBy,
 	}
 }
 
@@ -47,6 +51,7 @@ func (o ownership) applySBOM(m *models.SBOM) {
 	m.Tags = o.tags
 	m.Parent = o.parent
 	m.Origin = o.origin
+	m.UploadedBy = o.uploadedBy
 }
 
 func (o ownership) applyPackages(m *models.SBOMPackages) {

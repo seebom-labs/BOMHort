@@ -24,6 +24,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/seebom-labs/bomhort/backend/internal/apikey"
 	"github.com/seebom-labs/bomhort/backend/internal/claimlock"
 	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
 	"github.com/seebom-labs/bomhort/backend/internal/config"
@@ -1085,7 +1086,7 @@ func main() {
 	handler := securityHeadersMiddleware(
 		rateLimitMiddleware(cfg.RateLimitMax,
 			corsMiddleware(cfg.CORSAllowedOrigins,
-				authMiddleware(cfg.AuthEnabled, cfg.BadgesPublic, cfg.ServiceToken, cfg.APIKeys, mux),
+				authMiddleware(cfg.AuthEnabled, cfg.BadgesPublic, cfg.ServiceToken, cfg.APIKeys, cfg.NamedAPIKeys, mux),
 			),
 		),
 	)
@@ -1095,6 +1096,13 @@ func main() {
 		modes := []string{}
 		if cfg.ServiceToken != "" {
 			modes = append(modes, "service-token")
+		}
+		if len(cfg.NamedAPIKeys) > 0 {
+			keyNames := make([]string, len(cfg.NamedAPIKeys))
+			for i, k := range cfg.NamedAPIKeys {
+				keyNames[i] = k.Name
+			}
+			modes = append(modes, "named-api-keys("+strings.Join(keyNames, ", ")+")")
 		}
 		if len(cfg.APIKeys) > 0 {
 			modes = append(modes, "api-keys("+strconv.Itoa(len(cfg.APIKeys))+")")
@@ -1440,7 +1448,7 @@ func isBadgePath(path string) bool {
 // All comparisons use constant-time equality to prevent timing attacks.
 // When AUTH_ENABLED=false, this middleware is a no-op pass-through.
 // When badgesPublic=true, GET requests matching exact badge paths bypass authentication.
-func authMiddleware(enabled bool, badgesPublic bool, serviceToken string, apiKeys []string, next http.Handler) http.Handler {
+func authMiddleware(enabled bool, badgesPublic bool, serviceToken string, apiKeys []string, namedKeys []apikey.Key, next http.Handler) http.Handler {
 	if !enabled {
 		return next
 	}
@@ -1450,6 +1458,10 @@ func authMiddleware(enabled bool, badgesPublic bool, serviceToken string, apiKey
 	apiKeyBytes := make([][]byte, len(apiKeys))
 	for i, k := range apiKeys {
 		apiKeyBytes[i] = []byte(k)
+	}
+	namedKeyBytes := make([][]byte, len(namedKeys))
+	for i, k := range namedKeys {
+		namedKeyBytes[i] = []byte(k.Secret)
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1491,6 +1503,15 @@ func authMiddleware(enabled bool, badgesPublic bool, serviceToken string, apiKey
 		if len(serviceTokenBytes) > 0 && subtle.ConstantTimeCompare(presented, serviceTokenBytes) == 1 {
 			next.ServeHTTP(w, r)
 			return
+		}
+
+		// Named API keys check (constant-time over each configured key secret).
+		for i, k := range namedKeyBytes {
+			if subtle.ConstantTimeCompare(presented, k) == 1 {
+				ctx := apikey.WithKey(r.Context(), &namedKeys[i])
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
 		}
 
 		// API key check (constant-time over each configured key).
@@ -1581,6 +1602,7 @@ type uploadStore interface {
 	FindImageByDigestOwner(ctx context.Context, digest, imageRef, cluster, namespace, project, origin string) (*clickhouse.ImageSBOMRef, error)
 	FindPendingImageJob(ctx context.Context, digest, imageRef, cluster, namespace, project, origin string) (*models.IngestionJob, error)
 	FindSBOMByHash(ctx context.Context, hash string) (*clickhouse.ImageSBOMRef, error)
+	FindSBOMByID(ctx context.Context, sbomID string) (*clickhouse.ImageSBOMRef, error)
 	CloneImageSBOM(ctx context.Context, source clickhouse.ImageSBOMRef, digest, imageRef, sourceRepo, sourceRef, cluster, namespace, project, parent, origin string, tags []string) (string, error)
 	EnqueueJobs(ctx context.Context, jobs []models.IngestionJob) error
 }
@@ -1741,11 +1763,33 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 				return
 			}
 		}
+		authKey := apikey.FromContext(r.Context())
+
+		defaultOrigin := cfg.Origin
+		defaultCluster := cfg.ClusterName
+		defaultNamespace := cfg.Namespace
+		defaultProject := cfg.Project
+
+		if authKey != nil {
+			if d := authKey.Scope.DefaultOrigin(); d != "" {
+				defaultOrigin = d
+			}
+			if d := authKey.Scope.DefaultCluster(); d != "" {
+				defaultCluster = d
+			}
+			if d := authKey.Scope.DefaultNamespace(); d != "" {
+				defaultNamespace = d
+			}
+			if d := authKey.Scope.DefaultProject(); d != "" {
+				defaultProject = d
+			}
+		}
+
 		if len(r.URL.Query()["origin"]) > 1 {
 			writeError(w, http.StatusBadRequest, "?origin= may be specified only once")
 			return
 		}
-		uploadOrigin := originpkg.Normalize(queryOverride(r, "origin", cfg.Origin))
+		uploadOrigin := originpkg.Normalize(queryOverride(r, "origin", defaultOrigin))
 		if uploadOrigin != "" && !originpkg.IsValid(uploadOrigin) {
 			writeError(w, http.StatusBadRequest, "origin must be one of cluster-scan, ci, registry, vendor, manual")
 			return
@@ -1880,9 +1924,21 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			// existing ?cluster= contract (#131) -- a pushing CI job names where the
 			// artifact belongs, the server cannot infer it for an uploaded body the
 			// way the watcher can from an object key.
-			cluster := queryOverride(r, "cluster", cfg.ClusterName)
-			namespace := queryOverride(r, "namespace", cfg.Namespace)
-			project := queryOverride(r, "project", cfg.Project)
+			cluster := queryOverride(r, "cluster", defaultCluster)
+			namespace := queryOverride(r, "namespace", defaultNamespace)
+			project := queryOverride(r, "project", defaultProject)
+
+			// Validate scope restrictions for named API keys (#456).
+			var uploadedBy string
+			if authKey != nil {
+				uploadedBy = authKey.Name
+				if err := authKey.Scope.CheckUpload(authKey.Name, uploadOrigin, cluster, namespace, project); err != nil {
+					log.Printf("AUTH: upload forbidden for key %q from %s: %v", authKey.Name, clientIP(r), err)
+					writeError(w, http.StatusForbidden, err.Error())
+					return
+				}
+			}
+
 			// ?parent= names the product this upload belongs to explicitly; it
 			// outranks the mapping file and the automatic grouping signals.
 			parent := queryOverride(r, "parent", cfg.Parent)
@@ -1906,6 +1962,29 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 				}
 				if _, err := uuid.Parse(targetSBOMID); err != nil {
 					writeError(w, http.StatusBadRequest, "?sbom_id= must be a valid SBOM UUID")
+					return
+				}
+			}
+
+			// Authorize VEX target against key's scope (#456 review)
+			if fileType == models.JobTypeVEX && authKey != nil && !authKey.Scope.IsUnscoped() {
+				if targetSBOMID == "" {
+					writeError(w, http.StatusBadRequest, "VEX uploads with a scoped API key require an explicit ?sbom_id= matching the key scope")
+					return
+				}
+				targetSBOM, err := store.FindSBOMByID(r.Context(), targetSBOMID)
+				if err != nil {
+					log.Printf("ERROR: find target sbom %s: %v", sanitizeLogParam(targetSBOMID), err)
+					writeError(w, http.StatusInternalServerError, "Failed to verify target SBOM")
+					return
+				}
+				if targetSBOM == nil {
+					writeError(w, http.StatusNotFound, "Target SBOM not found")
+					return
+				}
+				if err := authKey.Scope.CheckUpload(authKey.Name, targetSBOM.Origin, targetSBOM.Cluster, targetSBOM.Namespace, targetSBOM.Project); err != nil {
+					log.Printf("AUTH: VEX target SBOM forbidden for key %q: %v", authKey.Name, err)
+					writeError(w, http.StatusForbidden, "Target SBOM is outside credential scope: "+err.Error())
 					return
 				}
 			}
@@ -2056,6 +2135,7 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 				Origin:       uploadOrigin,
 				ImageRef:     imageRef,
 				ImageDigest:  imageDigest,
+				UploadedBy:   uploadedBy,
 			}
 			// Single-row insert, deliberately: the API contract returns job_id
 			// synchronously, so the row has to be durable before we respond — there
@@ -2090,7 +2170,7 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 				sanitizeLogParam(cluster), sanitizeLogParam(namespace), sanitizeLogParam(project),
 				sanitizeLogParam(sourceFile))
 
-			writeJSON(w, http.StatusAccepted, map[string]string{
+			resp := map[string]string{
 				"status":       "pending",
 				"job_id":       job.JobID.String(),
 				"sha256_hash":  hash,
@@ -2102,7 +2182,11 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 				"origin":       uploadOrigin,
 				"image_ref":    imageRef,
 				"image_digest": imageDigest,
-			})
+			}
+			if uploadedBy != "" {
+				resp["uploaded_by"] = uploadedBy
+			}
+			writeJSON(w, http.StatusAccepted, resp)
 		}
 
 		if !cfg.DedupByImageDigest || len(r.URL.Query()["image"]) == 0 {

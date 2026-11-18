@@ -105,4 +105,3 @@ func TestExtractGitHubRepoImportPathDiffersFromRepo(t *testing.T) {
 		}
 	}
 }
-

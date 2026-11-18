@@ -219,4 +219,3 @@ func WellKnownModuleMappings() (prefixes, repoKeys []string) {
 	}
 	return prefixes, repoKeys
 }
-

@@ -9,6 +9,7 @@ import (
 
 	json "github.com/goccy/go-json"
 
+	"github.com/seebom-labs/bomhort/backend/internal/apikey"
 	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
 	"github.com/seebom-labs/bomhort/backend/internal/config"
 )
@@ -16,6 +17,10 @@ import (
 // fakeSourceStore implements sourceUpdater + sourceReader in memory.
 type fakeSourceStore struct {
 	repo, ref   string
+	origin      string
+	cluster     string
+	namespace   string
+	project     string
 	exists      bool
 	gotRepo     string
 	gotRef      string
@@ -31,11 +36,11 @@ func (f *fakeSourceStore) UpdateSBOMSource(_ context.Context, _, repo, ref strin
 	return nil
 }
 
-func (f *fakeSourceStore) QuerySBOMSource(_ context.Context, _ string) (string, string, error) {
+func (f *fakeSourceStore) QuerySBOMSource(_ context.Context, _ string) (string, string, string, string, string, string, error) {
 	if !f.exists {
-		return "", "", clickhouse.ErrSBOMNotFound
+		return "", "", "", "", "", "", clickhouse.ErrSBOMNotFound
 	}
-	return f.repo, f.ref, nil
+	return f.repo, f.ref, f.origin, f.cluster, f.namespace, f.project, nil
 }
 
 const patchTestID = "d5b0d9c8-1111-2222-3333-444455556666"
@@ -170,4 +175,60 @@ func TestPatchSourceNotFound(t *testing.T) {
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", rec.Code)
 	}
+}
+
+func TestPatchSource_ScopedAPIKeyAuthorization(t *testing.T) {
+	key := &apikey.Key{
+		Name:   "team-a-key",
+		Secret: "sec-a",
+		Scope: apikey.Scope{
+			Projects: []string{"team-a"},
+		},
+	}
+
+	t.Run("scoped key forbidden on foreign project", func(t *testing.T) {
+		store := &fakeSourceStore{
+			exists:  true,
+			project: "team-b",
+		}
+		cfg := &config.Config{AuthEnabled: true}
+		handler := patchSBOMSourceHandler(cfg, store, store)
+
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/sboms/"+patchTestID, strings.NewReader(`{"source_repo":"https://github.com/new/repo"}`))
+		req = req.WithContext(apikey.WithKey(req.Context(), key))
+		req.SetPathValue("id", patchTestID)
+
+		rec := httptest.NewRecorder()
+		handler(rec, req)
+
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("expected 403 for scoped key modifying foreign project, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if store.updateCalls != 0 {
+			t.Errorf("store updateCalls = %d, want 0", store.updateCalls)
+		}
+	})
+
+	t.Run("scoped key allowed on own project", func(t *testing.T) {
+		store := &fakeSourceStore{
+			exists:  true,
+			project: "team-a",
+		}
+		cfg := &config.Config{AuthEnabled: true}
+		handler := patchSBOMSourceHandler(cfg, store, store)
+
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/sboms/"+patchTestID, strings.NewReader(`{"source_repo":"https://github.com/new/repo"}`))
+		req = req.WithContext(apikey.WithKey(req.Context(), key))
+		req.SetPathValue("id", patchTestID)
+
+		rec := httptest.NewRecorder()
+		handler(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 for scoped key modifying own project, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if store.updateCalls != 1 {
+			t.Errorf("store updateCalls = %d, want 1", store.updateCalls)
+		}
+	})
 }

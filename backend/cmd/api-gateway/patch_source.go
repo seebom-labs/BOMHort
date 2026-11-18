@@ -9,6 +9,7 @@ import (
 	json "github.com/goccy/go-json"
 	"github.com/google/uuid"
 
+	"github.com/seebom-labs/bomhort/backend/internal/apikey"
 	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
 	"github.com/seebom-labs/bomhort/backend/internal/config"
 	"github.com/seebom-labs/bomhort/backend/internal/sourcerepo"
@@ -30,9 +31,9 @@ type patchSourceRequest struct {
 }
 
 // sourceReader fetches the current values so a partial PATCH can preserve the
-// untouched field.
+// untouched field, and provides ownership dimensions for authorization checks (#456).
 type sourceReader interface {
-	QuerySBOMSource(ctx context.Context, sbomID string) (repo, ref string, err error)
+	QuerySBOMSource(ctx context.Context, sbomID string) (repo, ref, origin, cluster, namespace, project string, err error)
 }
 
 // patchSBOMSourceHandler implements PATCH /api/v1/sboms/{id} (#332): set or
@@ -78,7 +79,7 @@ func patchSBOMSourceHandler(cfg *config.Config, store sourceUpdater, reader sour
 		}
 
 		// Partial PATCH: absent fields keep their current value.
-		repo, ref, err := reader.QuerySBOMSource(r.Context(), sbomID)
+		repo, ref, origin, cluster, namespace, project, err := reader.QuerySBOMSource(r.Context(), sbomID)
 		if err != nil {
 			if errors.Is(err, clickhouse.ErrSBOMNotFound) {
 				writeError(w, http.StatusNotFound, "SBOM not found")
@@ -87,6 +88,15 @@ func patchSBOMSourceHandler(cfg *config.Config, store sourceUpdater, reader sour
 			log.Printf("ERROR: patch source read for %s: %v", sanitizeLogParam(sbomID), err)
 			writeError(w, http.StatusInternalServerError, "Failed to read SBOM")
 			return
+		}
+
+		// Enforce named key scope on target SBOM (#456).
+		if authKey := apikey.FromContext(r.Context()); authKey != nil {
+			if err := authKey.Scope.CheckUpload(authKey.Name, origin, cluster, namespace, project); err != nil {
+				log.Printf("AUTH: patch source forbidden for key %q from %s: %v", authKey.Name, clientIP(r), err)
+				writeError(w, http.StatusForbidden, err.Error())
+				return
+			}
 		}
 
 		if req.SourceRepo != nil {

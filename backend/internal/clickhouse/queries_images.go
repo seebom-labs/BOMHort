@@ -170,6 +170,22 @@ func (c *Client) FindSBOMByHash(ctx context.Context, hash string) (*ImageSBOMRef
 	return &ref, nil
 }
 
+func (c *Client) FindSBOMByID(ctx context.Context, sbomID string) (*ImageSBOMRef, error) {
+	var ref ImageSBOMRef
+	err := c.Conn.QueryRow(ctx, `
+		SELECT sbom_id, cluster, namespace, project, origin
+		FROM sboms FINAL
+		WHERE toString(sbom_id) = ?
+		LIMIT 1`, sbomID).Scan(&ref.SBOMID, &ref.Cluster, &ref.Namespace, &ref.Project, &ref.Origin)
+	if err != nil {
+		if isNoRows(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to query SBOM by id: %w", err)
+	}
+	return &ref, nil
+}
+
 func (c *Client) FindPendingImageJob(ctx context.Context, digest, imageRef, cluster, namespace, project, origin string) (*models.IngestionJob, error) {
 	jobs, err := c.selectJobs(ctx,
 		"latest_status IN ('pending', 'processing') AND image_digest = ? AND image_ref = ? AND cluster = ? AND namespace = ? AND project = ? AND origin = ?",

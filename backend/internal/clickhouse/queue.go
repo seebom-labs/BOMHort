@@ -16,7 +16,7 @@ import (
 // updates), so all five writers must agree on the column set exactly —
 // keeping it in one place is what stops a newly added dimension from being
 // silently dropped on claim/complete/fail and resurfacing as empty data.
-const queueColumns = "created_at, job_id, source_file, sha256_hash, status, job_type, claimed_by, claimed_at, finished_at, error_message, cluster, namespace, project, source_repo, source_ref, target_sbom_id, tags, parent, origin, image_ref, image_digest, retry_after"
+const queueColumns = "created_at, job_id, source_file, sha256_hash, status, job_type, claimed_by, claimed_at, finished_at, error_message, cluster, namespace, project, source_repo, source_ref, target_sbom_id, tags, parent, origin, image_ref, image_digest, retry_after, uploaded_by"
 
 // EnqueueJobs inserts a batch of new ingestion jobs with status 'pending'.
 func (c *Client) EnqueueJobs(ctx context.Context, jobs []models.IngestionJob) error {
@@ -57,6 +57,7 @@ func (c *Client) EnqueueJobs(ctx context.Context, jobs []models.IngestionJob) er
 			job.ImageRef,
 			job.ImageDigest,
 			job.RetryAfter,
+			job.UploadedBy,
 		); err != nil {
 			return fmt.Errorf("failed to append queue job: %w", err)
 		}
@@ -98,7 +99,8 @@ func latestJobs(where string) string {
 		        argMax(origin, created_at)        AS origin,
 		        argMax(image_ref, created_at)     AS image_ref,
 		        argMax(image_digest, created_at)  AS image_digest,
-		        argMax(retry_after, created_at)   AS retry_after
+		        argMax(retry_after, created_at)   AS retry_after,
+		        argMax(uploaded_by, created_at)   AS uploaded_by
 		    FROM ingestion_queue ` + where + `
 		    GROUP BY job_id`
 }
@@ -106,7 +108,7 @@ func latestJobs(where string) string {
 // selectJobs returns the jobs whose latest state matches where, oldest first.
 func (c *Client) selectJobs(ctx context.Context, where string, limit int, args ...any) ([]models.IngestionJob, error) {
 	rows, err := c.Conn.Query(ctx, `
-		SELECT job_id, source_file, sha256_hash, min_created, version, job_type, cluster, namespace, project, source_repo, source_ref, target_sbom_id, tags, parent, origin, image_ref, image_digest
+		SELECT job_id, source_file, sha256_hash, min_created, version, job_type, cluster, namespace, project, source_repo, source_ref, target_sbom_id, tags, parent, origin, image_ref, image_digest, uploaded_by
 		FROM (`+latestJobs("")+`) sub
 		WHERE `+where+`
 		ORDER BY min_created ASC
@@ -119,7 +121,7 @@ func (c *Client) selectJobs(ctx context.Context, where string, limit int, args .
 	var jobs []models.IngestionJob
 	for rows.Next() {
 		var job models.IngestionJob
-		if err := rows.Scan(&job.JobID, &job.SourceFile, &job.SHA256Hash, &job.CreatedAt, &job.Version, &job.JobType, &job.Cluster, &job.Namespace, &job.Project, &job.SourceRepo, &job.SourceRef, &job.TargetSBOMID, &job.Tags, &job.Parent, &job.Origin, &job.ImageRef, &job.ImageDigest); err != nil {
+		if err := rows.Scan(&job.JobID, &job.SourceFile, &job.SHA256Hash, &job.CreatedAt, &job.Version, &job.JobType, &job.Cluster, &job.Namespace, &job.Project, &job.SourceRepo, &job.SourceRef, &job.TargetSBOMID, &job.Tags, &job.Parent, &job.Origin, &job.ImageRef, &job.ImageDigest, &job.UploadedBy); err != nil {
 			return nil, fmt.Errorf("failed to scan job row: %w", err)
 		}
 		jobs = append(jobs, job)
@@ -216,6 +218,7 @@ func (c *Client) claimJobs(ctx context.Context, workerID string, limit int) ([]m
 			job.ImageRef,
 			job.ImageDigest,
 			time.Time{},
+			job.UploadedBy,
 		); err != nil {
 			return nil, fmt.Errorf("failed to append claim: %w", err)
 		}
@@ -297,8 +300,8 @@ func (c *Client) CompleteJob(ctx context.Context, job models.IngestionJob) error
 	now := time.Now()
 	return c.Conn.Exec(ctx,
 		`INSERT INTO ingestion_queue (`+queueColumns+`)
-		 VALUES (`+nextVersion+`, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		versionMilli(job), job.JobID, job.SourceFile, job.SHA256Hash, models.JobStatusDone, job.JobType, job.ClaimedBy, job.ClaimedAt, &now, "", job.Cluster, job.Namespace, job.Project, job.SourceRepo, job.SourceRef, job.TargetSBOMID, job.Tags, job.Parent, job.Origin, job.ImageRef, job.ImageDigest, time.Time{})
+		 VALUES (`+nextVersion+`, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		versionMilli(job), job.JobID, job.SourceFile, job.SHA256Hash, models.JobStatusDone, job.JobType, job.ClaimedBy, job.ClaimedAt, &now, "", job.Cluster, job.Namespace, job.Project, job.SourceRepo, job.SourceRef, job.TargetSBOMID, job.Tags, job.Parent, job.Origin, job.ImageRef, job.ImageDigest, time.Time{}, job.UploadedBy)
 }
 
 // FailJob marks a job as failed with an error message.
@@ -306,8 +309,8 @@ func (c *Client) FailJob(ctx context.Context, job models.IngestionJob, errMsg st
 	now := time.Now()
 	return c.Conn.Exec(ctx,
 		`INSERT INTO ingestion_queue (`+queueColumns+`)
-		 VALUES (`+nextVersion+`, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		versionMilli(job), job.JobID, job.SourceFile, job.SHA256Hash, models.JobStatusFailed, job.JobType, job.ClaimedBy, job.ClaimedAt, &now, errMsg, job.Cluster, job.Namespace, job.Project, job.SourceRepo, job.SourceRef, job.TargetSBOMID, job.Tags, job.Parent, job.Origin, job.ImageRef, job.ImageDigest, time.Time{})
+		 VALUES (`+nextVersion+`, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		versionMilli(job), job.JobID, job.SourceFile, job.SHA256Hash, models.JobStatusFailed, job.JobType, job.ClaimedBy, job.ClaimedAt, &now, errMsg, job.Cluster, job.Namespace, job.Project, job.SourceRepo, job.SourceRef, job.TargetSBOMID, job.Tags, job.Parent, job.Origin, job.ImageRef, job.ImageDigest, time.Time{}, job.UploadedBy)
 }
 
 // DeferJob puts a claimed job back to 'pending' so that ClaimJobs picks it up
@@ -319,8 +322,8 @@ func (c *Client) FailJob(ctx context.Context, job models.IngestionJob, errMsg st
 func (c *Client) DeferJob(ctx context.Context, job models.IngestionJob, retryAfter time.Time, reason string) error {
 	return c.Conn.Exec(ctx,
 		`INSERT INTO ingestion_queue (`+queueColumns+`)
-		 VALUES (`+nextVersion+`, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		versionMilli(job), job.JobID, job.SourceFile, job.SHA256Hash, models.JobStatusPending, job.JobType, "", (*time.Time)(nil), (*time.Time)(nil), reason, job.Cluster, job.Namespace, job.Project, job.SourceRepo, job.SourceRef, job.TargetSBOMID, job.Tags, job.Parent, job.Origin, job.ImageRef, job.ImageDigest, retryAfter)
+		 VALUES (`+nextVersion+`, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		versionMilli(job), job.JobID, job.SourceFile, job.SHA256Hash, models.JobStatusPending, job.JobType, "", (*time.Time)(nil), (*time.Time)(nil), reason, job.Cluster, job.Namespace, job.Project, job.SourceRepo, job.SourceRef, job.TargetSBOMID, job.Tags, job.Parent, job.Origin, job.ImageRef, job.ImageDigest, retryAfter, job.UploadedBy)
 }
 
 // RequeueStaleJobs puts jobs back to 'pending' that have been 'processing'
