@@ -165,7 +165,6 @@ spec:
             {{- if .Values.originalStore.fs.enabled }}
             - name: originals
               mountPath: {{ .Values.originalStore.fs.mountPath }}
-              readOnly: true
             {{- end }}
       volumes:
         {{- with include "bomhort.sbomSource.volume" . | trim }}{{ . | nindent 8 }}{{ end }}

@@ -383,13 +383,13 @@ func TestReview_Comment10_VersionValidation(t *testing.T) {
 	}
 }
 
-// errorStore wraps mockStore and injects an error into QueryVEXStatementsCount.
+// errorVEXStore injects an error into QueryVEXStatements.
 type errorVEXStore struct {
-	mockStore
+	*mockStore
 }
 
-func (e *errorVEXStore) QueryVEXStatementsCount(_ context.Context, _ string) (int, error) {
-	return 0, errors.New("clickhouse connection pool exhausted")
+func (e *errorVEXStore) QueryVEXStatements(_ context.Context, _ string) ([]models.VEXStatement, error) {
+	return nil, errors.New("clickhouse connection pool exhausted")
 }
 
 // TestReview_Comment11_VEXCountErrorPropagation verifies that database errors
@@ -397,7 +397,7 @@ func (e *errorVEXStore) QueryVEXStatementsCount(_ context.Context, _ string) (in
 func TestReview_Comment11_VEXCountErrorPropagation(t *testing.T) {
 	_, baseStore, testSBOMID, _ := setupTestHandler()
 
-	errStore := &errorVEXStore{mockStore: *baseStore}
+	errStore := &errorVEXStore{mockStore: baseStore}
 	svc := NewService(errStore)
 	handler := NewHandler(svc, "https://api.example.com/api/v1/tea")
 
@@ -443,5 +443,13 @@ func TestReview_Comment12_CacheControlOnAuthenticatedDownloads(t *testing.T) {
 	ccKey := recAPIKey.Header().Get("Cache-Control")
 	if !strings.Contains(ccKey, "no-store") || !strings.Contains(ccKey, "private") {
 		t.Errorf("expected Cache-Control: private, no-store, got %q", ccKey)
+	}
+
+	reqToken := httptest.NewRequest(http.MethodGet, url, nil)
+	reqToken.Header.Set("X-Service-Token", "test-token")
+	recToken := httptest.NewRecorder()
+	handler.ServeHTTP(recToken, reqToken)
+	if recToken.Code != http.StatusOK || !strings.Contains(recToken.Header().Get("Cache-Control"), "no-store") {
+		t.Errorf("service token download: status %d, Cache-Control %q", recToken.Code, recToken.Header().Get("Cache-Control"))
 	}
 }

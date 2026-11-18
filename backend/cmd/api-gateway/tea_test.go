@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,10 +21,85 @@ import (
 )
 
 type fakeTEAStore struct {
-	products []tea.ProductSummary
-	releases []models.SBOM
-	vexCount int
-	rawBlobs map[string][]byte
+	products  []tea.ProductSummary
+	releases  []models.SBOM
+	vexCount  int
+	rawBlobs  map[string][]byte
+	mu        sync.Mutex
+	snapshots map[string][]tea.Snapshot
+}
+
+func TestVerifiedTEASourceHash(t *testing.T) {
+	raw := []byte("original SBOM")
+	sum := sha256.Sum256(raw)
+	hash := hex.EncodeToString(sum[:])
+	if got, err := verifiedSourceHash(hash, raw); err != nil || got != hash {
+		t.Fatalf("valid source: %q, %v", got, err)
+	}
+	for _, invalid := range []string{"", "0123456789abcdef0123456789abcdef", strings.Repeat("x", 64), strings.Repeat("0", 64)} {
+		if _, err := verifiedSourceHash(invalid, raw); err == nil {
+			t.Errorf("accepted unverified source hash %q", invalid)
+		}
+	}
+}
+
+func (f *fakeTEAStore) LatestSnapshot(_ context.Context, sbom *models.SBOM) (*tea.Snapshot, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	versions := f.snapshots[sbom.SBOMID.String()]
+	if len(versions) == 0 {
+		return nil, nil
+	}
+	snapshot := versions[len(versions)-1]
+	return &snapshot, nil
+}
+
+func (f *fakeTEAStore) GetSnapshot(_ context.Context, sbomID string, collectionVersion, vexVersion int) (*tea.Snapshot, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, snapshot := range f.snapshots[sbomID] {
+		if collectionVersion != 0 && snapshot.Collection.Version == collectionVersion ||
+			vexVersion != 0 && snapshot.LastVEXVersion == vexVersion && len(snapshot.VEXBytes) != 0 {
+			return &snapshot, nil
+		}
+	}
+	return nil, tea.ErrNotFound
+}
+
+func (f *fakeTEAStore) ListSnapshots(_ context.Context, sbomID string, maxVersion, limit, offset uint64) ([]tea.Snapshot, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var snapshots []tea.Snapshot
+	versions := f.snapshots[sbomID]
+	for i := len(versions) - 1; i >= 0; i-- {
+		snapshot := versions[i]
+		if uint64(snapshot.Collection.Version) > maxVersion {
+			continue
+		}
+		if offset > 0 {
+			offset--
+			continue
+		}
+		if uint64(len(snapshots)) == limit {
+			break
+		}
+		snapshots = append(snapshots, snapshot)
+	}
+	return snapshots, nil
+}
+
+func (f *fakeTEAStore) PublishSnapshot(_ context.Context, sbom *models.SBOM, _ *tea.Snapshot, next *tea.Snapshot) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.snapshots == nil {
+		f.snapshots = make(map[string][]tea.Snapshot)
+	}
+	id := sbom.SBOMID.String()
+	if len(f.snapshots[id])+1 != next.Collection.Version {
+		return false, nil
+	}
+	f.snapshots[id] = append(f.snapshots[id], *next)
+	return true, nil
 }
 
 func (f *fakeTEAStore) QueryProducts(_ context.Context, page, pageSize uint64) ([]tea.ProductSummary, uint64, error) {

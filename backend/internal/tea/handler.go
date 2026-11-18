@@ -220,19 +220,17 @@ func (h *Handler) handleProductReleaseRoute(w http.ResponseWriter, r *http.Reque
 
 	if parts[1] == "collections" {
 		// GET /productRelease/{uuid}/collections
-		col, err := h.svc.GetCollection(r.Context(), releaseUUID, 1, true)
+		page, pageSize := parsePagination(r)
+		collections, err := h.svc.ListCollections(r.Context(), releaseUUID, page, pageSize)
 		if err != nil {
 			if errors.Is(err, ErrNotFound) {
 				writeTEAError(w, http.StatusNotFound, ErrCodeObjectUnknown, "release not found")
 				return
 			}
-			writeTEAError(w, http.StatusInternalServerError, ErrCodeObjectUnknown, err.Error())
+			writeTEAServiceError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, PaginatedResponse[Collection]{
-			HasNext: false,
-			Results: []Collection{*col},
-		})
+		writeJSON(w, http.StatusOK, collections)
 		return
 	}
 
@@ -259,7 +257,7 @@ func (h *Handler) handleProductReleaseRoute(w http.ResponseWriter, r *http.Reque
 				writeTEAError(w, http.StatusNotFound, ErrCodeObjectUnknown, "collection not found")
 				return
 			}
-			writeTEAError(w, http.StatusInternalServerError, ErrCodeObjectUnknown, err.Error())
+			writeTEAServiceError(w, err)
 			return
 		}
 		writeJSON(w, http.StatusOK, col)
@@ -379,20 +377,40 @@ func (h *Handler) handleComponentReleaseRoute(w http.ResponseWriter, r *http.Req
 			writeTEAError(w, http.StatusNotFound, ErrCodeObjectUnknown, "component release not found")
 			return
 		}
-		col, err := h.svc.GetCollection(r.Context(), rel.SBOMID.String(), 1, true)
-		if err != nil {
-			writeTEAError(w, http.StatusInternalServerError, ErrCodeObjectUnknown, err.Error())
-			return
-		}
-		col.BelongsTo = BelongsToComponentRelease
-
 		if parts[1] == "collections" {
-			writeJSON(w, http.StatusOK, PaginatedResponse[Collection]{
-				HasNext: false,
-				Results: []Collection{*col},
-			})
+			page, pageSize := parsePagination(r)
+			collections, err := h.svc.ListCollections(r.Context(), rel.SBOMID.String(), page, pageSize)
+			if err != nil {
+				writeTEAServiceError(w, err)
+				return
+			}
+			for i := range collections.Results {
+				collections.Results[i].UUID = ComponentReleaseUUID(rel.SBOMID.String())
+				collections.Results[i].BelongsTo = BelongsToComponentRelease
+			}
+			writeJSON(w, http.StatusOK, collections)
 			return
 		}
+		version, latest := 1, true
+		if parts[1] == "collection" && len(parts) >= 3 && parts[2] != "latest" {
+			version, err = strconv.Atoi(parts[2])
+			if err != nil || version <= 0 {
+				writeTEAError(w, http.StatusBadRequest, ErrCodeInvalidRequest, "invalid collection version")
+				return
+			}
+			latest = false
+		}
+		col, err := h.svc.GetCollection(r.Context(), rel.SBOMID.String(), version, latest)
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				writeTEAError(w, http.StatusNotFound, ErrCodeObjectUnknown, "collection not found")
+				return
+			}
+			writeTEAServiceError(w, err)
+			return
+		}
+		col.UUID = ComponentReleaseUUID(rel.SBOMID.String())
+		col.BelongsTo = BelongsToComponentRelease
 		writeJSON(w, http.StatusOK, col)
 		return
 	}
@@ -441,7 +459,7 @@ func (h *Handler) handleArtifactRoute(w http.ResponseWriter, r *http.Request, ta
 			writeTEAError(w, http.StatusNotFound, ErrCodeObjectUnknown, "artifact not found")
 			return
 		}
-		writeTEAError(w, http.StatusInternalServerError, ErrCodeObjectUnknown, err.Error())
+		writeTEAServiceError(w, err)
 		return
 	}
 
@@ -455,20 +473,12 @@ func (h *Handler) downloadArtifact(w http.ResponseWriter, r *http.Request, artif
 			writeTEAError(w, http.StatusNotFound, ErrCodeObjectUnknown, "artifact not found")
 			return
 		}
-		writeTEAError(w, http.StatusInternalServerError, ErrCodeObjectUnknown, err.Error())
+		writeTEAServiceError(w, err)
 		return
 	}
 	defer data.Body.Close()
 
-	// Handle conditional validation via ETag / If-None-Match
 	etag := fmt.Sprintf(`"%s"`, data.SHA256Hash)
-	if match := r.Header.Get("If-None-Match"); match != "" {
-		if match == etag || match == data.SHA256Hash || match == "*" {
-			w.Header().Set("ETag", etag)
-			w.WriteHeader(http.StatusNotModified)
-			return
-		}
-	}
 
 	// Headers required by TEA spec
 	w.Header().Set("Content-Type", data.ContentType)
@@ -481,18 +491,22 @@ func (h *Handler) downloadArtifact(w http.ResponseWriter, r *http.Request, artif
 		w.Header().Set("Repr-Digest", fmt.Sprintf("sha-256=:%s:", base64.StdEncoding.EncodeToString(rawHash)))
 	}
 
-	hasAuth := r.Header.Get("Authorization") != "" || r.Header.Get("X-API-Key") != ""
+	hasAuth := r.Header.Get("Authorization") != "" || r.Header.Get("X-API-Key") != "" || r.Header.Get("X-Service-Token") != ""
 	if hasAuth {
 		// Authenticated downloads must never be cached publicly by shared reverse proxies (#534)
 		w.Header().Set("Cache-Control", "private, no-store, no-cache")
-		w.Header().Set("Vary", "Authorization, X-API-Key, Accept, Accept-Encoding")
+		w.Header().Set("Vary", "Authorization, X-API-Key, X-Service-Token, Accept, Accept-Encoding")
 	} else if isLatest {
 		w.Header().Set("Cache-Control", "no-cache")
 	} else {
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	}
 	if isLatest {
-		w.Header().Set("Content-Location", fmt.Sprintf("%s/artifact/%s/%d/download", h.effectiveBaseURL(r), artifactUUID, version))
+		w.Header().Set("Content-Location", fmt.Sprintf("%s/artifact/%s/%d/download", h.effectiveBaseURL(r), artifactUUID, data.Version))
+	}
+	if match := r.Header.Get("If-None-Match"); match != "" && (match == etag || match == data.SHA256Hash || match == "*") {
+		w.WriteHeader(http.StatusNotModified)
+		return
 	}
 
 	if data.SizeBytes > 0 {
@@ -542,4 +556,12 @@ func writeTEAError(w http.ResponseWriter, status int, code, msg string) {
 		Error:   code,
 		Message: msg,
 	})
+}
+
+func writeTEAServiceError(w http.ResponseWriter, err error) {
+	if errors.Is(err, ErrSnapshotUnavailable) {
+		writeTEAError(w, http.StatusServiceUnavailable, ErrCodeObjectUnknown, "TEA snapshot storage unavailable")
+		return
+	}
+	writeTEAError(w, http.StatusInternalServerError, ErrCodeObjectUnknown, err.Error())
 }

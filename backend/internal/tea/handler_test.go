@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -24,6 +25,67 @@ type mockStore struct {
 	vexCount    int
 	vexStmts    []models.VEXStatement
 	rawArtifact map[string][]byte
+	mu          sync.Mutex
+	snapshots   map[string][]Snapshot
+}
+
+func (m *mockStore) LatestSnapshot(_ context.Context, sbom *models.SBOM) (*Snapshot, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	versions := m.snapshots[sbom.SBOMID.String()]
+	if len(versions) == 0 {
+		return nil, nil
+	}
+	snapshot := versions[len(versions)-1]
+	return &snapshot, nil
+}
+
+func (m *mockStore) GetSnapshot(_ context.Context, sbomID string, collectionVersion, vexVersion int) (*Snapshot, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, snapshot := range m.snapshots[sbomID] {
+		if collectionVersion != 0 && snapshot.Collection.Version == collectionVersion ||
+			vexVersion != 0 && snapshot.LastVEXVersion == vexVersion && len(snapshot.VEXBytes) != 0 {
+			return &snapshot, nil
+		}
+	}
+	return nil, ErrNotFound
+}
+
+func (m *mockStore) ListSnapshots(_ context.Context, sbomID string, maxVersion, limit, offset uint64) ([]Snapshot, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var snapshots []Snapshot
+	versions := m.snapshots[sbomID]
+	for i := len(versions) - 1; i >= 0; i-- {
+		snapshot := versions[i]
+		if uint64(snapshot.Collection.Version) > maxVersion {
+			continue
+		}
+		if offset > 0 {
+			offset--
+			continue
+		}
+		if uint64(len(snapshots)) == limit {
+			break
+		}
+		snapshots = append(snapshots, snapshot)
+	}
+	return snapshots, nil
+}
+
+func (m *mockStore) PublishSnapshot(_ context.Context, sbom *models.SBOM, _ *Snapshot, next *Snapshot) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.snapshots == nil {
+		m.snapshots = make(map[string][]Snapshot)
+	}
+	id := sbom.SBOMID.String()
+	if len(m.snapshots[id])+1 != next.Collection.Version {
+		return false, nil
+	}
+	m.snapshots[id] = append(m.snapshots[id], *next)
+	return true, nil
 }
 
 func (m *mockStore) QueryProducts(_ context.Context, page, pageSize uint64) ([]ProductSummary, uint64, error) {

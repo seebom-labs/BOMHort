@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/google/uuid"
 
 	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
 	"github.com/seebom-labs/bomhort/backend/internal/docstore"
@@ -93,98 +93,69 @@ func (a *teaStoreAdapter) QueryVEXStatementsCount(ctx context.Context, sbomID st
 }
 
 func (a *teaStoreAdapter) QueryVEXStatements(ctx context.Context, sbomID string) ([]models.VEXStatement, error) {
-	items, err := a.ch.QuerySBOMVEXStatements(ctx, sbomID)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]models.VEXStatement, len(items))
-	for i, item := range items {
-		parsedVEXID, _ := uuid.Parse(item.VEXID)
-		out[i] = models.VEXStatement{
-			VEXID:           parsedVEXID,
-			DocumentID:      item.DocumentID,
-			SourceFile:      item.SourceFile,
-			SBOMID:          item.SBOMID,
-			ProductPURL:     item.ProductPURL,
-			VulnID:          item.VulnID,
-			Status:          item.Status,
-			Justification:   item.Justification,
-			ImpactStatement: item.ImpactStatement,
-			ActionStatement: item.ActionStatement,
-			Author:          item.Author,
-			Role:            item.Role,
-			Tooling:         item.Tooling,
-			StatusNotes:     item.StatusNotes,
-		}
-	}
-	return out, nil
+	return a.ch.QueryTEAVEXStatements(ctx, sbomID)
 }
 
 func (a *teaStoreAdapter) QueryStoredDocumentInfo(ctx context.Context, sbomID string) (*tea.StoredDocumentInfo, error) {
 	// 1. Try document store first (real 64-char sha256 captured at ingest #256)
 	if a.docStore != nil {
 		doc, err := a.ch.QueryStoredDocument(ctx, sbomID)
-		if err == nil && doc != nil && len(doc.SHA256Hash) == 64 {
-			rc, err := a.docStore.Get(ctx, doc.StorageRef)
-			if err == nil {
-				defer rc.Close()
-				buf := make([]byte, 4096)
-				n, _ := io.ReadFull(rc, buf)
-				mediaType, isInToto := tea.ProbeFormat(buf[:n], doc.SourceFile)
-				filename := filepath.Base(doc.SourceFile)
-				if filename == "" || filename == "." || filename == "/" {
-					filename = sbomID + ".json"
-				}
-				return &tea.StoredDocumentInfo{
-					SHA256Hash:  doc.SHA256Hash,
-					ContentType: mediaType,
-					IsInToto:    isInToto,
-					Filename:    filename,
-					SizeBytes:   doc.SizeBytes,
-				}, nil
+		if err != nil && !errors.Is(err, clickhouse.ErrDocumentNotStored) {
+			return nil, err
+		}
+		if doc != nil {
+			if _, err := hex.DecodeString(doc.SHA256Hash); err != nil || len(doc.SHA256Hash) != 64 {
+				return nil, fmt.Errorf("invalid stored document SHA-256 for %s", sbomID)
 			}
+			rc, err := a.docStore.Get(ctx, doc.StorageRef)
+			if err != nil {
+				return nil, fmt.Errorf("read stored document for TEA: %w", err)
+			}
+			defer rc.Close()
+			buf := make([]byte, 4096)
+			n, err := io.ReadFull(rc, buf)
+			if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+				return nil, fmt.Errorf("read stored document for TEA: %w", err)
+			}
+			mediaType, isInToto := tea.ProbeFormat(buf[:n], doc.SourceFile)
+			filename := filepath.Base(doc.SourceFile)
+			if filename == "" || filename == "." || filename == "/" {
+				filename = sbomID + ".json"
+			}
+			return &tea.StoredDocumentInfo{
+				SHA256Hash:  doc.SHA256Hash,
+				ContentType: mediaType,
+				IsInToto:    isInToto,
+				Filename:    filename,
+				SizeBytes:   doc.SizeBytes,
+			}, nil
 		}
 	}
 
 	// 2. Fall back to reading source file from S3 or local directory
 	sourceFile, err := a.ch.QuerySBOMSourceFile(ctx, sbomID)
-	if err != nil || sourceFile == "" {
-		return nil, tea.ErrNotFound
+	if err != nil {
+		return nil, err
+	}
+	if sourceFile == "" {
+		return nil, fmt.Errorf("no source file for TEA document %s", sbomID)
 	}
 
 	rel, rErr := a.ch.QueryTEAReleaseBySBOMID(ctx, sbomID)
-	if rErr != nil || rel == nil {
+	if rErr != nil {
+		return nil, rErr
+	}
+	if rel == nil {
 		return nil, tea.ErrNotFound
 	}
 
 	raw, err := a.readSourceBytes(ctx, sourceFile)
 	if err != nil {
-		// If reading source bytes fails, fall back to record metadata
-		sha256Hex := rel.SHA256Hash
-		filename := filepath.Base(sourceFile)
-		if filename == "" || filename == "." || filename == "/" {
-			filename = sbomID + ".json"
-		}
-		ct := tea.MediaTypeSPDXJSON
-		if strings.HasSuffix(strings.ToLower(filename), ".cdx.json") {
-			ct = tea.MediaTypeCycloneDXJSON
-		}
-		return &tea.StoredDocumentInfo{
-			SHA256Hash:  sha256Hex,
-			ContentType: ct,
-			IsInToto:    false,
-			Filename:    filename,
-			SizeBytes:   0,
-		}, nil
+		return nil, fmt.Errorf("read TEA source document: %w", err)
 	}
-
-	// Calculate actual 64-char SHA-256 of the source bytes
-	h := sha256.Sum256(raw)
-	computedHash := fmt.Sprintf("%x", h)
-
-	// If rel.SHA256Hash was already a 64-char hex SHA-256, verify integrity
-	if len(rel.SHA256Hash) == 64 && rel.SHA256Hash != computedHash {
-		return nil, fmt.Errorf("integrity error: hash mismatch for %s", sourceFile)
+	computedHash, err := verifiedSourceHash(rel.SHA256Hash, raw)
+	if err != nil {
+		return nil, fmt.Errorf("verify TEA source document: %w", err)
 	}
 
 	mediaType, isInToto := tea.ProbeFormat(raw, sourceFile)
@@ -206,39 +177,56 @@ func (a *teaStoreAdapter) GetArtifactData(ctx context.Context, sbomID string) (*
 	// 1. Try document store first (Tier-2 capture, exact producer bytes #256)
 	if a.docStore != nil {
 		doc, err := a.ch.QueryStoredDocument(ctx, sbomID)
-		if err == nil && doc != nil && len(doc.SHA256Hash) == 64 {
-			rc, err := a.docStore.Get(ctx, doc.StorageRef)
-			if err == nil {
-				buf := make([]byte, 4096)
-				n, _ := io.ReadFull(rc, buf)
-				mediaType, _ := tea.ProbeFormat(buf[:n], doc.SourceFile)
-				filename := filepath.Base(doc.SourceFile)
-				if filename == "" || filename == "." || filename == "/" {
-					filename = sbomID + ".json"
-				}
-				combined := io.MultiReader(bytes.NewReader(buf[:n]), rc)
-				return &tea.ArtifactData{
-					Filename:    filename,
-					ContentType: mediaType,
-					SHA256Hash:  doc.SHA256Hash,
-					SizeBytes:   doc.SizeBytes,
-					Body: struct {
-						io.Reader
-						io.Closer
-					}{combined, rc},
-				}, nil
+		if err != nil && !errors.Is(err, clickhouse.ErrDocumentNotStored) {
+			return nil, err
+		}
+		if doc != nil {
+			if _, err := hex.DecodeString(doc.SHA256Hash); err != nil || len(doc.SHA256Hash) != 64 {
+				return nil, fmt.Errorf("invalid stored document SHA-256 for %s", sbomID)
 			}
+			rc, err := a.docStore.Get(ctx, doc.StorageRef)
+			if err != nil {
+				return nil, fmt.Errorf("read stored document for TEA: %w", err)
+			}
+			buf := make([]byte, 4096)
+			n, err := io.ReadFull(rc, buf)
+			if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+				_ = rc.Close()
+				return nil, fmt.Errorf("read stored document for TEA: %w", err)
+			}
+			mediaType, _ := tea.ProbeFormat(buf[:n], doc.SourceFile)
+			filename := filepath.Base(doc.SourceFile)
+			if filename == "" || filename == "." || filename == "/" {
+				filename = sbomID + ".json"
+			}
+			combined := io.MultiReader(bytes.NewReader(buf[:n]), rc)
+			return &tea.ArtifactData{
+				Filename:    filename,
+				ContentType: mediaType,
+				SHA256Hash:  doc.SHA256Hash,
+				SizeBytes:   doc.SizeBytes,
+				Body: struct {
+					io.Reader
+					io.Closer
+				}{combined, rc},
+			}, nil
 		}
 	}
 
 	// 2. Fall back to source file from S3 or filesystem
 	sourceFile, err := a.ch.QuerySBOMSourceFile(ctx, sbomID)
-	if err != nil || sourceFile == "" {
-		return nil, tea.ErrNotFound
+	if err != nil {
+		return nil, err
+	}
+	if sourceFile == "" {
+		return nil, fmt.Errorf("no source file for TEA document %s", sbomID)
 	}
 
 	rel, rErr := a.ch.QueryTEAReleaseBySBOMID(ctx, sbomID)
-	if rErr != nil || rel == nil {
+	if rErr != nil {
+		return nil, rErr
+	}
+	if rel == nil {
 		return nil, tea.ErrNotFound
 	}
 
@@ -247,10 +235,9 @@ func (a *teaStoreAdapter) GetArtifactData(ctx context.Context, sbomID string) (*
 		return nil, err
 	}
 
-	h := sha256.Sum256(raw)
-	computedHash := fmt.Sprintf("%x", h)
-	if len(rel.SHA256Hash) == 64 && rel.SHA256Hash != computedHash {
-		return nil, fmt.Errorf("integrity error: hash mismatch for %s", sourceFile)
+	computedHash, err := verifiedSourceHash(rel.SHA256Hash, raw)
+	if err != nil {
+		return nil, fmt.Errorf("verify TEA source document: %w", err)
 	}
 
 	mediaType, _ := tea.ProbeFormat(raw, sourceFile)
@@ -266,6 +253,18 @@ func (a *teaStoreAdapter) GetArtifactData(ctx context.Context, sbomID string) (*
 		SizeBytes:   uint64(len(raw)),
 		Body:        io.NopCloser(bytes.NewReader(raw)),
 	}, nil
+}
+
+func verifiedSourceHash(expected string, raw []byte) (string, error) {
+	if decoded, err := hex.DecodeString(expected); err != nil || len(decoded) != sha256.Size {
+		return "", errors.New("source has no recorded SHA-256; capture the original document")
+	}
+	sum := sha256.Sum256(raw)
+	computed := hex.EncodeToString(sum[:])
+	if !strings.EqualFold(computed, expected) {
+		return "", errors.New("source document SHA-256 mismatch")
+	}
+	return computed, nil
 }
 
 func (a *teaStoreAdapter) readSourceBytes(ctx context.Context, sourceFile string) ([]byte, error) {

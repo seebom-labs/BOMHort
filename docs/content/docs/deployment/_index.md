@@ -285,7 +285,7 @@ From v0.7 the parsing worker keeps the **original bytes** of every ingested SBOM
 |-----------|-------------------|-------------|
 | `auto` (default) | `s3` if `s3.buckets` is set, else `fs` if `originalStore.fs.enabled`, else `none` | Almost always — follows your ingestion setup. |
 | `s3` | `originalStore.s3.bucket` (default: first non-`skipScan` bucket) under `originalStore.s3.prefix` (default `_bomhort/originals/`) | Any deployment with object storage. Anything under `_bomhort/` is ignored by the ingestion watcher, so originals are never re-ingested. |
-| `fs` | A dedicated PVC (`originalStore.fs.pvcName`) mounted read-write into the workers and read-only into the API gateway | Air-gapped / filesystem-only deployments. |
+| `fs` | A dedicated PVC (`originalStore.fs.pvcName`) mounted read-write into the workers and API gateway (the gateway persists TEA snapshots) | Air-gapped / filesystem-only deployments. |
 | `none` | Nowhere | Only deliberately — SBOMs ingested while disabled can **never** be recovered byte-for-byte. |
 
 **S3 (default with buckets configured) — nothing to do.** Optionally pin a dedicated archive bucket:

@@ -21,6 +21,32 @@ type TEAProductSummary struct {
 	LatestSBOMID    uuid.UUID
 }
 
+// QueryTEAVEXStatements returns the fields needed to reconstruct scoped OpenVEX.
+func (c *Client) QueryTEAVEXStatements(ctx context.Context, sbomID string) ([]models.VEXStatement, error) {
+	rows, err := c.Conn.Query(ctx, `
+		SELECT product_ref, product_purl, vuln_id, status, justification,
+		       impact_statement, action_statement, status_notes, vex_timestamp, ingested_at
+		FROM vex_statements FINAL WHERE sbom_id = ?`, sbomID)
+	if err != nil {
+		return nil, fmt.Errorf("querying TEA VEX statements: %w", err)
+	}
+	defer rows.Close()
+
+	var statements []models.VEXStatement
+	for rows.Next() {
+		var s models.VEXStatement
+		if err := rows.Scan(&s.ProductRef, &s.ProductPURL, &s.VulnID, &s.Status, &s.Justification,
+			&s.ImpactStatement, &s.ActionStatement, &s.StatusNotes, &s.VEXTimestamp, &s.IngestedAt); err != nil {
+			return nil, fmt.Errorf("scanning TEA VEX statement: %w", err)
+		}
+		statements = append(statements, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading TEA VEX statements: %w", err)
+	}
+	return statements, nil
+}
+
 // QueryTEAProducts returns distinct projects as TEA products with pagination (#534).
 func (c *Client) QueryTEAProducts(ctx context.Context, page, pageSize uint64) ([]TEAProductSummary, uint64, error) {
 	if pageSize == 0 {

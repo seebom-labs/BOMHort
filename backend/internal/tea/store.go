@@ -23,11 +23,21 @@ type ProductSummary struct {
 
 // ArtifactData represents stored or generated artifact payload.
 type ArtifactData struct {
+	Version     int
 	Filename    string
 	ContentType string
 	SHA256Hash  string
 	SizeBytes   uint64
 	Body        io.ReadCloser
+}
+
+// Snapshot contains a published collection and the exact VEX bytes it advertises.
+type Snapshot struct {
+	Collection         Collection `json:"collection"`
+	VEXBytes           []byte     `json:"vexBytes,omitempty"`
+	LastVEXVersion     int        `json:"lastVexVersion"`
+	LastVEXFingerprint string     `json:"lastVexFingerprint,omitempty"`
+	StorageRef         string     `json:"-"`
 }
 
 // StoredDocumentInfo holds validated document metadata for an SBOM.
@@ -39,7 +49,7 @@ type StoredDocumentInfo struct {
 	SizeBytes   uint64
 }
 
-// Store defines the read-only data operations required by the TEA service.
+// Store defines the data operations required by the TEA service.
 type Store interface {
 	QueryProducts(ctx context.Context, page, pageSize uint64) ([]ProductSummary, uint64, error)
 	QueryProductByName(ctx context.Context, projectName string) (*ProductSummary, error)
@@ -51,4 +61,8 @@ type Store interface {
 	QueryVEXStatements(ctx context.Context, sbomID string) ([]models.VEXStatement, error)
 	QueryStoredDocumentInfo(ctx context.Context, sbomID string) (*StoredDocumentInfo, error)
 	GetArtifactData(ctx context.Context, sbomID string) (*ArtifactData, error)
+	LatestSnapshot(ctx context.Context, sbom *models.SBOM) (*Snapshot, error)
+	GetSnapshot(ctx context.Context, sbomID string, collectionVersion, vexVersion int) (*Snapshot, error)
+	ListSnapshots(ctx context.Context, sbomID string, maxVersion, limit, offset uint64) ([]Snapshot, error)
+	PublishSnapshot(ctx context.Context, sbom *models.SBOM, previous, next *Snapshot) (bool, error)
 }
