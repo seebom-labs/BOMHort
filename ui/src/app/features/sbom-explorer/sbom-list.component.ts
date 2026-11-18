@@ -125,6 +125,9 @@ export type SbomViewMode = 'flat' | 'grouped';
             <span class="owner-badge origin-badge" *ngIf="sbom.origin" [title]="'Origin: ' + sbom.origin">
               {{ sbom.origin }}
             </span>
+            <span class="owner-badge image-badge" *ngIf="sbom.image_digest" [title]="'Image: ' + (sbom.image_ref || sbom.image_digest)">
+              image
+            </span>
             <span class="packages">{{ sbom.package_count | number }} packages</span>
             <span class="vulns" [class.has-vulns]="sbom.vuln_count > 0">
               {{ sbom.vuln_count | number }} vulns
@@ -243,6 +246,7 @@ export type SbomViewMode = 'flat' | 'grouped';
     }
     .owner-badge.cluster-badge { background: var(--status-info-bg); color: var(--accent-hover); border-color: transparent; }
     .owner-badge.origin-badge { background: rgba(147, 51, 234, 0.12); color: #a855f7; border-color: transparent; }
+    .owner-badge.image-badge { background: var(--surface); color: var(--accent); border-color: var(--accent); }
     .packages { color: var(--text-secondary); font-size: 0.8rem; width: 110px; }
     .vulns { font-size: 0.8rem; width: 80px; color: var(--text-secondary); }
     .has-vulns { color: var(--severity-critical); font-weight: 600; }

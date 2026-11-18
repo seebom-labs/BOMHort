@@ -167,7 +167,9 @@ func (c *Client) QueryClusterSBOMs(ctx context.Context, cluster string, page, pa
 			s.cluster,
 			s.namespace,
 			s.project,
-			s.origin
+			s.origin,
+			s.image_ref,
+			s.image_digest
 		FROM (SELECT * FROM sboms FINAL) AS s
 		LEFT JOIN (
 			SELECT sbom_id, sum(length(package_names)) AS pkg_count
@@ -197,7 +199,8 @@ func (c *Client) QueryClusterSBOMs(ctx context.Context, cluster string, page, pa
 		if err := rows.Scan(&item.SBOMID, &item.SourceFile, &item.SPDXVersion,
 			&item.DocumentName, &item.PackageCount, &item.VulnCount, &ingestedAt,
 			&item.SourceRepo, &item.SourceRef,
-			&item.Cluster, &item.Namespace, &item.Project, &item.Origin); err != nil {
+			&item.Cluster, &item.Namespace, &item.Project, &item.Origin,
+			&item.ImageRef, &item.ImageDigest); err != nil {
 			return nil, fmt.Errorf("failed to scan cluster sbom row: %w", err)
 		}
 		item.IngestedAt = ingestedAt.Format(time.RFC3339)
