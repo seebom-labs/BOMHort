@@ -16,7 +16,7 @@ used to drop it.
 
 An **extra-fields file** declares which of these fields BOMHort should
 recognise. The parsing worker stores the matches per SBOM
-(`sboms.extra_fields`, migration `034`). The SBOM detail API and page show
+(`sboms.extra_fields`, migration `035`). The SBOM detail API and page show
 them, and the SBOM list can be filtered by them. Adding a field takes a new
 config entry, not a code change.
 
@@ -28,6 +28,20 @@ config entry, not a code change.
 
 Docker Compose mounts `sboms/extra-fields.json`. The directory scanner never
 treats that file as an SBOM.
+
+The Helm chart mounts this config for the parsing worker at
+`/data/config/extra-fields/extra-fields.json`. Set `extraFields.config` in
+your Helm values to change it; workers must be restarted to load changes:
+
+```yaml
+extraFields:
+  config:
+    fields:
+      - name: issue_tracker
+        from:
+          - cyclonedx: metadata.component.externalReferences
+            type: issue-tracker
+```
 
 ```json
 {
@@ -125,7 +139,7 @@ See the [API reference]({{< relref "/docs/api-reference" >}}).
 
 The extra-fields file is read when the worker starts, and it applies to SBOMs
 ingested **after** that. Rows that are already stored keep the fields they were
-ingested with. A row ingested before migration `034`, or before a field was
+ingested with. A row ingested before migration `035`, or before a field was
 configured, reports no extra fields.
 
 A normal re-ingest does **not** change that. `make re-ingest`, or the next

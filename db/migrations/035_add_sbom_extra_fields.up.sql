@@ -1,4 +1,4 @@
--- 034_add_sbom_extra_fields.up.sql
+-- 035_add_sbom_extra_fields.up.sql
 -- Operator-declared SBOM fields beyond the built-in ones.
 --
 -- BOMHort extracts a fixed set of document fields (source_repo,
