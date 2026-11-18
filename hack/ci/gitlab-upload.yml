@@ -1,0 +1,62 @@
+# Reusable GitLab CI template for uploading SBOMs to BOMHort.
+# Mirrors the inputs and behavior of .github/actions/upload-sbom.
+#
+# Usage in .gitlab-ci.yml:
+#
+#   include:
+#     - remote: 'https://raw.githubusercontent.com/seebom-labs/BOMHort/main/hack/ci/gitlab-upload.yml'
+#
+#   upload-sbom:
+#     extends: .bomhort-upload-sbom
+#     variables:
+#       BOMHORT_URL: 'https://bomhort.example.com'
+#       BOMHORT_TOKEN: $BOMHORT_UPLOAD_TOKEN
+#       BOMHORT_SBOM: 'target/bom.spdx.json'
+#       BOMHORT_PROJECT: $CI_PROJECT_NAME
+
+.bomhort-upload-sbom:
+  image:
+    name: curlimages/curl:latest
+    entrypoint: [""]
+  variables:
+    BOMHORT_URL: ""
+    BOMHORT_TOKEN: ""
+    BOMHORT_AUTH_TYPE: "bearer"
+    BOMHORT_SBOM: ""
+    BOMHORT_PROJECT: "$CI_PROJECT_NAME"
+    BOMHORT_CLUSTER: ""
+    BOMHORT_NAMESPACE: ""
+    BOMHORT_PARENT: ""
+    BOMHORT_TAGS: ""
+    BOMHORT_SOURCE_REPO: "$CI_PROJECT_URL"
+    BOMHORT_SOURCE_REF: "$CI_COMMIT_SHA"
+  script:
+    - |
+      if [ -z "$BOMHORT_URL" ] || [ -z "$BOMHORT_TOKEN" ] || [ -z "$BOMHORT_SBOM" ]; then
+        echo "Error: BOMHORT_URL, BOMHORT_TOKEN, and BOMHORT_SBOM are required variables." >&2
+        exit 1
+      fi
+      if [ ! -f "$BOMHORT_SBOM" ]; then
+        echo "Error: SBOM file not found: $BOMHORT_SBOM" >&2
+        exit 1
+      fi
+      FILENAME=$(basename "$BOMHORT_SBOM")
+      BASE_URL="${BOMHORT_URL%/}"
+      AUTH_HEADER="Authorization: Bearer $BOMHORT_TOKEN"
+      if [ "$BOMHORT_AUTH_TYPE" = "api-key" ]; then
+        AUTH_HEADER="X-API-Key: $BOMHORT_TOKEN"
+      fi
+      QUERY=""
+      [ -n "$BOMHORT_PROJECT" ] && QUERY="${QUERY}${QUERY:+&}project=$(printf '%s' "$BOMHORT_PROJECT" | jq -sRr @uri 2>/dev/null || printf '%s' "$BOMHORT_PROJECT")"
+      [ -n "$BOMHORT_CLUSTER" ] && QUERY="${QUERY}${QUERY:+&}cluster=$(printf '%s' "$BOMHORT_CLUSTER" | jq -sRr @uri 2>/dev/null || printf '%s' "$BOMHORT_CLUSTER")"
+      [ -n "$BOMHORT_NAMESPACE" ] && QUERY="${QUERY}${QUERY:+&}namespace=$(printf '%s' "$BOMHORT_NAMESPACE" | jq -sRr @uri 2>/dev/null || printf '%s' "$BOMHORT_NAMESPACE")"
+      [ -n "$BOMHORT_PARENT" ] && QUERY="${QUERY}${QUERY:+&}parent=$(printf '%s' "$BOMHORT_PARENT" | jq -sRr @uri 2>/dev/null || printf '%s' "$BOMHORT_PARENT")"
+      [ -n "$BOMHORT_TAGS" ] && QUERY="${QUERY}${QUERY:+&}tags=$(printf '%s' "$BOMHORT_TAGS" | jq -sRr @uri 2>/dev/null || printf '%s' "$BOMHORT_TAGS")"
+      [ -n "$QUERY" ] && QUERY="?$QUERY"
+      curl -fsS -X POST \
+        -H "X-Filename: $FILENAME" \
+        -H "$AUTH_HEADER" \
+        ${BOMHORT_SOURCE_REPO:+-H "X-Source-Repo: $BOMHORT_SOURCE_REPO"} \
+        ${BOMHORT_SOURCE_REF:+-H "X-Source-Ref: $BOMHORT_SOURCE_REF"} \
+        --data-binary "@$BOMHORT_SBOM" \
+        "$BASE_URL/api/v1/sboms/upload$QUERY"

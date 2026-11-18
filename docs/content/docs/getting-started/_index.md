@@ -144,3 +144,44 @@ jobs:
 ```
 
 > **Pin the action version.** Use a full commit SHA or release tag instead of `@main`, which can change without notice. This example pins to the current action revision; update the pin deliberately when upgrading.
+
+### Pull Request Gating with SARIF Export
+
+To gate pull requests on vulnerability findings and upload a SARIF 2.1.0 report directly into GitHub Advanced Security / Code Scanning:
+
+```yaml
+      - name: Upload SBOM and gate on findings
+        id: bomhort
+        uses: seebom-labs/BOMHort/.github/actions/upload-sbom@1b3e829fa97f21f2697bc6fc8d6dba8da77316af
+        with:
+          url: 'https://bomhort.example.com'
+          token: ${{ secrets.BOMHORT_UPLOAD_TOKEN }}
+          sbom: 'build/app.spdx.json'
+          wait: 'true'
+          fail-on: 'high'
+          sarif: 'bomhort-findings.sarif'
+
+      - name: Upload SARIF report to GitHub
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'bomhort-findings.sarif'
+```
+
+### GitLab CI
+
+For GitLab CI, include the reusable template `hack/ci/gitlab-upload.yml` to mirror the same upload inputs and security posture:
+
+```yaml
+include:
+  - remote: 'https://raw.githubusercontent.com/seebom-labs/BOMHort/main/hack/ci/gitlab-upload.yml'
+
+upload-sbom:
+  extends: .bomhort-upload-sbom
+  variables:
+    BOMHORT_URL: 'https://bomhort.example.com'
+    BOMHORT_TOKEN: $BOMHORT_UPLOAD_TOKEN
+    BOMHORT_SBOM: 'build/app.spdx.json'
+    BOMHORT_CLUSTER: 'prod-eu'
+    BOMHORT_NAMESPACE: 'payments'
+```
