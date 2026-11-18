@@ -1097,7 +1097,11 @@ func main() {
 	mux.HandleFunc("PATCH /api/v1/sboms/{id}", patchSBOMSourceHandler(cfg, chClient, chClient))
 
 	// ── Transparency Exchange API (TEA Beta 2) (#534) ─────────────────
-	teaStore := newTEAStore(chClient, originals, s3c, cfg.SBOMDir)
+	teaSourceDir := ""
+	if cfg.HasLocalSBOMDir() {
+		teaSourceDir = cfg.SBOMDir
+	}
+	teaStore := newTEAStore(chClient, originals, s3c, teaSourceDir)
 	teaSvc := tea.NewService(teaStore, cfg.TEABaseURL)
 	teaHandler := tea.NewHandler(teaSvc, cfg.TEABaseURL)
 	mux.Handle("GET /.well-known/tea", teaHandler)

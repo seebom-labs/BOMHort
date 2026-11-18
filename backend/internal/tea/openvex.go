@@ -2,6 +2,7 @@ package tea
 
 import (
 	"bytes"
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -86,13 +87,20 @@ func buildOpenVEXArtifactData(sbomID string, stmts []models.VEXStatement, author
 	sorted := make([]models.VEXStatement, len(stmts))
 	copy(sorted, stmts)
 	sort.SliceStable(sorted, func(i, j int) bool {
-		if sorted[i].VulnID != sorted[j].VulnID {
-			return sorted[i].VulnID < sorted[j].VulnID
+		a, b := sorted[i], sorted[j]
+		if order := cmp.Or(
+			cmp.Compare(a.VulnID, b.VulnID),
+			cmp.Compare(a.ProductPURL, b.ProductPURL),
+			cmp.Compare(a.Status, b.Status),
+			cmp.Compare(a.ProductRef, b.ProductRef),
+			cmp.Compare(a.Justification, b.Justification),
+			cmp.Compare(a.ImpactStatement, b.ImpactStatement),
+			cmp.Compare(a.ActionStatement, b.ActionStatement),
+			cmp.Compare(a.StatusNotes, b.StatusNotes),
+		); order != 0 {
+			return order < 0
 		}
-		if sorted[i].ProductPURL != sorted[j].ProductPURL {
-			return sorted[i].ProductPURL < sorted[j].ProductPURL
-		}
-		return sorted[i].Status < sorted[j].Status
+		return !a.ProductWide && b.ProductWide
 	})
 
 	for _, s := range sorted {

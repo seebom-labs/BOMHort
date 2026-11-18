@@ -68,7 +68,7 @@ class OriginalStoreTemplatesTest(unittest.TestCase):
         w_mount = w_mount[:w_mount.index("{{") if "{{" in w_mount else 200]
         self.assertNotIn("readOnly: true", w_mount.split("- name:")[0])
         g_mount = gateway[gateway.index("name: originals"):][:200]
-        self.assertIn("readOnly: true", g_mount)
+        self.assertNotIn("readOnly: true", g_mount.split("- name:")[0])
 
     def test_pod_security_context_defaults_to_nobody_fsgroup(self):
         """Images run as nobody (65534); without fsGroup a fresh PVC is
@@ -93,4 +93,3 @@ class OriginalStoreTemplatesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

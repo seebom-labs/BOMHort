@@ -8,6 +8,8 @@
 
 Kubernetes-native SBOM platform as a monorepo. Go backend with four binaries (CronJob Ingestion-Watcher, scalable Parsing-Workers, stateless API-Gateway, background CVE-Refresher). ClickHouse (supported floor: 24.8 LTS, pinned by digest in the chart; CI also tests 24.12, #392) as the analytical database with MergeTree tables and array-based dependency storage. Angular frontend with virtual scrolling, OnPush change detection, full-text search, dark-mode toggle, and custom CSS theming. The SPDX files already exist as 1000+ files in the repository — no external scanner needed. Job coordination via a ClickHouse queue table (no NATS/Redis). **VEX support (OpenVEX)** enables vendor-side vulnerability assessment. **Cross-project search** for CVE impact, license violations, and dependency statistics. **License policy + exceptions** fully externalized as config files (no rebuild needed). **CVE Refresher** incrementally checks all known PURLs against OSV for newly disclosed CVEs — without re-scanning all SBOMs.
 
+The API gateway also exposes the read-only Transparency Exchange API (TEA). It atomically publishes immutable collection and VEX snapshots to the shared original document store and indexes their versions and hashes in ClickHouse; see [TEA storage requirements](content/docs/tea/_index.md#versioning-and-storage).
+
 ---
 
 ## 1. Monorepo Directory Structure

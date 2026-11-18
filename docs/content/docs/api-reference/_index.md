@@ -1948,6 +1948,12 @@ signal that ingestion labelling is not configured.
 
 ---
 
+## Transparency Exchange API
+
+The [TEA endpoints](/docs/tea/) expose immutable numbered collection and VEX
+artifact revisions. Collection and VEX publication returns `503` when the
+configured snapshot store is disabled or unavailable.
+
 ## Security Headers
 
 All responses include:

@@ -1,10 +1,15 @@
 package tea
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -20,7 +25,8 @@ var (
 	ErrNotFound = errors.New("tea resource not found")
 
 	// ErrInvalidRequest is returned on malformed input query or parameters.
-	ErrInvalidRequest = errors.New("invalid tea request")
+	ErrInvalidRequest      = errors.New("invalid tea request")
+	ErrSnapshotUnavailable = errors.New("TEA snapshot storage unavailable")
 )
 
 // Salt masks for reversible disjoint UUID derivation from sbom_id.
@@ -391,21 +397,141 @@ func (s *Service) GetProductRelease(ctx context.Context, releaseUUID string) (*P
 // GetCollection returns the artifact collection for a product release.
 // Per doc/tea-uuid-scope.md, a Collection uses the same UUID as its parent Product Release.
 func (s *Service) GetCollection(ctx context.Context, releaseUUID string, version int, isLatest bool) (*Collection, error) {
-	if !isLatest && version != 1 {
-		return nil, ErrNotFound
-	}
-
 	rel, err := s.store.QueryReleaseBySBOMID(ctx, releaseUUID)
-	if err != nil || rel == nil {
+	if errors.Is(err, ErrNotFound) || (err == nil && rel == nil) {
 		return nil, ErrNotFound
 	}
-
-	// Surface errors when loading VEX instead of returning an incomplete collection (#534)
-	vexCount, err := s.store.QueryVEXStatementsCount(ctx, releaseUUID)
 	if err != nil {
-		return nil, fmt.Errorf("querying vex statements count: %w", err)
+		return nil, err
 	}
+	if !isLatest {
+		snapshot, err := s.store.GetSnapshot(ctx, releaseUUID, version, 0)
+		if err == nil {
+			return &snapshot.Collection, nil
+		}
+		if !errors.Is(err, ErrNotFound) || version != 1 {
+			return nil, err
+		}
+	}
+	snapshot, err := s.publishLatest(ctx, rel)
+	if err != nil {
+		return nil, err
+	}
+	if !isLatest && version != snapshot.Collection.Version {
+		snapshot, err = s.store.GetSnapshot(ctx, releaseUUID, version, 0)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &snapshot.Collection, nil
+}
 
+func (s *Service) ListCollections(ctx context.Context, releaseUUID string, page, pageSize uint64) (*PaginatedResponse[Collection], error) {
+	latest, err := s.GetCollection(ctx, releaseUUID, 1, true)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]Collection, 0)
+	total := uint64(latest.Version)
+	if page == 0 || pageSize == 0 {
+		return nil, ErrInvalidRequest
+	}
+	if page-1 < (total+pageSize-1)/pageSize {
+		offset := (page - 1) * pageSize
+		snapshots, err := s.store.ListSnapshots(ctx, releaseUUID, total, pageSize, offset)
+		if err != nil {
+			return nil, err
+		}
+		expected := min(pageSize, total-offset)
+		if uint64(len(snapshots)) != expected {
+			return nil, errors.New("TEA snapshot index has missing or conflicting revisions")
+		}
+		for _, snapshot := range snapshots {
+			results = append(results, snapshot.Collection)
+		}
+		hasNext := offset+uint64(len(results)) < total
+		var next string
+		if hasNext {
+			next = fmt.Sprintf("%d", page+1)
+		}
+		return &PaginatedResponse[Collection]{HasNext: hasNext, NextPageToken: next, Results: results}, nil
+	}
+	return &PaginatedResponse[Collection]{Results: results}, nil
+}
+
+func (s *Service) publishLatest(ctx context.Context, rel *models.SBOM) (*Snapshot, error) {
+	sbomID := rel.SBOMID.String()
+	for {
+		previous, err := s.store.LatestSnapshot(ctx, rel)
+		if err != nil {
+			return nil, err
+		}
+		stmts, err := s.store.QueryVEXStatements(ctx, sbomID)
+		if err != nil {
+			return nil, fmt.Errorf("querying vex statements: %w", err)
+		}
+		col, err := s.buildCollection(ctx, rel, len(stmts))
+		if err != nil {
+			return nil, err
+		}
+		next := &Snapshot{Collection: *col}
+		if previous != nil {
+			next.Collection.Version = previous.Collection.Version
+			next.LastVEXVersion = previous.LastVEXVersion
+			next.LastVEXFingerprint = previous.LastVEXFingerprint
+		}
+		if len(stmts) != 0 {
+			data, err := buildOpenVEXArtifactData(sbomID, stmts, s.Authority(), 1)
+			if err != nil {
+				return nil, err
+			}
+			fingerprint := data.SHA256Hash
+			_ = data.Body.Close()
+			if next.LastVEXVersion == 0 || fingerprint != next.LastVEXFingerprint {
+				next.LastVEXVersion++
+			}
+			next.LastVEXFingerprint = fingerprint
+			data, err = buildOpenVEXArtifactData(sbomID, stmts, s.Authority(), next.LastVEXVersion)
+			if err != nil {
+				return nil, err
+			}
+			next.VEXBytes, err = io.ReadAll(data.Body)
+			_ = data.Body.Close()
+			if err != nil {
+				return nil, err
+			}
+			for i := range next.Collection.Artifacts {
+				if next.Collection.Artifacts[i].Type == ArtifactTypeVulnerabilities {
+					next.Collection.Artifacts[i].Version = next.LastVEXVersion
+				}
+			}
+		}
+		if previous != nil && reflect.DeepEqual(next.Collection, previous.Collection) &&
+			next.LastVEXVersion == previous.LastVEXVersion &&
+			next.LastVEXFingerprint == previous.LastVEXFingerprint &&
+			bytes.Equal(next.VEXBytes, previous.VEXBytes) {
+			return previous, nil
+		}
+		if previous == nil {
+			next.Collection.Version = 1
+		} else {
+			next.Collection.Version = previous.Collection.Version + 1
+		}
+		created, err := s.store.PublishSnapshot(ctx, rel, previous, next)
+		if err != nil {
+			return nil, err
+		}
+		if created {
+			return next, nil
+		}
+	}
+}
+
+func (s *Service) buildCollection(ctx context.Context, rel *models.SBOM, vexCount int) (*Collection, error) {
+	releaseUUID := rel.SBOMID.String()
+	if rel.IngestedAt.IsZero() && rel.CreationDate.IsZero() {
+		return nil, errors.New("TEA collection has no stable creation date")
+	}
 	// Retrieve real 64-char document sha256 and content-based format probe
 	sha256Hex := rel.SHA256Hash
 	mediaType := MediaTypeSPDXJSON
@@ -423,12 +549,14 @@ func (s *Service) GetCollection(ctx context.Context, releaseUUID string, version
 		if docInfo.Filename != "" {
 			docName = docInfo.Filename
 		}
-	} else {
+	} else if dErr == nil || errors.Is(dErr, ErrNotFound) {
 		// Fallback detection from file extension
 		lowerFile := strings.ToLower(rel.SourceFile)
 		if strings.HasSuffix(lowerFile, ".cdx.json") || strings.Contains(lowerFile, "cyclonedx") {
 			mediaType = MediaTypeCycloneDXJSON
 		}
+	} else {
+		return nil, fmt.Errorf("querying stored document info: %w", dErr)
 	}
 
 	// 1. Original SBOM artifact
@@ -487,7 +615,7 @@ func (s *Service) GetCollection(ctx context.Context, releaseUUID string, version
 			Version:     1,
 			Name:        "Consolidated OpenVEX",
 			Type:        ArtifactTypeVulnerabilities,
-			CreatedDate: formatTime(rel.IngestedAt, time.Now()),
+			CreatedDate: formatTime(rel.IngestedAt, rel.CreationDate),
 			Formats: []ArtifactFormat{
 				{
 					MediaType:   MediaTypeOpenVEXJSON,
@@ -501,7 +629,7 @@ func (s *Service) GetCollection(ctx context.Context, releaseUUID string, version
 	col := &Collection{
 		UUID:        rel.SBOMID.String(),
 		Version:     1,
-		CreatedDate: formatTime(rel.IngestedAt, time.Now()),
+		CreatedDate: formatTime(rel.IngestedAt, rel.CreationDate),
 		BelongsTo:   BelongsToProductRelease,
 		UpdateReason: CollectionUpdateReason{
 			Type: updateReasonType,
@@ -596,23 +724,48 @@ func (s *Service) GetArtifact(ctx context.Context, artifactUUID string, version 
 		return nil, ErrNotFound
 	}
 
-	if !isLatest && version != 1 {
+	if !isVEX && !isLatest && version != 1 {
+		return nil, ErrNotFound
+	}
+	sbomID := rel.SBOMID.String()
+	if isVEX {
+		var snapshot *Snapshot
+		if isLatest {
+			latest, err := s.publishLatest(ctx, rel)
+			if err != nil {
+				return nil, err
+			}
+			if latest.LastVEXVersion == 0 {
+				return nil, ErrNotFound
+			}
+			version = latest.LastVEXVersion
+		}
+		snapshot, err = s.store.GetSnapshot(ctx, sbomID, 0, version)
+		if errors.Is(err, ErrNotFound) && !isLatest && version == 1 {
+			if _, err = s.publishLatest(ctx, rel); err == nil {
+				snapshot, err = s.store.GetSnapshot(ctx, sbomID, 0, version)
+			}
+		}
+		if err != nil {
+			return nil, err
+		}
+		for _, artifact := range snapshot.Collection.Artifacts {
+			if artifact.Type == ArtifactTypeVulnerabilities && artifact.Version == version {
+				return &artifact, nil
+			}
+		}
 		return nil, ErrNotFound
 	}
 
-	col, err := s.GetCollection(ctx, rel.SBOMID.String(), 1, true)
+	col, err := s.GetCollection(ctx, sbomID, 1, true)
 	if err != nil {
 		return nil, err
 	}
-
 	for _, a := range col.Artifacts {
-		if isVEX && a.Type == ArtifactTypeVulnerabilities {
-			return &a, nil
-		}
 		if isAttestation && a.Type == ArtifactTypeAttestation {
 			return &a, nil
 		}
-		if !isVEX && !isAttestation && a.Type == ArtifactTypeBOM {
+		if !isAttestation && a.Type == ArtifactTypeBOM {
 			return &a, nil
 		}
 	}
@@ -627,19 +780,30 @@ func (s *Service) GetArtifactData(ctx context.Context, artifactUUID string, vers
 		return nil, ErrNotFound
 	}
 
-	if !isLatest && version != 1 {
-		return nil, ErrNotFound
-	}
-
 	if isVEX {
-		stmts, err := s.store.QueryVEXStatements(ctx, rel.SBOMID.String())
+		artifact, err := s.GetArtifact(ctx, artifactUUID, version, isLatest)
 		if err != nil {
 			return nil, err
 		}
-		return buildOpenVEXArtifactData(rel.SBOMID.String(), stmts, s.Authority(), version)
+		snapshot, err := s.store.GetSnapshot(ctx, rel.SBOMID.String(), 0, artifact.Version)
+		if err != nil {
+			return nil, err
+		}
+		sum := sha256.Sum256(snapshot.VEXBytes)
+		return &ArtifactData{
+			Version: artifact.Version, Filename: rel.SBOMID.String() + ".openvex.json",
+			ContentType: MediaTypeOpenVEXJSON, SHA256Hash: hex.EncodeToString(sum[:]),
+			SizeBytes: uint64(len(snapshot.VEXBytes)), Body: io.NopCloser(bytes.NewReader(snapshot.VEXBytes)),
+		}, nil
 	}
-
-	return s.store.GetArtifactData(ctx, rel.SBOMID.String())
+	if !isLatest && version != 1 {
+		return nil, ErrNotFound
+	}
+	data, err := s.store.GetArtifactData(ctx, rel.SBOMID.String())
+	if data != nil {
+		data.Version = 1
+	}
+	return data, err
 }
 
 // Helper methods
