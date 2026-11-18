@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/protobom/protobom/pkg/formats"
 	"github.com/protobom/protobom/pkg/reader"
 	"github.com/protobom/protobom/pkg/sbom"
 
@@ -33,8 +34,11 @@ type ParseResult struct {
 //   - SPDX 2.2 / 2.3 JSON
 //   - SPDX 3.0.1 JSON-LD
 //   - CycloneDX 1.4–1.7 JSON
-func Parse(data []byte, sourceFile, sha256Hash string) (*ParseResult, error) {
+//
+// An empty format lets protobom detect it from the document.
+func Parse(data []byte, sourceFile, sha256Hash string, format formats.Format) (*ParseResult, error) {
 	r := reader.New()
+	r.Options.Format = format
 
 	rs := bytes.NewReader(data)
 	doc, err := r.ParseStreamWithOptions(rs, r.Options)
@@ -152,7 +156,7 @@ func ParseReader(input io.Reader, sourceFile, sha256Hash string) (*ParseResult, 
 	if err != nil {
 		return nil, fmt.Errorf("protobom: failed to read input: %w", err)
 	}
-	return Parse(data, sourceFile, sha256Hash)
+	return Parse(data, sourceFile, sha256Hash, formats.EmptyFormat)
 }
 
 // convertDocument maps a protobom Document to BOMHort's internal models.

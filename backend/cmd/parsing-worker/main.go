@@ -449,7 +449,7 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 		return fmt.Errorf("failed to read SBOM source %s: %w", job.SourceFile, err)
 	}
 
-	result, err := sbom.Parse(bytes.NewReader(raw), job.SourceFile, job.SHA256Hash)
+	result, err := sbom.Parse(bytes.NewReader(raw), job.SourceFile, job.SHA256Hash, extraFields != nil && len(extraFields.Fields) > 0)
 	if err != nil {
 		return err
 	}
@@ -459,15 +459,19 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 		len(result.Packages.PackageNames),
 		len(result.Packages.RelSourceIndices))
 
-	// 1a. Operator-declared extra fields, read from the raw bytes so
-	// the result does not depend on the parser backend.
-	applyExtraFields(&result.SBOM, raw, extraFields)
-
-	// 1b. Skip if this SBOM was already fully ingested (idempotency guard).
-	if exists, _ := chClient.SBOMExists(ctx, result.SBOM.SBOMID); exists {
+	// 1a. Skip if this SBOM was already fully ingested (idempotency guard).
+	exists, err := chClient.SBOMExists(ctx, result.SBOM.SBOMID)
+	if err != nil {
+		return err
+	}
+	if exists {
 		log.Printf("  Skipping %s (already ingested, sbom_id=%s)", job.SourceFile, result.SBOM.SBOMID)
 		return nil
 	}
+
+	// 1b. Extract operator-declared fields from the metadata captured during
+	// format detection, independent of the selected parser backend.
+	applyExtraFields(&result.SBOM, result.CycloneDXMetadata, extraFields)
 
 	// 1c. Tier-2 fidelity capture (#256): persist the original bytes BEFORE any
 	// ClickHouse row is written. If the blob store is unavailable the job fails

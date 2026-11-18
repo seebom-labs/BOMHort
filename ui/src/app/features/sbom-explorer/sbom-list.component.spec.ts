@@ -208,6 +208,97 @@ describe('SbomListComponent', () => {
     req.flush({ data: [], total: 0, page: 1, page_size: 100 });
   });
 
+  it('shows a 400 error instead of loading forever or showing an empty result', async () => {
+    await TestBed.inject(Router).navigate([], { queryParams: { extra_field: 'Invalid' } });
+    const fixture = TestBed.createComponent(SbomListComponent);
+    fixture.detectChanges();
+
+    httpMock.expectOne((r) => r.url.endsWith('/sboms'))
+      .flush('invalid extra_field', { status: 400, statusText: 'Bad Request' });
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance;
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(component.loading).toBe(false);
+    expect(compiled.querySelector('[role="alert"]')?.textContent).toContain('Could not load SBOMs');
+    expect(compiled.querySelector('.empty-search')).toBeFalsy();
+
+    (compiled.querySelector('[role="alert"] button') as HTMLButtonElement).click();
+    const retry = httpMock.expectOne((r) => r.url.endsWith('/sboms'));
+    expect(retry.request.params.get('page')).toBe('1');
+    expect(retry.request.params.get('extra_field')).toBe('Invalid');
+    retry.flush({ data: [], total: 0, page: 1, page_size: 100 });
+    fixture.detectChanges();
+    expect(compiled.querySelector('[role="alert"]')).toBeFalsy();
+    expect(compiled.querySelector('.empty-search')).toBeTruthy();
+  });
+
+  it('shows and retries an initial grouped-list error', async () => {
+    await TestBed.inject(Router).navigate([], { queryParams: { view: 'grouped' } });
+    const fixture = TestBed.createComponent(SbomListComponent);
+    fixture.detectChanges();
+
+    httpMock.expectOne((r) => r.url.endsWith('/projects'))
+      .flush('unavailable', { status: 503, statusText: 'Unavailable' });
+    fixture.detectChanges();
+    expect(fixture.componentInstance.loading).toBe(false);
+    expect((fixture.nativeElement as HTMLElement).querySelector('[role="alert"]')?.textContent)
+      .toContain('Could not load projects');
+
+    fixture.componentInstance.retry();
+    const retry = httpMock.expectOne((r) => r.url.endsWith('/projects'));
+    expect(retry.request.params.get('page')).toBe('1');
+    retry.flush({ data: [singleGroup('p')], total: 1, page: 1, page_size: 100 });
+    expect(fixture.componentInstance.groups).toHaveLength(1);
+    expect(fixture.componentInstance.error).toBe('');
+  });
+
+  for (const mode of ['flat', 'grouped'] as const) {
+    it(`retries the failed next ${mode} page without skipping or losing rows`, async () => {
+      await TestBed.inject(Router).navigate([], {
+        queryParams: mode === 'grouped' ? { view: 'grouped', search: 'previous' } : { search: 'previous' },
+      });
+      const fixture = TestBed.createComponent(SbomListComponent);
+      fixture.detectChanges();
+      const path = mode === 'grouped' ? '/projects' : '/sboms';
+      const first = mode === 'grouped' ? singleGroup('first') : { sbom_id: 'first' };
+      const second = mode === 'grouped' ? singleGroup('second') : { sbom_id: 'second' };
+      httpMock.expectOne((r) => r.url.endsWith(path))
+        .flush({ data: [first], total: 2, page: 1, page_size: 100 });
+
+      const component = fixture.componentInstance;
+      component.loadMore();
+      const failed = httpMock.expectOne((r) => r.url.endsWith(path));
+      expect(failed.request.params.get('page')).toBe('2');
+      failed.flush('unavailable', { status: 503, statusText: 'Unavailable' });
+      expect(component.loadedCount).toBe(1);
+      expect(component.loading).toBe(false);
+      expect(component.error).toBeTruthy();
+
+      component.searchTerm = 'still typing';
+      component.retry();
+      const retry = httpMock.expectOne((r) => r.url.endsWith(path));
+      expect(retry.request.params.get('page')).toBe('2');
+      expect(retry.request.params.get('search')).toBe('previous');
+      retry.flush({ data: [second], total: 2, page: 2, page_size: 100 });
+      expect(component.loadedCount).toBe(2);
+      expect(component.error).toBe('');
+    });
+  }
+
+  it('cancels the previous request when the URL filter changes', async () => {
+    const fixture = TestBed.createComponent(SbomListComponent);
+    fixture.detectChanges();
+    const previous = httpMock.expectOne((r) => r.url.endsWith('/sboms'));
+
+    await TestBed.inject(Router).navigate([], { queryParams: { extra_field: 'owner_contact' } });
+    fixture.detectChanges();
+    expect(previous.cancelled).toBe(true);
+    const current = httpMock.expectOne((r) => r.url.endsWith('/sboms'));
+    expect(current.request.params.get('extra_field')).toBe('owner_contact');
+    current.flush({ data: [], total: 0, page: 1, page_size: 100 });
+  });
+
   it('drops the loaded rows when the filters change', () => {
     const fixture = TestBed.createComponent(SbomListComponent);
     const component = fixture.componentInstance;
@@ -238,4 +329,3 @@ function singleGroup(name: string): ProjectGroupItem {
     members: [{ project_name: name, sbom_count: 11, package_count: 420, vuln_count: 7, latest_ingested: '', latest_sbom_id: '', tags: [] }],
   };
 }
-

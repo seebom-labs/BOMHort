@@ -19,7 +19,7 @@ func TestParse_SPDX3(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := Parse(data, "demo-app.spdx3.json", "spdx3-hash")
+	result, err := Parse(data, "demo-app.spdx3.json", "spdx3-hash", "")
 	if err != nil {
 		t.Fatalf("Parse() failed: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestParse_SPDX3_Minimal(t *testing.T) {
 			 "creationInfo": "_:ci", "profileConformance": ["core"], "rootElement": []}
 		]
 	}`)
-	result, err := Parse(data, "empty.spdx3.json", "h")
+	result, err := Parse(data, "empty.spdx3.json", "h", "")
 	if err != nil {
 		t.Fatalf("Parse() failed: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestParse_SPDX3ContentIdentifierImage(t *testing.T) {
 	raw := strings.Replace(string(data),
 		`"software_packageUrl": "pkg:generic/demo-app@1.2.3"`,
 		`"software_packageUrl": "pkg:generic/demo-app@1.2.3", "contentIdentifier": "pkg:oci/acme/api@`+digest+`"`, 1)
-	result, err := Parse([]byte(raw), "demo-app.spdx3.json", "spdx3-content-identifier")
+	result, err := Parse([]byte(raw), "demo-app.spdx3.json", "spdx3-content-identifier", "")
 	if err != nil {
 		t.Fatal(err)
 	}

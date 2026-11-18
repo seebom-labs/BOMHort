@@ -62,12 +62,14 @@ treats that file as an SBOM.
 | `metadata.properties` | `property`: exact property name | the property's `value` |
 | `metadata.component.externalReferences` | `type`: reference type (case-insensitive) | the reference's `url` |
 
+Surrounding whitespace in `property` and `type` is ignored.
 Unknown keys are rejected, such as a misspelt `propery` or an `spdx` source.
 The file allows at most 32 fields and at most 8 sources per field.
 
-CycloneDX documents inside an in-toto envelope are read too. The fields are
-extracted from the raw document, so the result is the same with the built-in
-parsers and with `USE_PROTOBOM=true`.
+Fields are extracted from the original CycloneDX metadata, so the result is
+the same with the built-in parser and with `USE_PROTOBOM=true`. CycloneDX
+inside an in-toto envelope is not supported by the ingestion parser; in-toto
+support currently covers SPDX.
 
 **SPDX is not supported yet.** SPDX 2.3 has no name–value properties, only
 free-text annotations and package `externalRefs`, so mapping SPDX needs its
@@ -153,16 +155,24 @@ Take a ClickHouse backup first, and do not rebuild if your SBOMs arrive
 mainly through uploads you cannot repeat.
 {{% /alert %}}
 
-When the watcher's sources still hold every document:
+When the watcher's sources still hold every document, ensure no uploads or
+other ingestion or CVE-refresh jobs are writing while the tables are cleared.
+In Kubernetes, also prevent autoscaling or GitOps from restarting the worker
+until the rebuild is ready.
 
 1. Update the extra-fields file and restart the parsing worker so it loads it.
 2. Rebuild:
    - **Docker Compose:** `make re-scan`. It stops the worker, empties the
      tables above, rebuilds the services and re-runs the watcher.
-   - **Kind:** `make kind-reingest`.
+   - **Kind:** `make kind-reingest` does not stop the worker. First record
+     its replica count, scale `deployment/bomhort-parsing-worker` to zero,
+     and wait until all its pods, including terminating pods, are gone. Run
+     `make kind-reingest`, then restore the recorded replica count, even if
+     the command failed.
    - **Other Kubernetes deployments:** scale the parsing worker to zero,
-     `TRUNCATE` the six tables above, scale the worker back up, then start a
-     watcher run (`kubectl create job --from=cronjob/<release>-ingestion-watcher …`).
+     wait until all worker pods have terminated, `TRUNCATE` the six tables
+     above, scale the worker back up, then start a watcher run
+     (`kubectl create job --from=cronjob/<release>-ingestion-watcher …`).
      Stopping the worker first matters: one still busy with a job would write
      that SBOM after the truncate, and the rebuild would then skip it.
 3. Wait for the queue to drain (`make dev-status`, or the parsing worker's
@@ -173,6 +183,6 @@ without deleting anything, is planned as a follow-up.
 
 ## Relation to the owner map
 
-An operator-maintained owner map covers SBOMs whose content the operator
-doesn't control. Extra fields cover knowledge only the producer has. The two
-combine: where both name a contact, the operator's map wins.
+An operator-maintained owner map is proposed in
+[issue 551](https://github.com/seebom-labs/BOMHort/issues/551); it is not
+implemented yet. Extra fields only contain values written by the producer.

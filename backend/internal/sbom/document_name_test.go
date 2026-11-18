@@ -20,6 +20,10 @@ func namingFixture(t *testing.T) []byte {
 	return data
 }
 
+func parseWithProtobomAutodetect(data []byte, source, hash string) (*ParseResult, error) {
+	return parseWithProtobom(data, source, hash, "")
+}
+
 func TestDocumentNameFallbackAcrossBackends(t *testing.T) {
 	data := namingFixture(t)
 	const source = "s3://bucket/example-org/widget/v1.2.3/widget_spdx.json"
@@ -38,7 +42,7 @@ func TestDocumentNameFallbackAcrossBackends(t *testing.T) {
 			for _, backend := range []struct {
 				name  string
 				parse func([]byte, string, string) (*ParseResult, error)
-			}{{"builtin", parseSPDX}, {"protobom", parseWithProtobom}} {
+			}{{"builtin", parseSPDX}, {"protobom", parseWithProtobomAutodetect}} {
 				t.Run(backend.name, func(t *testing.T) {
 					result, err := backend.parse(input, source, "fixture-hash")
 					if err != nil {
@@ -102,7 +106,7 @@ func TestDocumentNameFallbackCycloneDX(t *testing.T) {
 		{`null`, "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79", "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79"},
 	} {
 		input := []byte(`{"bomFormat":"CycloneDX","specVersion":"1.5","serialNumber":"` + tt.serial + `","version":1,"metadata":{"component":` + tt.component + `},"components":[{"type":"library","name":"not-the-root","version":"5"}]}`)
-		for _, parse := range []func([]byte, string, string) (*ParseResult, error){parseCycloneDX, parseWithProtobom} {
+		for _, parse := range []func([]byte, string, string) (*ParseResult, error){parseCycloneDX, parseWithProtobomAutodetect} {
 			result, err := parse(input, "widget.cdx.json", "fixture-hash")
 			if err != nil {
 				t.Fatal(err)
@@ -115,7 +119,7 @@ func TestDocumentNameFallbackCycloneDX(t *testing.T) {
 }
 
 func TestNormalizedDocumentNameUsesExactLicenseProjectScope(t *testing.T) {
-	for _, parse := range []func([]byte, string, string) (*ParseResult, error){parseSPDX, parseWithProtobom} {
+	for _, parse := range []func([]byte, string, string) (*ParseResult, error){parseSPDX, parseWithProtobomAutodetect} {
 		result, err := parse(namingFixture(t), "widget.spdx.json", "fixture-hash")
 		if err != nil {
 			t.Fatal(err)

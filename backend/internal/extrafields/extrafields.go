@@ -29,8 +29,8 @@
 // SPDX is out of scope: SPDX 2.3 has no name–value properties, so its mapping
 // is a design of its own (follow-up).
 //
-// Extraction works on the raw document bytes, not on a parser's model, so it
-// yields the same result with the built-in parsers and with USE_PROTOBOM.
+// Extraction works on the raw CycloneDX metadata captured during format
+// detection, so it yields the same result with either parser backend.
 //
 // Values are untrusted producer input. Extract caps their length and count,
 // strips control characters and drops invalid UTF-8; rendering them escaped
@@ -138,6 +138,13 @@ func Parse(data []byte) (*Config, error) {
 	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
 		return nil, errors.New("invalid JSON: unexpected data after the top-level value")
 	}
+	for i := range cfg.Fields {
+		for j := range cfg.Fields[i].From {
+			source := &cfg.Fields[i].From[j]
+			source.Property = strings.TrimSpace(source.Property)
+			source.Type = strings.TrimSpace(source.Type)
+		}
+	}
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -233,19 +240,16 @@ type metadata struct {
 	CompRefs   []extRef
 }
 
-// Extract returns the configured fields found in raw, keyed by field name.
+// Extract returns the configured fields found in raw CycloneDX metadata, keyed
+// by field name.
 // Fields without a value are absent; no match at all returns nil. It never
-// fails: a document that is not CycloneDX, or whose metadata has an
-// unexpected shape, simply yields no fields — recognising an extra field must
-// never be the reason an otherwise valid SBOM is rejected.
+// fails: missing metadata or an unexpected shape simply yields no fields.
+// Recognising an extra field must never reject an otherwise valid SBOM.
 func Extract(raw []byte, cfg *Config) map[string][]string {
 	if cfg == nil || len(cfg.Fields) == 0 {
 		return nil
 	}
-	md, ok := readMetadata(raw)
-	if !ok {
-		return nil
-	}
+	md := readMetadata(raw)
 
 	var out map[string][]string
 	for _, f := range cfg.Fields {
@@ -291,38 +295,14 @@ func Extract(raw []byte, cfg *Config) map[string][]string {
 	return out
 }
 
-// readMetadata locates the CycloneDX metadata object, also inside an in-toto
-// envelope whose predicate is a CycloneDX BOM. ok is false when raw is not a
-// CycloneDX document.
-func readMetadata(raw []byte) (metadata, bool) {
-	var top struct {
-		BomFormat string          `json:"bomFormat"`
-		Metadata  json.RawMessage `json:"metadata"`
-		Predicate json.RawMessage `json:"predicate"`
-	}
-	if err := json.Unmarshal(raw, &top); err != nil {
-		return metadata{}, false
-	}
-	if top.BomFormat != "CycloneDX" && len(top.Predicate) > 0 {
-		var pred struct {
-			BomFormat string          `json:"bomFormat"`
-			Metadata  json.RawMessage `json:"metadata"`
-		}
-		if err := json.Unmarshal(top.Predicate, &pred); err == nil {
-			top.BomFormat, top.Metadata = pred.BomFormat, pred.Metadata
-		}
-	}
-	if top.BomFormat != "CycloneDX" {
-		return metadata{}, false
-	}
-
+func readMetadata(raw []byte) metadata {
 	var md metadata
 	var meta struct {
 		Properties json.RawMessage `json:"properties"`
 		Component  json.RawMessage `json:"component"`
 	}
-	if len(top.Metadata) == 0 || json.Unmarshal(top.Metadata, &meta) != nil {
-		return md, true
+	if len(raw) == 0 || json.Unmarshal(raw, &meta) != nil {
+		return md
 	}
 	md.Properties = decodeList[property](meta.Properties)
 	var comp struct {
@@ -333,7 +313,7 @@ func readMetadata(raw []byte) (metadata, bool) {
 		md.CompProps = decodeList[property](comp.Properties)
 		md.CompRefs = decodeList[extRef](comp.ExternalReferences)
 	}
-	return md, true
+	return md
 }
 
 // decodeList decodes a JSON array element by element, skipping elements that

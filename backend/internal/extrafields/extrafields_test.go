@@ -36,8 +36,6 @@ func mustParse(t *testing.T, s string) *Config {
 func TestExtract_PropertiesAndExternalReferences(t *testing.T) {
 	cfg := mustParse(t, ownerConfig)
 	doc := `{
-	  "bomFormat": "CycloneDX", "specVersion": "1.6",
-	  "metadata": {
 	    "properties": [
 	      {"name": "bomhort:owner:contact", "value": "platform@example.com"},
 	      {"name": "bomhort:owner:contact", "value": "team-a@example.com"}
@@ -53,7 +51,6 @@ func TestExtract_PropertiesAndExternalReferences(t *testing.T) {
 	        {"type": "issue-tracker", "url": "https://github.com/acme/app/issues"}
 	      ]
 	    }
-	  }
 	}`
 	got := Extract([]byte(doc), cfg)
 	want := map[string][]string{
@@ -68,40 +65,38 @@ func TestExtract_PropertiesAndExternalReferences(t *testing.T) {
 
 func TestExtract_NoMatchReturnsNil(t *testing.T) {
 	cfg := mustParse(t, ownerConfig)
-	doc := `{"bomFormat":"CycloneDX","metadata":{"component":{"name":"x"}}}`
+	doc := `{"component":{"name":"x"}}`
 	if got := Extract([]byte(doc), cfg); got != nil {
 		t.Fatalf("Extract = %#v, want nil", got)
 	}
 }
 
+func TestParse_TrimsSelectorsBeforeExtraction(t *testing.T) {
+	cfg := mustParse(t, `{"fields":[
+	  {"name":"component","from":[{"cyclonedx":"metadata.component.properties","property":" owner "}]},
+	  {"name":"metadata","from":[{"cyclonedx":"metadata.properties","property":"\towner\n"}]},
+	  {"name":"tracker","from":[{"cyclonedx":"metadata.component.externalReferences","type":" issue-tracker "}]}
+	]}`)
+	if cfg.Fields[0].From[0].Property != "owner" || cfg.Fields[1].From[0].Property != "owner" ||
+		cfg.Fields[2].From[0].Type != "issue-tracker" {
+		t.Fatalf("selectors not trimmed: %#v", cfg.Fields)
+	}
+	raw := `{"properties":[{"name":"owner","value":"metadata"}],"component":{
+	  "properties":[{"name":"owner","value":"component"}],
+	  "externalReferences":[{"type":"ISSUE-TRACKER","url":"https://example.test/issues"}]
+	}}`
+	want := map[string][]string{
+		"component": {"component"}, "metadata": {"metadata"}, "tracker": {"https://example.test/issues"},
+	}
+	if got := Extract([]byte(raw), cfg); !reflect.DeepEqual(got, want) {
+		t.Fatalf("Extract = %#v, want %#v", got, want)
+	}
+}
+
 func TestExtract_NilConfig(t *testing.T) {
-	doc := `{"bomFormat":"CycloneDX","metadata":{"properties":[{"name":"a","value":"b"}]}}`
+	doc := `{"properties":[{"name":"a","value":"b"}]}`
 	if got := Extract([]byte(doc), nil); got != nil {
 		t.Fatalf("Extract(nil cfg) = %#v, want nil", got)
-	}
-}
-
-func TestExtract_SPDXIsOutOfScope(t *testing.T) {
-	cfg := mustParse(t, ownerConfig)
-	doc := `{"spdxVersion":"SPDX-2.3","annotations":[{"comment":"bomhort:owner:contact=x"}]}`
-	if got := Extract([]byte(doc), cfg); got != nil {
-		t.Fatalf("Extract(SPDX) = %#v, want nil", got)
-	}
-}
-
-func TestExtract_InTotoEnvelope(t *testing.T) {
-	cfg := mustParse(t, ownerConfig)
-	doc := `{
-	  "_type": "https://in-toto.io/Statement/v0.1",
-	  "predicateType": "https://cyclonedx.org/bom",
-	  "predicate": {
-	    "bomFormat": "CycloneDX",
-	    "metadata": {"properties": [{"name": "bomhort:owner:contact", "value": "sec@example.com"}]}
-	  }
-	}`
-	got := Extract([]byte(doc), cfg)
-	if want := []string{"sec@example.com"}; !reflect.DeepEqual(got["owner_contact"], want) {
-		t.Fatalf("owner_contact = %v, want %v", got["owner_contact"], want)
 	}
 }
 
@@ -111,9 +106,9 @@ func TestExtract_LenientOnOddShapes(t *testing.T) {
 	cfg := mustParse(t, ownerConfig)
 	cases := map[string]string{
 		"not json":           `{{{`,
-		"metadata is string": `{"bomFormat":"CycloneDX","metadata":"x"}`,
-		"component is array": `{"bomFormat":"CycloneDX","metadata":{"component":[1,2]}}`,
-		"properties object":  `{"bomFormat":"CycloneDX","metadata":{"properties":{"a":1}}}`,
+		"metadata is string": `"x"`,
+		"component is array": `{"component":[1,2]}`,
+		"properties object":  `{"properties":{"a":1}}`,
 	}
 	for name, doc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -123,11 +118,11 @@ func TestExtract_LenientOnOddShapes(t *testing.T) {
 		})
 	}
 
-	doc := `{"bomFormat":"CycloneDX","metadata":{"properties":[
+	doc := `{"properties":[
 	  {"name":"bomhort:owner:contact","value":42},
 	  "garbage",
 	  {"name":"bomhort:owner:contact","value":"ok@example.com"}
-	]}}`
+	]}`
 	got := Extract([]byte(doc), cfg)
 	if want := []string{"ok@example.com"}; !reflect.DeepEqual(got["owner_contact"], want) {
 		t.Fatalf("owner_contact = %v, want %v", got["owner_contact"], want)
@@ -145,7 +140,7 @@ func TestExtract_UntrustedValueLimits(t *testing.T) {
 	for i := 0; i < MaxValuesPerField+5; i++ {
 		props = append(props, `{"name":"bomhort:owner:contact","value":"v`+strings.Repeat("x", i)+`"}`)
 	}
-	doc := `{"bomFormat":"CycloneDX","metadata":{"properties":[` + strings.Join(props, ",") + `]}}`
+	doc := `{"properties":[` + strings.Join(props, ",") + `]}`
 	got := Extract([]byte(doc), cfg)["owner_contact"]
 
 	if len(got) != MaxValuesPerField {
@@ -183,6 +178,8 @@ func TestParse_Rejects(t *testing.T) {
 		"unknown cdx source":  `{"fields":[{"name":"a","from":[{"cyclonedx":"components","property":"x"}]}]}`,
 		"missing property":    `{"fields":[{"name":"a","from":[{"cyclonedx":"metadata.properties"}]}]}`,
 		"missing type":        `{"fields":[{"name":"a","from":[{"cyclonedx":"metadata.component.externalReferences"}]}]}`,
+		"blank property":      `{"fields":[{"name":"a","from":[{"cyclonedx":"metadata.properties","property":" \t "}]}]}`,
+		"blank type":          `{"fields":[{"name":"a","from":[{"cyclonedx":"metadata.component.externalReferences","type":" \t "}]}]}`,
 		"type on properties":  `{"fields":[{"name":"a","from":[{"cyclonedx":"metadata.properties","property":"x","type":"vcs"}]}]}`,
 		"property on extrefs": `{"fields":[{"name":"a","from":[{"cyclonedx":"metadata.component.externalReferences","type":"vcs","property":"x"}]}]}`,
 		"no sources":          `{"fields":[{"name":"a","from":[]}]}`,

@@ -9,11 +9,11 @@ import (
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
 
-// applyExtraFields stores the operator-declared fields found in raw on
+// applyExtraFields stores the operator-declared fields in the metadata on
 // the SBOM row. It never fails the job: an SBOM without the fields, or with
 // fields in an unexpected shape, is ingested exactly as before.
-func applyExtraFields(sbom *models.SBOM, raw []byte, cfg *extrafields.Config) {
-	sbom.ExtraFields = extrafields.Extract(raw, cfg)
+func applyExtraFields(sbom *models.SBOM, metadata []byte, cfg *extrafields.Config) {
+	sbom.ExtraFields = extrafields.Extract(metadata, cfg)
 	if len(sbom.ExtraFields) == 0 {
 		return
 	}
