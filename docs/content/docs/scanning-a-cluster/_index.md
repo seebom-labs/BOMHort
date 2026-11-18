@@ -11,9 +11,10 @@ description: >
 A **cluster scanner** is a job that runs inside a Kubernetes cluster, finds the
 images that are actually running, produces an SBOM for each one and pushes it
 to [`POST /api/v1/sboms/upload`]({{< relref "/docs/api-reference#post-apiv1sbomsupload" >}}).
-BOMHort itself never talks to a Kubernetes API (see
+BOMHort does not discover pod images itself (see
 [Fleet Views]({{< relref "/docs/ownership" >}})): the scanner knows where each
-image runs, and states it on the upload.
+image runs, and states it on the upload. Workers may still use the Kubernetes
+API for Lease-based coordination.
 
 This page is the contract between the two. It has two parts:
 
@@ -23,11 +24,10 @@ This page is the contract between the two. It has two parts:
    required. A scanner that sends every *required* row correctly may describe
    itself as *BOMHort-conformant*.
 
-{{% alert title="The reference scanner lives in its own repository" color="info" %}}
-A small reference scanner (a CronJob plus a Helm chart) is planned as a separate
-repository under the `seebom-labs` organisation. It generates SBOMs with an
-existing generator (syft or trivy), so BOMHort never ships SBOM generation
-code. Until it exists, the script below is the reference.
+{{% alert title="Reference scanner planned" color="info" %}}
+A reference scanner (a CronJob with Helm support) is planned in the BOMHort
+monorepo. It will use an existing SBOM generator such as syft or trivy.
+The script below is a limited example, not a complete scanner.
 {{% /alert %}}
 
 ## What ends up where
@@ -57,6 +57,9 @@ Every run:
    container, init container included. Use the digest from
    `status.containerStatuses[].imageID`, not `spec.containers[].image`: a tag
    names whatever was pushed last, the digest names what is actually running.
+   Some runtimes report only a local image ID instead of a repository digest.
+   Resolve those through the runtime or report them as unsupported; do not
+   guess a digest from a mutable tag.
 3. **Deduplicate by digest.** Twenty replicas of one Deployment are one image;
    generate its SBOM once.
 4. **Get an SBOM for each digest.** Generate it with an existing tool, e.g.
@@ -65,12 +68,14 @@ Every run:
 5. **Upload once per ownership tuple** with the parameters in the
    [conformance list](#conformance-list). One image running in two namespaces
    is two uploads, each with its own ownership and the same `image`.
-6. **Don't re-upload what BOMHort already has.** Generators such as syft
-   stamp a fresh timestamp and document ID into each SBOM, so without a check
-   every run would store every image again. `HEAD /api/v1/images/{digest}`
-   answers `200` once BOMHort holds an SBOM for a digest, so the scanner can
-   skip generating it. With digest dedup enabled (below), BOMHort also
-   recognises a repeated `image` for the same ownership tuple by itself.
+6. **Don't re-upload a completed ownership.** Generators such as syft stamp a
+   fresh timestamp and document ID into each SBOM, so without a check every
+   run can store it again. `HEAD /api/v1/images/{digest}` only reports whether
+   the digest exists anywhere; it cannot tell whether this ownership was
+   recorded. Check every page of `GET /api/v1/images/{digest}` for the image
+   reference, origin and ownership tuple, or keep a confirmed upload cache.
+   For a new tuple, still upload a valid SBOM even if `HEAD` returned `200`.
+   Reuse a cached document or generate one if no document is available.
 
 ### RBAC
 
@@ -118,8 +123,12 @@ key needs distributing, is planned.
 
 ### A minimal scanner
 
-Readable rather than robust: no retries, no owner walk beyond one level, no
-upload cache. It needs `kubectl`, `jq`, `syft` and `curl`.
+Readable rather than robust: no retries, owner walk or upload cache. It needs
+`kubectl`, `jq`, `syft` and `curl`. Every scanned pod must carry the configured
+project label, and each running container or completed init container must have
+an `imageID` containing a `repository@sha256:…` reference. The example fails
+rather than silently skipping an unsupported image ID or using an unstable
+pod/ReplicaSet name.
 
 ```bash
 #!/usr/bin/env bash
@@ -127,27 +136,30 @@ set -euo pipefail
 
 : "${BOMHORT_URL:?}" "${BOMHORT_API_KEY:?}" "${CLUSTER_NAME:?}"
 PROJECT_LABEL="${PROJECT_LABEL:-app.kubernetes.io/name}"
-WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
+WORK="$(mktemp -d)"
+trap 'rm -f -- "$WORK"/*.spdx.json "$WORK/containers.tsv"; rmdir -- "$WORK"' EXIT
 
-# One line per running container:
-#   digest-ref <TAB> namespace <TAB> project <TAB> owner-kind <TAB> owner-name
+# One line per running container or completed init container:
+#   digest-ref <TAB> digest <TAB> namespace <TAB> project
 kubectl get pods --all-namespaces --field-selector=status.phase=Running -o json |
   jq -r --arg label "$PROJECT_LABEL" '
     .items[] as $pod
-    | ($pod.metadata.ownerReferences // [] | first) as $owner
-    | ($pod.status.containerStatuses // []) + ($pod.status.initContainerStatuses // [])
+    | (($pod.status.containerStatuses // []) | map(select(.state.running != null))) +
+      (($pod.status.initContainerStatuses // []) | map(select(.state.running != null or .state.terminated != null)))
     | .[]
-    | select((.imageID // "") | contains("@sha256:"))
-    | [ (.imageID | sub("^[a-z-]+://"; "")),
-        $pod.metadata.namespace,
-        ($pod.metadata.labels[$label] // $owner.name // $pod.metadata.name),
-        ($owner.kind // "Pod"),
-        ($owner.name // $pod.metadata.name) ]
+    | .imageID as $id
+    | ($pod.metadata.labels[$label] // "") as $project
+    | if ($project | type) != "string" or $project == "" then
+        error("missing project label on \($pod.metadata.namespace)/\($pod.metadata.name)")
+      else . end
+    | if (($id // "") | test("^(?:[a-zA-Z][a-zA-Z0-9+.-]*://)?[^@[:space:]]+@sha256:[a-f0-9]{64}$")) then .
+      else error("unsupported imageID on \($pod.metadata.namespace)/\($pod.metadata.name): \($id)") end
+    | ($id | sub("^[a-zA-Z][a-zA-Z0-9+.-]*://"; "")) as $ref
+    | [$ref, ($ref | split("@")[-1]), $pod.metadata.namespace, $project]
     | @tsv' |
-  sort -u > "$WORK/containers.tsv"
+  LC_ALL=C sort -t $'\t' -u -k2,2 -k3,3 -k4,4 > "$WORK/containers.tsv"
 
-while IFS=$'\t' read -r ref namespace project kind name; do
-  digest="${ref#*@}"
+while IFS=$'\t' read -r ref digest namespace project; do
   sbom="$WORK/${digest#sha256:}.spdx.json"
   # Generate once per digest.
   [[ -f "$sbom" ]] || syft "$ref" -q -o spdx-json > "$sbom"
@@ -155,10 +167,14 @@ while IFS=$'\t' read -r ref namespace project kind name; do
   # Only needed with DEDUP_BY_IMAGE_DIGEST=false: keeps the document unique
   # per ownership tuple (see Known limitations).
   doc="$WORK/upload.spdx.json"
-  jq --arg ns "https://bomhort.local/scan/$CLUSTER_NAME/$namespace/$project/$digest" \
-     '.documentNamespace = $ns' "$sbom" > "$doc"
+  jq --arg cluster "$CLUSTER_NAME" --arg namespace "$namespace" --arg project "$project" '
+    if (.documentNamespace | type) != "string" or .documentNamespace == "" then
+      error("generated SPDX has no documentNamespace")
+    else
+      .documentNamespace += "/" + ([$cluster, $namespace, $project] | map(@uri) | join("/"))
+    end' "$sbom" > "$doc"
 
-  curl -fsS -X POST "$BOMHORT_URL/api/v1/sboms/upload" \
+  status="$(curl -fsS -X POST "$BOMHORT_URL/api/v1/sboms/upload" \
     -H "X-API-Key: $BOMHORT_API_KEY" \
     -H "X-Filename: ${digest#sha256:}.spdx.json" \
     --url-query "cluster=$CLUSTER_NAME" \
@@ -166,17 +182,19 @@ while IFS=$'\t' read -r ref namespace project kind name; do
     --url-query "project=$project" \
     --url-query "origin=cluster-scan" \
     --url-query "image=$ref" \
-    --url-query "workload_kind=$kind" \
-    --url-query "workload_name=$name" \
     --data-binary @"$doc" \
-    -o /dev/null -w "%{http_code} $namespace/$project $ref\n"
+    -o /dev/null -w "%{http_code}")"
+  case "$status" in
+    200|202) printf '%s %s/%s %s\n' "$status" "$namespace" "$project" "$ref" ;;
+    *) printf 'unexpected HTTP status %s for %s/%s %s\n' "$status" "$namespace" "$project" "$ref" >&2; exit 1 ;;
+  esac
 done < "$WORK/containers.tsv"
 ```
 
 `--url-query` (curl 7.87 or later) URL-encodes each value into the query
 string while `--data-binary` still sends the document as the body.
-For a ReplicaSet, `$owner.name` is the ReplicaSet (`payment-api-7d9f8c6b5`);
-a production scanner walks one level further to the Deployment.
+Without the label, a production scanner must resolve the owning workload
+before choosing a project; a ReplicaSet name alone changes on every rollout.
 
 ## Conformance list
 
@@ -191,16 +209,15 @@ Status:
 - **recommended**: send it whenever the scanner knows the value.
 - **optional**: send it if the deployment uses it.
 - **planned**: not accepted by BOMHort yet. Unknown parameters are ignored
-  today, so a scanner can and should already send them: the value starts being
-  stored the day the feature lands, with no scanner change. Send well-formed
-  values only; once a parameter is supported, a malformed one is a `400`.
+  today; their future validation and meaning are not a current API contract.
+  Do not depend on them until they are supported.
 - **not-applicable**: part of the upload contract, but not for a scanner.
 
 <!-- scanner-conformance:start -->
 | Name | Sent as | Status | What a cluster scanner sends |
 |------|---------|--------|------------------------------|
 | `X-API-Key` | credential | required | An API key from `API_KEYS`, mounted from a Secret |
-| `X-Filename` | header | required | `<digest-hex>.spdx.json` or `<digest-hex>.cdx.json`: the extension tells BOMHort the format |
+| `X-Filename` | header | required | `<digest-hex>.spdx.json` or `<digest-hex>.cdx.json`: the filename identifies an SBOM; its contents determine the format |
 | `cluster` | query | required | The cluster name the scanner is configured with |
 | `namespace` | query | required | The pod's namespace |
 | `project` | query | required | The project label's value, else the owning workload's name |
@@ -233,6 +250,8 @@ A conformant scanner also:
   spec's tag;
 - treats `200 {"status":"duplicate"}` and `200` with `"reused": true` as
   success, not as an error to retry;
+- treats `202` as pending, not as proof that parsing succeeded, and confirms
+  the image and ownership before marking the upload complete;
 - treats `409` as "the same content is still being ingested" and retries that
   upload on a later run;
 - treats `400` as a bug in the scanner (a malformed value), not as a transient
@@ -245,11 +264,12 @@ A conformant scanner also:
 the same digest arrives twice depends on `DEDUP_BY_IMAGE_DIGEST` on the API
 gateway (Helm: `apiGateway.dedupByImageDigest`, default `false`):
 
-- **`true` (recommended for cluster scanning):** a second upload of a digest
-  that BOMHort already holds for the same cluster, namespace and project is a
-  `200` duplicate. For a different ownership tuple, BOMHort copies the parsed
-  SBOM to the new owner and answers `200` with `"reused": true`: no second
-  parse, and one image running in many namespaces shows up in each of them.
+- **`true` (recommended for cluster scanning):** once the digest is fully
+  ingested, another upload with the same image reference, origin, cluster,
+  namespace and project is a `200` duplicate. For a different reference,
+  origin or ownership, BOMHort copies the parsed SBOM and answers `200` with
+  `"reused": true`. While the first upload is still pending, a different
+  ownership may instead be enqueued for parsing separately.
 - **`false`:** deduplication is by the document's content hash. Uploading the
   *same bytes* for a second namespace is a `200` duplicate and the second
   ownership is not recorded. That is why the minimal scanner rewrites
@@ -262,9 +282,9 @@ What a cluster scanner wants but BOMHort does not accept yet. The conformance
 list already accounts for each one.
 
 - **No workload columns yet.** `workload_kind`, `workload_name` and
-  `workload_uid` are sent today and ignored today (see *planned* above). Until
-  they land, the workload is only visible through `project`, and `?workload=`
-  style lookups are not possible.
+  `workload_uid` are ignored if sent (see *planned* above). Until they land,
+  the workload is only visible through `project`, and `?workload=` style
+  lookups are not possible.
 - **No attestation fetch.** When an image already carries a signed SBOM
   attestation in its registry, the scanner has to download it itself (for
   example with `cosign download attestation`) and upload the predicate. Asking

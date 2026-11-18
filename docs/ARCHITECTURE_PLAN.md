@@ -303,11 +303,11 @@ Resolution order, highest priority first:
    silently overriding a named value from directory structure would be
    impossible to debug.
 
-**Cluster scanners.** BOMHort never calls a Kubernetes API; a scanner inside
-each cluster lists running pods, generates one SBOM per image digest with an
-existing generator (syft, trivy) and pushes it through level 1. The reference
-scanner is planned as a separate repository; BOMHort owns only the contract,
-the conformance list on the *Scanning a Cluster* docs page
+**Cluster scanners.** BOMHort does not discover pod images itself; a scanner
+inside each cluster lists running pods, generates one SBOM per image digest
+with an existing generator (syft, trivy) and pushes it through level 1. A
+reference scanner is planned in the monorepo. Its contract is the conformance
+list on the *Scanning a Cluster* docs page
 (`docs/content/docs/scanning-a-cluster/_index.md`). That list is asserted
 against `uploadHandler` by `TestDocsScannerConformanceInSync`
 (`cmd/api-gateway/scanner_conformance_test.go`), so a parameter added to the
