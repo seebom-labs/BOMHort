@@ -1692,6 +1692,11 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 	useS3Push := deps.useS3Push
 	localWritable := deps.localWritable
 
+	var sem chan struct{}
+	if cfg != nil && cfg.MaxConcurrentUploads > 0 {
+		sem = make(chan struct{}, cfg.MaxConcurrentUploads)
+	}
+
 	return func(w http.ResponseWriter, r *http.Request) {
 		// A write endpoint being open by default is a real risk, independent of
 		// authMiddleware's default-off posture (which is an accepted default for
@@ -1702,6 +1707,17 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			log.Printf("AUTH: rejected upload from %s — AUTH_ENABLED=false", clientIP(r))
 			writeError(w, http.StatusForbidden, "Upload requires AUTH_ENABLED=true")
 			return
+		}
+
+		if sem != nil {
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			default:
+				w.Header().Set("Retry-After", "5")
+				writeError(w, http.StatusTooManyRequests, "Too many concurrent uploads in progress, please retry shortly")
+				return
+			}
 		}
 
 		if !useS3Push && !localWritable {

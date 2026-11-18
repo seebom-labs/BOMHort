@@ -49,6 +49,12 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.WorkerID == "" {
 		t.Error("expected non-empty WorkerID (should be hostname)")
 	}
+	if cfg.MaxUploadSizeMB != 50 {
+		t.Errorf("expected default MaxUploadSizeMB 50, got %d", cfg.MaxUploadSizeMB)
+	}
+	if cfg.MaxConcurrentUploads != 10 {
+		t.Errorf("expected default MaxConcurrentUploads 10, got %d", cfg.MaxConcurrentUploads)
+	}
 	if len(cfg.S3Buckets) != 0 {
 		t.Errorf("expected no S3 buckets by default, got %d", len(cfg.S3Buckets))
 	}
