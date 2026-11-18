@@ -29,6 +29,8 @@ const maxPageSize = 500
 // server could legitimately offer. Every tool is annotated ReadOnlyHint so a
 // client can tell an agent it never needs to ask for confirmation.
 func registerTools(s *mcp.Server, c *apiclient.Client) {
+	s.AddReceivingMiddleware(scrubMiddleware)
+
 	// Closed world: every answer comes from this BOMHort instance, never from
 	// the internet. Read-only and idempotent are facts here, not hints we hope
 	// hold — there is no write path in this binary at all.
