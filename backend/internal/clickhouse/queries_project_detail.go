@@ -153,7 +153,7 @@ func (c *Client) QueryProjectDetail(ctx context.Context, name string) (*dto.Proj
 // first. Same row shape as every other SBOM listing so the UI reuses the
 // component.
 func (c *Client) QueryProjectSBOMs(ctx context.Context, name string, page, pageSize uint64) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
-	return c.QuerySBOMs(ctx, page, pageSize, "", name, 0)
+	return c.QuerySBOMs(ctx, page, pageSize, "", name, "", 0)
 }
 
 // QueryProjectSBOMIDByVersion returns the most recently ingested SBOM ID for a specific
@@ -379,10 +379,13 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows error: %w", err)
 	}
+	if err := c.enrichExploits(ctx, items); err != nil {
+		return nil, err
+	}
 	if items == nil {
 		items = []dto.VulnerabilityListItem{}
 	}
-	return items, rows.Err()
+	return items, nil
 }
 
 // QueryProjectPackages lists the distinct components across a project's

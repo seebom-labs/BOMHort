@@ -166,6 +166,21 @@ func (c *Client) QueryDashboardStats(ctx context.Context, f VulnFilter) (*dto.Da
 		return nil, fmt.Errorf("failed to query quality stats: %w", err)
 	}
 
+	// Origin breakdown (#455): how many SBOMs were produced under each provenance class.
+	stats.OriginBreakdown = make(map[string]uint64)
+	originRows, err := c.Conn.Query(ctx,
+		"SELECT origin, count() AS cnt FROM sboms FINAL WHERE origin != '' GROUP BY origin")
+	if err == nil {
+		defer originRows.Close()
+		for originRows.Next() {
+			var o string
+			var cnt uint64
+			if err := originRows.Scan(&o, &cnt); err == nil {
+				stats.OriginBreakdown[o] = cnt
+			}
+		}
+	}
+
 	return stats, nil
 }
 
@@ -176,19 +191,20 @@ func (c *Client) QueryDashboardStats(ctx context.Context, f VulnFilter) (*dto.Da
 // the SBOMs that resolve to that project through projectKeyExpr — the same
 // rule the project listing and project page use, so "the SBOMs of
 // kubernetes" is eleven documents and not every path containing the word.
+// origin (#455), when non-empty, restricts to SBOMs produced with that origin class.
 // minQuality (#537), when > 0, restricts the list to SBOMs with quality_score >= minQuality.
 // The filters compose.
-func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, project string, minQuality uint8) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
-	return c.querySBOMs(ctx, page, pageSize, search, project, minQuality, "", "")
+func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, project, origin string, minQuality uint8) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
+	return c.querySBOMs(ctx, page, pageSize, search, project, origin, minQuality, "", "")
 }
 
 // QuerySBOMsByImage adds digest and image-reference prefix filters to the
 // regular SBOM listing filters.
-func (c *Client) QuerySBOMsByImage(ctx context.Context, page, pageSize uint64, search, project string, minQuality uint8, digest, imagePrefix string) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
-	return c.querySBOMs(ctx, page, pageSize, search, project, minQuality, digest, imagePrefix)
+func (c *Client) QuerySBOMsByImage(ctx context.Context, page, pageSize uint64, search, project, origin string, minQuality uint8, digest, imagePrefix string) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
+	return c.querySBOMs(ctx, page, pageSize, search, project, origin, minQuality, digest, imagePrefix)
 }
 
-func (c *Client) querySBOMs(ctx context.Context, page, pageSize uint64, search, project string, minQuality uint8, digest, imagePrefix string) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
+func (c *Client) querySBOMs(ctx context.Context, page, pageSize uint64, search, project, origin string, minQuality uint8, digest, imagePrefix string) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
 	if page == 0 {
 		page = 1
 	}
@@ -202,6 +218,10 @@ func (c *Client) querySBOMs(ctx context.Context, page, pageSize uint64, search, 
 	if project != "" {
 		conds = append(conds, "("+projectKeyExpr+") = ?")
 		whereArgs = append(whereArgs, project)
+	}
+	if origin != "" {
+		conds = append(conds, "s.origin = ?")
+		whereArgs = append(whereArgs, origin)
 	}
 	if search != "" {
 		conds = append(conds, "(s.document_name ILIKE ? OR s.source_file ILIKE ?)")
@@ -247,6 +267,7 @@ func (c *Client) querySBOMs(ctx context.Context, page, pageSize uint64, search, 
 			s.cluster,
 			s.namespace,
 			s.project,
+			s.origin,
 			ifNull(p.pkg_count, 0) AS package_count,
 			ifNull(v.vuln_count, 0) AS vuln_count,
 			s.quality_score,
@@ -282,7 +303,7 @@ func (c *Client) querySBOMs(ctx context.Context, page, pageSize uint64, search, 
 			&item.DocumentName, &item.DocumentVersion, &ingestedAt,
 			&item.SourceRepo, &item.SourceRef,
 			&item.ImageRef, &item.ImageDigest,
-			&item.Cluster, &item.Namespace, &item.Project,
+			&item.Cluster, &item.Namespace, &item.Project, &item.Origin,
 			&item.PackageCount, &item.VulnCount,
 			&item.QualityScore, &item.QualityFlags,
 		); err != nil {
@@ -368,6 +389,12 @@ type VulnFilter struct {
 	ParentMembers []string
 	// Reachability filters findings by evidence ("reachable", "not_reachable", "unknown").
 	Reachability string
+	// ExploitAvailable (?exploit=available) keeps only findings with public
+	// exploit code. Honoured by the finding listings (vulnWhere), not by the
+	// dashboard counts.
+	ExploitAvailable bool
+	// Origin (#455) restricts to findings from SBOMs produced under that origin.
+	Origin string
 }
 
 // ownerPredicate restricts sbom_id to the SBOMs matching f, or returns ""
@@ -390,6 +417,10 @@ func ownerPredicate(f VulnFilter, asString bool) (string, []any) {
 			owner = append(owner, c.pred)
 			args = append(args, c.vals)
 		}
+	}
+	if f.Origin != "" {
+		owner = append(owner, "s.origin = ?")
+		args = append(args, f.Origin)
 	}
 	if len(owner) == 0 {
 		return "", nil
@@ -426,6 +457,9 @@ func vulnWhere(scope string, f VulnFilter) (string, []any) {
 	if owner != "" {
 		preds = append(preds, owner)
 		args = append(args, ownerArgs...)
+	}
+	if f.ExploitAvailable {
+		preds = append(preds, exploitPredicate)
 	}
 	if len(preds) == 0 {
 		return "", nil
@@ -505,11 +539,21 @@ func scanVulnerabilityListRow(rows driver.Rows) (dto.VulnerabilityListItem, erro
 
 // VulnerabilityCursor streams the rows of the instance-wide finding listing
 // one at a time (#266). Close it when done.
+//
+// Rows are read ahead in batches of streamBatch so exploit references can be
+// looked up once per batch instead of once per row; memory stays bounded by
+// the batch, not by the export.
 type VulnerabilityCursor struct {
+	c    *Client
+	ctx  context.Context
 	rows driver.Rows
+	buf  []dto.VulnerabilityListItem
+	pos  int
 	item dto.VulnerabilityListItem
 	err  error
 }
+
+const streamBatch = 500
 
 // StreamVulnerabilities runs the same query as QueryVulnerabilities without
 // pagination and returns a cursor over it. The query is sent before this
@@ -521,17 +565,44 @@ func (c *Client) StreamVulnerabilities(ctx context.Context, scope string, f Vuln
 	if err != nil {
 		return nil, fmt.Errorf("failed to query vulnerabilities: %w", err)
 	}
-	return &VulnerabilityCursor{rows: rows}, nil
+	return &VulnerabilityCursor{c: c, ctx: ctx, rows: rows}, nil
 }
 
 // Next advances to the next finding. It returns false at the end or on an
 // error; check Err afterwards.
 func (cur *VulnerabilityCursor) Next() bool {
-	if cur.err != nil || !cur.rows.Next() {
+	if cur.err != nil {
 		return false
 	}
-	cur.item, cur.err = scanVulnerabilityListRow(cur.rows)
-	return cur.err == nil
+	if cur.pos >= len(cur.buf) && !cur.fill() {
+		return false
+	}
+	cur.item = cur.buf[cur.pos]
+	cur.pos++
+	return true
+}
+
+// fill reads the next batch and attaches its exploit references.
+func (cur *VulnerabilityCursor) fill() bool {
+	cur.buf, cur.pos = cur.buf[:0], 0
+	for len(cur.buf) < streamBatch && cur.rows.Next() {
+		item, err := scanVulnerabilityListRow(cur.rows)
+		if err != nil {
+			cur.err = err
+			return false
+		}
+		cur.buf = append(cur.buf, item)
+	}
+	if len(cur.buf) == 0 {
+		return false
+	}
+	if cur.c != nil {
+		if err := cur.c.enrichExploits(cur.ctx, cur.buf); err != nil {
+			cur.err = err
+			return false
+		}
+	}
+	return true
 }
 
 // Item returns the current finding.
@@ -562,7 +633,7 @@ func (cur *VulnerabilityCursor) Close() error { return cur.rows.Close() }
 //
 // scope ("" or a depgraph scope label) restricts the listing to findings
 // whose package is pulled in that way (direct, transitive, …); f restricts
-// it to an ownership slice (#459).
+// it to an ownership/origin slice (#459, #455).
 func (c *Client) QueryVulnerabilities(ctx context.Context, page, pageSize uint64, scope string, f VulnFilter) (*dto.PaginatedResponse[dto.VulnerabilityListItem], error) {
 	if page == 0 {
 		page = 1
@@ -597,6 +668,9 @@ func (c *Client) QueryVulnerabilities(ctx context.Context, page, pageSize uint64
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to read vulnerability rows: %w", err)
 	}
+	if err := c.enrichExploits(ctx, items); err != nil {
+		return nil, err
+	}
 
 	if items == nil {
 		items = []dto.VulnerabilityListItem{}
@@ -608,6 +682,37 @@ func (c *Client) QueryVulnerabilities(ctx context.Context, page, pageSize uint64
 		Page:     page,
 		PageSize: pageSize,
 	}, nil
+}
+
+// QueryOrigins returns all distinct non-empty origins with their SBOM counts (#455).
+func (c *Client) QueryOrigins(ctx context.Context) ([]dto.OriginItem, error) {
+	rows, err := c.Conn.Query(ctx, `
+		SELECT origin, count() AS sbom_count
+		FROM sboms FINAL
+		WHERE origin != ''
+		GROUP BY origin
+		ORDER BY sbom_count DESC, origin ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query origins: %w", err)
+	}
+	defer rows.Close()
+
+	var items []dto.OriginItem
+	for rows.Next() {
+		var item dto.OriginItem
+		if err := rows.Scan(&item.Origin, &item.SBOMCount); err != nil {
+			return nil, fmt.Errorf("failed to scan origin item: %w", err)
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
+	if items == nil {
+		items = []dto.OriginItem{}
+	}
+	return items, nil
 }
 
 // QueryLicenseCompliance fetches license compliance records aggregated by

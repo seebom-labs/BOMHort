@@ -21,6 +21,7 @@ export interface DashboardStats {
   low_vulns: number;
   scope_breakdown?: ScopeBreakdown;
   license_breakdown: Record<string, number>;
+  origin_breakdown?: Record<string, number>;
   exempted_packages: number;
   total_vex_statements: number;
   last_cve_refresh?: string;
@@ -76,13 +77,17 @@ export interface SBOMListItem {
   /** Source attribution (#332); omitted by the API when unknown. */
   source_repo?: string;
   source_ref?: string;
-  /** Ownership dimensions (#177); omitted when unset. */
+  /** Ownership and provenance dimensions (#177, #455); omitted when unset. */
   cluster?: string;
   namespace?: string;
   project?: string;
+  origin?: string;
   /** Quality evaluation score (0-100) and deduction flags (#537). */
   quality_score?: number;
   quality_flags?: string[];
+  /** Image reference and digest (#457). */
+  image_ref?: string;
+  image_digest?: string;
 }
 
 /** Status an advisory feed reports for a finding. */
@@ -155,6 +160,51 @@ export interface VulnerabilityListItem {
   evidence_source?: string;
   evidence_ref?: string;
   evidence_at?: string;
+  /**
+   * Whether public exploit code exists for the finding's CVE (matched by
+   * vuln_id or any alias): a Nuclei template, a Metasploit module or an
+   * Exploit-DB entry. `exploit_sources` names the sources in that order and
+   * `exploits` links each one; both are absent when none is known.
+   * Always sent by current gateways; optional for older ones.
+   */
+  exploit_available?: boolean;
+  exploit_sources?: ExploitSource[];
+  exploits?: ExploitRef[];
+  /** Image digest when finding is in a container image (#457). */
+  image_digest?: string;
+}
+
+/** One image item in the container images list (#457). */
+export interface ImageListItem {
+  image_ref: string;
+  digest: string;
+  sbom_count: number;
+  worst_severity: string;
+  first_seen_at: string;
+  last_seen_at: string;
+}
+
+/** One SBOM associated with a container image (#457). */
+export interface ImageSBOM {
+  sbom_id: string;
+  source_file: string;
+  document_name: string;
+  document_version?: string;
+  image_ref?: string;
+  origin?: string;
+  cluster?: string;
+  namespace?: string;
+  project?: string;
+  ingested_at: string;
+}
+
+/** Image details and list of SBOMs for an image digest (#457). */
+export interface ImageDetail {
+  digest: string;
+  sboms: ImageSBOM[];
+  total: number;
+  page: number;
+  page_size: number;
 }
 
 /** ReachabilitySummary is returned by POST /api/v1/sboms/{id}/evidence (#535). */
@@ -166,6 +216,18 @@ export interface ReachabilitySummary {
   reachable: number;
   not_reachable: number;
   timestamp: string;
+}
+
+export type ExploitSource = 'nuclei' | 'metasploit' | 'exploitdb';
+
+/** One piece of public exploit code for a finding's CVE. */
+export interface ExploitRef {
+  source: ExploitSource;
+  /** Template path (nuclei), module name (metasploit) or EDB-ID (exploitdb). */
+  ref: string;
+  /** Public page of the exploit. */
+  url: string;
+  title?: string;
 }
 
 export type DependencyScope = 'root' | 'direct' | 'transitive' | 'unknown';
@@ -255,6 +317,11 @@ export interface SBOMDetail {
   /** Source attribution (#332); omitted by the API when unknown. */
   source_repo?: string;
   source_ref?: string;
+  /** Ownership and provenance dimensions (#177, #455); omitted when unset. */
+  cluster?: string;
+  namespace?: string;
+  project?: string;
+  origin?: string;
   critical_vulns: number;
   high_vulns: number;
   medium_vulns: number;
@@ -263,6 +330,9 @@ export interface SBOMDetail {
   /** Quality evaluation score (0-100) and deduction flags (#537). */
   quality_score?: number;
   quality_flags?: string[];
+  /** Image reference and digest (#457). */
+  image_ref?: string;
+  image_digest?: string;
 }
 
 export interface ToolQualitySummary {
@@ -564,6 +634,14 @@ export interface TagListItem {
   is_project: boolean;
 }
 
+/**
+ * Origin values in use with counts (#455).
+ */
+export interface OriginItem {
+  origin: string;
+  sbom_count: number;
+}
+
 export interface GlobalSearchPackage {
   package_name: string;
   purl: string;
@@ -644,6 +722,15 @@ export interface OwnerFilter {
   project?: string;
   parent?: string;
   tag?: string;
+  origin?: string;
+}
+
+/**
+ * Filters of the finding listings: the ownership slice plus
+ * `exploit: 'available'`, which keeps only findings with public exploit code.
+ */
+export interface VulnListFilter extends OwnerFilter {
+  exploit?: 'available' | '';
 }
 
 export interface ClusterListItem {

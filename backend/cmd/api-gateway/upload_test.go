@@ -350,6 +350,93 @@ func TestUploadHandler_NoStorageConfigured_Returns503(t *testing.T) {
 	}
 }
 
+// The gateway/worker handoff for push uploads (#590). A local upload is only
+// worth queuing when the worker can open it, and the worker resolves a job's
+// source file with cfg.LocalSBOMPath. Without a shared SBOM_DIR
+// (SBOM_DIR_DISABLED, the chart's sbomSource.enabled=false) the directory is
+// still writable inside the gateway's own container, which used to be enough
+// to answer 202 and queue a file no worker could read.
+func TestUploadStorage_GatewayWorkerHandoff(t *testing.T) {
+	body := []byte(`{"spdxVersion": "SPDX-2.3"}`)
+	upload := func(t *testing.T, cfg *config.Config, s3Store uploadObjectStore) (*httptest.ResponseRecorder, *fakeUploadStore) {
+		t.Helper()
+		store := &fakeUploadStore{}
+		pushBucket, useS3Push, localWritable := resolveUploadStorage(cfg, s3Store != nil)
+		h := uploadHandler(uploadDeps{
+			cfg:            cfg,
+			store:          store,
+			imageDedupLock: claimlock.LocalKeyed(),
+			s3Store:        s3Store,
+			pushBucket:     pushBucket,
+			useS3Push:      useS3Push,
+			localWritable:  localWritable,
+		})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/sboms/upload", bytes.NewReader(body))
+		req.Header.Set("X-Filename", "project.spdx.json")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec, store
+	}
+	scanBucket := config.S3BucketConfig{Name: "sboms"}
+
+	t.Run("shared directory: the worker can open what the gateway queued", func(t *testing.T) {
+		cfg := testUploadConfig(t)
+		rec, store := upload(t, cfg, nil)
+		if rec.Code != http.StatusAccepted {
+			t.Fatalf("expected 202, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if len(store.enqueuedJobs) != 1 {
+			t.Fatalf("expected 1 enqueued job, got %d", len(store.enqueuedJobs))
+		}
+		path, err := cfg.LocalSBOMPath(store.enqueuedJobs[0].SourceFile)
+		if err != nil {
+			t.Fatalf("worker cannot resolve the queued source file: %v", err)
+		}
+		if got, err := os.ReadFile(path); err != nil || !bytes.Equal(got, body) {
+			t.Errorf("worker read %q, %v; want the uploaded body", got, err)
+		}
+	})
+
+	t.Run("no shared directory: a writable SBOM_DIR is not upload storage", func(t *testing.T) {
+		cfg := testUploadConfig(t) // SBOMDir is a writable temp dir
+		cfg.SBOMDirDisabled = true
+		cfg.S3Buckets = []config.S3BucketConfig{scanBucket}
+
+		rec, store := upload(t, cfg, &fakeS3Store{})
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Fatalf("expected 503, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), "no shared SBOM_DIR") {
+			t.Errorf("503 should say the local fallback is unavailable, got: %s", rec.Body.String())
+		}
+		if len(store.enqueuedJobs) != 0 {
+			t.Errorf("queued %d job(s) for a file no worker can read", len(store.enqueuedJobs))
+		}
+		if _, err := os.Stat(filepath.Join(cfg.SBOMDir, "pushed")); !os.IsNotExist(err) {
+			t.Errorf("the gateway must not touch SBOM_DIR/pushed without a shared directory (stat: %v)", err)
+		}
+		if _, err := cfg.LocalSBOMPath(filepath.Join("pushed", "project.spdx.json")); err == nil {
+			t.Error("the worker must refuse a local source file without a shared directory")
+		}
+	})
+
+	t.Run("no shared directory: uploads still reach a skipScan bucket", func(t *testing.T) {
+		cfg := testUploadConfig(t)
+		cfg.SBOMDirDisabled = true
+		cfg.S3Buckets = []config.S3BucketConfig{scanBucket, {Name: "pushed", SkipScan: true}}
+		s3Store := &fakeS3Store{}
+
+		rec, store := upload(t, cfg, s3Store)
+		if rec.Code != http.StatusAccepted {
+			t.Fatalf("expected 202, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if len(store.enqueuedJobs) != 1 || !strings.HasPrefix(store.enqueuedJobs[0].SourceFile, "s3://pushed/") {
+			t.Errorf("expected one job with an s3://pushed/ source, got %+v", store.enqueuedJobs)
+		}
+		assertNoFilesInPushedDir(t, cfg)
+	})
+}
+
 func TestUploadHandler_MissingFilenameHeader(t *testing.T) {
 	cfg := testUploadConfig(t)
 	h := localUploadHandler(cfg, &fakeUploadStore{})

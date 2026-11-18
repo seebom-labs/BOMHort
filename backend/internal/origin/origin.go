@@ -1,18 +1,66 @@
+// Package origin defines the origin dimension vocabulary (#455) recording how
+// an SBOM was produced.
+//
+// An SBOM inventory fed by several kinds of producers needs to answer "where
+// did this document come from?" — scanned from a running container, produced
+// by a CI build, pulled from a registry referrer, delivered by a vendor, or
+// uploaded by hand.
+//
+// Unlike tags, origin is a fixed, validated vocabulary, not free-form text.
+// Any unknown value is rejected with 400 Bad Request at ingest time.
 package origin
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
-var values = map[string]struct{}{
-	"cluster-scan": {},
-	"ci":           {},
-	"registry":     {},
-	"vendor":       {},
-	"manual":       {},
+// Allowed origin constants.
+const (
+	ClusterScan = "cluster-scan" // Generated from a running workload/image by a runtime scanner
+	CI          = "ci"           // Produced by a build / CI pipeline
+	Registry    = "registry"     // Pulled from an OCI referrer or attached artifact
+	Vendor      = "vendor"       // Delivered by a third-party vendor
+	Manual      = "manual"       // Ad-hoc or manual upload
+)
+
+// ValidOrigins lists all supported non-empty origin values.
+var ValidOrigins = []string{
+	ClusterScan,
+	CI,
+	Registry,
+	Vendor,
+	Manual,
 }
 
-func Normalize(value string) string { return strings.ToLower(strings.TrimSpace(value)) }
+var values = map[string]struct{}{
+	ClusterScan: {},
+	CI:          {},
+	Registry:    {},
+	Vendor:      {},
+	Manual:      {},
+}
 
+// Normalize lowercases and trims whitespace from the origin.
+func Normalize(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+// IsValid reports whether value is one of the allowed origin constants.
 func IsValid(value string) bool {
 	_, ok := values[value]
 	return ok
+}
+
+// Validate checks whether o is an allowed origin. It returns nil for empty or
+// valid origin strings, and an error describing the allowed set for unknown values.
+func Validate(o string) error {
+	o = Normalize(o)
+	if o == "" {
+		return nil
+	}
+	if !IsValid(o) {
+		return fmt.Errorf("invalid origin %q: must be one of %s or empty", o, strings.Join(ValidOrigins, ", "))
+	}
+	return nil
 }

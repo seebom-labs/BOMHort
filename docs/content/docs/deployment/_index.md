@@ -115,8 +115,24 @@ s3:
   secretKey: "minioadmin"
 ```
 
+**S3 only: run without the `sbom-data` volume.** With `gitSync.enabled: false` the chart still creates the `sbomSource` PVC and mounts it into the ingestion watcher, the parsing workers and the API gateway, so that local files can be ingested next to S3. That PVC is `ReadWriteOnce`, so the chart also adds a required pod affinity that places all of those pods on one node. If every SBOM comes from S3, switch the volume off:
+
+```yaml
+gitSync:
+  enabled: false
+
+sbomSource:
+  enabled: false   # no PVC, no sbom-data mount, no pod affinity
+```
+
+- `s3.buckets` must hold at least one bucket. The render fails otherwise, because nothing could be ingested: on an empty value, on an empty list (`'[]'` included), and on anything that is not a JSON array of bucket objects with a `name`.
+- Push uploads need a `"skipScan"` bucket ([Option E](#option-e-push-model-uploads-cicd)), and `sbomSource.writable: true` is refused. The chart sets `SBOM_DIR_DISABLED=true` for the pods, which switches the `SBOM_DIR/pushed/` fallback off: without a `skipScan` bucket the upload endpoint answers `503`. It does not depend on whether `sbomSource.mountPath` happens to be writable inside the gateway container, where an upload would be stored out of reach of every parsing worker. The ingestion watcher skips its local scan for the same reason.
+- The pod affinity stays while `originalStore.fs.enabled` is `true`, because the workers and the gateway share that PVC the same way. With originals in S3, which is the default once `s3.buckets` is set, it goes too.
+- A `license-exceptions.json` kept on the volume is no longer read. Provide exceptions through `licenseExceptions` instead.
+- **On an existing release, Helm deletes the PVC** when you switch this off, and with the usual `Delete` reclaim policy its data. Check that it holds nothing you ingest from (files copied in, or push uploads stored with `sbomSource.writable`) before upgrading. SBOMs already ingested from the volume stay in the database, but their source files are gone with it.
+
 **Advantages:**
-- No PVC, no volume scheduling, no pod affinity constraints
+- No PVC, no volume scheduling, no pod affinity constraints (with `sbomSource.enabled: false`, see above)
 - Streams object listings — handles 100k+ SBOMs without memory issues
 - Works with any S3-compatible storage (AWS, GCS, MinIO, Ceph, DigitalOcean Spaces)
 
@@ -246,7 +262,7 @@ sbomSource:
   accessMode: ReadWriteMany
 ```
 
-If neither a `skipScan` bucket nor a writable `SBOM_DIR` is configured, the API Gateway logs a startup warning and `POST /api/v1/sboms/upload` returns `503 Service Unavailable` for every request rather than failing with a confusing storage error.
+If neither a `skipScan` bucket nor a writable `SBOM_DIR` is configured, the API Gateway logs a startup warning and `POST /api/v1/sboms/upload` returns `503 Service Unavailable` for every request rather than failing with a confusing storage error. With `sbomSource.enabled: false` there is no shared `SBOM_DIR` at all (`SBOM_DIR_DISABLED=true`), so only a `skipScan` bucket enables uploads.
 
 **Sizing the write budget.** The gateway's rate limit is request-based (100 requests / 10s per IP), not byte-based, so the effective per-IP write budget is `100 × MAX_UPLOAD_SIZE_MB` per 10 seconds — 5 GB at the 50 MB default. Set `apiGateway.maxUploadSizeMB` to the smallest value that fits your largest SBOM, especially if the endpoint is reachable from untrusted networks:
 
@@ -895,6 +911,33 @@ parsingWorker:
 See [Architecture: License Resolution](/docs/architecture/#license-resolution) for the exact resolution strategy.
 
 ---
+
+## 8a. Public Exploit Code {#public-exploit-code}
+
+`cve-refresher` also refreshes, on every run, an index of which CVEs have public exploit code: Nuclei templates, Metasploit modules and Exploit-DB entries. Findings show it next to the CVE, link each exploit, and the listings and the CSV report take `?exploit=available` ([API reference](/docs/api-reference/#exploit-code)).
+
+| Source | Index file | License | Size |
+|--------|------------|---------|------|
+| `nuclei` | `projectdiscovery/nuclei-templates` `cves.json` | MIT | ~2 MB |
+| `metasploit` | `rapid7/metasploit-framework` `db/modules_metadata_base.json` (`exploit/` modules and `auxiliary/` modules outside `auxiliary/scanner/`, which only detect a flaw) | BSD-3-Clause | ~12 MB |
+| `exploitdb` | `exploit-database/exploitdb` `files_exploits.csv` | GPL-2.0 (index read as data; no exploit code is fetched or linked into BOMHort) | ~10 MB |
+
+The refresher downloads the three index files, not the repositories: about 25 MB per run, a few seconds of work, and no `git` in the image. Each source is independent. A source that fails to download or parse, or parses to nothing (a format change upstream), keeps its previous snapshot and is logged as a `WARNING`; it never empties the signal. The CVE refresh runs either way.
+
+```yaml
+cveRefresher:
+  exploitRefs:
+    enabled: true                               # false: skip the sync
+    sources: [nuclei, metasploit, exploitdb]    # any subset
+    urls:                                       # empty = upstream file
+      nuclei: ""
+      metasploit: ""
+      exploitdb: ""
+```
+
+For air-gapped installs, mirror the three files and point `urls` at an internal `https://` location, or at `file:///path` on a volume you mount into the CronJob. Outside Helm the variables are `SKIP_EXPLOIT_REFS`, `EXPLOIT_SOURCES` (comma-separated) and `EXPLOIT_NUCLEI_URL` / `EXPLOIT_METASPLOIT_URL` / `EXPLOIT_EXPLOITDB_URL`. An unknown source name or URL scheme stops the refresher at startup. Plain `http://` is refused — in the URL and as a redirect target — because an index rewritten in transit would plant false exploit matches; use `https://` or `file://`.
+
+The data lives in `exploit_refs` (migration `033`). Findings are matched against it at query time, by `vuln_id` or any alias, so nothing has to be re-scanned when a new exploit appears.
 
 ## 9. Full Deployment Example
 

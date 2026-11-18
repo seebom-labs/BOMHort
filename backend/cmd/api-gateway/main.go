@@ -118,20 +118,20 @@ func main() {
 	// Push-model upload storage (#135): either a dedicated skipScan S3 bucket,
 	// or a writable local SBOM_DIR as a fallback. Resolved once at startup —
 	// uploadHandler uses this instead of re-probing on every request.
-	pushBucket, hasPushBucket := findS3PushBucket(cfg.S3Buckets)
+	pushBucket, hasPushBucket, localUploadWritable := resolveUploadStorage(cfg, s3c != nil)
 	var uploadS3Store uploadObjectStore
-	if hasPushBucket && s3c != nil {
+	if hasPushBucket {
 		uploadS3Store = s3c
-	} else {
-		hasPushBucket = false // S3 client failed to initialize — fall back to local only
 	}
-	localUploadWritable := isDirWritable(filepath.Join(cfg.SBOMDir, "pushed"))
-	if !hasPushBucket && !localUploadWritable {
-		log.Printf("WARNING: no upload storage available — POST %s will return 503 until either S3_BUCKETS has a skipScan bucket or SBOM_DIR (%s) is writable", uploadPath, cfg.SBOMDir)
-	} else if hasPushBucket {
+	switch {
+	case hasPushBucket:
 		log.Printf("Push-model upload storage: S3 bucket %q (skipScan)", pushBucket.Name)
-	} else {
+	case localUploadWritable:
 		log.Printf("Push-model upload storage: local filesystem (%s/pushed)", cfg.SBOMDir)
+	case !cfg.HasLocalSBOMDir():
+		log.Printf("WARNING: no upload storage available — POST %s will return 503 until S3_BUCKETS has a skipScan bucket (SBOM_DIR_DISABLED: there is no shared SBOM directory to fall back to)", uploadPath)
+	default:
+		log.Printf("WARNING: no upload storage available — POST %s will return 503 until either S3_BUCKETS has a skipScan bucket or SBOM_DIR (%s) is writable", uploadPath, cfg.SBOMDir)
 	}
 
 	var exceptionsS3 rulesource.ObjectGetter
@@ -200,6 +200,11 @@ func main() {
 		search := sanitizeSearchTerm(r.URL.Query().Get("search"))
 		project := sanitizeProjectName(r.URL.Query().Get("project"))
 		minQuality := parseUint8(r.URL.Query().Get("min_quality"), 0)
+		originVal, ok := parseOrigin(r.URL.Query().Get("origin"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Invalid origin (expected cluster-scan, ci, registry, vendor, manual)")
+			return
+		}
 		digest := strings.TrimSpace(r.URL.Query().Get("digest"))
 		imagePrefix := strings.TrimSpace(r.URL.Query().Get("image"))
 		if digest != "" && !imageid.ValidDigest(digest) {
@@ -211,7 +216,7 @@ func main() {
 			return
 		}
 
-		resp, err := chClient.QuerySBOMsByImage(r.Context(), page, pageSize, search, project, minQuality, digest, imagePrefix)
+		resp, err := chClient.QuerySBOMsByImage(r.Context(), page, pageSize, search, project, originVal, minQuality, digest, imagePrefix)
 		if err != nil {
 			log.Printf("ERROR: list sboms: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch SBOMs")
@@ -280,8 +285,8 @@ func main() {
 	// ?scope=direct|transitive|root|unknown keeps only findings whose package
 	// is pulled in that way (migration 025).
 	//
-	// ?cluster=, ?namespace=, ?project=, ?parent= and ?tag= narrow it to an
-	// ownership slice (#459), see vuln_filter.go.
+	// ?cluster=, ?namespace=, ?project=, ?parent=, ?tag= and ?origin= narrow it to an
+	// ownership/origin slice (#459, #455), see vuln_filter.go.
 	mux.HandleFunc("GET /api/v1/vulnerabilities", vulnListHandler(chClient, vulnFilter, nil))
 
 	// CSV export of the same listing (#266); streamed, see report_csv.go.
@@ -293,7 +298,9 @@ func main() {
 				return nil, err
 			}
 			return cur, nil
-		}, time.Now))
+		},
+		time.Now,
+	))
 
 	// License compliance overview.
 	// ?license=<id> returns that one license with its affected_sboms; the
@@ -380,11 +387,19 @@ func main() {
 			writeError(w, http.StatusBadRequest, "Invalid reachability (expected reachable, not_reachable, or unknown)")
 			return
 		}
+		exploitOnly, ok := parseExploit(r.URL.Query().Get("exploit"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, invalidExploitMsg)
+			return
+		}
 		vulns, err := chClient.QuerySBOMVulnerabilities(r.Context(), sbomID, scope, reachability)
 		if err != nil {
 			log.Printf("ERROR: sbom vulns for %s: %v", sanitizeLogParam(sbomID), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch SBOM vulnerabilities")
 			return
+		}
+		if exploitOnly {
+			vulns = onlyExploitable(vulns)
 		}
 		writeJSON(w, http.StatusOK, vulns)
 	})
@@ -512,8 +527,14 @@ func main() {
 			}
 		}
 
+		originVal, ok := parseOrigin(r.URL.Query().Get("origin"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Invalid origin (expected cluster-scan, ci, registry, vendor, manual)")
+			return
+		}
+
 		if groupBy == "parent" {
-			resp, err := chClient.QueryProjectGroups(r.Context(), assignments, page, pageSize, search, tag)
+			resp, err := chClient.QueryProjectGroups(r.Context(), assignments, page, pageSize, search, tag, originVal)
 			if err != nil {
 				log.Printf("ERROR: list project groups: %v", err)
 				writeError(w, http.StatusInternalServerError, "Failed to fetch project groups")
@@ -523,7 +544,7 @@ func main() {
 			return
 		}
 
-		resp, err := chClient.QueryProjects(r.Context(), page, pageSize, search, tag)
+		resp, err := chClient.QueryProjects(r.Context(), page, pageSize, search, tag, originVal)
 		if err != nil {
 			log.Printf("ERROR: list projects: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch projects")
@@ -540,6 +561,18 @@ func main() {
 		if err != nil {
 			log.Printf("ERROR: list tags: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch tags")
+			return
+		}
+		writeJSON(w, http.StatusOK, items)
+	})
+
+	// Origin values in use, with their reach (#455). Lets the UI render the
+	// origin filters and chips data-driven.
+	mux.HandleFunc("GET /api/v1/origins", func(w http.ResponseWriter, r *http.Request) {
+		items, err := chClient.QueryOrigins(r.Context())
+		if err != nil {
+			log.Printf("ERROR: list origins: %v", err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch origins")
 			return
 		}
 		writeJSON(w, http.StatusOK, items)
@@ -612,11 +645,19 @@ func main() {
 			writeError(w, http.StatusBadRequest, "Invalid scope (expected direct, transitive, root or unknown)")
 			return
 		}
+		exploitOnly, ok := parseExploit(r.URL.Query().Get("exploit"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, invalidExploitMsg)
+			return
+		}
 		items, err := chClient.QueryProjectVulnerabilities(r.Context(), name, scope)
 		if err != nil {
 			log.Printf("ERROR: project vulnerabilities for %s: %v", sanitizeLogParam(name), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch project vulnerabilities")
 			return
+		}
+		if exploitOnly {
+			items = onlyExploitable(items)
 		}
 		writeJSON(w, http.StatusOK, items)
 	})
@@ -858,9 +899,14 @@ func main() {
 			writeError(w, http.StatusBadRequest, "Invalid cluster name")
 			return
 		}
+		originVal, ok := parseOrigin(r.URL.Query().Get("origin"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Invalid origin (expected cluster-scan, ci, registry, vendor, manual)")
+			return
+		}
 		page := parseUint64(r.URL.Query().Get("page"), 1)
 		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
-		resp, err := chClient.QueryClusterSBOMs(r.Context(), name, page, pageSize)
+		resp, err := chClient.QueryClusterSBOMs(r.Context(), name, page, pageSize, originVal)
 		if err != nil {
 			log.Printf("ERROR: cluster sboms for %s: %v", sanitizeLogParam(name), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch cluster SBOMs")
@@ -924,9 +970,14 @@ func main() {
 			writeError(w, http.StatusBadRequest, "Invalid namespace name")
 			return
 		}
+		originVal, ok := parseOrigin(r.URL.Query().Get("origin"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Invalid origin (expected cluster-scan, ci, registry, vendor, manual)")
+			return
+		}
 		page := parseUint64(r.URL.Query().Get("page"), 1)
 		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
-		resp, err := chClient.QueryNamespaceSBOMs(r.Context(), name, cluster, page, pageSize)
+		resp, err := chClient.QueryNamespaceSBOMs(r.Context(), name, cluster, originVal, page, pageSize)
 		if err != nil {
 			log.Printf("ERROR: namespace sboms for %s: %v", sanitizeLogParam(name), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch namespace SBOMs")
@@ -939,7 +990,12 @@ func main() {
 	// The whole cluster → namespace → project hierarchy in one response, so
 	// the UI can render the ownership tree without an N+1 of per-cluster calls.
 	mux.HandleFunc("GET /api/v1/fleet", func(w http.ResponseWriter, r *http.Request) {
-		tree, err := chClient.QueryFleetTree(r.Context())
+		originVal, ok := parseOrigin(r.URL.Query().Get("origin"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Invalid origin (expected cluster-scan, ci, registry, vendor, manual)")
+			return
+		}
+		tree, err := chClient.QueryFleetTree(r.Context(), originVal)
 		if err != nil {
 			log.Printf("ERROR: fleet tree: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch fleet tree")
@@ -1146,6 +1202,19 @@ func parseScope(raw string) (string, bool) {
 		return "", true
 	}
 	if !depgraph.IsValidScope(raw) {
+		return "", false
+	}
+	return raw, true
+}
+
+// parseOrigin validates the optional ?origin= filter (#455). "" means no
+// filter; anything outside the origin vocabulary is rejected.
+func parseOrigin(raw string) (string, bool) {
+	raw = originpkg.Normalize(raw)
+	if raw == "" {
+		return "", true
+	}
+	if !originpkg.IsValid(raw) {
 		return "", false
 	}
 	return raw, true
@@ -1582,9 +1651,27 @@ func isDirWritable(dir string) bool {
 	return true
 }
 
+// resolveUploadStorage decides where push uploads (#135) are stored: the
+// skipScan S3 bucket when there is one and the S3 client is usable, else
+// SBOM_DIR/pushed/ when that is writable.
+//
+// The local fallback is only offered when SBOM_DIR is a directory the parsing
+// workers share (cfg.HasLocalSBOMDir). Writability alone does not show that:
+// with no volume mounted the gateway can still create SBOM_DIR in its own
+// container filesystem, would answer 202 and would queue a file no worker can
+// ever open (#590).
+func resolveUploadStorage(cfg *config.Config, s3Available bool) (pushBucket config.S3BucketConfig, useS3Push, localWritable bool) {
+	pushBucket, useS3Push = findS3PushBucket(cfg.S3Buckets)
+	if !s3Available {
+		useS3Push = false // S3 client failed to initialize — fall back to local only
+	}
+	localWritable = cfg.HasLocalSBOMDir() && isDirWritable(filepath.Join(cfg.SBOMDir, "pushed"))
+	return pushBucket, useS3Push, localWritable
+}
+
 // uploadDeps bundles uploadHandler's runtime dependencies and the storage-
-// routing decision resolved once at startup (see findS3PushBucket and
-// isDirWritable in main()), instead of six positional constructor
+// routing decision resolved once at startup (see resolveUploadStorage),
+// instead of six positional constructor
 // parameters — two of them bools, which read ambiguously and are easy to
 // transpose by accident at the call site.
 type uploadDeps struct {
@@ -1600,8 +1687,9 @@ type uploadDeps struct {
 	// useS3Push is true when pushBucket is a valid push target and s3Store
 	// is usable — uploads route to S3 instead of the local fallback.
 	useS3Push bool
-	// localWritable is true when cfg.SBOMDir/pushed is writable — the
-	// local-filesystem fallback used when useS3Push is false.
+	// localWritable is true when cfg.SBOMDir/pushed is a shared directory
+	// (see resolveUploadStorage) and writable — the local-filesystem
+	// fallback used when useS3Push is false.
 	localWritable bool
 }
 
@@ -1633,7 +1721,11 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 		}
 
 		if !useS3Push && !localWritable {
-			writeError(w, http.StatusServiceUnavailable, "No upload storage configured — set S3_BUCKETS with a skipScan bucket, or ensure SBOM_DIR is writable")
+			msg := "No upload storage configured — set S3_BUCKETS with a skipScan bucket, or ensure SBOM_DIR is writable"
+			if !cfg.HasLocalSBOMDir() {
+				msg = "No upload storage configured — set S3_BUCKETS with a skipScan bucket (this instance has no shared SBOM_DIR to fall back to)"
+			}
+			writeError(w, http.StatusServiceUnavailable, msg)
 			return
 		}
 
