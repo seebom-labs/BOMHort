@@ -192,19 +192,20 @@ func (c *Client) QueryDashboardStats(ctx context.Context, f VulnFilter) (*dto.Da
 // rule the project listing and project page use, so "the SBOMs of
 // kubernetes" is eleven documents and not every path containing the word.
 // origin (#455), when non-empty, restricts to SBOMs produced with that origin class.
+// cluster, workloadKind, workloadName, workloadUID filter by runtime ownership/workload identity (#458).
 // minQuality (#537), when > 0, restricts the list to SBOMs with quality_score >= minQuality.
 // The filters compose.
-func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, project, origin string, minQuality uint8) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
-	return c.querySBOMs(ctx, page, pageSize, search, project, origin, minQuality, "", "")
+func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, project, cluster, origin, workloadKind, workloadName, workloadUID string, minQuality uint8) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
+	return c.querySBOMs(ctx, page, pageSize, search, project, cluster, origin, workloadKind, workloadName, workloadUID, minQuality, "", "")
 }
 
 // QuerySBOMsByImage adds digest and image-reference prefix filters to the
 // regular SBOM listing filters.
-func (c *Client) QuerySBOMsByImage(ctx context.Context, page, pageSize uint64, search, project, origin string, minQuality uint8, digest, imagePrefix string) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
-	return c.querySBOMs(ctx, page, pageSize, search, project, origin, minQuality, digest, imagePrefix)
+func (c *Client) QuerySBOMsByImage(ctx context.Context, page, pageSize uint64, search, project, cluster, origin, workloadKind, workloadName, workloadUID string, minQuality uint8, digest, imagePrefix string) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
+	return c.querySBOMs(ctx, page, pageSize, search, project, cluster, origin, workloadKind, workloadName, workloadUID, minQuality, digest, imagePrefix)
 }
 
-func (c *Client) querySBOMs(ctx context.Context, page, pageSize uint64, search, project, origin string, minQuality uint8, digest, imagePrefix string) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
+func (c *Client) querySBOMs(ctx context.Context, page, pageSize uint64, search, project, cluster, origin, workloadKind, workloadName, workloadUID string, minQuality uint8, digest, imagePrefix string) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
 	if page == 0 {
 		page = 1
 	}
@@ -222,6 +223,22 @@ func (c *Client) querySBOMs(ctx context.Context, page, pageSize uint64, search, 
 	if origin != "" {
 		conds = append(conds, "s.origin = ?")
 		whereArgs = append(whereArgs, origin)
+	}
+	if cluster != "" {
+		conds = append(conds, "s.cluster = ?")
+		whereArgs = append(whereArgs, cluster)
+	}
+	if workloadKind != "" {
+		conds = append(conds, "s.workload_kind = ?")
+		whereArgs = append(whereArgs, workloadKind)
+	}
+	if workloadName != "" {
+		conds = append(conds, "s.workload_name = ?")
+		whereArgs = append(whereArgs, workloadName)
+	}
+	if workloadUID != "" {
+		conds = append(conds, "s.workload_uid = ?")
+		whereArgs = append(whereArgs, workloadUID)
 	}
 	if search != "" {
 		conds = append(conds, "(s.document_name ILIKE ? OR s.source_file ILIKE ?)")
@@ -268,6 +285,9 @@ func (c *Client) querySBOMs(ctx context.Context, page, pageSize uint64, search, 
 			s.namespace,
 			s.project,
 			s.origin,
+			s.workload_kind,
+			s.workload_name,
+			s.workload_uid,
 			ifNull(p.pkg_count, 0) AS package_count,
 			ifNull(v.vuln_count, 0) AS vuln_count,
 			s.quality_score,
@@ -304,6 +324,7 @@ func (c *Client) querySBOMs(ctx context.Context, page, pageSize uint64, search, 
 			&item.SourceRepo, &item.SourceRef,
 			&item.ImageRef, &item.ImageDigest,
 			&item.Cluster, &item.Namespace, &item.Project, &item.Origin,
+			&item.WorkloadKind, &item.WorkloadName, &item.WorkloadUID,
 			&item.PackageCount, &item.VulnCount,
 			&item.QualityScore, &item.QualityFlags,
 		); err != nil {

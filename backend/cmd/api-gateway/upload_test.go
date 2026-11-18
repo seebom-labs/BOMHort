@@ -27,17 +27,28 @@ type fakeUploadStore struct {
 	hashExists    bool
 	hashExistsErr error
 	enqueueErr    error
-	enqueuedJobs  []models.IngestionJob
-	imageOwner    *clickhouse.ImageSBOMRef
-	pendingJob    *models.IngestionJob
+	enqueuedJobs           []models.IngestionJob
+	imageOwner             *clickhouse.ImageSBOMRef
+	pendingJob             *models.IngestionJob
+	lastClonedWorkloadKind string
+	lastClonedWorkloadName string
+	lastClonedWorkloadUID  string
 }
 
 func (f *fakeUploadStore) FindImageByDigest(ctx context.Context, digest string) (*clickhouse.ImageSBOMRef, error) {
 	return f.imageOwner, nil
 }
 
-func (f *fakeUploadStore) FindImageByDigestOwner(ctx context.Context, digest, imageRef, cluster, namespace, project, origin string) (*clickhouse.ImageSBOMRef, error) {
-	if f.imageOwner != nil && f.imageOwner.ImageRef == imageRef && f.imageOwner.Cluster == cluster && f.imageOwner.Namespace == namespace && f.imageOwner.Project == project && f.imageOwner.Origin == origin {
+func (f *fakeUploadStore) FindImageByDigestOwner(ctx context.Context, digest, imageRef, cluster, namespace, project, origin, workloadKind, workloadName, workloadUID string) (*clickhouse.ImageSBOMRef, error) {
+	if f.imageOwner != nil &&
+		f.imageOwner.ImageRef == imageRef &&
+		f.imageOwner.Cluster == cluster &&
+		f.imageOwner.Namespace == namespace &&
+		f.imageOwner.Project == project &&
+		f.imageOwner.Origin == origin &&
+		f.imageOwner.WorkloadKind == workloadKind &&
+		f.imageOwner.WorkloadName == workloadName &&
+		f.imageOwner.WorkloadUID == workloadUID {
 		return f.imageOwner, nil
 	}
 	return nil, nil
@@ -47,11 +58,20 @@ func (f *fakeUploadStore) FindSBOMByHash(ctx context.Context, hash string) (*cli
 	return f.imageOwner, nil
 }
 
-func (f *fakeUploadStore) FindPendingImageJob(ctx context.Context, digest, imageRef, cluster, namespace, project, origin string) (*models.IngestionJob, error) {
-	return f.pendingJob, nil
+func (f *fakeUploadStore) FindPendingImageJob(ctx context.Context, digest, imageRef, cluster, namespace, project, origin, workloadKind, workloadName, workloadUID string) (*models.IngestionJob, error) {
+	if f.pendingJob != nil &&
+		f.pendingJob.WorkloadKind == workloadKind &&
+		f.pendingJob.WorkloadName == workloadName &&
+		f.pendingJob.WorkloadUID == workloadUID {
+		return f.pendingJob, nil
+	}
+	return nil, nil
 }
 
-func (f *fakeUploadStore) CloneImageSBOM(ctx context.Context, source clickhouse.ImageSBOMRef, digest, imageRef, sourceRepo, sourceRef, cluster, namespace, project, parent, origin string, tags []string) (string, error) {
+func (f *fakeUploadStore) CloneImageSBOM(ctx context.Context, source clickhouse.ImageSBOMRef, digest, imageRef, sourceRepo, sourceRef, cluster, namespace, project, parent, origin string, tags []string, workloadKind, workloadName, workloadUID string) (string, error) {
+	f.lastClonedWorkloadKind = workloadKind
+	f.lastClonedWorkloadName = workloadName
+	f.lastClonedWorkloadUID = workloadUID
 	return "cloned-sbom-id", nil
 }
 
@@ -282,6 +302,131 @@ func TestUploadHandler_ImageDigestPendingJob(t *testing.T) {
 	}
 	if body["job_id"] != jobID.String() || len(store.enqueuedJobs) != 0 {
 		t.Fatalf("pending response = %#v; enqueued jobs = %d", body, len(store.enqueuedJobs))
+	}
+}
+
+func TestUploadHandler_ImageDigestDedup_TwoWorkloadsSharingImage(t *testing.T) {
+	cfg := testUploadConfig(t)
+	cfg.DedupByImageDigest = true
+	digest := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	// Workload 1 has already ingested the image.
+	store := &fakeUploadStore{
+		imageOwner: &clickhouse.ImageSBOMRef{
+			ImageRef:     "ghcr.io/acme/api",
+			Cluster:      "default-cluster",
+			Namespace:    "default",
+			Project:      "my-project",
+			Origin:       "cluster-scan",
+			WorkloadKind: "Deployment",
+			WorkloadName: "payment-service",
+			WorkloadUID:  "11111111-1111-1111-1111-111111111111",
+		},
+	}
+
+	// 1. Upload for Workload 1 with identical ownership and workload identity -> duplicate
+	req1 := httptest.NewRequest(http.MethodPost,
+		"/api/v1/sboms/upload?image=ghcr.io%2Facme%2Fapi%40"+strings.ReplaceAll(digest, ":", "%3A")+
+			"&cluster=default-cluster&namespace=default&project=my-project&origin=cluster-scan&workload_kind=Deployment&workload_name=payment-service&workload_uid=11111111-1111-1111-1111-111111111111",
+		strings.NewReader(`{}`))
+	req1.Header.Set("X-Filename", "api.spdx.json")
+	rec1 := httptest.NewRecorder()
+	localUploadHandler(cfg, store).ServeHTTP(rec1, req1)
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("workload 1 status = %d: %s", rec1.Code, rec1.Body.String())
+	}
+	var body1 map[string]any
+	if err := json.Unmarshal(rec1.Body.Bytes(), &body1); err != nil {
+		t.Fatal(err)
+	}
+	if body1["status"] != "duplicate" || body1["duplicate"] != true {
+		t.Errorf("workload 1 result = %#v, want duplicate: true", body1)
+	}
+
+	// 2. Upload for Workload 2 sharing the same image and ownership tuple (cluster/namespace/project/origin) -> reused
+	req2 := httptest.NewRequest(http.MethodPost,
+		"/api/v1/sboms/upload?image=ghcr.io%2Facme%2Fapi%40"+strings.ReplaceAll(digest, ":", "%3A")+
+			"&cluster=default-cluster&namespace=default&project=my-project&origin=cluster-scan&workload_kind=Deployment&workload_name=checkout-service&workload_uid=22222222-2222-2222-2222-222222222222",
+		strings.NewReader(`{}`))
+	req2.Header.Set("X-Filename", "api.spdx.json")
+	rec2 := httptest.NewRecorder()
+	localUploadHandler(cfg, store).ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("workload 2 status = %d: %s", rec2.Code, rec2.Body.String())
+	}
+	var body2 map[string]any
+	if err := json.Unmarshal(rec2.Body.Bytes(), &body2); err != nil {
+		t.Fatal(err)
+	}
+	if body2["status"] != "reused" || body2["duplicate"] != false || body2["reused"] != true {
+		t.Errorf("workload 2 result = %#v, want reused: true", body2)
+	}
+	// Verify that CloneImageSBOM received Workload 2's identity
+	if store.lastClonedWorkloadKind != "Deployment" || store.lastClonedWorkloadName != "checkout-service" || store.lastClonedWorkloadUID != "22222222-2222-2222-2222-222222222222" {
+		t.Errorf("cloned workload identity = (%q, %q, %q), want Deployment/checkout-service/22222222-2222-2222-2222-222222222222",
+			store.lastClonedWorkloadKind, store.lastClonedWorkloadName, store.lastClonedWorkloadUID)
+	}
+
+	assertNoFilesInPushedDir(t, cfg)
+}
+
+func TestUploadHandler_ImageDigestPendingJob_WorkloadIdentity(t *testing.T) {
+	cfg := testUploadConfig(t)
+	cfg.DedupByImageDigest = true
+	jobID := uuid.New()
+	store := &fakeUploadStore{
+		pendingJob: &models.IngestionJob{
+			JobID:        jobID,
+			WorkloadKind: "Deployment",
+			WorkloadName: "payment-service",
+			WorkloadUID:  "11111111-1111-1111-1111-111111111111",
+		},
+		imageOwner: &clickhouse.ImageSBOMRef{
+			ImageRef: "ghcr.io/acme/api",
+		},
+	}
+	digest := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	// Request for workload 1 matches the pending job
+	req1 := httptest.NewRequest(http.MethodPost,
+		"/api/v1/sboms/upload?image=ghcr.io%2Facme%2Fapi%40"+strings.ReplaceAll(digest, ":", "%3A")+
+			"&workload_kind=Deployment&workload_name=payment-service&workload_uid=11111111-1111-1111-1111-111111111111",
+		strings.NewReader(`{}`))
+	req1.Header.Set("X-Filename", "api.spdx.json")
+	rec1 := httptest.NewRecorder()
+	localUploadHandler(cfg, store).ServeHTTP(rec1, req1)
+	if rec1.Code != http.StatusAccepted {
+		t.Fatalf("status = %d: %s", rec1.Code, rec1.Body.String())
+	}
+	var body1 map[string]string
+	if err := json.Unmarshal(rec1.Body.Bytes(), &body1); err != nil {
+		t.Fatal(err)
+	}
+	if body1["job_id"] != jobID.String() {
+		t.Fatalf("pending response = %#v, want job_id %s", body1, jobID)
+	}
+
+	// Request for workload 2 sharing the image does NOT match workload 1's pending job;
+	// since the image exists in store, it clones/reuses rather than waiting on workload 1's job.
+	req2 := httptest.NewRequest(http.MethodPost,
+		"/api/v1/sboms/upload?image=ghcr.io%2Facme%2Fapi%40"+strings.ReplaceAll(digest, ":", "%3A")+
+			"&workload_kind=Deployment&workload_name=checkout-service&workload_uid=22222222-2222-2222-2222-222222222222",
+		strings.NewReader(`{}`))
+	req2.Header.Set("X-Filename", "api.spdx.json")
+	rec2 := httptest.NewRecorder()
+	localUploadHandler(cfg, store).ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec2.Code, rec2.Body.String())
+	}
+	var body2 map[string]any
+	if err := json.Unmarshal(rec2.Body.Bytes(), &body2); err != nil {
+		t.Fatal(err)
+	}
+	if body2["status"] != "reused" {
+		t.Fatalf("workload 2 status = %#v, want reused", body2)
+	}
+	if store.lastClonedWorkloadName != "checkout-service" {
+		t.Errorf("cloned workload name = %q, want checkout-service", store.lastClonedWorkloadName)
 	}
 }
 
