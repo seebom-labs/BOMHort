@@ -506,7 +506,7 @@ func vulnerabilityListSQL(scopeWhere string) string {
 			) AS f
 			INNER JOIN (
 				SELECT sbom_id, vuln_id, product_purl, status, action_statement,
-					action_statement_timestamp, vex_timestamp
+					action_statement_timestamp, author, vex_timestamp
 				FROM vex_statements FINAL
 				WHERE sbom_id != ''
 			) AS s ON s.vuln_id = f.match_id AND s.sbom_id = toString(f.sbom_id)

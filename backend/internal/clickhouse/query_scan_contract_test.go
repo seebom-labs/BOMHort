@@ -280,3 +280,31 @@ func TestSelectColumnsMatchScanDestinations(t *testing.T) {
 		t.Errorf("only %d query/scan pairs checked — the pairing logic likely broke", checked)
 	}
 }
+
+// TestVulnerabilityListSQLProjectionGuards verifies that subquery s in
+// vulnerabilityListSQL explicitly projects every column referenced by outer
+// expressions (e.g. argMax(s.<col>, ...)), preventing ClickHouse unknown-column
+// runtime errors (#413 review).
+func TestVulnerabilityListSQLProjectionGuards(t *testing.T) {
+	sql := vulnerabilityListSQL("")
+	sStart := strings.Index(sql, "INNER JOIN (")
+	if sStart < 0 {
+		t.Fatal("INNER JOIN not found in vulnerabilityListSQL")
+	}
+	sPart := sql[sStart:]
+	sFrom := strings.Index(sPart, "FROM vex_statements")
+	if sFrom < 0 {
+		t.Fatal("FROM vex_statements not found in subquery s")
+	}
+	sProjection := sPart[:sFrom]
+
+	expectedCols := []string{
+		"sbom_id", "vuln_id", "product_purl", "status",
+		"action_statement", "action_statement_timestamp", "author", "vex_timestamp",
+	}
+	for _, col := range expectedCols {
+		if !strings.Contains(sProjection, col) {
+			t.Errorf("subquery s projection is missing column %q required by outer aggregations/joins", col)
+		}
+	}
+}
