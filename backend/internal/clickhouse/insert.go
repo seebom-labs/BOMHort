@@ -19,7 +19,7 @@ func (c *Client) InsertSBOM(ctx context.Context, sbom *models.SBOM) error {
 			creation_date, creator_tools, cluster, namespace, project,
 			source_repo, source_ref, document_version, tags,
 			parent, root_purl, supplier, origin, image_ref, image_digest,
-			quality_score, quality_flags
+			quality_score, quality_flags, extra_fields
 		)`)
 	if err != nil {
 		return fmt.Errorf("failed to prepare sbom batch: %w", err)
@@ -55,11 +55,21 @@ func (c *Client) InsertSBOM(ctx context.Context, sbom *models.SBOM) error {
 		sbom.ImageDigest,
 		sbom.QualityScore,
 		qualityFlags,
+		extraFieldsFor(sbom),
 	); err != nil {
 		return fmt.Errorf("failed to append sbom: %w", err)
 	}
 
 	return batch.Send()
+}
+
+// extraFieldsFor returns the sbom's extra fields as a non-nil map: the
+// Map(String, Array(String)) column takes an empty map, not a nil one.
+func extraFieldsFor(sbom *models.SBOM) map[string][]string {
+	if sbom.ExtraFields == nil {
+		return map[string][]string{}
+	}
+	return sbom.ExtraFields
 }
 
 // InsertSBOMPackages inserts the parallel-array package row for an SBOM.

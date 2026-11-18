@@ -407,6 +407,22 @@ projectGroups:
   #       reason: shared org, the projects are unrelated
   groups: []
 
+# Extra producer-written CycloneDX fields. The parsing worker reads this file
+# at startup; restart workers after changing the config.
+extraFields:
+  mountDir: /data/config/extra-fields
+  config:
+    version: "1.0.0"
+    description: "SBOM fields BOMHort recognises beyond its built-in ones."
+    fields:
+      - name: owner_contact
+        description: "Team or person who answers for the component."
+        from:
+          - cyclonedx: metadata.component.properties
+            property: bomhort:owner:contact
+          - cyclonedx: metadata.properties
+            property: bomhort:owner:contact
+
 # Ingestion Watcher (CronJob)
 ingestionWatcher:
   schedule: "0 */6 * * *"  # Every 6 hours

@@ -1,0 +1,14 @@
+{
+  "version": "1.0.0",
+  "description": "SBOM fields BOMHort recognises beyond its built-in ones. Each field is read from a fixed list of CycloneDX places: metadata.component.properties and metadata.properties by property name, metadata.component.externalReferences by type. Earlier sources come first. SPDX is not supported yet. Changes apply to SBOMs ingested afterwards.",
+  "fields": [
+    {
+      "name": "owner_contact",
+      "description": "Team or person who answers for the component (e-mail, chat channel or URL).",
+      "from": [
+        {"cyclonedx": "metadata.component.properties", "property": "bomhort:owner:contact"},
+        {"cyclonedx": "metadata.properties", "property": "bomhort:owner:contact"}
+      ]
+    }
+  ]
+}

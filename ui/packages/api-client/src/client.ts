@@ -1,5 +1,6 @@
 import type {
   OwnerFilter,
+  ExtraFieldFilter,
   VulnListFilter,
   AffectedProject,
   ArchivedPackageInfo,
@@ -128,10 +129,10 @@ export class BomhortApiClient {
   }
 
   getSboms(page?: number, pageSize?: number, search?: string, project?: string, signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>>;
-  getSboms(page?: number, pageSize?: number, search?: string, project?: string, minQuality?: number, signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>>;
+  getSboms(page?: number, pageSize?: number, search?: string, project?: string, minQuality?: number, signal?: AbortSignal, field?: ExtraFieldFilter): Promise<PaginatedResponse<SBOMListItem>>;
   getSboms(page?: number, pageSize?: number, search?: string, project?: string, origin?: string, signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>>;
   getSboms(page?: number, pageSize?: number, search?: string, project?: string, origin?: string, minQuality?: number, signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>>;
-  getSboms(page?: number, pageSize?: number, search?: string, project?: string, origin?: string, minQuality?: number, digest?: string, signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>>;
+  getSboms(page?: number, pageSize?: number, search?: string, project?: string, origin?: string, minQuality?: number, digest?: string, signal?: AbortSignal, field?: ExtraFieldFilter): Promise<PaginatedResponse<SBOMListItem>>;
   getSboms(
     page = 1,
     pageSize = 50,
@@ -139,8 +140,9 @@ export class BomhortApiClient {
     project = '',
     originOrQualityOrSignal?: string | number | AbortSignal,
     minQualityOrSignal?: number | AbortSignal,
-    digestOrSignal?: string | AbortSignal,
+    digestOrSignalOrField?: string | AbortSignal | ExtraFieldFilter,
     maybeSignal?: AbortSignal,
+    field: ExtraFieldFilter = {},
   ): Promise<PaginatedResponse<SBOMListItem>> {
     const origin = typeof originOrQualityOrSignal === 'string' ? originOrQualityOrSignal : '';
     const minQuality = typeof originOrQualityOrSignal === 'number'
@@ -148,14 +150,17 @@ export class BomhortApiClient {
       : typeof minQualityOrSignal === 'number'
         ? minQualityOrSignal
         : 0;
-    const digest = typeof digestOrSignal === 'string' ? digestOrSignal : '';
+    const digest = typeof digestOrSignalOrField === 'string' ? digestOrSignalOrField : '';
     const signal = isSignal(originOrQualityOrSignal)
       ? originOrQualityOrSignal
       : isSignal(minQualityOrSignal)
         ? minQualityOrSignal
-        : isSignal(digestOrSignal)
-          ? digestOrSignal
+        : isSignal(digestOrSignalOrField)
+          ? digestOrSignalOrField
           : maybeSignal;
+    const extraField = typeof digestOrSignalOrField === 'object' && digestOrSignalOrField !== null && !isSignal(digestOrSignalOrField)
+      ? digestOrSignalOrField
+      : field;
     return this.get(
       `/sboms${query({
         page,
@@ -165,6 +170,8 @@ export class BomhortApiClient {
         origin,
         min_quality: minQuality > 0 ? minQuality : undefined,
         digest: digest || undefined,
+        extra_field: extraField.extra_field,
+        extra_value: extraField.extra_field ? extraField.extra_value : undefined,
       })}`,
       signal,
     );

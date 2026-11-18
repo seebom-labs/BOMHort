@@ -11,7 +11,7 @@ import { BomhortApiClient } from '@bomhort/api-client';
 const calls: Record<string, unknown[]> = {
   getDashboardStats: [{ cluster: 'prod-eu', namespace: '' }],
   getQualityStats: [],
-  getSboms: [2, 25, 'gin', 'payment-api'],
+  getSboms: [2, 25, 'gin', 'payment-api', 70, { extra_field: 'owner_contact', extra_value: 'team@example.com' }],
   getSbomDetail: ['id-1'],
   getSbomDependencies: ['id-1'],
   getSbomVulnerabilities: ['id-1', 'direct'],
@@ -51,6 +51,12 @@ const calls: Record<string, unknown[]> = {
   getImage: ['sha256:abc'],
 };
 
+// Where the fetch client's signature differs from the service's: getSboms
+// keeps its AbortSignal in sixth position, so the extra-field filter follows it.
+const clientCalls: Record<string, unknown[]> = {
+  getSboms: [2, 25, 'gin', 'payment-api', 70, undefined, { extra_field: 'owner_contact', extra_value: 'team@example.com' }],
+};
+
 describe('ApiService ↔ @bomhort/api-client parity', () => {
   let service: ApiService;
   let http: HttpTestingController;
@@ -76,7 +82,7 @@ describe('ApiService ↔ @bomhort/api-client parity', () => {
       svc[method](...args).subscribe();
       const req = http.expectOne(() => true);
       req.flush({});
-      await cli[method](...args);
+      await cli[method](...(clientCalls[method] ?? args));
 
       // Same path and same decoded params; HttpParams leaves "/" unencoded and
       // orders keys differently, both irrelevant to the server.
@@ -87,6 +93,54 @@ describe('ApiService ↔ @bomhort/api-client parity', () => {
       http.verify();
     });
   }
+
+  it('getSboms keeps its AbortSignal in sixth position', async () => {
+    let seen: AbortSignal | null | undefined;
+    let fetched = '';
+    const client = new BomhortApiClient({
+      fetch: async (input, init) => {
+        fetched = String(input);
+        seen = init?.signal;
+        return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+      },
+    });
+    const ctl = new AbortController();
+    await client.getSboms(1, 50, '', '', 0, ctl.signal);
+    expect(seen).toBe(ctl.signal);
+    expect(new URL(fetched, 'http://h').searchParams.has('extra_field')).toBe(false);
+  });
+
+  it('combines origin, image and extra-field filters in both clients', async () => {
+    let fetched = '';
+    let seen: AbortSignal | null | undefined;
+    const client = new BomhortApiClient({
+      fetch: async (input, init) => {
+        fetched = String(input);
+        seen = init?.signal;
+        return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+      },
+    });
+    const field = { extra_field: 'owner_contact', extra_value: 'team@example.com' };
+    const ctl = new AbortController();
+    service.getSboms(2, 25, 'gin', 'payment-api', 'ci', 70, 'sha256:abc', field).subscribe();
+    const req = http.expectOne((r) => r.url.endsWith('/sboms'));
+    await client.getSboms(2, 25, 'gin', 'payment-api', 'ci', 70, 'sha256:abc', ctl.signal, field);
+
+    const params = new URL(fetched, 'http://h').searchParams;
+    expect([...params.entries()].sort()).toEqual([...req.request.params.keys()]
+      .map((key) => [key, req.request.params.get(key)!]).sort());
+    expect(params.get('origin')).toBe('ci');
+    expect(params.get('digest')).toBe('sha256:abc');
+    expect(params.get('extra_field')).toBe('owner_contact');
+    expect(params.get('extra_value')).toBe('team@example.com');
+    expect(seen).toBe(ctl.signal);
+    req.flush({});
+
+    await client.getSboms(2, 25, 'gin', 'payment-api', 70, ctl.signal, field);
+    expect(new URL(fetched, 'http://h').searchParams.get('extra_field')).toBe('owner_contact');
+    expect(seen).toBe(ctl.signal);
+    http.verify();
+  });
 
   it('download and report URLs match', () => {
     const client = new BomhortApiClient();

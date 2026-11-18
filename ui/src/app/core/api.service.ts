@@ -3,6 +3,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
   OwnerFilter,
+  ExtraFieldFilter,
   VulnListFilter,
   DashboardStats,
   PaginatedResponse,
@@ -77,22 +78,28 @@ export class ApiService {
   /**
    * SBOM list. `search` is a substring match on document name / source path;
    * `project` (#398) is the exact project identity and scopes the list to
-   * one project's versions. They compose. `minQuality` filters by minimum quality score (#537).
+   * one project's versions. `minQuality` filters by minimum quality score (#537).
+   * `field` narrows to SBOMs carrying an extra field, optionally with one
+   * exact value. They compose.
    */
-  getSboms(page?: number, pageSize?: number, search?: string, project?: string, minQuality?: number): Observable<PaginatedResponse<SBOMListItem>>;
+  getSboms(page?: number, pageSize?: number, search?: string, project?: string, minQuality?: number, field?: ExtraFieldFilter): Observable<PaginatedResponse<SBOMListItem>>;
   getSboms(page?: number, pageSize?: number, search?: string, project?: string, origin?: string, minQuality?: number): Observable<PaginatedResponse<SBOMListItem>>;
-  getSboms(page?: number, pageSize?: number, search?: string, project?: string, origin?: string, minQuality?: number, digest?: string): Observable<PaginatedResponse<SBOMListItem>>;
+  getSboms(page?: number, pageSize?: number, search?: string, project?: string, origin?: string, minQuality?: number, digest?: string, field?: ExtraFieldFilter): Observable<PaginatedResponse<SBOMListItem>>;
   getSboms(
     page = 1,
     pageSize = 50,
     search = '',
     project = '',
     originOrMinQuality: string | number = '',
-    maybeMinQuality = 0,
+    minQualityOrField: number | ExtraFieldFilter = 0,
     digest = '',
+    field: ExtraFieldFilter = {},
   ): Observable<PaginatedResponse<SBOMListItem>> {
     const origin = typeof originOrMinQuality === 'string' ? originOrMinQuality : '';
-    const minQuality = typeof originOrMinQuality === 'number' ? originOrMinQuality : maybeMinQuality;
+    const minQuality = typeof originOrMinQuality === 'number'
+      ? originOrMinQuality
+      : typeof minQualityOrField === 'number' ? minQualityOrField : 0;
+    const extraField = typeof minQualityOrField === 'object' ? minQualityOrField : field;
     let params = new HttpParams()
       .set('page', page.toString())
       .set('page_size', pageSize.toString());
@@ -110,6 +117,12 @@ export class ApiService {
     }
     if (digest) {
       params = params.set('digest', digest);
+    }
+    if (extraField.extra_field) {
+      params = params.set('extra_field', extraField.extra_field);
+      if (extraField.extra_value) {
+        params = params.set('extra_value', extraField.extra_value);
+      }
     }
     return this.http.get<PaginatedResponse<SBOMListItem>>(`${this.baseUrl}/sboms`, { params });
   }
@@ -444,4 +457,3 @@ export class ApiService {
       `${this.baseUrl}/namespaces/${encodeURIComponent(namespace)}/sboms`, { params });
   }
 }
-

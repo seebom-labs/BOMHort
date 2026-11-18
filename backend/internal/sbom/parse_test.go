@@ -19,7 +19,7 @@ func TestParse_DetectsSPDX(t *testing.T) {
 		"relationships": []
 	}`
 
-	result, err := Parse(strings.NewReader(spdxJSON), "test.spdx.json", "hash123")
+	result, err := Parse(strings.NewReader(spdxJSON), "test.spdx.json", "hash123", false)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestParse_DetectsCycloneDX(t *testing.T) {
 		]
 	}`
 
-	result, err := Parse(strings.NewReader(cdxJSON), "test.cdx.json", "hash456")
+	result, err := Parse(strings.NewReader(cdxJSON), "test.cdx.json", "hash456", false)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestParse_DetectsInTotoEnvelope(t *testing.T) {
 		}
 	}`
 
-	result, err := Parse(strings.NewReader(inTotoJSON), "intoto.spdx.json", "hash789")
+	result, err := Parse(strings.NewReader(inTotoJSON), "intoto.spdx.json", "hash789", false)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestParse_ProtobomBackend(t *testing.T) {
 		]
 	}`
 
-	result, err := Parse(strings.NewReader(cdxJSON), "protobom.cdx.json", "hash-proto")
+	result, err := Parse(strings.NewReader(cdxJSON), "protobom.cdx.json", "hash-proto", false)
 	if err != nil {
 		t.Fatalf("Parse with protobom failed: %v", err)
 	}
@@ -141,7 +141,7 @@ func TestParse_DetectsSPDX3(t *testing.T) {
  "software_packageUrl": "pkg:npm/spdx3-pkg@1.0.0"}
 ]
 }`
-	result, err := Parse(strings.NewReader(spdx3), "doc.spdx3.json", "hash-spdx3")
+	result, err := Parse(strings.NewReader(spdx3), "doc.spdx3.json", "hash-spdx3", false)
 	if err != nil {
 		t.Fatalf("Parse SPDX 3 failed: %v", err)
 	}

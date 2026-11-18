@@ -91,7 +91,7 @@ func TestParse_NormalizesYarnLockfilePURLs(t *testing.T) {
 	      "referenceLocator": "pkg:npm/ws@npm:^8.18.0, ws@8.20.0"}]
 	  }]
 	}`
-	res, err := Parse(strings.NewReader(doc), "yarn.spdx.json", "h")
+	res, err := Parse(strings.NewReader(doc), "yarn.spdx.json", "h", false)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}

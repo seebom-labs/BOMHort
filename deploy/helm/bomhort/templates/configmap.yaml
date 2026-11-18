@@ -74,6 +74,7 @@ data:
   {{- else }}
   PROJECT_GROUPS_FILE: ""
   {{- end }}
+  EXTRA_FIELDS_FILE: {{ printf "%s/extra-fields.json" (trimSuffix "/" .Values.extraFields.mountDir) | quote }}
   LICENSE_POLICY_FILE: {{ .Values.licensePolicy.mountPath | quote }}
   {{- with .Values.licensePolicy.expressionMode }}
   {{- if not (has . (list "strict" "permissive-wins" "off")) }}

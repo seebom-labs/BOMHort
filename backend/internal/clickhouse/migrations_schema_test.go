@@ -342,6 +342,45 @@ func TestInsertsPersistOwnershipColumns(t *testing.T) {
 	}
 }
 
+// CloneImageSBOM copies an SBOM to a new image identity with INSERT ... SELECT
+// statements that name every column. A column added to one of those tables
+// later is left at its DEFAULT on every clone unless it is added to the clone
+// too, and nothing else notices: the clone still succeeds, it just carries
+// less than the SBOM it was copied from. Every column must therefore be
+// written, either copied or overridden with the new identity.
+func TestImageCloneWritesEveryColumn(t *testing.T) {
+	schema := schemaFromMigrations(t)
+	inserts := insertTargetsFromSource(t, "queries_images.go")
+	if len(inserts) == 0 {
+		t.Fatal("no INSERT statements found in queries_images.go — the extractor is broken")
+	}
+
+	for table, statements := range inserts {
+		cols, ok := schema[table]
+		if !ok {
+			t.Errorf("queries_images.go inserts into %s, but no migration creates that table", table)
+			continue
+		}
+		for i, stmt := range statements {
+			have := make(map[string]bool, len(stmt))
+			for _, c := range stmt {
+				have[c] = true
+			}
+			var missing []string
+			for col := range cols {
+				if !have[col] {
+					missing = append(missing, col)
+				}
+			}
+			sort.Strings(missing)
+			for _, col := range missing {
+				t.Errorf("INSERT INTO %s (statement #%d) in queries_images.go does not write %q: a cloned SBOM would lose it",
+					table, i+1, col)
+			}
+		}
+	}
+}
+
 // All five ingestion_queue writers must agree on the column set. The queue is
 // append-only — a status transition rewrites the whole row — so a writer
 // omitting a column silently blanks it for that job.

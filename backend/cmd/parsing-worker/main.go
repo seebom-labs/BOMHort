@@ -20,6 +20,7 @@ import (
 	"github.com/seebom-labs/bomhort/backend/internal/depgraph"
 	"github.com/seebom-labs/bomhort/backend/internal/docstore"
 	"github.com/seebom-labs/bomhort/backend/internal/evidence"
+	"github.com/seebom-labs/bomhort/backend/internal/extrafields"
 	gh "github.com/seebom-labs/bomhort/backend/internal/github"
 	"github.com/seebom-labs/bomhort/backend/internal/license"
 	"github.com/seebom-labs/bomhort/backend/internal/osv"
@@ -139,6 +140,19 @@ func main() {
 		log.Printf("Original document store: backend=%s", originals.Backend())
 	}
 
+	// Extra SBOM fields: which producer-written fields to recognise
+	// beyond the built-in ones. Missing file = feature off; an invalid file
+	// is fatal so a typo does not silently recognise nothing.
+	extraFields, err := extrafields.Load(cfg.ExtraFieldsFile)
+	if err != nil {
+		log.Fatalf("Invalid extra-fields configuration: %v", err)
+	}
+	if extraFields == nil {
+		log.Printf("Extra SBOM fields: none configured (%s not found)", cfg.ExtraFieldsFile)
+	} else {
+		log.Printf("Extra SBOM fields from %s: %s", cfg.ExtraFieldsFile, strings.Join(extraFields.Names(), ", "))
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -251,7 +265,7 @@ func main() {
 		// by a cancelled write is never claimed again.
 		statusCtx := context.WithoutCancel(ctx)
 		for _, job := range jobs {
-			if err := processJob(ctx, cfg, chClient, osvClient, exceptions, ghResolver, registryResolvers, s3c, originals, job); err != nil {
+			if err := processJob(ctx, cfg, chClient, osvClient, exceptions, ghResolver, registryResolvers, s3c, originals, extraFields, job); err != nil {
 				var deferErr *deferError
 				if errors.As(err, &deferErr) {
 					log.Printf("Deferred %s until %s: %v", job.SourceFile, deferErr.until.Format(time.RFC3339), deferErr.cause)
@@ -285,7 +299,7 @@ func main() {
 	}
 }
 
-func processJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, rules *license.ExceptionsWatcher, ghResolver *gh.Resolver, registryResolvers []registryResolver, s3c *s3client.Client, originals docstore.Store, job models.IngestionJob) error {
+func processJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, rules *license.ExceptionsWatcher, ghResolver *gh.Resolver, registryResolvers []registryResolver, s3c *s3client.Client, originals docstore.Store, extraFields *extrafields.Config, job models.IngestionJob) error {
 	// Determine how to open the file: S3 URI or local path.
 	openFile := func() (io.ReadCloser, error) {
 		if strings.HasPrefix(job.SourceFile, "s3://") {
@@ -318,7 +332,7 @@ func processJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Cl
 	// rules current when its results are written.
 	exceptions := func() *license.ExceptionIndex { return rules.Current().Value }
 
-	return processSBOMJob(ctx, cfg, chClient, osvClient, exceptions, ghResolver, registryResolvers, openFile, originals, job)
+	return processSBOMJob(ctx, cfg, chClient, osvClient, exceptions, ghResolver, registryResolvers, openFile, originals, extraFields, job)
 }
 
 func processVEXJob(ctx context.Context, chClient *clickhouse.Client, openFile func() (io.ReadCloser, error), job models.IngestionJob) error {
@@ -420,7 +434,7 @@ func excludeIndices(names, licenses []string, skip []uint32) ([]string, []string
 	return outNames, outLics
 }
 
-func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, exceptions func() *license.ExceptionIndex, ghResolver *gh.Resolver, registryResolvers []registryResolver, openFile func() (io.ReadCloser, error), originals docstore.Store, job models.IngestionJob) error {
+func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, exceptions func() *license.ExceptionIndex, ghResolver *gh.Resolver, registryResolvers []registryResolver, openFile func() (io.ReadCloser, error), originals docstore.Store, extraFields *extrafields.Config, job models.IngestionJob) error {
 
 	// 1. Read the whole document once. The bytes are needed twice — for the
 	// parser and for the Tier-2 original capture (#256) — and sbom.Parse reads
@@ -435,7 +449,7 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 		return fmt.Errorf("failed to read SBOM source %s: %w", job.SourceFile, err)
 	}
 
-	result, err := sbom.Parse(bytes.NewReader(raw), job.SourceFile, job.SHA256Hash)
+	result, err := sbom.Parse(bytes.NewReader(raw), job.SourceFile, job.SHA256Hash, extraFields != nil && len(extraFields.Fields) > 0)
 	if err != nil {
 		return err
 	}
@@ -445,11 +459,19 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 		len(result.Packages.PackageNames),
 		len(result.Packages.RelSourceIndices))
 
-	// 1b. Skip if this SBOM was already fully ingested (idempotency guard).
-	if exists, _ := chClient.SBOMExists(ctx, result.SBOM.SBOMID); exists {
+	// 1a. Skip if this SBOM was already fully ingested (idempotency guard).
+	exists, err := chClient.SBOMExists(ctx, result.SBOM.SBOMID)
+	if err != nil {
+		return err
+	}
+	if exists {
 		log.Printf("  Skipping %s (already ingested, sbom_id=%s)", job.SourceFile, result.SBOM.SBOMID)
 		return nil
 	}
+
+	// 1b. Extract operator-declared fields from the metadata captured during
+	// format detection, independent of the selected parser backend.
+	applyExtraFields(&result.SBOM, result.CycloneDXMetadata, extraFields)
 
 	// 1c. Tier-2 fidelity capture (#256): persist the original bytes BEFORE any
 	// ClickHouse row is written. If the blob store is unavailable the job fails
