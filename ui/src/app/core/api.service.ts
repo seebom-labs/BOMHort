@@ -30,6 +30,7 @@ import {
   ProjectPackageItem,
   TagListItem,
   GlobalSearchResponse,
+  ImageDetail,
   FleetCluster,
   ClusterListItem,
   ClusterStats,
@@ -79,6 +80,7 @@ export class ApiService {
    */
   getSboms(page?: number, pageSize?: number, search?: string, project?: string, minQuality?: number): Observable<PaginatedResponse<SBOMListItem>>;
   getSboms(page?: number, pageSize?: number, search?: string, project?: string, origin?: string, minQuality?: number): Observable<PaginatedResponse<SBOMListItem>>;
+  getSboms(page?: number, pageSize?: number, search?: string, project?: string, origin?: string, minQuality?: number, digest?: string): Observable<PaginatedResponse<SBOMListItem>>;
   getSboms(
     page = 1,
     pageSize = 50,
@@ -86,6 +88,7 @@ export class ApiService {
     project = '',
     originOrMinQuality: string | number = '',
     maybeMinQuality = 0,
+    digest = '',
   ): Observable<PaginatedResponse<SBOMListItem>> {
     const origin = typeof originOrMinQuality === 'string' ? originOrMinQuality : '';
     const minQuality = typeof originOrMinQuality === 'number' ? originOrMinQuality : maybeMinQuality;
@@ -104,7 +107,17 @@ export class ApiService {
     if (minQuality > 0) {
       params = params.set('min_quality', minQuality.toString());
     }
+    if (digest) {
+      params = params.set('digest', digest);
+    }
     return this.http.get<PaginatedResponse<SBOMListItem>>(`${this.baseUrl}/sboms`, { params });
+  }
+
+  getImage(digest: string, page = 1, pageSize = 50): Observable<ImageDetail> {
+    let params = new HttpParams()
+      .set('page', page.toString())
+      .set('page_size', pageSize.toString());
+    return this.http.get<ImageDetail>(`${this.baseUrl}/images/${encodeURIComponent(digest)}`, { params });
   }
 
   getSbomDetail(sbomId: string): Observable<SBOMDetail> {

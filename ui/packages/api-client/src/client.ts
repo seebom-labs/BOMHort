@@ -11,6 +11,8 @@ import type {
   DependencyStatsResponse,
   FleetCluster,
   GlobalSearchResponse,
+  ImageDetail,
+  ImageListItem,
   LicenseComplianceItem,
   LicenseExceptionsFile,
   LicenseSourceItem,
@@ -128,6 +130,7 @@ export class BomhortApiClient {
   getSboms(page?: number, pageSize?: number, search?: string, project?: string, minQuality?: number, signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>>;
   getSboms(page?: number, pageSize?: number, search?: string, project?: string, origin?: string, signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>>;
   getSboms(page?: number, pageSize?: number, search?: string, project?: string, origin?: string, minQuality?: number, signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>>;
+  getSboms(page?: number, pageSize?: number, search?: string, project?: string, origin?: string, minQuality?: number, digest?: string, signal?: AbortSignal): Promise<PaginatedResponse<SBOMListItem>>;
   getSboms(
     page = 1,
     pageSize = 50,
@@ -135,6 +138,7 @@ export class BomhortApiClient {
     project = '',
     originOrQualityOrSignal?: string | number | AbortSignal,
     minQualityOrSignal?: number | AbortSignal,
+    digestOrSignal?: string | AbortSignal,
     maybeSignal?: AbortSignal,
   ): Promise<PaginatedResponse<SBOMListItem>> {
     const origin = typeof originOrQualityOrSignal === 'string' ? originOrQualityOrSignal : '';
@@ -143,15 +147,55 @@ export class BomhortApiClient {
       : typeof minQualityOrSignal === 'number'
         ? minQualityOrSignal
         : 0;
+    const digest = typeof digestOrSignal === 'string' ? digestOrSignal : '';
     const signal = isSignal(originOrQualityOrSignal)
       ? originOrQualityOrSignal
       : isSignal(minQualityOrSignal)
         ? minQualityOrSignal
-        : maybeSignal;
+        : isSignal(digestOrSignal)
+          ? digestOrSignal
+          : maybeSignal;
     return this.get(
-      `/sboms${query({ page, page_size: pageSize, search, project, origin, min_quality: minQuality > 0 ? minQuality : undefined })}`,
+      `/sboms${query({
+        page,
+        page_size: pageSize,
+        search,
+        project,
+        origin,
+        min_quality: minQuality > 0 ? minQuality : undefined,
+        digest: digest || undefined,
+      })}`,
       signal,
     );
+  }
+
+  getImage(digest: string, signal?: AbortSignal): Promise<ImageDetail>;
+  getImage(digest: string, page?: number, pageSize?: number, signal?: AbortSignal): Promise<ImageDetail>;
+  getImage(
+    digest: string,
+    pageOrSignal?: number | AbortSignal,
+    pageSizeOrSignal?: number | AbortSignal,
+    maybeSignal?: AbortSignal,
+  ): Promise<ImageDetail> {
+    const page = typeof pageOrSignal === 'number' ? pageOrSignal : 1;
+    const pageSize = typeof pageSizeOrSignal === 'number' ? pageSizeOrSignal : 50;
+    const signal = isSignal(pageOrSignal)
+      ? pageOrSignal
+      : isSignal(pageSizeOrSignal)
+        ? pageSizeOrSignal
+        : maybeSignal;
+    return this.get(
+      `/images/${encodeURIComponent(digest)}${query({ page, page_size: pageSize })}`,
+      signal,
+    );
+  }
+
+  async checkImage(digest: string, signal?: AbortSignal): Promise<boolean> {
+    const url = `${this.baseUrl}/images/${encodeURIComponent(digest)}`;
+    const res = await this.fetchFn(url, { method: 'HEAD', headers: this.headers, signal });
+    if (res.status === 200) return true;
+    if (res.status === 404) return false;
+    throw new ApiError(res.status, url, await res.text());
   }
 
   getSbomDetail(sbomId: string, signal?: AbortSignal): Promise<SBOMDetail> {
