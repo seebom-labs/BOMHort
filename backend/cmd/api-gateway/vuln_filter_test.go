@@ -98,6 +98,25 @@ func TestParseExploit(t *testing.T) {
 	}
 }
 
+func TestParseCWE(t *testing.T) {
+	for raw, want := range map[string]struct {
+		value string
+		ok    bool
+	}{
+		"":          {value: "", ok: true},
+		"79":        {value: "CWE-79", ok: true},
+		" cWe-79 ":  {value: "CWE-79", ok: true},
+		"CWE-":      {ok: false},
+		"CWE-x":     {ok: false},
+		"CWE-79,80": {ok: false},
+	} {
+		got, ok := parseCWE(raw)
+		if ok != want.ok || got != want.value {
+			t.Errorf("parseCWE(%q) = %q, %v; want %q, %v", raw, got, ok, want.value, want.ok)
+		}
+	}
+}
+
 func TestOnlyExploitable(t *testing.T) {
 	items := []dto.VulnerabilityListItem{
 		{VulnID: "CVE-1", ExploitAvailable: true},
