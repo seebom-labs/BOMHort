@@ -282,6 +282,9 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 			f.advisory_source, f.advisory_status, f.component_location,
 			ifNull(vx.vex_status, '')            AS vex_status,
 			ifNull(vx.vex_justification, '')     AS vex_justification,
+			ifNull(vx.vex_action_statement, '')  AS vex_action_statement,
+			ifNull(vx.vex_impact_statement, '')  AS vex_impact_statement,
+			ifNull(vx.vex_action_statement_timestamp, toDateTime(0)) AS vex_action_statement_timestamp,
 			ifNull(vx.winning_timestamp, toDateTime(0)) AS vex_timestamp,
 			ifNull(vx.vex_statement_id, '')      AS vex_statement_id,
 			ifNull(vx.vex_author, '')            AS vex_author,
@@ -318,6 +321,9 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 				m.vuln_id AS vuln_id, m.purl AS purl,
 				argMax(st.status, st.vex_timestamp)          AS vex_status,
 				argMax(st.justification, st.vex_timestamp)   AS vex_justification,
+				argMax(st.action_statement, st.vex_timestamp)     AS vex_action_statement,
+				argMax(st.impact_statement, st.vex_timestamp)     AS vex_impact_statement,
+				argMax(st.action_statement_timestamp, st.vex_timestamp) AS vex_action_statement_timestamp,
 				argMax(toString(st.vex_id), st.vex_timestamp) AS vex_statement_id,
 				argMax(st.author, st.vex_timestamp)          AS vex_author,
 				argMax(st.tooling, st.vex_timestamp)         AS vex_tooling,
@@ -344,7 +350,7 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 	var items []dto.VulnerabilityListItem
 	for rows.Next() {
 		var item dto.VulnerabilityListItem
-		var discoveredAt, vexTimestamp, evidenceAt time.Time
+		var discoveredAt, vexTimestamp, actionAt, evidenceAt time.Time
 		var depth uint16
 		var aliases []string
 		var components string
@@ -354,7 +360,9 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 			&item.SourceFile, &discoveredAt, &item.AffectedSBOMs, &depth, &aliases,
 			&item.CWEIDs,
 			&item.AdvisorySource, &item.AdvisoryStatus, &components,
-			&item.VEXStatus, &item.VEXJustification, &vexTimestamp,
+			&item.VEXStatus, &item.VEXJustification,
+			&item.VEXActionStatement, &item.VEXImpactStatement,
+			&actionAt, &vexTimestamp,
 			&item.VEXStatementID, &item.VEXAuthor, &item.VEXTooling,
 			&hasNoDepGraph,
 			&item.Reachability, &item.EvidenceSource, &item.EvidenceRef, &evidenceAt,
@@ -373,6 +381,11 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 		}
 		if !vexTimestamp.IsZero() && vexTimestamp.Unix() != 0 {
 			item.VEXTimestamp = vexTimestamp.Format(time.RFC3339)
+		}
+		// Legacy statements and LEFT JOIN misses store the epoch default
+		// (#413), which omitempty drops from the JSON.
+		if actionAt.Unix() > 0 {
+			item.VEXActionStatementTimestamp = actionAt.Format(time.RFC3339)
 		}
 		if !evidenceAt.IsZero() && evidenceAt.Unix() > 0 {
 			item.EvidenceAt = evidenceAt.Format(time.RFC3339)

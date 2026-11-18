@@ -60,7 +60,10 @@ func TestVulnerabilityReportCSV(t *testing.T) {
 			Summary: "Non-linear parsing, \"quoted\", with a comma", FixedVersion: "v0.33.0",
 			SourceFile: "etcd.spdx.json", DiscoveredAt: "2026-05-15T00:00:00Z",
 			DependencyScope: "direct", DependencyDepth: depth(1), VEXStatus: "not_affected",
-			Reachability: "not_reachable", EvidenceSource: "govulncheck v1.1.3",
+			VEXActionStatement:          "Upgrade to v0.33.0; then re-scan the fleet.\nFull plan follows.",
+			VEXActionStatementTimestamp: "2026-05-15T02:00:00Z",
+			VEXAuthor:                   "Example Org Security Team",
+			Reachability:                "not_reachable", EvidenceSource: "govulncheck v1.1.3",
 			EvidenceRef: "job-42", EvidenceAt: "2026-05-15T01:00:00Z",
 			ExploitAvailable: true, ExploitSources: []string{"nuclei", "exploitdb"},
 		},
@@ -97,7 +100,10 @@ func TestVulnerabilityReportCSV(t *testing.T) {
 	want := []string{"CVE-2024-45338", "GO-2024-3333", "CVE-2024-45338;GHSA-w32m-9786-jp63", "HIGH",
 		"pkg:golang/golang.org/x/net@v0.21.0", "Non-linear parsing, \"quoted\", with a comma", "v0.33.0",
 		"etcd.spdx.json", "2026-05-15T00:00:00Z", "direct", "1", "not_affected",
-		"not_reachable", "govulncheck v1.1.3", "job-42", "2026-05-15T01:00:00Z", "true", "nuclei;exploitdb"}
+		"not_reachable", "govulncheck v1.1.3", "job-42", "2026-05-15T01:00:00Z",
+		"true", "nuclei;exploitdb",
+		"Upgrade to v0.33.0; then re-scan the fleet.\nFull plan follows.", "2026-05-15T02:00:00Z",
+		"Example Org Security Team"}
 	if strings.Join(records[1], "|") != strings.Join(want, "|") {
 		t.Errorf("row 1 =\n%v\nwant\n%v", records[1], want)
 	}

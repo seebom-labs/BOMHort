@@ -239,7 +239,7 @@ func (c *Client) InsertVEXStatements(ctx context.Context, stmts []models.VEXStat
 		`INSERT INTO vex_statements (
 			ingested_at, vex_id, document_id, source_file, sbom_id,
 			product_ref, product_purl, vuln_id, status, justification,
-			impact_statement, action_statement, vex_timestamp,
+			impact_statement, action_statement, action_statement_timestamp, vex_timestamp,
 			author, role, tooling, status_notes,
 			cluster, namespace, project
 		)`)
@@ -248,6 +248,10 @@ func (c *Client) InsertVEXStatements(ctx context.Context, stmts []models.VEXStat
 	}
 
 	for _, s := range stmts {
+		actionAt := s.ActionStatementTimestamp
+		if actionAt.IsZero() {
+			actionAt = time.Unix(0, 0)
+		}
 		if err := batch.Append(
 			s.IngestedAt,
 			s.VEXID,
@@ -261,6 +265,7 @@ func (c *Client) InsertVEXStatements(ctx context.Context, stmts []models.VEXStat
 			s.Justification,
 			s.ImpactStatement,
 			s.ActionStatement,
+			actionAt,
 			s.VEXTimestamp,
 			s.Author,
 			s.Role,
