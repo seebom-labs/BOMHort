@@ -109,13 +109,14 @@ func groupName(project string, assignments map[string]projectgroup.Assignment, h
 
 // QueryProjectGroups lists projects grouped by their resolved parent, paged
 // by group. search matches the group name or any member name; tag restricts
-// the members to projects carrying it, like QueryProjects.
-func (c *Client) QueryProjectGroups(ctx context.Context, assignments map[string]projectgroup.Assignment, page, pageSize uint64, search, tag string) (*dto.PaginatedResponse[dto.ProjectGroupItem], error) {
+// the members to projects carrying it, like QueryProjects; origin restricts
+// members to projects carrying SBOMs produced with that origin class (#455).
+func (c *Client) QueryProjectGroups(ctx context.Context, assignments map[string]projectgroup.Assignment, page, pageSize uint64, search, tag, origin string) (*dto.PaginatedResponse[dto.ProjectGroupItem], error) {
 	if page == 0 {
 		page = 1
 	}
 
-	projects, err := c.queryAllProjectRows(ctx, tag)
+	projects, err := c.queryAllProjectRows(ctx, tag, origin)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +173,7 @@ func (c *Client) QueryProjectGroups(ctx context.Context, assignments map[string]
 	if len(items) > 0 {
 		// Member counts (each member de-duplicated over its own versions),
 		// then group counts (de-duplicated over all members' versions).
-		c.enrichProjectStats(ctx, pageMembers)
+		c.enrichProjectStats(ctx, pageMembers, origin)
 		memberStats := make(map[string]dto.ProjectListItem, len(pageMembers))
 		for _, m := range pageMembers {
 			memberStats[m.ProjectName] = m
@@ -183,7 +184,7 @@ func (c *Client) QueryProjectGroups(ctx context.Context, assignments map[string]
 				items[i].Members[j].VulnCount = memberStats[items[i].Members[j].ProjectName].VulnCount
 			}
 		}
-		c.enrichGroupStats(ctx, items)
+		c.enrichGroupStats(ctx, items, origin)
 	}
 
 	return &dto.PaginatedResponse[dto.ProjectGroupItem]{
@@ -252,14 +253,22 @@ func buildGroup(name string, isProject bool, members []dto.ProjectListItem, assi
 }
 
 // queryAllProjectRows returns every project (optionally restricted to those
-// carrying tag) with its SBOM count, newest ingest and newest SBOM id. The
+// carrying tag or origin) with its SBOM count, newest ingest and newest SBOM id. The
 // same aggregation as QueryProjects, without paging.
-func (c *Client) queryAllProjectRows(ctx context.Context, tag string) ([]dto.ProjectListItem, error) {
-	tagWhere := ""
+func (c *Client) queryAllProjectRows(ctx context.Context, tag, origin string) ([]dto.ProjectListItem, error) {
+	var rowConds []string
 	var args []interface{}
 	if tag != "" {
-		tagWhere = "WHERE has(s.tags, ?)"
+		rowConds = append(rowConds, "has(s.tags, ?)")
 		args = append(args, tag)
+	}
+	if origin != "" {
+		rowConds = append(rowConds, "s.origin = ?")
+		args = append(args, origin)
+	}
+	rowWhere := ""
+	if len(rowConds) > 0 {
+		rowWhere = "WHERE " + strings.Join(rowConds, " AND ")
 	}
 	rows, err := c.Conn.Query(ctx, fmt.Sprintf(`
 		SELECT
@@ -274,12 +283,13 @@ func (c *Client) queryAllProjectRows(ctx context.Context, tag string) ([]dto.Pro
 				s.ingested_at,
 				s.document_version,
 				s.tags,
+				s.origin,
 				%s AS project_name
 			FROM (SELECT * FROM sboms FINAL) AS s
 			%s
 		) AS s
 		GROUP BY project_name
-	`, projectKeyExpr, tagWhere), args...)
+	`, projectKeyExpr, rowWhere), args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query projects for grouping: %w", err)
 	}
@@ -305,7 +315,7 @@ func (c *Client) queryAllProjectRows(ctx context.Context, tag string) ([]dto.Pro
 // transform() maps each member project to its group inside the query, so one
 // pass per table covers the whole page. Errors are logged and leave the
 // counts at zero, like enrichProjectStats.
-func (c *Client) enrichGroupStats(ctx context.Context, items []dto.ProjectGroupItem) {
+func (c *Client) enrichGroupStats(ctx context.Context, items []dto.ProjectGroupItem, origin string) {
 	var memberNames, groupOf []string
 	for _, g := range items {
 		for _, m := range g.Members {
@@ -317,6 +327,13 @@ func (c *Client) enrichGroupStats(ctx context.Context, items []dto.ProjectGroupI
 		return
 	}
 
+	filter := "s.project_name IN (?)"
+	filterArgs := []any{memberNames}
+	if origin != "" {
+		filter += " AND s.origin = ?"
+		filterArgs = append(filterArgs, origin)
+	}
+
 	pkgQuery := fmt.Sprintf(`
 		SELECT transform(toString(s.project_name), ?, ?, '') AS grp, uniqExact(pk.pkg_key) AS package_count
 		FROM %s AS s
@@ -325,8 +342,8 @@ func (c *Client) enrichGroupStats(ctx context.Context, items []dto.ProjectGroupI
 			FROM %s AS p
 		) AS pk ON pk.sbom_id = s.sbom_id
 		GROUP BY grp
-	`, projectSBOMs, packageKeyExpr, projectRows("*", "sbom_packages", "s.project_name IN (?)"))
-	pkgs := c.groupCounts(ctx, "package", pkgQuery, memberNames, groupOf)
+	`, projectSBOMs, packageKeyExpr, projectRows("*", "sbom_packages", filter))
+	pkgs := c.groupCounts(ctx, "package", pkgQuery, memberNames, groupOf, filterArgs)
 
 	vulnQuery := fmt.Sprintf(`
 		SELECT transform(toString(s.project_name), ?, ?, '') AS grp, uniqExact(v.vuln_id, v.purl) AS vuln_count
@@ -334,8 +351,8 @@ func (c *Client) enrichGroupStats(ctx context.Context, items []dto.ProjectGroupI
 		INNER JOIN %s AS v
 			ON v.sbom_id = s.sbom_id
 		GROUP BY grp
-	`, projectSBOMs, projectRows("sbom_id, vuln_id, purl", "vulnerabilities", "s.project_name IN (?)"))
-	vulns := c.groupCounts(ctx, "vulnerability", vulnQuery, memberNames, groupOf)
+	`, projectSBOMs, projectRows("sbom_id, vuln_id, purl", "vulnerabilities", filter))
+	vulns := c.groupCounts(ctx, "vulnerability", vulnQuery, memberNames, groupOf, filterArgs)
 
 	for i := range items {
 		items[i].PackageCount = pkgs[items[i].Name]
@@ -343,9 +360,10 @@ func (c *Client) enrichGroupStats(ctx context.Context, items []dto.ProjectGroupI
 	}
 }
 
-func (c *Client) groupCounts(ctx context.Context, what, query string, memberNames, groupOf []string) map[string]uint64 {
+func (c *Client) groupCounts(ctx context.Context, what, query string, memberNames, groupOf []string, filterArgs []any) map[string]uint64 {
 	out := make(map[string]uint64)
-	rows, err := c.Conn.Query(ctx, query, memberNames, groupOf, memberNames)
+	args := append([]any{memberNames, groupOf}, filterArgs...)
+	rows, err := c.Conn.Query(ctx, query, args...)
 	if err != nil {
 		log.Printf("WARNING: project group %s counts: %v", what, err)
 		return out

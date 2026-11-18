@@ -7,6 +7,7 @@ import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../core/api.service';
 import { ProjectListItem, TagListItem } from '../../core/api.models';
+import { ORIGIN_FILTERS, Origin } from '../../shared/origin-dimension';
 
 @Component({
   selector: 'app-project-list',
@@ -48,6 +49,17 @@ import { ProjectListItem, TagListItem } from '../../core/api.models';
           {{ t.tag }}
           <span class="tag-count">{{ t.project_count | number }}</span>
         </button>
+      </div>
+
+      <!-- Origin filter chips (#455) -->
+      <div class="tag-bar origin-bar">
+        <button
+          *ngFor="let f of originFilters"
+          type="button"
+          class="tag-chip origin-chip"
+          [class.selected]="activeOrigin === f.value"
+          (click)="selectOrigin(f.value)"
+        >{{ f.label }}</button>
       </div>
 
       <!--
@@ -156,6 +168,10 @@ import { ProjectListItem, TagListItem } from '../../core/api.models';
       background: var(--status-info-bg); color: var(--accent-hover);
       border-color: var(--accent); font-weight: 600;
     }
+    .origin-chip.selected {
+      background: rgba(147, 51, 234, 0.12); color: #a855f7;
+      border-color: #a855f7;
+    }
     .tag-count { font-size: 0.65rem; opacity: 0.7; }
     .tag-chip.is-project { border-style: dashed; }
     .parent-banner {
@@ -241,6 +257,9 @@ export class ProjectListComponent implements OnInit, OnDestroy {
   tags: TagListItem[] = [];
   /** Currently filtered grouping; '' = no grouping filter. */
   activeTag = '';
+  /** Currently filtered origin; '' = no origin filter (#455). */
+  activeOrigin: '' | Origin = '';
+  readonly originFilters = ORIGIN_FILTERS;
 
   /**
    * The filter state the current rows were loaded with. Distinct from
@@ -253,6 +272,7 @@ export class ProjectListComponent implements OnInit, OnDestroy {
    */
   private loadedTag: string | null = null;
   private loadedSearch: string | null = null;
+  private loadedOrigin: string | null = null;
 
   private page = 1;
   private readonly pageSize = 100;
@@ -275,7 +295,7 @@ export class ProjectListComponent implements OnInit, OnDestroy {
       // Only the URL is written here; the reload happens in the queryParams
       // subscription below, so there is exactly one path into loadProjects()
       // and typing cannot race a back-navigation.
-      this.syncUrl(term, this.activeTag, true);
+      this.syncUrl(term, this.activeTag, this.activeOrigin, true);
     });
 
     // Tags load independently of the listing: a failure here must not hide
@@ -301,17 +321,19 @@ export class ProjectListComponent implements OnInit, OnDestroy {
     this.route.queryParams.pipe(takeUntil(this.destroy$)).subscribe((params) => {
       const tag = params['tag'] ?? '';
       const search = params['search'] ?? '';
+      const origin = params['origin'] ?? '';
 
       // Compared against what was last *loaded*, not against searchTerm:
       // searchTerm is bound to the input via ngModel and already holds the
       // new value while the user types, so comparing it would make this
       // guard swallow the very reload the typing asked for.
-      if (tag === this.loadedTag && search === this.loadedSearch) {
+      if (tag === this.loadedTag && search === this.loadedSearch && origin === this.loadedOrigin) {
         return;
       }
 
       this.activeTag = tag;
       this.searchTerm = search;
+      this.activeOrigin = origin as Origin;
       this.resetPaging();
       this.loadProjects(search);
     });
@@ -340,7 +362,14 @@ export class ProjectListComponent implements OnInit, OnDestroy {
    * identical code path.
    */
   selectTag(tag: string): void {
-    this.syncUrl(this.searchTerm, this.activeTag === tag ? '' : tag, false);
+    this.syncUrl(this.searchTerm, this.activeTag === tag ? '' : tag, this.activeOrigin, false);
+  }
+
+  /**
+   * Switches the origin filter (#455).
+   */
+  selectOrigin(origin: string): void {
+    this.syncUrl(this.searchTerm, this.activeTag, this.activeOrigin === origin ? '' : (origin as Origin), false);
   }
 
   /**
@@ -355,10 +384,10 @@ export class ProjectListComponent implements OnInit, OnDestroy {
    * character at a time. Choosing a grouping is a deliberate act and gets its
    * own entry, so back returns to the previous grouping.
    */
-  private syncUrl(search: string, tag: string, replace: boolean): void {
+  private syncUrl(search: string, tag: string, origin: string, replace: boolean): void {
     this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: { tag: tag || null, search: search || null },
+      queryParams: { tag: tag || null, origin: origin || null, search: search || null },
       queryParamsHandling: 'merge',
       replaceUrl: replace,
     });
@@ -401,9 +430,10 @@ export class ProjectListComponent implements OnInit, OnDestroy {
     this.loading = true;
     this.loadedTag = this.activeTag;
     this.loadedSearch = search;
+    this.loadedOrigin = this.activeOrigin;
     this.cdr.markForCheck();
 
-    this.api.getProjects(this.page, this.pageSize, search, this.activeTag).subscribe((response) => {
+    this.api.getProjects(this.page, this.pageSize, search, this.activeTag, this.activeOrigin).subscribe((response) => {
       if (append) {
         this.projects = [...this.projects, ...response.data];
       } else {

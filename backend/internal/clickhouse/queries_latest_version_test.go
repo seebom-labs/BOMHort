@@ -77,7 +77,7 @@ func TestProjectLatestIsHighestVersion(t *testing.T) {
 		if d.LatestSBOMID != want.id || d.LatestVersion != want.version {
 			t.Errorf("%s: latest = %q/%s, want %q/%s", tc.name, d.LatestVersion, d.LatestSBOMID, want.version, want.id)
 		}
-		list, err := c.QueryProjects(ctx, 1, 10, project, "")
+		list, err := c.QueryProjects(ctx, 1, 10, project, "", "")
 		if err != nil {
 			t.Fatalf("%s: list: %v", tc.name, err)
 		}
