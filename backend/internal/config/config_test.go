@@ -516,6 +516,25 @@ func TestLoad_SBOMDirDisabled(t *testing.T) {
 	if got, err := cfg.LocalSBOMPath("pushed/a.spdx.json"); err != nil || got != "/tmp/sboms/pushed/a.spdx.json" {
 		t.Errorf("LocalSBOMPath = %q, %v; want /tmp/sboms/pushed/a.spdx.json", got, err)
 	}
+	if got, err := cfg.LocalSBOMPath("direct.spdx.json"); err != nil || got != "/tmp/sboms/direct.spdx.json" {
+		t.Errorf("LocalSBOMPath = %q, %v; want /tmp/sboms/direct.spdx.json", got, err)
+	}
+
+	// Traversal and invalid paths must be rejected.
+	for _, bad := range []string{
+		"../../etc/passwd",
+		"pushed/../../etc/passwd",
+		"..",
+		".",
+		"",
+		"   ",
+		"/etc/passwd",
+		"/tmp/sboms/pushed/a.spdx.json",
+	} {
+		if got, err := cfg.LocalSBOMPath(bad); err == nil {
+			t.Errorf("LocalSBOMPath(%q) = %q, want error for invalid/traversal path", bad, got)
+		}
+	}
 
 	t.Setenv("SBOM_DIR_DISABLED", "true")
 	cfg, err = Load()

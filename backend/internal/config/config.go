@@ -520,12 +520,24 @@ func (c *Config) HasLocalSBOMDir() bool {
 
 // LocalSBOMPath resolves a job's relative source file to its path under
 // SBOMDir. Without a shared directory it fails instead of pointing into the
-// pod's own filesystem.
+// pod's own filesystem. It enforces directory containment so a source file
+// cannot escape SBOMDir via path traversal ("..") or absolute paths.
 func (c *Config) LocalSBOMPath(sourceFile string) (string, error) {
 	if !c.HasLocalSBOMDir() {
 		return "", fmt.Errorf("%s is a local file, but this instance has no shared SBOM directory (SBOM_DIR_DISABLED)", sourceFile)
 	}
-	return filepath.Join(c.SBOMDir, sourceFile), nil
+	clean := filepath.Clean(strings.TrimSpace(sourceFile))
+	if clean == "" || clean == "." || clean == "/" || clean == "\\" || filepath.IsAbs(clean) || !filepath.IsLocal(clean) {
+		return "", fmt.Errorf("invalid source file path: %q", sourceFile)
+	}
+
+	resolved := filepath.Join(c.SBOMDir, clean)
+	rel, err := filepath.Rel(c.SBOMDir, resolved)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("source file path escapes SBOM directory: %q", sourceFile)
+	}
+
+	return resolved, nil
 }
 
 // ResolvedOriginalStoreBackend resolves "auto" to a concrete backend:
