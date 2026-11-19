@@ -123,7 +123,7 @@ func vulnerabilityReportHandler(filter vulnFilterFunc, stream vulnerabilityStrea
 
 		filename := "bomhort-vulnerabilities-" + now().UTC().Format("2006-01-02") + ".csv"
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-		w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+		w.Header().Set("Content-Disposition", contentDispositionAttachment(filename))
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusOK)
 

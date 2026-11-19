@@ -1062,7 +1062,12 @@ func main() {
 			}
 		} else {
 			// Local filesystem.
-			absPath := filepath.Join(cfg.SBOMDir, sourceFile)
+			absPath, pathErr := safeLocalSBOMPath(cfg.SBOMDir, sourceFile)
+			if pathErr != nil {
+				log.Printf("WARNING: sbom download invalid local path for %s: %v", sanitizeLogParam(sbomID), pathErr)
+				writeError(w, http.StatusBadRequest, "Invalid source file path")
+				return
+			}
 			f, openErr := os.Open(absPath)
 			if openErr != nil {
 				log.Printf("ERROR: sbom download local open %s: %v", sanitizeLogParam(absPath), openErr)
@@ -1074,7 +1079,7 @@ func main() {
 		defer rc.Close()
 
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+		w.Header().Set("Content-Disposition", contentDispositionAttachment(filename))
 		w.WriteHeader(http.StatusOK)
 		if _, err := io.Copy(w, rc); err != nil {
 			log.Printf("ERROR: sbom download stream for %s: %v", sanitizeLogParam(sbomID), err)
@@ -2231,7 +2236,7 @@ func serveStoredOriginal(w http.ResponseWriter, r *http.Request, chClient *click
 	}
 
 	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	w.Header().Set("Content-Disposition", contentDispositionAttachment(filename))
 	if passthrough {
 		w.Header().Set("Content-Encoding", "gzip")
 		w.Header().Add("Vary", "Accept-Encoding")
