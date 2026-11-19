@@ -225,11 +225,13 @@ func (c *Client) CloneImageSBOM(ctx context.Context, source ImageSBOMRef, digest
 				ingested_at, sbom_id, source_file, package_spdx_ids, package_names,
 				package_versions, package_purls, package_licenses, package_license_sources,
 				rel_source_indices, rel_target_indices, rel_types, package_depths,
+				license_discrepancy,
 				cluster, namespace, project, image_digest
 			)
 			SELECT now(), ?, source_file, package_spdx_ids, package_names,
 			       package_versions, package_purls, package_licenses, package_license_sources,
 			       rel_source_indices, rel_target_indices, rel_types, package_depths,
+			       if(length(license_discrepancy) = length(package_names), license_discrepancy, arrayResize(CAST([], 'Array(String)'), length(package_names), '')),
 			       ?, ?, ?, ?
 			FROM sbom_packages FINAL WHERE sbom_id = ?`,
 			[]any{targetID, cluster, namespace, project, digest, source.SBOMID}},

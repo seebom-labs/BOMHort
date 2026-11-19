@@ -186,6 +186,7 @@ services:
       SKIP_DEPSDEV_RESOLVE: ${SKIP_DEPSDEV_RESOLVE:-false}
       SKIP_PACKAGIST_RESOLVE: ${SKIP_PACKAGIST_RESOLVE:-false}
       SKIP_PYPI_RESOLVE: ${SKIP_PYPI_RESOLVE:-false}
+      SKIP_CLEARLYDEFINED_RESOLVE: ${SKIP_CLEARLYDEFINED_RESOLVE:-false}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       EXCEPTIONS_FILE: /data/config/license-exceptions.json
       LICENSE_POLICY_FILE: /data/config/license-policy.json

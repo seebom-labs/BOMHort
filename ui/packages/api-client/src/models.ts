@@ -283,6 +283,20 @@ export interface LicenseAffectedSBOM {
   document_name: string;
 }
 
+export interface LicenseDiscrepancyItem {
+  sbom_id: string;
+  document_name?: string;
+  project?: string;
+  cluster?: string;
+  namespace?: string;
+  package_name: string;
+  package_version: string;
+  purl?: string;
+  declared_license: string;
+  discovered_license: string;
+  source?: string;
+}
+
 export interface VEXStatementItem {
   vex_id: string;
   document_id: string;

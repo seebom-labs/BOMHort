@@ -71,6 +71,7 @@ func (c *Client) InsertSBOMPackages(ctx context.Context, pkg *models.SBOMPackage
 			package_purls, package_licenses, package_license_sources,
 			rel_source_indices, rel_target_indices, rel_types,
 			package_depths,
+			license_discrepancy,
 			cluster, namespace, project, image_digest
 		)`)
 	if err != nil {
@@ -91,6 +92,7 @@ func (c *Client) InsertSBOMPackages(ctx context.Context, pkg *models.SBOMPackage
 		pkg.RelTargetIndices,
 		pkg.RelTypes,
 		depthsFor(pkg),
+		licenseDiscrepanciesFor(pkg),
 		pkg.Cluster,
 		pkg.Namespace,
 		pkg.Project,
@@ -100,6 +102,14 @@ func (c *Client) InsertSBOMPackages(ctx context.Context, pkg *models.SBOMPackage
 	}
 
 	return batch.Send()
+}
+
+// licenseDiscrepanciesFor returns the license discrepancy expressions padded or
+// trimmed to one entry per package, so the parallel arrays never disagree in length.
+func licenseDiscrepanciesFor(pkg *models.SBOMPackages) []string {
+	out := make([]string, len(pkg.PackageNames))
+	copy(out, pkg.LicenseDiscrepancy)
+	return out
 }
 
 // licenseSourcesFor returns the license sources padded or trimmed to one entry

@@ -21,8 +21,9 @@ import "strings"
 // A package whose license is still unknown carries the reason instead, so the
 // UI can tell an actionable gap from one where looking further makes no sense.
 const (
-	SourceDeclared = "declared"
-	SourceGitHub   = "github"
+	SourceDeclared       = "declared"
+	SourceGitHub         = "github"
+	SourceClearlyDefined = "clearlydefined"
 
 	ModifierLatest     = "latest"
 	ModifierNormalized = "normalized"
@@ -36,6 +37,8 @@ const (
 	// ReasonNoLicenseUpstream: the registry knows the package, but its
 	// author declared no license. Legally "all rights reserved".
 	ReasonNoLicenseUpstream = "no-license-upstream"
+	// ReasonNotHarvested: ClearlyDefined has not harvested or scanned this package definition yet.
+	ReasonNotHarvested = "not-harvested"
 	// ReasonNoPURL: the SBOM gives no package URL to look the package up by.
 	ReasonNoPURL = "no-purl"
 	// ReasonUnsupported: no resolver covers the ecosystem (generic binaries,
@@ -87,7 +90,7 @@ func WithModifier(source, modifier string) string {
 // license, in the order the pipeline checks them.
 var UnresolvedReasons = []string{
 	ReasonFirstParty, ReasonNoPURL, ReasonUnsupported,
-	ReasonNotPublished, ReasonNoLicenseUpstream, ReasonUnresolved,
+	ReasonNotPublished, ReasonNoLicenseUpstream, ReasonNotHarvested, ReasonUnresolved,
 }
 
 // IsUnresolvedReason reports whether a source string is a reason for a missing

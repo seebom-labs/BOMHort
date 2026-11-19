@@ -39,6 +39,7 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
         <span class="badge">{{ detail.spdx_version }}</span>
         <span class="badge origin-badge" *ngIf="detail.origin" [title]="'Origin: ' + detail.origin">{{ detail.origin }}</span>
         <button class="download-btn" title="Download original SBOM" (click)="downloadSbom()">⬇ Download</button>
+        <a class="download-btn" title="Download attribution NOTICE file" [href]="getNoticeUrl()" download>📄 NOTICE</a>
       </div>
 
       <div class="source-row" *ngIf="detail.source_repo || detail.source_ref">
@@ -604,6 +605,11 @@ export class SbomDetailComponent implements OnInit {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+  }
+
+  getNoticeUrl(): string {
+    if (!this.detail) return '';
+    return this.api.getSbomNoticesUrl(this.detail.sbom_id);
   }
 
   toggleLicense(licenseId: string): void {
