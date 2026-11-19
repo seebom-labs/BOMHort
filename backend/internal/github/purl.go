@@ -148,11 +148,19 @@ func gopkgInRepo(modulePath string) (owner, repo string, ok bool) {
 		return seg[:i], true
 	}
 	if name, ok := versioned(parts[0]); ok {
-		return "go-" + name, name, true
+		owner, repo := "go-"+name, name
+		if ValidOwner(owner) && ValidRepo(repo) {
+			return owner, repo, true
+		}
+		return "", "", false
 	}
 	if len(parts) >= 2 && parts[0] != "" {
 		if name, ok := versioned(parts[1]); ok {
-			return parts[0], name, true
+			owner, repo := parts[0], name
+			if ValidOwner(owner) && ValidRepo(repo) {
+				return owner, repo, true
+			}
+			return "", "", false
 		}
 	}
 	return "", "", false
@@ -170,13 +178,55 @@ func stripGoVersionSuffix(path string) string {
 	return path
 }
 
+// ValidOwner reports whether s is a valid GitHub user or organization name.
+// GitHub usernames may only contain alphanumeric characters, hyphens, or underscores,
+// cannot begin or end with a hyphen or dot, cannot be "." or "..", and have a
+// maximum length of 39 characters.
+func ValidOwner(s string) bool {
+	if len(s) == 0 || len(s) > 39 || strings.Contains(s, "..") {
+		return false
+	}
+	if s[0] == '-' || s[len(s)-1] == '-' || s[0] == '.' || s[len(s)-1] == '.' {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_') {
+			return false
+		}
+	}
+	return true
+}
+
+// ValidRepo reports whether s is a valid GitHub repository name.
+// GitHub repository names may contain alphanumeric characters, hyphens, underscores,
+// and periods, cannot be "." or "..", and have a maximum length of 100 characters.
+func ValidRepo(s string) bool {
+	s = strings.TrimSuffix(s, ".git")
+	if len(s) == 0 || len(s) > 100 || s == "." || strings.Contains(s, "..") {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.') {
+			return false
+		}
+	}
+	return true
+}
+
 // splitOwnerRepo splits "owner/repo[/subpath...]" into owner and repo.
 func splitOwnerRepo(s string) (string, string, bool) {
 	parts := strings.SplitN(s, "/", 3)
-	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+	if len(parts) < 2 {
 		return "", "", false
 	}
-	return parts[0], parts[1], true
+	owner := parts[0]
+	repo := strings.TrimSuffix(parts[1], ".git")
+	if !ValidOwner(owner) || !ValidRepo(repo) {
+		return "", "", false
+	}
+	return owner, repo, true
 }
 
 // RepoKey returns the lowercase "owner/repo" key for cache lookups.
@@ -219,4 +269,3 @@ func WellKnownModuleMappings() (prefixes, repoKeys []string) {
 	}
 	return prefixes, repoKeys
 }
-

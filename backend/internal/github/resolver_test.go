@@ -383,3 +383,26 @@ func TestOversizedResponseIsNotDecoded(t *testing.T) {
 		t.Errorf("ResolveWithMetadata() = %+v, want nil for an oversized repository response", meta)
 	}
 }
+
+func TestFetch_InvalidOwnerRepo(t *testing.T) {
+	resolver := newTestResolver()
+	ctx := context.Background()
+
+	invalidPairs := [][2]string{
+		{"..", "repo"},
+		{"owner", ".."},
+		{"../..", "repo"},
+		{"-owner", "repo"},
+		{"owner", "repo/sub"},
+	}
+
+	for _, p := range invalidPairs {
+		owner, repo := p[0], p[1]
+		if _, err := resolver.fetchLicense(ctx, owner, repo); err == nil {
+			t.Errorf("fetchLicense(%q, %q) expected error, got nil", owner, repo)
+		}
+		if _, err := resolver.fetchRepoMetadata(ctx, owner, repo); err == nil {
+			t.Errorf("fetchRepoMetadata(%q, %q) expected error, got nil", owner, repo)
+		}
+	}
+}

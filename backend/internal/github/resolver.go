@@ -294,6 +294,9 @@ func (r *Resolver) MetadataCacheEntries() []*RepoMetadata {
 }
 
 func (r *Resolver) fetchLicense(ctx context.Context, owner, repo string) (string, error) {
+	if !ValidOwner(owner) || !ValidRepo(repo) {
+		return "", fmt.Errorf("invalid github repository: %s/%s", owner, repo)
+	}
 	url := fmt.Sprintf("%s/repos/%s/%s/license", r.apiBase, owner, repo)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -367,6 +370,9 @@ func detectFromContent(content, encoding string) string {
 
 // fetchRepoMetadata gets full repo info including archived status.
 func (r *Resolver) fetchRepoMetadata(ctx context.Context, owner, repo string) (*RepoMetadata, error) {
+	if !ValidOwner(owner) || !ValidRepo(repo) {
+		return nil, fmt.Errorf("invalid github repository: %s/%s", owner, repo)
+	}
 	url := fmt.Sprintf("%s/repos/%s/%s", r.apiBase, owner, repo)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
