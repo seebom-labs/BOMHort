@@ -126,7 +126,11 @@ func TestSanitizeHeaderStripsControlCharacters(t *testing.T) {
 	if strings.ContainsAny(got, "\r\n") {
 		t.Errorf("sanitizeHeader kept newlines: %q", got)
 	}
-	if len(sanitizeHeader(strings.Repeat("a", 500))) > 200 {
-		t.Error("sanitizeHeader did not truncate")
+	if gotC1 := sanitizeHeader("https://evil\u009b31m.example"); gotC1 != "https://evil31m.example" {
+		t.Errorf("sanitizeHeader kept C1 control sequence: %q", gotC1)
+	}
+	truncated := sanitizeHeader(strings.Repeat("a", 500))
+	if len(truncated) > 205 || !strings.HasSuffix(truncated, "...") {
+		t.Errorf("sanitizeHeader did not truncate properly: %q", truncated)
 	}
 }

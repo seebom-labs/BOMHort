@@ -37,6 +37,7 @@ import (
 	"github.com/seebom-labs/bomhort/backend/internal/repo"
 	"github.com/seebom-labs/bomhort/backend/internal/rulesource"
 	s3client "github.com/seebom-labs/bomhort/backend/internal/s3"
+	"github.com/seebom-labs/bomhort/backend/internal/sanitize"
 	"github.com/seebom-labs/bomhort/backend/internal/sourcerepo"
 	tagpkg "github.com/seebom-labs/bomhort/backend/internal/tags"
 	"github.com/seebom-labs/bomhort/backend/internal/tea"
@@ -1410,13 +1411,10 @@ func isValidVulnID(s string) bool {
 }
 
 // sanitizeLogParam strips newlines and control characters to prevent log injection.
+// It removes all Unicode control characters (C0, C1, DEL) such as CRLF and ANSI escapes,
+// and truncates strings exceeding 200 runes to prevent log flooding.
 func sanitizeLogParam(s string) string {
-	s = strings.ReplaceAll(s, "\n", "")
-	s = strings.ReplaceAll(s, "\r", "")
-	if len(s) > 200 {
-		s = s[:200] + "..."
-	}
-	return s
+	return sanitize.LogParam(s)
 }
 
 // securityHeadersMiddleware adds standard security headers to every response.
