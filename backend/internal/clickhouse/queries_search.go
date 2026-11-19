@@ -627,7 +627,7 @@ func (c *Client) QueryVersionSkew(ctx context.Context, page, pageSize uint64, se
 	args := []interface{}{}
 	if search != "" {
 		searchFilter = "AND dep_name ILIKE ?"
-		args = append(args, "%"+search+"%")
+		args = append(args, "%"+escapeLikePattern(search)+"%")
 	}
 
 	// Count total skewed packages (packages with >1 version across projects).
@@ -757,7 +757,7 @@ func (c *Client) QueryDependencySearch(ctx context.Context, query string, page, 
 		page = 1
 	}
 	offset := (page - 1) * pageSize
-	searchPattern := "%" + query + "%"
+	searchPattern := "%" + escapeLikePattern(query) + "%"
 
 	var totalResults uint64
 	if err := c.Conn.QueryRow(ctx, `

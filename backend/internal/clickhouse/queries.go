@@ -225,7 +225,7 @@ func (c *Client) querySBOMs(ctx context.Context, page, pageSize uint64, search, 
 	}
 	if search != "" {
 		conds = append(conds, "(s.document_name ILIKE ? OR s.source_file ILIKE ?)")
-		pattern := "%" + search + "%"
+		pattern := "%" + escapeLikePattern(search) + "%"
 		whereArgs = append(whereArgs, pattern, pattern)
 	}
 	if minQuality > 0 {

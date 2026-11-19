@@ -406,7 +406,7 @@ func (c *Client) QueryProjectPackages(ctx context.Context, name string, page, pa
 	args := []interface{}{name}
 	if search != "" {
 		searchWhere = "WHERE pkg_name ILIKE ? OR purl ILIKE ?"
-		pattern := "%" + search + "%"
+		pattern := "%" + escapeLikePattern(search) + "%"
 		args = append(args, pattern, pattern)
 	}
 
