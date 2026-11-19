@@ -1,4 +1,4 @@
--- 033_add_license_discrepancy.up.sql
+-- 036_add_license_discrepancy.up.sql
 -- Concluded vs. declared license: records scan-derived expressions from
 -- ClearlyDefined that disagree with the package's declared license (#530).
 --

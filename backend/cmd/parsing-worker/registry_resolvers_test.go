@@ -240,4 +240,3 @@ func TestDetectLicenseDiscrepancies_ExcludesPrivatePackages(t *testing.T) {
 		t.Errorf("CheckDiscrepanciesBatch received %v, want %v", cd.checkedDiscs, wantPURLs)
 	}
 }
-
