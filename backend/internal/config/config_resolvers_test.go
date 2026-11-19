@@ -69,4 +69,3 @@ func TestLoad_PrivatePackagePrefixes(t *testing.T) {
 		}
 	}
 }
-
