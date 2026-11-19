@@ -1144,7 +1144,12 @@ func main() {
 			}
 		} else {
 			// Local filesystem.
-			absPath := filepath.Join(cfg.SBOMDir, sourceFile)
+			absPath, pathErr := cfg.LocalSBOMPath(sourceFile)
+			if pathErr != nil {
+				log.Printf("ERROR: sbom download invalid local path %s: %v", sanitizeLogParam(sourceFile), pathErr)
+				writeError(w, http.StatusNotFound, "SBOM file not found in storage")
+				return
+			}
 			f, openErr := os.Open(absPath)
 			if openErr != nil {
 				log.Printf("ERROR: sbom download local open %s: %v", sanitizeLogParam(absPath), openErr)

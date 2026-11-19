@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/seebom-labs/bomhort/backend/internal/config"
 )
 
 func TestDownloadEndpoint_InvalidUUID(t *testing.T) {
@@ -86,4 +88,33 @@ func extractFilename(sourceFile string) string {
 		}
 	}
 	return sourceFile
+}
+
+func TestDownloadEndpoint_LocalSBOMPathContainment(t *testing.T) {
+	cfg := &config.Config{
+		SBOMDir: t.TempDir(),
+	}
+
+	for _, bad := range []string{
+		"../../etc/passwd",
+		"pushed/../../etc/passwd",
+		"/etc/passwd",
+		"..",
+		"",
+	} {
+		if _, err := cfg.LocalSBOMPath(bad); err == nil {
+			t.Errorf("cfg.LocalSBOMPath(%q) should fail with path containment error", bad)
+		}
+	}
+
+	// Valid relative paths, dot-prefixed names, and space-containing names must succeed
+	for _, good := range []string{
+		"pushed/sbom.json",
+		"..dots.spdx.json",
+		" lead.spdx.json",
+	} {
+		if _, err := cfg.LocalSBOMPath(good); err != nil {
+			t.Errorf("cfg.LocalSBOMPath(%q) unexpected error: %v", good, err)
+		}
+	}
 }
