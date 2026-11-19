@@ -162,4 +162,38 @@ describe('LicenseViolationsComponent', () => {
       expect(component.scopeSummary({ ...base, direct_count: 0, transitive_count: 0 })).toBe('');
     });
   });
+
+  it('displays license discrepancies tab and cards', () => {
+    const api = TestBed.inject(ApiService);
+    vi.spyOn(api, 'getProjectLicenseViolationSummaries').mockReturnValue(of([]));
+    vi.spyOn(api, 'getLicenseExceptions').mockReturnValue(of({
+      version: '1.0.0', lastUpdated: '', blanketExceptions: [], exceptions: [],
+    }));
+    vi.spyOn(api, 'getLicenseDiscrepancies').mockReturnValue(of([
+      {
+        sbom_id: 'sbom-1',
+        document_name: 'test-app',
+        package_name: 'discrepant-lib',
+        package_version: '1.0.0',
+        purl: 'pkg:npm/discrepant-lib@1.0.0',
+        declared_license: 'MIT',
+        discovered_license: 'GPL-2.0-only',
+        source: 'clearlydefined',
+      },
+    ]));
+
+    const fixture = TestBed.createComponent(LicenseViolationsComponent);
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+    expect(element.textContent).toContain('Discrepancies (1)');
+
+    const buttons = element.querySelectorAll('.tabs button');
+    (buttons[2] as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(element.textContent).toContain('discrepant-lib');
+    expect(element.textContent).toContain('Declared: MIT');
+    expect(element.textContent).toContain('Discovered: GPL-2.0-only');
+    expect(element.textContent).toContain('clearlydefined');
+  });
 });

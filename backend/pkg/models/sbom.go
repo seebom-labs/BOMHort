@@ -88,10 +88,14 @@ type SBOMPackages struct {
 	// parse time by internal/sbom; the UI and the findings tables read it to
 	// tell direct from transitive dependencies.
 	PackageDepths []uint16 `json:"package_depths"`
-	Cluster       string   `json:"cluster,omitempty"`
-	Namespace     string   `json:"namespace,omitempty"`
-	Project       string   `json:"project,omitempty"`
-	ImageDigest   string   `json:"image_digest,omitempty"`
+	// LicenseDiscrepancy is parallel to PackageNames: scan-derived discovered license
+	// expressions from ClearlyDefined that disagree with the declared license.
+	// Empty string when there is no discrepancy (#530).
+	LicenseDiscrepancy []string `json:"license_discrepancy,omitempty"`
+	Cluster            string   `json:"cluster,omitempty"`
+	Namespace          string   `json:"namespace,omitempty"`
+	Project            string   `json:"project,omitempty"`
+	ImageDigest        string   `json:"image_digest,omitempty"`
 	// RootIndices marks the package(s) the SBOM DESCRIBES – the product itself,
 	// not a dependency. Kept in the arrays (index 0 is the dependency-tree root)
 	// but excluded from license compliance. Not persisted to ClickHouse.

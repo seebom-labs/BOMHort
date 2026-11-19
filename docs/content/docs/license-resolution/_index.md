@@ -59,6 +59,7 @@ up at most once across all workers and restarts.
 | `depsdev` | origin | deps.dev version batch API (Maven, PyPI, Cargo, Go, npm, NuGet). |
 | `packagist` | origin | repo.packagist.org (Composer). |
 | `pypi` | origin | pypi.org JSON API. |
+| `clearlydefined` | origin | clearlydefined.io definitions API (Linux Foundation). |
 | `latest` | modifier | The exact version had no license (or the SBOM gave no usable version), so the newest release's license was used. |
 | `normalized` | modifier | Free text such as `Apache License 2.0` was rewritten to an SPDX ID. |
 | `first-party` | reason | The project's own code (SBOM root, Yarn workspace, Maven `${project.*}` module). Excluded from the compliance check. |
@@ -66,6 +67,7 @@ up at most once across all workers and restarts.
 | `unsupported-ecosystem` | reason | No resolver covers the PURL type (`generic`, `deb`, `apk`, `oci`, …). |
 | `not-published` | reason | The registry does not know the package or version: private, internal, or deleted. |
 | `no-license-upstream` | reason | The registry knows the package, but its author declared no license. Legally that means *all rights reserved*. |
+| `not-harvested` | reason | ClearlyDefined has not harvested or scanned this package definition yet. |
 | `unresolved` | reason | A resolver covers the package but gave no answer: disabled, rate-limited, network error, or a negative result cached before reasons were recorded. Usually worth a re-scan. |
 <!-- license-sources:end -->
 
@@ -273,6 +275,23 @@ it off, and which test pins it.
   (`TestResolvePackageLicenses_GitHubRateLimitAborts`),
   `internal/clickhouse/queue_defer_integration_test.go`.
 
+### D16. ClearlyDefined and license discrepancies
+
+- **Decision:** ClearlyDefined runs last in the resolver chain (after PyPI). It
+  is consulted when the license is still unknown, or to detect discrepancies when
+  ClearlyDefined's harvested scan expressions disagree with a package's declared
+  license. When a discrepancy occurs, declared license remains authoritative and
+  is never overridden (D1), but the discovered expression is recorded in
+  `license_discrepancy` and surfaced in the license discrepancies view.
+- **Why:** Declared licenses represent what upstream projects actually stated.
+  Automated scanners (e.g. ScanCode) may discover embedded subcomponents or
+  different licenses in incidental files; recording discrepancies gives
+  governance visibility into scanner findings without arbitrarily breaking
+  compliance against the declared license.
+- **Switch:** `SKIP_CLEARLYDEFINED_RESOLVE=true`.
+- **Test:** `internal/clearlydefined/resolver_test.go`, `TestLicensePipelineGolden`
+  (row `clearlydefined-pkg`).
+
 ## Deliberately not guessed
 
 | Input | Stays | Why |
@@ -374,6 +393,7 @@ otherwise.
 | `jakarta.xml.bind-api` | Raw POM license name | `BSD-3-Clause` | `depsdev+normalized` | permissive | checked |
 | `monolog/monolog` | Composer `dev-main` | `MIT` | `packagist+latest` | permissive | checked |
 | `typing-extensions` | deps.dev empty, PyPI has it | `PSF-2.0` | `pypi` | permissive | checked |
+| `clearlydefined-pkg` | ClearlyDefined harvest | `MIT` | `clearlydefined` | permissive | checked |
 | `internal-ui` | Private npm package | `NOASSERTION` | `not-published` | unknown | checked |
 | `@golden/web` | Yarn workspace | `NOASSERTION` | `first-party` | unknown | excluded |
 | `golden-core` | Maven `${project.groupId}` module | `NOASSERTION` | `first-party` | unknown | excluded |
@@ -388,7 +408,7 @@ otherwise.
 | Setting | Effect |
 |---------|--------|
 | `SKIP_GITHUB_RESOLVE=true` | Disable step 2 |
-| `SKIP_NPM_RESOLVE`, `SKIP_NUGET_RESOLVE`, `SKIP_DEPSDEV_RESOLVE`, `SKIP_PACKAGIST_RESOLVE`, `SKIP_PYPI_RESOLVE` | Disable one registry resolver |
+| `SKIP_NPM_RESOLVE`, `SKIP_NUGET_RESOLVE`, `SKIP_DEPSDEV_RESOLVE`, `SKIP_PACKAGIST_RESOLVE`, `SKIP_PYPI_RESOLVE`, `SKIP_CLEARLYDEFINED_RESOLVE` | Disable one registry resolver |
 | `LICENSE_EXPRESSION_MODE` | How expressions fold ([D6](#d6-expressions-fold-into-one-category)) |
 
 Resolution happens at ingest. After changing settings or upgrading, re-process

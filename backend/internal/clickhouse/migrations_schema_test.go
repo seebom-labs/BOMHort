@@ -178,7 +178,7 @@ func TestMigrationsParseIntoASchema(t *testing.T) {
 	// silently broken parser would make every other test in this file vacuous.
 	want := map[string][]string{
 		"sboms":              {"sbom_id", "source_file", "document_name", "cluster", "namespace", "project", "origin", "image_ref", "image_digest"},
-		"sbom_packages":      {"sbom_id", "package_purls", "cluster", "namespace", "project", "image_digest"},
+		"sbom_packages":      {"sbom_id", "package_purls", "cluster", "namespace", "project", "image_digest", "license_discrepancy"},
 		"vulnerabilities":    {"sbom_id", "vuln_id", "purl", "cluster", "namespace", "project", "image_digest"},
 		"license_compliance": {"sbom_id", "license_id", "exempted_packages", "cluster", "namespace", "project"},
 		"ingestion_queue":    {"job_id", "status", "cluster", "namespace", "project", "origin", "image_ref", "image_digest"},

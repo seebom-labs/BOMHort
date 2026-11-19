@@ -10,12 +10,13 @@ func TestLoad_ResolverSwitches(t *testing.T) {
 	t.Setenv("S3_BUCKET", "")
 
 	switches := map[string]func(*Config) bool{
-		"SKIP_GITHUB_RESOLVE":    func(c *Config) bool { return c.SkipGitHubResolve },
-		"SKIP_NPM_RESOLVE":       func(c *Config) bool { return c.SkipNPMResolve },
-		"SKIP_NUGET_RESOLVE":     func(c *Config) bool { return c.SkipNuGetResolve },
-		"SKIP_DEPSDEV_RESOLVE":   func(c *Config) bool { return c.SkipDepsDevResolve },
-		"SKIP_PACKAGIST_RESOLVE": func(c *Config) bool { return c.SkipPackagistResolve },
-		"SKIP_PYPI_RESOLVE":      func(c *Config) bool { return c.SkipPyPIResolve },
+		"SKIP_GITHUB_RESOLVE":         func(c *Config) bool { return c.SkipGitHubResolve },
+		"SKIP_NPM_RESOLVE":            func(c *Config) bool { return c.SkipNPMResolve },
+		"SKIP_NUGET_RESOLVE":          func(c *Config) bool { return c.SkipNuGetResolve },
+		"SKIP_DEPSDEV_RESOLVE":        func(c *Config) bool { return c.SkipDepsDevResolve },
+		"SKIP_PACKAGIST_RESOLVE":      func(c *Config) bool { return c.SkipPackagistResolve },
+		"SKIP_PYPI_RESOLVE":           func(c *Config) bool { return c.SkipPyPIResolve },
+		"SKIP_CLEARLYDEFINED_RESOLVE": func(c *Config) bool { return c.SkipClearlyDefinedResolve },
 	}
 	for env := range switches {
 		t.Setenv(env, "")
