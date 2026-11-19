@@ -3,7 +3,6 @@ package clickhouse
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 
 	"github.com/seebom-labs/bomhort/backend/pkg/dto"
@@ -29,16 +28,6 @@ const globalSearchProjectKeyExpr = `
 		s.source_file
 	)
 `
-
-// escapeLikePattern escapes ClickHouse ILIKE wildcards so user input is
-// matched literally instead of acting as a wildcard. Backslash must be
-// escaped first to avoid double-escaping the added escape characters.
-func escapeLikePattern(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, "%", `\%`)
-	s = strings.ReplaceAll(s, "_", `\_`)
-	return s
-}
 
 // QueryGlobalSearch runs a faceted search across packages, projects,
 // vulnerabilities, and licenses. Each facet returns at most `limit` items

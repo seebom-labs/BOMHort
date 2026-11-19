@@ -1130,7 +1130,7 @@ Paginated list of projects. A project is its configured `project` label when set
 |-----------|------|---------|-------------|
 | `page` | integer | 1 | Page number |
 | `page_size` | integer | 50 | Items per page (max 500) |
-| `search` | string | — | Filter projects by name (ILIKE) |
+| `search` | string | — | Filter projects by name (case-insensitive substring; wildcards `%` and `_` are matched literally) |
 | `tag` | string | — | Only projects carrying this grouping label |
 | `group_by` | string | — | `parent`: list parents with their member projects instead (see below) |
 
