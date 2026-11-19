@@ -629,7 +629,7 @@ Download the original SBOM JSON file. Streams the file from S3 or local filesyst
 | Header | Value |
 |--------|-------|
 | `Content-Type` | `application/json` |
-| `Content-Disposition` | `attachment; filename="<original-filename>"` |
+| `Content-Disposition` | `attachment; filename=<original-filename>` |
 
 **Errors:**
 - `400` — Invalid UUID format
@@ -995,7 +995,7 @@ The ownership filters work as on the JSON listing.
 
 A legacy `vex_filter` parameter is ignored, as on the JSON listing.
 
-**Response:** `200 OK`, `Content-Type: text/csv; charset=utf-8`, `Content-Disposition: attachment; filename="bomhort-vulnerabilities-<YYYY-MM-DD>.csv"` (UTC date).
+**Response:** `200 OK`, `Content-Type: text/csv; charset=utf-8`, `Content-Disposition: attachment; filename=bomhort-vulnerabilities-<YYYY-MM-DD>.csv` (UTC date).
 
 ```csv
 cve_id,vuln_id,aliases,severity,purl,summary,fixed_version,source_file,discovered_at,dependency_scope,dependency_depth,remediation_status,reachability,evidence_source,evidence_ref,evidence_at,exploit_available,exploit_sources,action_statement,action_statement_timestamp,vex_author
