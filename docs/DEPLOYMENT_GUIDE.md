@@ -479,23 +479,40 @@ kubectl rollout restart deployment bomhort-api-gateway bomhort-parsing-worker
 
 The entire UI color scheme is defined via 60+ CSS Custom Properties and can be overridden **without rebuilding Angular**.
 
-### Enable the theme ConfigMap
+The chart renders no theme ConfigMap: the stylesheet comes from one you manage
+yourself in the release namespace.
+
+### Create the theme ConfigMap
+
+```bash
+kubectl create configmap bomhort-theme \
+  --from-file=custom-theme.css=./my-theme.css \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+### Reference it in the values
 
 ```yaml
 # values-production.yaml
 ui:
   customTheme:
     enabled: true
+    existingConfigMap: bomhort-theme
+    existingConfigMapKey: custom-theme.css   # default; the key holding the CSS
 ```
 
-### Apply a custom theme
+`enabled: true` without `existingConfigMap` fails `helm template`; a missing
+ConfigMap or key keeps the UI pods from starting. The file is mounted via
+`subPath`, so restart the UI after changing the CSS:
 
 ```bash
-kubectl create configmap bomhort-custom-theme \
-  --from-file=custom-theme.css=./my-theme.css \
-  --dry-run=client -o yaml | kubectl apply -f -
 kubectl rollout restart deployment bomhort-ui
 ```
+
+> **Upgrading:** earlier chart versions rendered `<release>-custom-theme`
+> themselves. Helm deletes that ConfigMap on upgrade, along with any CSS applied
+> to it. Copy the CSS into a ConfigMap with a different name first and point
+> `existingConfigMap` at it.
 
 ### Example theme file
 
@@ -596,7 +613,8 @@ helm install bomhort ./deploy/helm/bomhort \
   --set s3.accessKey="AKIA..." \
   --set s3.secretKey="..." \
   --set parsingWorker.replicas=10 \
-  --set ui.customTheme.enabled=true
+  --set ui.customTheme.enabled=true \
+  --set ui.customTheme.existingConfigMap=bomhort-theme
 
 # 2. Override license exceptions from a local file
 kubectl create configmap bomhort-license-exceptions \
@@ -608,8 +626,8 @@ kubectl create configmap bomhort-license-policy \
   --from-file=license-policy.json=./my-policy.json \
   --dry-run=client -o yaml | kubectl apply -f -
 
-# 4. Apply a custom theme
-kubectl create configmap bomhort-custom-theme \
+# 4. Create the custom theme ConfigMap (the UI pods wait for it)
+kubectl create configmap bomhort-theme \
   --from-file=custom-theme.css=./my-theme.css \
   --dry-run=client -o yaml | kubectl apply -f -
 
@@ -862,7 +880,7 @@ ingress:
 | **VEX files** | Same S3 bucket or directory as SBOMs | Place `*.openvex.json` or `*.vex.json` alongside SBOMs |
 | **License Exceptions** | `bomhort-license-exceptions` ConfigMap, your own via `licenseExceptions.existingConfigMap`, or a URL / S3 object via `licenseExceptions.source` | Update the rules → pods reload within `refreshInterval` → stored results re-checked automatically |
 | **License Policy** | `bomhort-license-policy` ConfigMap, or your own via `licensePolicy.existingConfigMap` | `kubectl edit configmap` → restart API + Workers |
-| **Custom Theme** | `bomhort-custom-theme` ConfigMap | `kubectl create configmap` → restart UI |
+| **Custom Theme** | Your own ConfigMap via `ui.customTheme.existingConfigMap` | Update the ConfigMap → restart UI |
 | **Site Config** | `bomhort-ui-config` ConfigMap | Helm values `ui.siteConfig.content.*` → restart UI |
 | **Dark Mode** | Built-in toggle (navbar) | User preference, stored in browser localStorage |
 | **ClickHouse password** | `bomhort-secret` Secret | `kubectl edit secret` |
