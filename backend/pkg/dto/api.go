@@ -295,6 +295,24 @@ type LicenseAffectedSBOM struct {
 	DocumentName string `json:"document_name"`
 }
 
+// LicenseDiscrepancyItem is one item in GET /api/v1/licenses/discrepancies.
+// It reports a package where the discovered license (e.g. from ClearlyDefined
+// scan results) differs from the declared license. Declared license remains
+// authoritative for compliance (#530).
+type LicenseDiscrepancyItem struct {
+	SBOMID            string `json:"sbom_id"`
+	DocumentName      string `json:"document_name,omitempty"`
+	Project           string `json:"project,omitempty"`
+	Cluster           string `json:"cluster,omitempty"`
+	Namespace         string `json:"namespace,omitempty"`
+	PackageName       string `json:"package_name"`
+	PackageVersion    string `json:"package_version"`
+	PURL              string `json:"purl,omitempty"`
+	DeclaredLicense   string `json:"declared_license"`
+	DiscoveredLicense string `json:"discovered_license"`
+	Source            string `json:"source,omitempty"`
+}
+
 // VEXStatementItem is the response DTO for listing VEX statements.
 type VEXStatementItem struct {
 	VEXID      string `json:"vex_id"`
