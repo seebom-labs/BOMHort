@@ -143,7 +143,7 @@ func (c *Client) QueryProjects(ctx context.Context, page, pageSize uint64, searc
 	var searchArgs []interface{}
 	if search != "" {
 		havingClause = "HAVING project_name ILIKE ?"
-		searchArgs = append(searchArgs, "%"+search+"%")
+		searchArgs = append(searchArgs, "%"+escapeLikePattern(search)+"%")
 	}
 
 	// Count total projects.
