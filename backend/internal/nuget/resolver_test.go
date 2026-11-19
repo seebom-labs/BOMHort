@@ -23,6 +23,11 @@ func TestExtractNuGetPackage(t *testing.T) {
 		{"pkg:nuget/", "", "", false},
 		{"pkg:nuget/a/b@1.0", "", "", false},
 		{"pkg:nuget/..@1.0", "", "", false},
+		{"pkg:nuget/Moq@..", "", "", false},
+		{"pkg:nuget/Moq@.", "", "", false},
+		{"pkg:nuget/Moq@../evil", "", "", false},
+		{"pkg:nuget/Moq@1.0/2", "", "", false},
+		{"pkg:nuget/Moq@1.0\\2", "", "", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.purl, func(t *testing.T) {
