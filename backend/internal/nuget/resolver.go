@@ -308,5 +308,9 @@ func ExtractNuGetPackage(purl string) (id, version string, ok bool) {
 	if id == "" || strings.ContainsAny(id, "/\\ ") || strings.Contains(id, "..") {
 		return "", "", false
 	}
-	return id, strings.TrimSpace(version), true
+	version = strings.TrimSpace(version)
+	if version == "." || strings.Contains(version, "..") || strings.ContainsAny(version, "/\\ ") {
+		return "", "", false
+	}
+	return id, version, true
 }

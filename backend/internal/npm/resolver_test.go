@@ -30,6 +30,11 @@ func TestExtractNPMPackage(t *testing.T) {
 		{"pkg:npm/foo/bar@1.0.0", "", "", false},  // unscoped names cannot contain "/"
 		{"pkg:npm/@a/b/c@1.0.0", "", "", false},   // scoped names have exactly one "/"
 		{"pkg:npm/..%2Fetc@1.0.0", "", "", false}, // path traversal
+		{"pkg:npm/lodash@..", "", "", false},      // version path traversal
+		{"pkg:npm/lodash@.", "", "", false},       // dot version
+		{"pkg:npm/lodash@../evil", "", "", false}, // version path traversal with slash
+		{"pkg:npm/lodash@1.0/2", "", "", false},   // slash in version
+		{"pkg:npm/lodash@1.0\\2", "", "", false},  // backslash in version
 		{"", "", "", false},
 	}
 	for _, tt := range tests {

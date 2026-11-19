@@ -97,6 +97,9 @@ func ExtractPyPIPackage(purl string) (name, version string, ok bool) {
 	case "unknown", "noassertion", "none", "*", "latest":
 		version = ""
 	}
+	if version != "" && (version == "." || strings.Contains(version, "..")) {
+		return "", "", false
+	}
 	if strings.ContainsAny(version, "/\\ ") || strings.Contains(version, "${") {
 		return "", "", false
 	}

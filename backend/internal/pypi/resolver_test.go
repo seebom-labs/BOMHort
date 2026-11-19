@@ -20,6 +20,9 @@ func TestExtractPyPIPackage(t *testing.T) {
 		{"pkg:pypi/requests", "requests", "", true},
 		{"pkg:pypi/requests@unknown", "requests", "", true},
 		{"pkg:pypi/requests@${version}", "", "", false},
+		{"pkg:pypi/requests@..", "", "", false},
+		{"pkg:pypi/requests@.", "", "", false},
+		{"pkg:pypi/requests@../evil", "", "", false},
 		{"pkg:pypi/a/b@1.0", "", "", false},
 		{"pkg:npm/requests@1.0", "", "", false},
 	}

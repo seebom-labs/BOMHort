@@ -275,5 +275,9 @@ func ExtractNPMPackage(purl string) (name, version string, ok bool) {
 	if !strings.HasPrefix(name, "@") && strings.Contains(name, "/") {
 		return "", "", false
 	}
+	version = strings.TrimSpace(version)
+	if version == "." || strings.Contains(version, "..") || strings.ContainsAny(version, "/\\ ") {
+		return "", "", false
+	}
 	return name, version, true
 }
