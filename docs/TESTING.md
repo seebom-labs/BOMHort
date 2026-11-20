@@ -4,6 +4,13 @@
 
 ## Quick Start
 
+For AI-assisted PR reviews, also follow the repository-wide
+[review procedure](../.ai/review.md). Executable changes require a disposable
+local stack and real end-to-end assertions; UI changes additionally require
+browser and performance analysis. Current live ClickHouse and Playwright recipes
+are in the [development testing guide](content/docs/development/testing.md).
+Mock-only tests and skipped integration tests do not complete an AI review.
+
 ```bash
 # Run all tests
 cd backend && go test ./... -count=1
@@ -382,4 +389,3 @@ The `internal/clickhouse/` package (queries, insert, queue) has basic signature 
 - **Option B:** Interface-based mocking of the ClickHouse client for query logic tests
 
 The `cmd/` packages (ingestion-watcher, parsing-worker, cve-refresher) are tested implicitly through integration via Docker Compose but have no unit tests. These are thin orchestration layers that wire together the tested internal packages. The `cmd/api-gateway` package has 23 unit tests covering auth middleware and endpoint validation.
-
