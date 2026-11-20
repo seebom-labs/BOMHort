@@ -104,7 +104,6 @@ A full re-ingestion (truncate + re-ingest) is required when:
 
 | Scenario | Why |
 |---|---|
-| Changed the **license policy** (`license-policy.json`) | Existing packages need reclassification |
 | Enabled/disabled **OSV scanning** (`skipOSV`) | Vulnerability data needs to be fetched or cleared |
 | Enabled/disabled **GitHub license resolution** (`skipGitHubResolve`) | Unknown licenses need re-resolution |
 | Enabled/disabled **npm / NuGet / deps.dev / Packagist / PyPI license resolution** (`skipNPMResolve`, `skipNuGetResolve`, `skipDepsDevResolve`, `skipPackagistResolve`, `skipPyPIResolve`) | Unknown package-registry licenses need re-resolution |
@@ -116,6 +115,11 @@ For these changes, a simple incremental re-trigger will **not** reprocess existi
 Changed **license exceptions** are not on this list: the workers re-check the
 stored results of every SBOM when the rules change, without re-ingesting
 anything. See [Retroactive application](/docs/license-exceptions/#retroactive-application).
+
+License policy and expression-mode changes also re-evaluate stored compliance
+rows after the parsing worker starts with the new policy. Helm-managed changes
+roll the worker automatically. For an externally managed policy ConfigMap, set
+a new `licensePolicy.rolloutChecksum` or restart the worker after changing it.
 
 {{% alert title="Tip" color="success" %}}
 Changes to **VEX files** do **not** require a full re-ingestion. VEX matching is applied at query time. Simply add or update your `.openvex.json` files and trigger an incremental re-ingestion to pick them up. Note that statements are scoped to the SBOM whose product they describe (#350): the worker maps the OpenVEX product `@id` to an SBOM (or use `?sbom_id=` on upload); statements whose product matches no SBOM are stored **unscoped** and suppress **nothing** — there is no global or fleet-wide VEX scope. Check the worker logs for the warning. If the product's SBOM merely had not been ingested yet, the VEX rescue pass (migration `020`) scopes the statement automatically once it arrives.

@@ -20,6 +20,7 @@ func TestReevaluate_PolicyModeChange(t *testing.T) {
 		LicenseID:            "MIT AND GPL-3.0-only",
 		Category:             catStrict,
 		PackageCount:         1,
+		PackageNames:         []string{"pkg-dual"},
 		NonCompliantPackages: []string{"pkg-dual"},
 	}
 
@@ -40,5 +41,14 @@ func TestReevaluate_PolicyModeChange(t *testing.T) {
 	// SameOutcome should return false because category and outcome changed
 	if SameOutcome(initialResult, rechecked) {
 		t.Error("expected SameOutcome to report false between strict and permissive-wins outcomes")
+	}
+
+	// The package identity must survive the permissive classification so a
+	// later policy reversal can restore the violation.
+	SetExpressionMode(ExpressionModeStrict)
+	roundTrip := Reevaluate(rechecked, nil, "my-project")
+	if roundTrip.Category != CategoryCopyleft || len(roundTrip.NonCompliantPackages) != 1 ||
+		roundTrip.NonCompliantPackages[0] != "pkg-dual" {
+		t.Fatalf("strict round trip lost package identity: %+v", roundTrip)
 	}
 }

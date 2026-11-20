@@ -590,6 +590,12 @@ kubectl edit configmap bomhort-license-policy
 kubectl rollout restart deployment bomhort-api-gateway bomhort-parsing-worker
 ```
 
+The worker re-evaluates stored compliance rows after it starts with the new
+policy, including expression-mode changes. A Helm-managed policy or mode change
+rolls the deployments automatically. If the policy comes from
+`licensePolicy.existingConfigMap`, set a new `licensePolicy.rolloutChecksum`
+when its content changes, or restart both deployments manually as above.
+
 To manage the policy outside the chart, set `licensePolicy.existingConfigMap`
 (key `licensePolicy.existingConfigMapKey`, default `license-policy.json`). It
 works exactly like

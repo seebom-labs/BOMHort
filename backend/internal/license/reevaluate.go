@@ -19,19 +19,23 @@ import "sort"
 // exempted count, never a violation: a permissive license is compliant either
 // way.
 //
-// The category is kept as stored. Reclassifying a license is a policy change,
-// and the package lists of a formerly permissive license were never recorded,
-// so policy changes still need a re-scan.
+// PackageNames is populated from sbom_packages by the recheck query. It keeps
+// permissive results reversible: those rows intentionally store no violation
+// list, but a later policy may classify the same license as non-permissive.
 func Reevaluate(r Result, exceptions *ExceptionIndex, project string) Result {
-	names := make([]string, 0, len(r.NonCompliantPackages)+len(r.ExemptedPackages))
-	names = append(names, r.NonCompliantPackages...)
-	names = append(names, r.ExemptedPackages...)
+	names := r.PackageNames
+	if names == nil {
+		names = make([]string, 0, len(r.NonCompliantPackages)+len(r.ExemptedPackages))
+		names = append(names, r.NonCompliantPackages...)
+		names = append(names, r.ExemptedPackages...)
+	}
 
 	cat := Categorize(r.LicenseID)
 	out := Result{
 		LicenseID:    r.LicenseID,
 		Category:     cat,
 		PackageCount: r.PackageCount,
+		PackageNames: names,
 	}
 
 	if exceptions != nil {
