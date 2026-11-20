@@ -14,7 +14,8 @@ import (
 // Producers use different identity schemes, so the lookup tries, in order of
 // trustworthiness:
 //
-//  1. sbom_id — the caller already knows the SBOM (explicit upload mapping).
+//  1. sbom_id, bare or as urn:uuid:<sbom_id> — the caller already knows the
+//     SBOM (explicit upload mapping, or a BOMHort OpenVEX export, #533).
 //  2. source_repo — the normalised repository URL (#332); VEXViper and other
 //     repo-scoped producers emit the repo URL as the product IRI.
 //  3. document_namespace / document_name — SPDX document identity, for
@@ -31,12 +32,16 @@ func (c *Client) ResolveSBOMByProductRef(ctx context.Context, ref string) (strin
 		SELECT toString(sbom_id)
 		FROM sboms FINAL
 		WHERE toString(sbom_id) = ?
+		   OR concat('urn:uuid:', toString(sbom_id)) = ?
 		   OR (source_repo != '' AND source_repo = ?)
 		   OR (document_namespace != '' AND document_namespace = ?)
 		   OR (document_name != '' AND document_name = ?)
-		ORDER BY ingested_at DESC
+		-- An SBOM named by its id wins outright: a namespace or repository
+		-- can be shared by several SBOMs (CycloneDX revisions share their
+		-- serialNumber), and then the newest one is taken.
+		ORDER BY (toString(sbom_id) = ? OR concat('urn:uuid:', toString(sbom_id)) = ?) DESC, ingested_at DESC
 		LIMIT 1
-	`, ref, ref, ref, ref).Scan(&sbomID)
+	`, ref, ref, ref, ref, ref, ref, ref).Scan(&sbomID)
 	if err != nil {
 		// No rows is not an error for the caller: it means "global".
 		if isNoRows(err) {

@@ -457,7 +457,7 @@ func main() {
 		switch r.URL.Query().Get("format") {
 		case "":
 		case vexFormatOpenVEX:
-			serveOpenVEX(w, "sbom-"+sbomID, "SBOM not found", func() ([]vex.ExportStatement, bool, error) {
+			serveOpenVEX(w, "sbom-"+sbomID, "SBOM not found", func() (*clickhouse.VEXExport, bool, error) {
 				return chClient.QuerySBOMVEXExport(r.Context(), sbomID)
 			})
 			return
@@ -713,7 +713,7 @@ func main() {
 			writeError(w, http.StatusBadRequest, "format must be openvex")
 			return
 		}
-		serveOpenVEX(w, "project-"+safeFileName(name), "Project not found", func() ([]vex.ExportStatement, bool, error) {
+		serveOpenVEX(w, "project-"+safeFileName(name), "Project not found", func() (*clickhouse.VEXExport, bool, error) {
 			return chClient.QueryProjectVEXExport(r.Context(), name)
 		})
 	})
@@ -1226,11 +1226,11 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 // vexFormatOpenVEX is the ?format= value of the VEX export routes (#533).
 const vexFormatOpenVEX = "openvex"
 
-// serveOpenVEX writes the statements load returns as one OpenVEX document,
+// serveOpenVEX writes the decisions load returns as one OpenVEX document,
 // offered for download as <name>.openvex.json, or 404 with notFound when the
 // SBOM or project does not exist.
-func serveOpenVEX(w http.ResponseWriter, name, notFound string, load func() ([]vex.ExportStatement, bool, error)) {
-	stmts, found, err := load()
+func serveOpenVEX(w http.ResponseWriter, name, notFound string, load func() (*clickhouse.VEXExport, bool, error)) {
+	export, found, err := load()
 	if err != nil {
 		log.Printf("ERROR: vex export %s: %v", sanitizeLogParam(name), err)
 		writeError(w, http.StatusInternalServerError, "Failed to export VEX")
@@ -1240,7 +1240,7 @@ func serveOpenVEX(w http.ResponseWriter, name, notFound string, load func() ([]v
 		writeError(w, http.StatusNotFound, notFound)
 		return
 	}
-	doc, err := vex.Export(stmts)
+	doc, err := vex.Export(export.Statements, export.Issued)
 	if err != nil {
 		log.Printf("ERROR: vex export %s: %v", sanitizeLogParam(name), err)
 		writeError(w, http.StatusInternalServerError, "Failed to export VEX")
