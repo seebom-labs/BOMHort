@@ -2,7 +2,10 @@ package clickhouse
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -24,8 +27,47 @@ type Client struct {
 	archivedListMu sync.Mutex
 }
 
+// buildTLSConfig creates a *tls.Config according to the ClickHouse configuration.
+func buildTLSConfig(cfg *config.Config) (*tls.Config, error) {
+	if !cfg.ClickHouseSecure {
+		return nil, nil
+	}
+
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: cfg.ClickHouseSkipVerify,
+		ServerName:         cfg.ClickHouseHost,
+	}
+
+	if cfg.ClickHouseCAFile != "" {
+		caCert, err := os.ReadFile(cfg.ClickHouseCAFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read ClickHouse CA certificate file %s: %w", cfg.ClickHouseCAFile, err)
+		}
+		caPool := x509.NewCertPool()
+		if !caPool.AppendCertsFromPEM(caCert) {
+			return nil, fmt.Errorf("failed to parse ClickHouse CA certificate from %s", cfg.ClickHouseCAFile)
+		}
+		tlsConfig.RootCAs = caPool
+	}
+
+	if cfg.ClickHouseCertFile != "" && cfg.ClickHouseKeyFile != "" {
+		cert, err := tls.LoadX509KeyPair(cfg.ClickHouseCertFile, cfg.ClickHouseKeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load ClickHouse client cert/key pair (%s, %s): %w", cfg.ClickHouseCertFile, cfg.ClickHouseKeyFile, err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
+	}
+
+	return tlsConfig, nil
+}
+
 // NewClient creates a new ClickHouse client from config.
 func NewClient(cfg *config.Config) (*Client, error) {
+	tlsConfig, err := buildTLSConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+
 	conn, err := clickhouse.Open(&clickhouse.Options{
 		Addr: []string{fmt.Sprintf("%s:%d", cfg.ClickHouseHost, cfg.ClickHousePort)},
 		Auth: clickhouse.Auth{
@@ -33,6 +75,7 @@ func NewClient(cfg *config.Config) (*Client, error) {
 			Username: cfg.ClickHouseUser,
 			Password: cfg.ClickHousePassword,
 		},
+		TLS:      tlsConfig,
 		Settings: querySettings(cfg),
 	})
 	if err != nil {
