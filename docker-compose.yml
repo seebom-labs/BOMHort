@@ -91,8 +91,7 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY:-}
       S3_USE_PATH_STYLE: ${S3_USE_PATH_STYLE:-}
       S3_USE_SSL: ${S3_USE_SSL:-}
-      # Original SBOM bytes (#256): read side. auto → s3 when S3 is configured,
-      # else the shared originals volume below.
+      # Original SBOM bytes and immutable TEA snapshots.
       ORIGINAL_STORE_BACKEND: ${ORIGINAL_STORE_BACKEND:-auto}
       ORIGINAL_STORE_FS_PATH: /data/originals
     volumes:
@@ -100,7 +99,7 @@ services:
       - ./sboms/license-exceptions.json:/data/config/license-exceptions.json:ro
       - ./sboms/project-groups.json:/data/config/project-groups.json:ro
       - ./sboms/license-policy.json:/data/config/license-policy.json:ro
-      - originals_data:/data/originals:ro
+      - originals_data:/data/originals
     depends_on:
       clickhouse:
         condition: service_healthy
@@ -249,6 +248,8 @@ services:
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: ""
       ADVISORY_SOURCES: ${ADVISORY_SOURCES:-}
+      SKIP_EXPLOIT_REFS: ${SKIP_EXPLOIT_REFS:-false}
+      EXPLOIT_SOURCES: ${EXPLOIT_SOURCES:-nuclei,metasploit,exploitdb}
     depends_on:
       clickhouse:
         condition: service_healthy

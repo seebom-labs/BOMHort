@@ -2,6 +2,7 @@ package s3
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -283,6 +284,31 @@ func (c *Client) PutObject(ctx context.Context, bucket, key string, body io.Read
 	}
 
 	return nil
+}
+
+// PutObjectIfAbsent creates an object only if its key does not already exist.
+func (c *Client) PutObjectIfAbsent(ctx context.Context, bucket, key string, body io.Reader, size int64) (bool, error) {
+	mc, ok := c.clients[bucket]
+	if !ok {
+		return false, fmt.Errorf("no S3 client configured for bucket %q", bucket)
+	}
+	// shortcut: a single PUT cannot exceed 5 GiB; use conditional multipart completion for larger snapshots.
+	opts := minio.PutObjectOptions{DisableMultipart: true}
+	opts.SetMatchETagExcept("*")
+	_, err := mc.PutObject(ctx, bucket, key, body, size, opts)
+	if err != nil {
+		if minio.ToErrorResponse(err).StatusCode == 412 {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to conditionally put S3 object %s/%s: %w", bucket, key, err)
+	}
+	return true, nil
+}
+
+// IsObjectNotFound reports a missing object, not a missing or inaccessible bucket.
+func IsObjectNotFound(err error) bool {
+	var response minio.ErrorResponse
+	return errors.As(err, &response) && response.Code == "NoSuchKey"
 }
 
 // RemoveObject deletes an S3 object. Used for best-effort cleanup when a

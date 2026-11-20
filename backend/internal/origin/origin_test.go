@@ -17,3 +17,31 @@ func TestNormalizeAndValidate(t *testing.T) {
 		}
 	}
 }
+
+func TestValidate(t *testing.T) {
+	cases := []struct {
+		input string
+		valid bool
+	}{
+		{"", true},
+		{"   ", true},
+		{"cluster-scan", true},
+		{"ci", true},
+		{"CI", true},
+		{" ci ", true},
+		{"registry", true},
+		{"vendor", true},
+		{"manual", true},
+		{"production", false},
+		{"unknown", false},
+	}
+	for _, tc := range cases {
+		err := Validate(tc.input)
+		if tc.valid && err != nil {
+			t.Errorf("Validate(%q) unexpected error: %v", tc.input, err)
+		}
+		if !tc.valid && err == nil {
+			t.Errorf("Validate(%q) expected error, got nil", tc.input)
+		}
+	}
+}

@@ -56,6 +56,7 @@ func TestCloneImageSBOMCopiesRelatedRowsAndIsIdempotent(t *testing.T) {
 	if err := c.InsertVulnerabilities(ctx, []models.Vulnerability{{
 		DiscoveredAt: now, SBOMID: sourceID, SourceFile: source.SourceFile,
 		PURL: "pkg:generic/root@1", VulnID: "GHSA-test-0000", Severity: "HIGH",
+		CWEIDs:  []string{"CWE-79"},
 		Cluster: source.Cluster, ImageDigest: digest,
 	}}); err != nil {
 		t.Fatal(err)
@@ -88,6 +89,13 @@ func TestCloneImageSBOMCopiesRelatedRowsAndIsIdempotent(t *testing.T) {
 	}
 	if id != targetID.String() {
 		t.Fatalf("clone ID = %s, want deterministic %s", id, targetID)
+	}
+	clonedVulns, err := c.QuerySBOMVulnerabilities(ctx, id, "", "", "")
+	if err != nil {
+		t.Fatalf("query cloned vulnerabilities: %v", err)
+	}
+	if len(clonedVulns) != 1 || len(clonedVulns[0].CWEIDs) != 1 || clonedVulns[0].CWEIDs[0] != "CWE-79" {
+		t.Errorf("cloned CWE IDs = %+v, want [CWE-79]", clonedVulns)
 	}
 	if err := c.Conn.Exec(ctx, "ALTER TABLE sbom_packages DELETE WHERE sbom_id = ? SETTINGS mutations_sync = 1", targetID); err != nil {
 		t.Fatalf("remove cloned package row for retry check: %v", err)

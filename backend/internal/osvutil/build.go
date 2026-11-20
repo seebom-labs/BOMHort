@@ -25,6 +25,7 @@ func BuildVulnerability(entry osv.VulnEntry, sbomID uuid.UUID, sourceFile, purl 
 		Severity:         ClassifySeverity(entry),
 		Summary:          entry.Summary,
 		Aliases:          entry.Aliases,
+		CWEIDs:           ExtractCWEs(entry),
 		AffectedVersions: ExtractAffectedVersions(entry),
 		FixedVersion:     ExtractFixedVersion(entry),
 		OSVJSON:          string(rawJSON),

@@ -82,10 +82,10 @@ s3:
 gitSync:
   enabled: false
 
+# Everything is ingested from the bucket above, so there is no sbom-data PVC
+# and no pod affinity pinning the workers and the gateway to one node (#590).
 sbomSource:
-  pvcName: bomhort-sbom-data
-  mountPath: /data/sboms
-  storageSize: 15Gi
+  enabled: false
 
 # ─── License Config ─────────────────────────────────────────────────────────
 # Classification: the chart's default policy is already the CNCF Allowed
@@ -150,8 +150,8 @@ apiGateway:
     requests: { cpu: 100m, memory: 128Mi }
     limits:   { cpu: 500m, memory: 256Mi }
   # Public read-only instance: no auth. The upload endpoint has no push
-  # bucket configured and sbomSource.writable stays false, so POST uploads
-  # are rejected at the storage layer.
+  # bucket configured and no sbom-data volume to fall back to, so POST
+  # uploads are rejected at the storage layer.
   auth:
     enabled: false
 

@@ -18,9 +18,7 @@ spec:
         app.kubernetes.io/name: bomhort
         app.kubernetes.io/component: api-gateway
         app.kubernetes.io/instance: {{ .Release.Name }}
-        {{- if not .Values.gitSync.enabled }}
-        bomhort.io/sbom-volume: "true"
-        {{- end }}
+        {{- with include "bomhort.sbomSource.podLabel" (dict "root" . "originals" true) | trim }}{{ . | nindent 8 }}{{ end }}
     spec:
       {{- if .Values.apiGateway.dedupByImageDigest }}
       serviceAccountName: {{ .Release.Name }}-api-gateway
@@ -32,16 +30,7 @@ spec:
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if not .Values.gitSync.enabled }}
-      affinity:
-        podAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector:
-                matchExpressions:
-                  - key: bomhort.io/sbom-volume
-                    operator: Exists
-              topologyKey: kubernetes.io/hostname
-      {{- end }}
+      {{- with include "bomhort.sbomSource.affinity" (dict "root" . "originals" true) | trim }}{{ . | nindent 6 }}{{ end }}
       containers:
         - name: api-gateway
           image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}/api-gateway:{{ .Values.image.tag | default .Chart.AppVersion }}"
@@ -69,8 +58,12 @@ spec:
           {{- end }}
           {{- end }}
           {{- $exceptionsEnv := include "bomhort.licenseExceptions.env" . }}
-          {{- if or .Values.clickhouse.userPasswordSecret.enabled .Values.s3.credentialsSecret.enabled .Values.apiGateway.auth.enabled .Values.apiGateway.maxUploadSizeMB .Values.apiGateway.dedupByImageDigest $queryLimits $exceptionsEnv }}
+          {{- if or .Values.clickhouse.userPasswordSecret.enabled .Values.s3.credentialsSecret.enabled .Values.apiGateway.auth.enabled .Values.apiGateway.maxUploadSizeMB .Values.apiGateway.teaBaseUrl .Values.apiGateway.dedupByImageDigest $queryLimits $exceptionsEnv }}
           env:
+            {{- if .Values.apiGateway.teaBaseUrl }}
+            - name: TEA_BASE_URL
+              value: {{ .Values.apiGateway.teaBaseUrl | quote }}
+            {{- end }}
             {{- if .Values.clickhouse.userPasswordSecret.enabled }}
             - name: CLICKHOUSE_PASSWORD
               valueFrom:
@@ -149,9 +142,11 @@ spec:
           resources:
             {{- toYaml .Values.apiGateway.resources | nindent 12 }}
           volumeMounts:
+            {{- if include "bomhort.sbomSource.mounted" . }}
             - name: sbom-data
               mountPath: {{ .Values.sbomSource.mountPath }}
               readOnly: {{ not .Values.sbomSource.writable }}
+            {{- end }}
             {{- /* No rollout checksum: the pods re-read the mounted
                  directory and re-check stored results themselves. */}}
             {{- with include "bomhort.licenseExceptions.volumeMount" . }}{{ . | trim | nindent 12 }}{{ end }}
@@ -171,16 +166,9 @@ spec:
             {{- if .Values.originalStore.fs.enabled }}
             - name: originals
               mountPath: {{ .Values.originalStore.fs.mountPath }}
-              readOnly: true
             {{- end }}
       volumes:
-        - name: sbom-data
-          {{- if .Values.gitSync.enabled }}
-          emptyDir: {}
-          {{- else }}
-          persistentVolumeClaim:
-            claimName: {{ .Values.sbomSource.pvcName }}
-          {{- end }}
+        {{- with include "bomhort.sbomSource.volume" . | trim }}{{ . | nindent 8 }}{{ end }}
         {{- if .Values.originalStore.fs.enabled }}
         - name: originals
           persistentVolumeClaim:

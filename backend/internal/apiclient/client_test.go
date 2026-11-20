@@ -231,3 +231,77 @@ func TestContextCancellationIsPropagated(t *testing.T) {
 		t.Fatal("want error from cancelled context, got nil")
 	}
 }
+
+func TestGetImage(t *testing.T) {
+	var gotPath string
+	var gotQuery string
+	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotQuery = r.URL.RawQuery
+		page := r.URL.Query().Get("page")
+		if page == "2" {
+			_, _ = w.Write([]byte(`{"digest":"sha256:abc","total":51,"page":2,"page_size":50,"sboms":[{"sbom_id":"51","source_file":"test51.json","document_name":"test51","image_ref":"app:v1","ingested_at":"2026-01-01T00:00:00Z"}]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"digest":"sha256:abc","total":51,"page":1,"page_size":50,"sboms":[{"sbom_id":"1","source_file":"test.json","document_name":"test","image_ref":"app:v1","ingested_at":"2026-01-01T00:00:00Z"}]}`))
+	}), Options{})
+
+	// Page 1 (using defaults 0, 0)
+	img, err := c.GetImage(context.Background(), "sha256:abc", 0, 0)
+	if err != nil {
+		t.Fatalf("GetImage: %v", err)
+	}
+	if gotPath != "/api/v1/images/sha256:abc" {
+		t.Errorf("gotPath = %q", gotPath)
+	}
+	if img.Digest != "sha256:abc" || img.Total != 51 || img.Page != 1 || len(img.SBOMs) != 1 || img.SBOMs[0].SBOMID != "1" {
+		t.Errorf("page 1 decoded = %+v", img)
+	}
+
+	// Page 2 (multi-page contract test)
+	img2, err := c.GetImage(context.Background(), "sha256:abc", 2, 50)
+	if err != nil {
+		t.Fatalf("GetImage page 2: %v", err)
+	}
+	if gotQuery != "page=2&page_size=50" {
+		t.Errorf("gotQuery = %q, want page=2&page_size=50", gotQuery)
+	}
+	if img2.Total != 51 || img2.Page != 2 || len(img2.SBOMs) != 1 || img2.SBOMs[0].SBOMID != "51" {
+		t.Errorf("page 2 decoded = %+v", img2)
+	}
+}
+
+func TestCheckImage(t *testing.T) {
+	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/images/sha256:exists" {
+			w.WriteHeader(http.StatusOK)
+		} else if r.URL.Path == "/api/v1/images/sha256:missing" {
+			w.WriteHeader(http.StatusNotFound)
+		} else if r.URL.Path == "/api/v1/images/sha256:unauthorized" {
+			w.WriteHeader(http.StatusUnauthorized)
+		} else {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}), Options{})
+
+	exists, err := c.CheckImage(context.Background(), "sha256:exists")
+	if err != nil || !exists {
+		t.Errorf("CheckImage(exists) = %v, %v, want true, nil", exists, err)
+	}
+
+	missing, err := c.CheckImage(context.Background(), "sha256:missing")
+	if err != nil || missing {
+		t.Errorf("CheckImage(missing) = %v, %v, want false, nil", missing, err)
+	}
+
+	_, err = c.CheckImage(context.Background(), "sha256:unauthorized")
+	var statusErr *StatusError
+	if !errors.As(err, &statusErr) || statusErr.StatusCode != http.StatusUnauthorized {
+		t.Errorf("CheckImage(unauthorized) err = %v, want StatusError 401", err)
+	}
+
+	_, err = c.CheckImage(context.Background(), "sha256:error")
+	if !errors.As(err, &statusErr) || statusErr.StatusCode != http.StatusInternalServerError {
+		t.Errorf("CheckImage(error) err = %v, want StatusError 500", err)
+	}
+}

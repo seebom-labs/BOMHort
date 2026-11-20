@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 
 	s3client "github.com/seebom-labs/bomhort/backend/internal/s3"
 )
@@ -14,9 +15,11 @@ import (
 // S3Store persists originals as objects under bucket/prefix. It is the raw
 // backend; NewS3Store wraps it in the shared compression layer.
 type S3Store struct {
-	client *s3client.Client
-	bucket string
-	prefix string
+	client             *s3client.Client
+	bucket             string
+	prefix             string
+	mu                 sync.Mutex
+	conditionalChecked map[string]bool
 }
 
 // NewS3Store returns a Store writing to bucket under prefix. The client must
@@ -48,6 +51,55 @@ func newS3Store(client *s3client.Client, bucket, prefix string) (*S3Store, error
 
 // Backend implements rawStore.
 func (s *S3Store) Backend() string { return BackendS3 }
+
+func (s *S3Store) syncImmutable(string) error { return nil }
+
+func (s *S3Store) immutableRef(key string) (string, error) {
+	return "s3://" + s.bucket + "/" + s.prefix + strings.TrimPrefix(key, "/"), nil
+}
+
+func (s *S3Store) putRawIfAbsent(ctx context.Context, ref string, data []byte) (bool, error) {
+	bucket, key, err := s.resolve(ref)
+	if err != nil {
+		return false, err
+	}
+	if err := s.checkConditionalWrites(ctx, bucket, key); err != nil {
+		return false, err
+	}
+	return s.client.PutObjectIfAbsent(ctx, bucket, key, bytes.NewReader(data), int64(len(data)))
+}
+
+func (s *S3Store) checkConditionalWrites(ctx context.Context, bucket, key string) error {
+	var prefix string
+	if i := strings.LastIndex(key, "/tea/"); i >= 0 {
+		prefix = key[:i+1]
+	} else if !strings.HasPrefix(key, "tea/") {
+		return errors.New("docstore: invalid immutable S3 key")
+	}
+	probe := prefix + "tea/.conditional-write-probe"
+	cacheKey := bucket + "/" + probe
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.conditionalChecked[cacheKey] {
+		return nil
+	}
+	data := []byte("conditional-write-probe")
+	if _, err := s.client.PutObjectIfAbsent(ctx, bucket, probe, bytes.NewReader(data), int64(len(data))); err != nil {
+		return fmt.Errorf("docstore: conditional-write probe: %w", err)
+	}
+	created, err := s.client.PutObjectIfAbsent(ctx, bucket, probe, bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return fmt.Errorf("docstore: conditional-write probe: %w", err)
+	}
+	if created {
+		return errors.New("docstore: S3 backend does not enforce conditional writes")
+	}
+	if s.conditionalChecked == nil {
+		s.conditionalChecked = make(map[string]bool)
+	}
+	s.conditionalChecked[cacheKey] = true
+	return nil
+}
 
 // putRaw implements rawStore.
 func (s *S3Store) putRaw(ctx context.Context, key string, data []byte) (string, error) {

@@ -132,6 +132,7 @@ func (c *Client) InsertVulnerabilities(ctx context.Context, vulns []models.Vulne
 		`INSERT INTO vulnerabilities (
 			discovered_at, sbom_id, source_file, purl, vuln_id,
 			severity, summary, affected_versions, fixed_version, osv_json, aliases,
+			cwe_ids,
 			dependency_depth,
 			advisory_source, advisory_status, component_location,
 			cluster, namespace, project,
@@ -163,6 +164,7 @@ func (c *Client) InsertVulnerabilities(ctx context.Context, vulns []models.Vulne
 			v.FixedVersion,
 			v.OSVJSON,
 			v.Aliases,
+			v.CWEIDs,
 			v.DependencyDepth,
 			advisorySourceOrOSV(v.AdvisorySource),
 			v.AdvisoryStatus,

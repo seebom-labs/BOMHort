@@ -108,6 +108,62 @@ type rawStore interface {
 	putRaw(ctx context.Context, key string, data []byte) (ref string, err error)
 	getRaw(ctx context.Context, ref string) (io.ReadCloser, error)
 	deleteRaw(ctx context.Context, ref string) error
+	immutableRef(key string) (string, error)
+	putRawIfAbsent(ctx context.Context, ref string, data []byte) (bool, error)
+	syncImmutable(ref string) error
+}
+
+// SyncImmutable makes a previously created object durable before it is indexed.
+func SyncImmutable(store Store, ref string) error {
+	switch s := store.(type) {
+	case *multiStore:
+		backend, err := s.storeFor(ref)
+		if err != nil {
+			return err
+		}
+		return SyncImmutable(backend, ref)
+	case *encodedStore:
+		return s.raw.syncImmutable(ref)
+	default:
+		return errors.New("docstore: immutable storage is unavailable")
+	}
+}
+
+// ImmutableRef returns the reference at which an immutable object would be
+// stored by the configured primary backend.
+func ImmutableRef(store Store, key string) (string, error) {
+	switch s := store.(type) {
+	case *encodedStore:
+		return s.raw.immutableRef(key + gzipSuffix)
+	case *multiStore:
+		return ImmutableRef(s.primary, key)
+	default:
+		return "", errors.New("docstore: immutable storage is unavailable")
+	}
+}
+
+// PutIfAbsent atomically creates a compressed object at ref. Existing objects
+// are never overwritten, including when a writer is retried after a timeout.
+func PutIfAbsent(ctx context.Context, store Store, ref string, data []byte) (bool, error) {
+	switch s := store.(type) {
+	case *multiStore:
+		backend, err := s.storeFor(ref)
+		if err != nil {
+			return false, err
+		}
+		return PutIfAbsent(ctx, backend, ref, data)
+	case *encodedStore:
+		if EncodingOf(ref) != EncodingGzip {
+			return false, fmt.Errorf("docstore: immutable reference must use gzip: %q", ref)
+		}
+		compressed, err := compress(data)
+		if err != nil {
+			return false, err
+		}
+		return s.raw.putRawIfAbsent(ctx, ref, compressed)
+	default:
+		return false, errors.New("docstore: immutable storage is unavailable")
+	}
 }
 
 // EncodingOf derives the content encoding from a stored reference.
@@ -202,7 +258,11 @@ func (e *encodedStore) Get(ctx context.Context, ref string) (io.ReadCloser, erro
 	if err != nil {
 		return nil, err
 	}
-	return decodeReader(rc, enc)
+	reader, err := decodeReader(rc, enc)
+	if s3client.IsObjectNotFound(err) {
+		return nil, fmt.Errorf("%w: %s", ErrNotFound, ref)
+	}
+	return reader, err
 }
 
 func (e *encodedStore) Delete(ctx context.Context, ref string) error {

@@ -14,6 +14,10 @@ func TestBuildVulnerability(t *testing.T) {
 		ID:      "GHSA-xxxx-yyyy-zzzz",
 		Summary: "bad thing",
 		Aliases: []string{"CVE-2024-1"},
+		DatabaseSpecific: map[string]interface{}{
+			"cwe_ids":  []interface{}{"CWE-79"},
+			"severity": "HIGH",
+		},
 	}
 	v := BuildVulnerability(entry, id, "a.json", "pkg:golang/x@1", 3)
 
@@ -25,5 +29,9 @@ func TestBuildVulnerability(t *testing.T) {
 	}
 	if v.Severity != ClassifySeverity(entry) || v.OSVJSON == "" {
 		t.Fatalf("derived fields missing: %+v", v)
+	}
+	// CWE ids survive into the row (#409), not just into the raw osv_json blob.
+	if len(v.CWEIDs) != 1 || v.CWEIDs[0] != "CWE-79" {
+		t.Fatalf("cwe_ids not carried over: %+v", v.CWEIDs)
 	}
 }

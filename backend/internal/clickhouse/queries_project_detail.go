@@ -153,7 +153,7 @@ func (c *Client) QueryProjectDetail(ctx context.Context, name string) (*dto.Proj
 // first. Same row shape as every other SBOM listing so the UI reuses the
 // component.
 func (c *Client) QueryProjectSBOMs(ctx context.Context, name string, page, pageSize uint64) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
-	return c.QuerySBOMs(ctx, page, pageSize, "", name, 0)
+	return c.QuerySBOMs(ctx, page, pageSize, "", name, "", 0)
 }
 
 // QueryProjectSBOMIDByVersion returns the most recently ingested SBOM ID for a specific
@@ -205,7 +205,7 @@ func (c *Client) QueryProjectBadgeStats(ctx context.Context, name, version strin
 	}
 
 	// Count unsuppressed vulnerabilities using the scope-aware VEX join.
-	vulns, err := c.QuerySBOMVulnerabilities(ctx, targetSBOMID, "", "")
+	vulns, err := c.QuerySBOMVulnerabilities(ctx, targetSBOMID, "", "", "")
 	if err != nil {
 		return nil, err
 	}
@@ -278,6 +278,7 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 		SELECT
 			f.vuln_id, f.severity, f.purl, f.summary, f.fixed_version,
 			f.source_file, f.discovered_at, f.affected_sboms, f.dependency_depth, f.aliases,
+			f.cwe_ids,
 			f.advisory_source, f.advisory_status, f.component_location,
 			ifNull(vx.vex_status, '')            AS vex_status,
 			ifNull(vx.vex_justification, '')     AS vex_justification,
@@ -298,6 +299,7 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 				uniqExact(v.sbom_id)                     AS affected_sboms,
 				min(v.dependency_depth)                  AS dependency_depth,
 				groupUniqArrayArray(v.aliases)           AS aliases,
+				groupUniqArrayArray(v.cwe_ids)           AS cwe_ids,
 				argMax(v.advisory_source, v.discovered_at)    AS advisory_source,
 				argMax(v.advisory_status, v.discovered_at)    AS advisory_status,
 				argMax(v.component_location, v.discovered_at) AS component_location,
@@ -350,6 +352,7 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 		if err := rows.Scan(
 			&item.VulnID, &item.Severity, &item.PURL, &item.Summary, &item.FixedVersion,
 			&item.SourceFile, &discoveredAt, &item.AffectedSBOMs, &depth, &aliases,
+			&item.CWEIDs,
 			&item.AdvisorySource, &item.AdvisoryStatus, &components,
 			&item.VEXStatus, &item.VEXJustification, &vexTimestamp,
 			&item.VEXStatementID, &item.VEXAuthor, &item.VEXTooling,
@@ -379,10 +382,13 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows error: %w", err)
 	}
+	if err := c.enrichExploits(ctx, items); err != nil {
+		return nil, err
+	}
 	if items == nil {
 		items = []dto.VulnerabilityListItem{}
 	}
-	return items, rows.Err()
+	return items, nil
 }
 
 // QueryProjectPackages lists the distinct components across a project's

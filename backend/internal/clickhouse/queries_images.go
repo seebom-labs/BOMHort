@@ -236,13 +236,13 @@ func (c *Client) CloneImageSBOM(ctx context.Context, source ImageSBOMRef, digest
 		{"vulnerabilities", `
 			INSERT INTO vulnerabilities (
 				discovered_at, sbom_id, source_file, purl, vuln_id, severity, summary,
-				affected_versions, fixed_version, osv_json, aliases, dependency_depth,
+				affected_versions, fixed_version, osv_json, aliases, cwe_ids, dependency_depth,
 				advisory_source, advisory_status, component_location,
 				cluster, namespace, project, image_digest,
 				reachability, evidence_source, evidence_ref, evidence_at
 			)
 			SELECT now(), ?, source_file, purl, vuln_id, severity, summary,
-			       affected_versions, fixed_version, osv_json, aliases, dependency_depth,
+			       affected_versions, fixed_version, osv_json, aliases, cwe_ids, dependency_depth,
 			       advisory_source, advisory_status, component_location,
 			       ?, ?, ?, ?, reachability, evidence_source, evidence_ref, evidence_at
 			FROM vulnerabilities FINAL WHERE sbom_id = ?`,

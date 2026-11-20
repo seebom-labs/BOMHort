@@ -11,12 +11,20 @@ data:
   CLICKHOUSE_DATABASE: {{ .Values.clickhouse.database | quote }}
   CLICKHOUSE_USER: {{ .Values.clickhouse.user | quote }}
   SBOM_DIR: {{ .Values.sbomSource.mountPath | quote }}
+  {{- /* Without a sbom-data volume SBOM_DIR is only a path inside each pod.
+       Say so, rather than leave the binaries to probe it: the gateway could
+       create it in its own filesystem, take a push upload and queue a file no
+       worker can read (#590). */}}
+  {{- if not (include "bomhort.sbomSource.mounted" .) }}
+  SBOM_DIR_DISABLED: "true"
+  {{- end }}
   {{- with .Values.ownership }}
   CLUSTER_NAME: {{ .cluster | default "" | quote }}
   NAMESPACE: {{ .namespace | default "" | quote }}
   PROJECT: {{ .project | default "" | quote }}
   ORIGIN: {{ .origin | default "" | quote }}
   PARENT: {{ .parent | default "" | quote }}
+  ORIGIN: {{ .origin | default "" | quote }}
   INGEST_PATH_LAYOUT: {{ .pathLayout | default "" | quote }}
   {{- end }}
   {{- /*

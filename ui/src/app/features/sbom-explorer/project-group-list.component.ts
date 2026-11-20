@@ -67,6 +67,7 @@ import { SBOMListItem, ProjectListItem } from '../../core/api.models';
               <span class="badge">{{ sbom.spdx_version }}</span>
               <span class="badge cluster-badge" *ngIf="sbom.cluster" [title]="'Cluster: ' + sbom.cluster">{{ sbom.cluster }}</span>
               <span class="badge" *ngIf="sbom.namespace" [title]="'Namespace: ' + sbom.namespace">{{ sbom.namespace }}</span>
+              <span class="badge origin-badge" *ngIf="sbom.origin" [title]="'Origin: ' + sbom.origin">{{ sbom.origin }}</span>
               <span class="packages">{{ sbom.package_count | number }} packages</span>
               <span class="vulns" [class.has-vulns]="sbom.vuln_count > 0">{{ sbom.vuln_count | number }} vulns</span>
               <span class="date">{{ sbom.ingested_at | date:'short' }}</span>
@@ -119,6 +120,7 @@ import { SBOMListItem, ProjectListItem } from '../../core/api.models';
     }
     .badge.tag-badge { border-radius: 10px; cursor: help; }
     .badge.cluster-badge { background: var(--status-info-bg); color: var(--accent-hover); }
+    .badge.origin-badge { background: rgba(147, 51, 234, 0.12); color: #a855f7; }
     .packages { color: var(--text-secondary); font-size: 0.8rem; width: 110px; }
     .vulns { font-size: 0.8rem; width: 80px; color: var(--text-secondary); }
     .has-vulns { color: var(--severity-critical); font-weight: 600; }

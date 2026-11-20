@@ -264,6 +264,10 @@ Explicit configuration always outranks derivation. An operator who names a
 dimension means it; silently overriding that from directory structure would be
 impossible to debug.
 
+A scanner running inside each cluster uses mechanism 1: it knows the namespace
+and workload of every image it finds. What it should send is specified in
+[Scanning a Cluster]({{< relref "/docs/scanning-a-cluster" >}}).
+
 ### 1. Path derivation (`INGEST_PATH_LAYOUT`)
 
 ```bash

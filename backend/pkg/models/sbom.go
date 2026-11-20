@@ -24,7 +24,9 @@ type SBOM struct {
 	// DocumentNamespace above, which is the SPDX document's URI identifier.
 	Namespace string `json:"namespace,omitempty"`
 	Project   string `json:"project,omitempty"`
-	Origin    string `json:"origin,omitempty"`
+	// Origin (#455) records how the SBOM was produced: cluster-scan, ci,
+	// registry, vendor, manual. '' = unassigned/legacy.
+	Origin string `json:"origin,omitempty"`
 	// SourceRepo/SourceRef (#332) name where the product's source lives:
 	// a normalised https repository URL and the commit/tag/branch the SBOM
 	// was generated from. Extracted from the document at parse time
@@ -115,13 +117,16 @@ type Vulnerability struct {
 	// (GHSA-… ↔ CVE-… ↔ GO-…). VEX matching accepts any of them: a
 	// statement written about the CVE must hit the finding stored under
 	// its GHSA id.
-	Aliases      []string `json:"aliases,omitempty"`
+	Aliases []string `json:"aliases,omitempty"`
+	// CWEIDs are the weakness classes of the flaw (#409), extracted from
+	// OSV database_specific.cwe_ids. Empty for NVD-sourced entries that
+	// carry none; backfilled from osv_json (migration 034).
+	CWEIDs       []string `json:"cwe_ids,omitempty"`
 	FixedVersion string   `json:"fixed_version"`
 	OSVJSON      string   `json:"osv_json"`
 	// DependencyDepth is the smallest depth of the affected PURL in the SBOM
 	// (see SBOMPackages.PackageDepths); depgraph.Unknown when not derivable.
 	DependencyDepth uint16 `json:"dependency_depth"`
-
 	// AdvisorySource is "osv" for a finding osv.dev reported, else the name
 	// of the ADVISORY_SOURCES feed that decided it.
 	AdvisorySource string `json:"advisory_source,omitempty"`
@@ -166,6 +171,7 @@ type LicenseCompliance struct {
 	Cluster              string    `json:"cluster,omitempty"`
 	Namespace            string    `json:"namespace,omitempty"`
 	Project              string    `json:"project,omitempty"`
+	Origin               string    `json:"origin,omitempty"`
 }
 
 // IngestionJob represents a job in the ClickHouse-based queue.
@@ -220,6 +226,7 @@ type StoredDocument struct {
 	Cluster         string    `json:"cluster,omitempty"`
 	Namespace       string    `json:"namespace,omitempty"`
 	Project         string    `json:"project,omitempty"`
+	Origin          string    `json:"origin,omitempty"`
 	SourceFile      string    `json:"source_file"`
 	StorageBackend  string    `json:"storage_backend"` // s3 | fs
 	StorageRef      string    `json:"storage_ref"`     // s3://bucket/key or fs://relative/path
@@ -299,6 +306,7 @@ type VEXStatement struct {
 	Cluster     string `json:"cluster,omitempty"`
 	Namespace   string `json:"namespace,omitempty"`
 	Project     string `json:"project,omitempty"`
+	Origin      string `json:"origin,omitempty"`
 }
 
 // VEX status constants (OpenVEX spec).

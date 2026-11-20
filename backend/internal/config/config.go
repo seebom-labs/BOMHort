@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/seebom-labs/bomhort/backend/internal/advisory"
+	"github.com/seebom-labs/bomhort/backend/internal/exploit"
 	"github.com/seebom-labs/bomhort/backend/internal/ingestpath"
 	"github.com/seebom-labs/bomhort/backend/internal/origin"
 	"github.com/seebom-labs/bomhort/backend/internal/tags"
@@ -36,7 +38,9 @@ type S3BucketConfig struct {
 	// NAMESPACE/PROJECT defaults and anything derived from the object key.
 	Namespace string `json:"namespace,omitempty"`
 	Project   string `json:"project,omitempty"`
-	Origin    string `json:"origin,omitempty"`
+	// Origin (#455) optionally sets the origin for all SBOMs in this bucket:
+	// cluster-scan, ci, registry, vendor, manual.
+	Origin string `json:"origin,omitempty"`
 	// Parent pins every object in this bucket to one parent (product), for
 	// a bucket per product. Explicit configuration, so it outranks the
 	// global PARENT, the "parent" path-layout token and every automatic
@@ -81,6 +85,15 @@ type Config struct {
 
 	// SBOM source directory (local filesystem)
 	SBOMDir string
+	// SBOMDirDisabled (SBOM_DIR_DISABLED) says SBOMDir is not a directory the
+	// ingestion watcher, the parsing workers and the API gateway share. The
+	// Helm chart sets it when it mounts no sbom-data volume
+	// (sbomSource.enabled=false, #590). SBOMDir is then only a path in each
+	// pod's own filesystem, where a file one pod writes is invisible to the
+	// others — so the watcher does not scan it, the workers do not open job
+	// files from it and the gateway does not store push uploads in it, however
+	// writable it happens to be.
+	SBOMDirDisabled bool
 
 	// S3 bucket sources (multiple buckets supported)
 	S3Buckets []S3BucketConfig
@@ -100,6 +113,12 @@ type Config struct {
 	// match SBOM packages against them, feed first for the prefixes a feed
 	// is authoritative for. Empty: osv.dev only.
 	AdvisorySources []advisory.Source
+
+	// Public exploit-code index (cve-refresher). SkipExploitRefs turns the
+	// daily sync off; ExploitFeeds are the enabled sources with the URL of
+	// each index (EXPLOIT_SOURCES, EXPLOIT_<SOURCE>_URL).
+	SkipExploitRefs bool
+	ExploitFeeds    []exploit.Feed
 
 	// Feature flags
 	SkipOSV              bool   // Skip OSV vulnerability lookups (fast ingestion, licenses only)
@@ -142,7 +161,10 @@ type Config struct {
 	// config, path derivation, upload query param) supplies a value.
 	Namespace string // Default namespace (default "" = unassigned)
 	Project   string // Default project   (default "" = unassigned)
-	Origin    string // Optional provenance label for ingested documents
+	// Origin (#455) records how the SBOM was produced: cluster-scan, ci,
+	// registry, vendor, manual. Instance-wide default, used when nothing more
+	// specific supplies a value.
+	Origin string // Default origin (default "" = unassigned)
 	// Parent is the instance-wide default parent (product) for every
 	// ingested SBOM, from PARENT. Rarely useful instance-wide; per-bucket
 	// "parent", the "parent" path-layout token and ?parent= on upload are the
@@ -173,6 +195,10 @@ type Config struct {
 
 	// Push-model upload (#135)
 	MaxUploadSizeMB int // Max accepted body size for POST /api/v1/sboms/upload, in MB (default 50)
+
+	// Transparency Exchange API (TEA Beta 2, #534).
+	// Base URL advertised in /.well-known/tea. Empty = auto-detected from request.
+	TEABaseURL string
 
 	// Tier-2 fidelity capture (#256): where the original SBOM bytes are kept.
 	//   OriginalStoreBackend: "auto" (default) | "s3" | "fs" | "none"
@@ -243,6 +269,7 @@ func Load() (*Config, error) {
 		ClickHouseUser:        getEnv("CLICKHOUSE_USER", "default"),
 		ClickHousePassword:    getEnv("CLICKHOUSE_PASSWORD", ""),
 		SBOMDir:               getEnv("SBOM_DIR", "./sboms"),
+		SBOMDirDisabled:       getEnvBool("SBOM_DIR_DISABLED", false),
 		APIPort:               getEnvInt("API_PORT", 8080),
 		CORSAllowedOrigins:    getEnv("CORS_ALLOWED_ORIGINS", "*"),
 		RateLimitMax:          getEnvInt("RATE_LIMIT_MAX", 100),
@@ -276,6 +303,7 @@ func Load() (*Config, error) {
 		BadgesPublic:          getEnvBool("BADGES_PUBLIC", false),
 		BrandName:             getEnv("BRAND_NAME", "BOMHort"),
 		MaxUploadSizeMB:       getEnvInt("MAX_UPLOAD_SIZE_MB", 50),
+		TEABaseURL:            strings.TrimRight(getEnv("TEA_BASE_URL", ""), "/"),
 
 		OriginalStoreBackend:  strings.ToLower(getEnv("ORIGINAL_STORE_BACKEND", OriginalStoreAuto)),
 		OriginalStoreS3Bucket: getEnv("ORIGINAL_STORE_S3_BUCKET", ""),
@@ -298,6 +326,13 @@ func Load() (*Config, error) {
 	if cfg.Origin != "" && !origin.IsValid(cfg.Origin) {
 		return nil, fmt.Errorf("invalid ORIGIN %q", cfg.Origin)
 	}
+
+	cfg.SkipExploitRefs = getEnvBool("SKIP_EXPLOIT_REFS", false)
+	feeds, err := loadExploitFeeds()
+	if err != nil {
+		return nil, err
+	}
+	cfg.ExploitFeeds = feeds
 
 	switch cfg.MCPTransport {
 	case MCPTransportStdio, MCPTransportHTTP:
@@ -339,6 +374,10 @@ func Load() (*Config, error) {
 	case "", "strict", "permissive-wins", "off":
 	default:
 		return nil, fmt.Errorf("invalid LICENSE_EXPRESSION_MODE %q (want strict|permissive-wins|off)", cfg.LicenseExpressionMode)
+	}
+
+	if err := origin.Validate(cfg.Origin); err != nil {
+		return nil, fmt.Errorf("invalid ORIGIN: %w", err)
 	}
 
 	// Fail fast on a malformed layout rather than ingesting a whole fleet with
@@ -415,10 +454,14 @@ func Load() (*Config, error) {
 	// Deduplicate bucket names.
 	cfg.S3Buckets = deduplicateBuckets(cfg.S3Buckets)
 
-	// Per-bucket layouts are validated here for the same fail-fast reason.
-	for _, b := range cfg.S3Buckets {
-		if _, err := ingestpath.ParseLayout(b.PathLayout); err != nil {
-			return nil, fmt.Errorf("invalid pathLayout for bucket %q: %w", b.Name, err)
+	// Per-bucket layouts and origins are validated here for the same fail-fast reason.
+	for i := range cfg.S3Buckets {
+		if _, err := ingestpath.ParseLayout(cfg.S3Buckets[i].PathLayout); err != nil {
+			return nil, fmt.Errorf("invalid pathLayout for bucket %q: %w", cfg.S3Buckets[i].Name, err)
+		}
+		cfg.S3Buckets[i].Origin = origin.Normalize(cfg.S3Buckets[i].Origin)
+		if err := origin.Validate(cfg.S3Buckets[i].Origin); err != nil {
+			return nil, fmt.Errorf("invalid origin for bucket %q: %w", cfg.S3Buckets[i].Name, err)
 		}
 	}
 
@@ -466,6 +509,23 @@ func (c *Config) BucketIngestLayout(b S3BucketConfig) ingestpath.Layout {
 // HasS3Sources returns true if any S3 buckets are configured.
 func (c *Config) HasS3Sources() bool {
 	return len(c.S3Buckets) > 0
+}
+
+// HasLocalSBOMDir reports whether SBOMDir is a directory shared between the
+// pods (see SBOMDirDisabled). Check it before treating SBOMDir as storage;
+// that the path exists or is writable says nothing about who else can see it.
+func (c *Config) HasLocalSBOMDir() bool {
+	return !c.SBOMDirDisabled && c.SBOMDir != ""
+}
+
+// LocalSBOMPath resolves a job's relative source file to its path under
+// SBOMDir. Without a shared directory it fails instead of pointing into the
+// pod's own filesystem.
+func (c *Config) LocalSBOMPath(sourceFile string) (string, error) {
+	if !c.HasLocalSBOMDir() {
+		return "", fmt.Errorf("%s is a local file, but this instance has no shared SBOM directory (SBOM_DIR_DISABLED)", sourceFile)
+	}
+	return filepath.Join(c.SBOMDir, sourceFile), nil
 }
 
 // ResolvedOriginalStoreBackend resolves "auto" to a concrete backend:
@@ -627,4 +687,36 @@ func (c *Config) S3BucketNames() string {
 		}
 	}
 	return strings.Join(names, ", ")
+}
+
+// loadExploitFeeds reads EXPLOIT_SOURCES (comma-separated, default all
+// three) and the per-source index URL EXPLOIT_<SOURCE>_URL (default the
+// upstream file; file:// for an air-gapped mirror). An unknown source name
+// or URL scheme is refused rather than silently skipped, and so is plain
+// http://: an index rewritten in transit would plant false exploit matches.
+func loadExploitFeeds() ([]exploit.Feed, error) {
+	names := exploit.Sources
+	if raw, ok := os.LookupEnv("EXPLOIT_SOURCES"); ok && strings.TrimSpace(raw) != "" {
+		names = nil
+		seen := map[string]bool{}
+		for _, n := range parseCSV(strings.ToLower(raw)) {
+			if !exploit.IsSource(n) {
+				return nil, fmt.Errorf("invalid EXPLOIT_SOURCES entry %q (want %s)", n, strings.Join(exploit.Sources, ", "))
+			}
+			if !seen[n] {
+				seen[n] = true
+				names = append(names, n)
+			}
+		}
+	}
+	feeds := make([]exploit.Feed, 0, len(names))
+	for _, n := range names {
+		key := "EXPLOIT_" + strings.ToUpper(n) + "_URL"
+		u := strings.TrimSpace(getEnv(key, exploit.DefaultURLs[n]))
+		if !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "file://") {
+			return nil, fmt.Errorf("invalid %s (want an https:// or file:// URL)", key)
+		}
+		feeds = append(feeds, exploit.Feed{Source: n, URL: u})
+	}
+	return feeds, nil
 }
