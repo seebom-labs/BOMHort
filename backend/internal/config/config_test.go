@@ -37,6 +37,9 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.APIPort != 8080 {
 		t.Errorf("expected default API port 8080, got %d", cfg.APIPort)
 	}
+	if cfg.ShutdownTimeout != 30 {
+		t.Errorf("expected default ShutdownTimeout 30, got %d", cfg.ShutdownTimeout)
+	}
 	if cfg.SkipOSV != false {
 		t.Error("expected default SkipOSV=false")
 	}

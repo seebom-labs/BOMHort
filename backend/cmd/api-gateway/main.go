@@ -14,12 +14,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/signal"
 	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -1158,8 +1160,36 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
-	if err := srv.ListenAndServe(); err != nil {
+
+	shutdownTimeout := 30 * time.Second
+	if cfg.ShutdownTimeout > 0 {
+		shutdownTimeout = time.Duration(cfg.ShutdownTimeout) * time.Second
+	}
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+
+	serverErr := make(chan error, 1)
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverErr <- err
+		}
+	}()
+
+	select {
+	case err := <-serverErr:
 		log.Fatalf("Server failed: %v", err)
+	case sig := <-stop:
+		log.Printf("Received signal %v, initiating graceful shutdown (deadline: %v)...", sig, shutdownTimeout)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Printf("Graceful shutdown failed: %v", err)
+			_ = srv.Close()
+		} else {
+			log.Println("API Gateway stopped gracefully")
+		}
 	}
 }
 

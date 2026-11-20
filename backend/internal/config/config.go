@@ -102,6 +102,7 @@ type Config struct {
 	APIPort            int
 	CORSAllowedOrigins string // Comma-separated allowed origins (default "*" for dev)
 	RateLimitMax       int    // Requests per IP per 10s window; 0 disables the limiter
+	ShutdownTimeout    int    // Graceful shutdown deadline in seconds (default 30)
 
 	// Worker
 	WorkerID        string
@@ -273,6 +274,7 @@ func Load() (*Config, error) {
 		APIPort:               getEnvInt("API_PORT", 8080),
 		CORSAllowedOrigins:    getEnv("CORS_ALLOWED_ORIGINS", "*"),
 		RateLimitMax:          getEnvInt("RATE_LIMIT_MAX", 100),
+		ShutdownTimeout:       getEnvInt("SHUTDOWN_TIMEOUT_SECONDS", 30),
 		WorkerID:              getEnv("WORKER_ID", ""),
 		WorkerBatchSize:       getEnvInt("WORKER_BATCH_SIZE", 10),
 		SkipOSV:               getEnvBool("SKIP_OSV", false),
