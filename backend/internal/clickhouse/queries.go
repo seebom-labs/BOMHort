@@ -857,13 +857,11 @@ func (c *Client) QuerySBOMDependencies(ctx context.Context, sbomID string) ([]dt
 		return nil, fmt.Errorf("failed to query sbom_packages for %s: %w", sbomID, err)
 	}
 
-	// Build a children map from relationship arrays.
-	childrenMap := make(map[uint32][]uint32)
-	for i := range relSources {
-		if i < len(relTargets) {
-			childrenMap[relSources[i]] = append(childrenMap[relSources[i]], relTargets[i])
-		}
-	}
+	// Parent→child references (#56): the dependency edges the depth walk
+	// uses, so the tree and dependency_scope agree. Raw source→target pairs
+	// pointed the wrong way for DEPENDENCY_OF/CONTAINED_BY and included
+	// relationships that are not dependencies (DESCRIBES, …).
+	childrenOf := depgraph.Children(len(names), relSources, relTargets, relTypes)
 
 	nodes := make([]dto.DependencyNode, len(names))
 	for i := range names {
@@ -889,7 +887,7 @@ func (c *Client) QuerySBOMDependencies(ctx context.Context, sbomID string) ([]dt
 			source = sources[i]
 		}
 
-		children := childrenMap[idx]
+		children := childrenOf[i]
 		if children == nil {
 			children = []uint32{}
 		}
