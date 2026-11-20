@@ -22,6 +22,7 @@ function sample(): DependencyNode[] {
 }
 
 const names = (rows: { index: number }[], nodes = sample()) => rows.map((r) => nodes[r.index].name);
+const nodeName = (index: number) => sample()[index].name;
 
 describe('buildTree', () => {
   it('starts at the product and lists unreachable packages separately', () => {
@@ -63,6 +64,19 @@ describe('visibleRows', () => {
     expect(rows[1]).toMatchObject({ hasChildren: true, expanded: false, key: '0/1' });
     expect(rows[2].hasChildren).toBe(false);
     expect(rows[3]).toMatchObject({ detached: true, level: 0 });
+  });
+
+  it('numbers every row among its siblings (aria-posinset / aria-setsize)', () => {
+    const tree = buildTree(sample());
+    const { rows } = visibleRows(tree, new Set(['0', '0/1']));
+    // app and the unconnected orphan form the top level; express has two
+    // children, app has two.
+    expect(rows.map((r) => [nodeName(r.index), r.posInSet, r.setSize])).toEqual([
+      ['app', 1, 2], ['express', 1, 2], ['lodash', 1, 2], ['debug', 2, 2], ['lodash', 2, 2], ['orphan', 2, 2],
+    ]);
+    // In a search only the siblings that are shown count.
+    const searched = visibleRows(tree, new Set(), 'ms').rows;
+    expect(searched.map((r) => [r.posInSet, r.setSize])).toEqual([[1, 1], [1, 1], [1, 1], [1, 1]]);
   });
 
   it('shows a shared package under every parent and marks a cycle instead of looping', () => {

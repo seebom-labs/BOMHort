@@ -1,6 +1,6 @@
-import { ChangeDetectionStrategy, Component, Input, OnChanges, SimpleChanges } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, ElementRef, Input, OnChanges, SimpleChanges, ViewChild, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { ScrollingModule } from '@angular/cdk/scrolling';
+import { CdkVirtualScrollViewport, ScrollingModule } from '@angular/cdk/scrolling';
 import type { DependencyNode, VulnerabilityListItem } from '../../core/api.models';
 import { ScopeBadgeComponent } from '../../shared/scope-badge/scope-badge.component';
 import { DependencyTree, FlatDep, TreeRow, buildTree, defaultExpanded, visibleRows } from './dependency-tree';
@@ -37,12 +37,12 @@ const SEVERITY_RANK: Record<string, number> = { CRITICAL: 4, HIGH: 3, MEDIUM: 2,
       <input type="search" class="dep-search" placeholder="Search name, version or purl"
              aria-label="Search dependencies" [value]="query"
              (input)="onSearch($any($event.target).value)">
-      <button *ngIf="view === 'tree' && !query" type="button" class="dep-collapse" (click)="collapseAll()">Collapse all</button>
+      <button *ngIf="view === 'tree' && !searching" type="button" class="dep-collapse" (click)="collapseAll()">Collapse all</button>
     </div>
     <p class="dep-hint" *ngIf="view === 'tree' && truncated">
       Showing the first {{ treeRows.length | number }} rows: the matching packages are reachable through many paths. Refine the search to see the rest.
     </p>
-    <p class="dep-hint" *ngIf="query && !(view === 'tree' ? treeRows.length : listDeps.length)">
+    <p class="dep-hint" *ngIf="searching && !(view === 'tree' ? treeRows.length : listDeps.length)">
       No dependencies match "{{ query }}".
     </p>
     <div class="dep-table-header">
@@ -52,16 +52,24 @@ const SEVERITY_RANK: Record<string, number> = { CRITICAL: 4, HIGH: 3, MEDIUM: 2,
       <span class="dep-col-license">License</span>
     </div>
     <cdk-virtual-scroll-viewport *ngIf="view === 'tree'" itemSize="44" class="viewport" role="tree" aria-label="Dependency tree">
-      <div *cdkVirtualFor="let row of treeRows; trackBy: trackByRow" class="dep-row" role="treeitem"
+      <!-- WAI-ARIA tree pattern: one row is in the tab order (roving
+           tabindex) and the arrow keys move between rows; see onTreeKeydown. -->
+      <div *cdkVirtualFor="let row of treeRows; let i = index; trackBy: trackByRow" class="dep-row" role="treeitem"
+           [attr.data-key]="row.key"
+           [attr.tabindex]="row.key === activeKey ? 0 : -1"
            [attr.aria-level]="row.level + 1"
+           [attr.aria-posinset]="row.posInSet"
+           [attr.aria-setsize]="row.setSize"
            [attr.aria-expanded]="row.hasChildren && !row.cycle ? row.expanded : null"
            [class.match]="row.match"
-           [style.padding-left.px]="12 + row.level * 20">
-        <!-- A search shows the paths to its matches and ignores manual
-             expansion, so there is nothing to toggle while it is active. -->
-        <button *ngIf="row.hasChildren && !row.cycle && !query; else spacer" type="button" class="tree-toggle"
-                [attr.aria-label]="(row.expanded ? 'Collapse ' : 'Expand ') + depAt(row.index).name"
-                (click)="toggleRow(row)">{{ row.expanded ? '▾' : '▸' }}</button>
+           [style.padding-left.px]="12 + row.level * 20"
+           (focus)="activeKey = row.key"
+           (keydown)="onTreeKeydown($event, i)">
+        <!-- Mouse affordance only: the row itself takes the keyboard. A search
+             shows the paths to its matches and ignores manual expansion, so
+             there is nothing to toggle while it is active. -->
+        <button *ngIf="canToggle(row); else spacer" type="button" class="tree-toggle" tabindex="-1" aria-hidden="true"
+                (click)="toggleRow(row); activeKey = row.key">{{ row.expanded ? '▾' : '▸' }}</button>
         <ng-template #spacer><span class="tree-spacer"></span></ng-template>
         <ng-container *ngTemplateOutlet="cells; context: { $implicit: depAt(row.index), row: row }"></ng-container>
       </div>
@@ -132,6 +140,8 @@ const SEVERITY_RANK: Record<string, number> = { CRITICAL: 4, HIGH: 3, MEDIUM: 2,
     }
     .dep-row:hover { background: var(--surface-alt); }
     .dep-row.match .dep-name { color: var(--accent); }
+    .dep-row:focus { outline: none; }
+    .dep-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
     .tree-toggle {
       width: 18px; flex-shrink: 0; margin-right: -10px; background: none; border: none; cursor: pointer;
       color: var(--text-secondary); font-size: 0.8rem; padding: 0; line-height: 1;
@@ -193,9 +203,20 @@ export class DependencyTreeComponent implements OnChanges {
   truncated = false;
   /** deps narrowed by the search, for the list view. */
   listDeps: FlatDep[] = [];
+  /** The row in the tab order (roving tabindex); the first row by default. */
+  activeKey: string | null = null;
   private byIndex = new Map<number, FlatDep>();
   private expanded = new Set<string>();
   private vulnByPurl = new Map<string, { count: number; worst: string }>();
+
+  @ViewChild(CdkVirtualScrollViewport) private viewport?: CdkVirtualScrollViewport;
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly cdr = inject(ChangeDetectorRef);
+
+  /** A search is active; whitespace alone is no search, as in visibleRows. */
+  get searching(): boolean {
+    return this.query.trim() !== '';
+  }
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['nodes']) {
@@ -219,6 +240,81 @@ export class DependencyTreeComponent implements OnChanges {
   onSearch(query: string): void {
     this.query = query;
     this.refresh();
+  }
+
+  /** Whether the row can be expanded or collapsed by the user right now. */
+  canToggle(row: TreeRow): boolean {
+    return row.hasChildren && !row.cycle && !this.searching;
+  }
+
+  /**
+   * Keyboard interaction of the WAI-ARIA tree pattern: Up/Down move between
+   * visible rows, Right expands a row or moves to its first child, Left
+   * collapses it or moves to its parent, Home/End jump to the first/last row,
+   * Enter/Space toggle.
+   */
+  onTreeKeydown(event: KeyboardEvent, index: number): void {
+    const rows = this.treeRows;
+    const row = rows[index];
+    if (!row) return;
+    let target = index;
+    switch (event.key) {
+      case 'ArrowDown': target = Math.min(index + 1, rows.length - 1); break;
+      case 'ArrowUp': target = Math.max(index - 1, 0); break;
+      case 'Home': target = 0; break;
+      case 'End': target = rows.length - 1; break;
+      case 'ArrowRight':
+        if (this.canToggle(row) && !row.expanded) this.toggleRow(row);
+        else if (row.expanded && rows[index + 1]?.level === row.level + 1) target = index + 1;
+        break;
+      case 'ArrowLeft':
+        if (this.canToggle(row) && row.expanded) {
+          this.toggleRow(row);
+        } else {
+          for (let j = index - 1; j >= 0; j--) {
+            if (rows[j].level === row.level - 1) { target = j; break; }
+          }
+        }
+        break;
+      case 'Enter':
+      case ' ':
+        if (this.canToggle(row)) this.toggleRow(row);
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    // Expanding or collapsing only changes rows below this one, so the
+    // index of the row itself and of everything above it stays valid.
+    this.focusRow(target);
+  }
+
+  /**
+   * Makes the row the tab stop and focuses it. Virtual scrolling renders only
+   * the rows near the viewport, so a row outside the rendered range is
+   * scrolled to first and focused once it is rendered.
+   */
+  private focusRow(index: number): void {
+    const row = this.treeRows[index];
+    if (!row) return;
+    this.activeKey = row.key;
+    this.cdr.detectChanges();
+    const range = this.viewport?.getRenderedRange();
+    if (this.viewport && range && (index < range.start || index >= range.end)) {
+      this.viewport.scrollToIndex(index);
+    }
+    this.focusWhenRendered(row.key, 20);
+  }
+
+  private focusWhenRendered(key: string, attempts: number): void {
+    // Keys hold only digits, '/', 'd' and ':', so they are safe in a quoted
+    // attribute selector.
+    const el = this.host.nativeElement.querySelector<HTMLElement>(`[data-key="${key}"]`);
+    if (el) {
+      el.focus();
+    } else if (attempts > 0) {
+      setTimeout(() => this.focusWhenRendered(key, attempts - 1), 16);
+    }
   }
 
   toggleRow(row: TreeRow): void {
@@ -251,6 +347,8 @@ export class DependencyTreeComponent implements OnChanges {
       const { rows, truncated } = visibleRows(this.tree, this.expanded, this.query);
       this.treeRows = rows;
       this.truncated = truncated;
+      // Keep exactly one row in the tab order.
+      if (!rows.some((r) => r.key === this.activeKey)) this.activeKey = rows[0]?.key ?? null;
     }
   }
 

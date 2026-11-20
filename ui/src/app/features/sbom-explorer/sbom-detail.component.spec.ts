@@ -7,6 +7,7 @@ import { afterEach, beforeEach as beforeEachVi, vi } from 'vitest';
 import { By } from '@angular/platform-browser';
 import { SbomDetailComponent } from './sbom-detail.component';
 import { DependencyTreeComponent } from './dependency-tree.component';
+import { CdkVirtualScrollViewport } from '@angular/cdk/scrolling';
 
 describe('SbomDetailComponent', () => {
   beforeEach(async () => {
@@ -295,4 +296,90 @@ describe('SbomDetailComponent dependency tree', () => {
     expect(badge?.textContent?.trim()).toBe('2');
     expect(badge?.classList.contains('sev-critical')).toBe(true);
   });
+  // WAI-ARIA tree pattern (#56 review): the rows themselves take the
+  // keyboard, with a single tab stop that follows focus.
+  describe('keyboard', () => {
+    const items = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('[role="treeitem"]')];
+    const name = (el: Element | null) => el?.querySelector('.dep-name')?.firstChild?.textContent?.trim();
+    async function press(fixture: ComponentFixture<SbomDetailComponent>, key: string) {
+      (document.activeElement as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+      await settle(fixture);
+      return document.activeElement;
+    }
+
+    it('is a single tab stop; the toggles are not in the tab order', async () => {
+      const fixture = await load(graph);
+      const el = fixture.nativeElement as HTMLElement;
+      const stops = items(el).filter((i) => i.getAttribute('tabindex') === '0');
+      expect(stops.map(name)).toEqual(['app']);
+      expect(items(el).filter((i) => i.getAttribute('tabindex') === '-1').length).toBe(items(el).length - 1);
+      expect([...el.querySelectorAll('.tree-toggle')].every((b) => b.getAttribute('tabindex') === '-1')).toBe(true);
+      expect(items(el).map((i) => [i.getAttribute('aria-posinset'), i.getAttribute('aria-setsize')]))
+        .toEqual([['1', '1'], ['1', '2'], ['2', '2']]);
+    });
+
+    it('moves between rows, into children, to leaves and back to parents', async () => {
+      const fixture = await load(graph);
+      const el = fixture.nativeElement as HTMLElement;
+      items(el)[0].focus();
+      expect(name(await press(fixture, 'ArrowDown'))).toBe('express');
+      expect(name(await press(fixture, 'ArrowDown'))).toBe('lodash');
+      expect(name(await press(fixture, 'ArrowDown'))).toBe('lodash'); // last row: stays
+      expect(name(await press(fixture, 'ArrowUp'))).toBe('express');
+
+      // Right on a collapsed parent expands it and keeps focus there ...
+      let focused = await press(fixture, 'ArrowRight');
+      expect(name(focused)).toBe('express');
+      expect(focused?.getAttribute('aria-expanded')).toBe('true');
+      // ... a second Right moves to its first child, a leaf.
+      focused = await press(fixture, 'ArrowRight');
+      expect(name(focused)).toBe('debug');
+      expect(focused?.getAttribute('aria-level')).toBe('3');
+      // Left on a leaf goes to the parent, then collapses it, then goes up.
+      expect(name(await press(fixture, 'ArrowLeft'))).toBe('express');
+      focused = await press(fixture, 'ArrowLeft');
+      expect(name(focused)).toBe('express');
+      expect(focused?.getAttribute('aria-expanded')).toBe('false');
+      expect(name(await press(fixture, 'ArrowLeft'))).toBe('app');
+
+      expect(name(await press(fixture, 'End'))).toBe('lodash');
+      expect(name(await press(fixture, 'Home'))).toBe('app');
+      // Enter and Space toggle; the tab stop follows focus.
+      focused = await press(fixture, 'Enter');
+      expect(focused?.getAttribute('aria-expanded')).toBe('false');
+      expect(items(el).map(name)).toEqual(['app']);
+      focused = await press(fixture, ' ');
+      expect(focused?.getAttribute('aria-expanded')).toBe('true');
+      expect(focused?.getAttribute('tabindex')).toBe('0');
+    });
+
+    it('scrolls a row that virtual scrolling has not rendered into view', async () => {
+      const many = [dep(0, 'app', Array.from({ length: 300 }, (_, i) => i + 1), 'root'),
+        ...Array.from({ length: 300 }, (_, i) => dep(i + 1, `pkg-${i + 1}`, [], 'direct'))];
+      const fixture = await load(many);
+      const viewport = fixture.debugElement.query(By.directive(CdkVirtualScrollViewport))
+        .componentInstance as CdkVirtualScrollViewport;
+      expect(viewport.getRenderedRange().end).toBeLessThan(301); // only part of the tree is rendered
+      const scroll = vi.spyOn(viewport, 'scrollToIndex').mockImplementation(() => {});
+      items(fixture.nativeElement)[0].focus();
+      await press(fixture, 'End');
+      expect(scroll).toHaveBeenCalledWith(300);
+      expect(treeOf(fixture).activeKey).toBe('0/300');
+    });
+  });
+
+  it('treats a whitespace-only search as no search', async () => {
+    const fixture = await load(graph);
+    const el = fixture.nativeElement as HTMLElement;
+    const toggles = el.querySelectorAll('.tree-toggle').length;
+    const search = el.querySelector<HTMLInputElement>('.dep-search')!;
+    search.value = '   ';
+    search.dispatchEvent(new Event('input'));
+    await settle(fixture);
+    expect(el.querySelectorAll('.tree-toggle').length).toBe(toggles);
+    expect(treeOf(fixture).treeRows.map((r) => r.index)).toEqual([0, 1, 2]);
+    expect(el.querySelector('.dep-hint')).toBeNull();
+    expect(el.querySelector('.dep-collapse')).not.toBeNull();
+  });
 });
+

@@ -41,6 +41,10 @@ export interface TreeRow {
   detached: boolean;
   /** Matches the search term. */
   match: boolean;
+  /** 1-based position among its siblings (aria-posinset). */
+  posInSet: number;
+  /** Number of siblings, itself included (aria-setsize). */
+  setSize: number;
 }
 
 export interface TreeRows {
@@ -109,14 +113,21 @@ export function visibleRows(tree: DependencyTree, expanded: ReadonlySet<string>,
 
   // Iterative depth-first walk; `path` holds the indices above the current
   // occurrence so a cycle is recognised on the spot.
-  type Frame = { index: number; level: number; key: string; path: ReadonlySet<number>; detached: boolean };
-  const walk = (top: readonly number[], detached: boolean, prefix: string) => {
-    const stack: Frame[] = [...top]
-      .reverse()
-      .map((i) => ({ index: i, level: 0, key: prefix + i, path: new Set<number>(), detached }));
+  type Frame = {
+    index: number; level: number; key: string; path: ReadonlySet<number>; detached: boolean;
+    posInSet: number; setSize: number;
+  };
+  // The top level (reachable and unconnected packages) is one sibling set.
+  const shownTop = (top: readonly number[]) => (leadsToMatch ? top.filter((i) => leadsToMatch.has(i)) : [...top]);
+  const roots = shownTop(tree.roots);
+  const detachedTop = shownTop(tree.detached);
+  const topSize = roots.length + detachedTop.length;
+  const walk = (top: readonly number[], detached: boolean, prefix: string, offset: number) => {
+    const stack: Frame[] = top
+      .map((i, k) => ({ index: i, level: 0, key: prefix + i, path: new Set<number>(), detached, posInSet: offset + k + 1, setSize: topSize }))
+      .reverse();
     while (stack.length) {
       const f = stack.pop()!;
-      if (leadsToMatch && !leadsToMatch.has(f.index)) continue;
       if (leadsToMatch && rows.length >= SEARCH_ROW_LIMIT) {
         truncated = true;
         return;
@@ -139,16 +150,21 @@ export function visibleRows(tree: DependencyTree, expanded: ReadonlySet<string>,
         cycle,
         detached: f.detached,
         match: !!q && matches(node, q),
+        posInSet: f.posInSet,
+        setSize: f.setSize,
       });
       if (!open) continue;
       for (let k = shown.length - 1; k >= 0; k--) {
-        stack.push({ index: shown[k], level: f.level + 1, key: `${f.key}/${shown[k]}`, path, detached: f.detached });
+        stack.push({
+          index: shown[k], level: f.level + 1, key: `${f.key}/${shown[k]}`, path, detached: f.detached,
+          posInSet: k + 1, setSize: shown.length,
+        });
       }
     }
   };
 
-  walk(tree.roots, false, '');
-  if (!truncated) walk(tree.detached, true, 'd:');
+  walk(roots, false, '', 0);
+  if (!truncated) walk(detachedTop, true, 'd:', roots.length);
   return { rows, truncated };
 }
 
