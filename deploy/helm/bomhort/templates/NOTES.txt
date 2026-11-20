@@ -1,0 +1,23 @@
+{{- if .Values.ingress.enabled }}
+{{- $authEnabled := false }}
+{{- $uiIngress := false }}
+{{- if .Values.apiGateway.auth.enabled }}
+{{- $authEnabled = true }}
+{{- end }}
+{{- range .Values.ingress.hosts }}
+{{- range .paths }}
+{{- if eq (.serviceSuffix | default "api-gateway") "ui" }}
+{{- $uiIngress = true }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if not $authEnabled }}
+SECURITY WARNING: Ingress is enabled while apiGateway.auth.enabled=false. Direct API paths may expose SBOMs, packages, and vulnerability data without authentication.
+{{- end }}
+{{- if and $uiIngress $authEnabled (not .Values.ingress.externalAuth.enabled) }}
+SECURITY WARNING: An Ingress path targets the bundled UI. The UI's nginx proxy adds the gateway service token to anonymous read requests, so gateway authentication alone does not protect data reached through this UI. Configure external authentication at the ingress/controller, or remove the UI path.
+{{- end }}
+{{- if and $uiIngress $authEnabled .Values.ingress.externalAuth.enabled }}
+NOTE: ingress.externalAuth.enabled is an operator assertion only. Verify that your ingress/controller configuration actually enforces user authentication before exposing the UI.
+{{- end }}
+{{- end }}

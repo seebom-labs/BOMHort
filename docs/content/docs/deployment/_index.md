@@ -1208,6 +1208,10 @@ The pod mounts neither the release ConfigMap nor its Secret: it talks to the API
 
 BOMHort includes an optional Ingress resource to expose the API Gateway (and optionally the UI) outside the cluster. The template is controller-agnostic — it works with any Ingress controller that implements the Kubernetes Ingress spec (Envoy Gateway, Contour, AWS ALB, etc.).
 
+Direct API paths require `apiGateway.auth.enabled: true` if they are publicly reachable. The bundled UI is intentionally public by itself; when its `/api/` proxy reaches an authenticated API Gateway, nginx adds the release's service token to anonymous read requests. Therefore gateway authentication alone does not protect data exposed through a public UI Ingress path. Configure user authentication at the ingress/controller or an external auth proxy before exposing the UI.
+
+The chart prints a Helm install/upgrade note when an Ingress exposes unauthenticated API paths or the UI without declared external authentication. Set `ingress.requireAuth: true` to fail rendering unless gateway auth is enabled and every UI path has `ingress.externalAuth.enabled: true`. That value is an operator assertion only: the chart cannot validate controller-specific auth configuration, so confirm your annotations/proxy actually enforce it. For API-only access, route only to the API Gateway and set `ui.enabled: false` if the UI is not needed.
+
 {{% alert title="Gateway API" color="info" %}}
 For the newer [Gateway API](https://gateway-api.sigs.k8s.io/), configure Gateway/HTTPRoute resources separately. The Helm chart provides the classic Ingress resource.
 {{% /alert %}}

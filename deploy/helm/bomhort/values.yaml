@@ -514,9 +514,14 @@ apiGateway:
 # For Gateway API support, use a dedicated Gateway/HTTPRoute instead.
 ingress:
   enabled: false
-  # When requireAuth is enabled (or true), rendering fails if ingress is enabled
-  # but apiGateway.auth.enabled is false. Useful in CI or hardened environments.
+  # When requireAuth is true, rendering fails unless API gateway auth is enabled
+  # and any UI path is protected by external ingress authentication.
   requireAuth: false
+  # Set true only when the ingress/controller in front of this chart actually
+  # enforces user authentication. The chart cannot verify controller-specific
+  # auth annotations. Required by requireAuth when an Ingress path targets ui.
+  externalAuth:
+    enabled: false
   className: ""   # e.g. "envoy", "contour", "alb"
   annotations: {}
     # cert-manager.io/cluster-issuer: letsencrypt-prod
