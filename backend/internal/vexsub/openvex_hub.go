@@ -17,23 +17,13 @@ import (
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
 
-const maxHubDocsPerSync = 500
+const hubBatchSize = 500
 
-var (
-	hubCursorsMu sync.Mutex
-	hubCursors   = make(map[string]int)
-)
-
-// ResetHubCursors resets the in-memory pagination cursor for all OpenVEX hubs.
-// Primarily used by tests to guarantee clean, deterministic state.
-func ResetHubCursors() {
-	hubCursorsMu.Lock()
-	defer hubCursorsMu.Unlock()
-	hubCursors = make(map[string]int)
-}
+// ResetHubCursors is a no-op kept for backwards compatibility with test harnesses (#538).
+func ResetHubCursors() {}
 
 type vexHubIndex struct {
-	Packages []struct {
+	Packages *[]struct {
 		ID       string `json:"id"`
 		PURL     string `json:"purl"`
 		Location string `json:"location"`
@@ -54,16 +44,35 @@ func FetchOpenVEXHub(ctx context.Context, client *http.Client, sourceURL string,
 	// Fast path: check index.json at the hub root first so large PURL sets do
 	// not trigger tens of thousands of 404 probes.
 	indexURL := joinBaseURL(sourceURL, "index.json")
-	if docURLs, ok, capped, err := fetchHubIndexURLs(ctx, client, sourceURL, indexURL, knownPURLs); err != nil {
+	if docURLs, isIndexed, err := fetchHubIndexURLs(ctx, client, sourceURL, indexURL, knownPURLs); err != nil {
 		return SourceResult{}, err
-	} else if ok {
-		stmts, hasErrors, err := fetchOpenVEXDocumentsConcurrently(ctx, client, sourceURL, docURLs, true)
-		if err != nil {
-			return SourceResult{}, err
+	} else if isIndexed {
+		if len(docURLs) == 0 {
+			return SourceResult{Complete: true}, nil
+		}
+		var allStmts []models.VEXStatement
+		hasErrors := false
+		for i := 0; i < len(docURLs); i += hubBatchSize {
+			if ctx.Err() != nil {
+				return SourceResult{}, ctx.Err()
+			}
+			end := i + hubBatchSize
+			if end > len(docURLs) {
+				end = len(docURLs)
+			}
+			batch := docURLs[i:end]
+			stmts, batchErrors, err := fetchOpenVEXDocumentsConcurrently(ctx, client, sourceURL, batch, true)
+			if err != nil {
+				return SourceResult{}, err
+			}
+			if batchErrors {
+				hasErrors = true
+			}
+			allStmts = append(allStmts, stmts...)
 		}
 		return SourceResult{
-			Statements: stmts,
-			Complete:   !capped && !hasErrors,
+			Statements: allStmts,
+			Complete:   !hasErrors,
 		}, nil
 	}
 
@@ -103,25 +112,28 @@ func FetchOpenVEXHub(ctx context.Context, client *http.Client, sourceURL string,
 	}, nil
 }
 
-func fetchHubIndexURLs(ctx context.Context, client *http.Client, baseURL, indexURL string, knownPURLs []string) ([]string, bool, bool, error) {
+func fetchHubIndexURLs(ctx context.Context, client *http.Client, baseURL, indexURL string, knownPURLs []string) ([]string, bool, error) {
 	body, _, err := fetchBytes(ctx, client, indexURL, map[string]string{"Accept": "application/json"})
 	if err != nil {
 		var he *httpError
 		if errors.As(err, &he) && (he.StatusCode == http.StatusNotFound || he.StatusCode == http.StatusMethodNotAllowed) {
 			// Legacy hub without an index.json; fall back to candidate PURL paths.
-			return nil, false, false, nil
+			return nil, false, nil
 		}
 		// Server errors (5xx) or transport/network failures must be propagated so
 		// that an outage is not misinterpreted as an empty legacy hub (#538).
-		return nil, false, false, fmt.Errorf("fetching hub index %s: %w", indexURL, err)
+		return nil, false, fmt.Errorf("fetching hub index %s: %w", indexURL, err)
 	}
 
 	var idx vexHubIndex
 	if err := json.Unmarshal(body, &idx); err != nil {
-		return nil, false, false, fmt.Errorf("parsing hub index %s: %w", indexURL, err)
+		return nil, false, fmt.Errorf("parsing hub index %s: %w", indexURL, err)
 	}
-	if len(idx.Packages) == 0 {
-		return nil, true, false, nil
+	if idx.Packages == nil {
+		return nil, false, fmt.Errorf("parsing hub index %s: missing or invalid packages field", indexURL)
+	}
+	if len(*idx.Packages) == 0 {
+		return nil, true, nil
 	}
 
 	knownByCore := make(map[string][]ParsedPURL, len(knownPURLs))
@@ -136,7 +148,7 @@ func fetchHubIndexURLs(ctx context.Context, client *http.Client, baseURL, indexU
 
 	seen := make(map[string]struct{})
 	var allMatchingURLs []string
-	for _, entry := range idx.Packages {
+	for _, entry := range *idx.Packages {
 		loc := strings.TrimSpace(entry.Location)
 		if loc == "" {
 			continue
@@ -166,39 +178,7 @@ func fetchHubIndexURLs(ctx context.Context, client *http.Client, baseURL, indexU
 		allMatchingURLs = append(allMatchingURLs, docURL)
 	}
 
-	total := len(allMatchingURLs)
-	if total == 0 {
-		return nil, true, false, nil
-	}
-
-	if total <= maxHubDocsPerSync {
-		hubCursorsMu.Lock()
-		delete(hubCursors, baseURL)
-		hubCursorsMu.Unlock()
-		return allMatchingURLs, true, false, nil
-	}
-
-	// More than maxHubDocsPerSync matching documents exist.
-	// Progress across subsequent refreshes using an offset cursor, while keeping
-	// capped = true so reconciliation remains disabled until a complete snapshot is obtained (#538).
-	hubCursorsMu.Lock()
-	offset := hubCursors[baseURL]
-	if offset >= total {
-		offset = 0
-	}
-	end := offset + maxHubDocsPerSync
-	if end > total {
-		end = total
-	}
-	docURLs := allMatchingURLs[offset:end]
-	if end >= total {
-		hubCursors[baseURL] = 0
-	} else {
-		hubCursors[baseURL] = end
-	}
-	hubCursorsMu.Unlock()
-
-	return docURLs, true, true, nil
+	return allMatchingURLs, true, nil
 }
 
 func matchesAnyCandidate(stmt ParsedPURL, candidates []ParsedPURL) bool {

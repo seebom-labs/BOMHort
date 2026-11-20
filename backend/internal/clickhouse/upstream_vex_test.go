@@ -85,7 +85,7 @@ func TestUpstreamVEXPrecedence(t *testing.T) {
 
 	filter := VulnFilter{Projects: []string{project}}
 
-	vulns, err := c.QuerySBOMVulnerabilities(ctx, sbomID.String(), "", "")
+	vulns, err := c.QuerySBOMVulnerabilities(ctx, sbomID.String(), "", "", "")
 	if err != nil {
 		t.Fatalf("QuerySBOMVulnerabilities failed: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestUpstreamVEXPrecedence(t *testing.T) {
 		t.Fatalf("Insert local VEX failed: %v", err)
 	}
 
-	vulns, err = c.QuerySBOMVulnerabilities(ctx, sbomID.String(), "", "")
+	vulns, err = c.QuerySBOMVulnerabilities(ctx, sbomID.String(), "", "", "")
 	if err != nil {
 		t.Fatalf("QuerySBOMVulnerabilities failed: %v", err)
 	}
