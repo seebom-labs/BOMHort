@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"log"
 	"net/http"
 
 	json "github.com/goccy/go-json"
@@ -84,7 +83,7 @@ func patchSBOMSourceHandler(cfg *config.Config, store sourceUpdater, reader sour
 				writeError(w, http.StatusNotFound, "SBOM not found")
 				return
 			}
-			log.Printf("ERROR: patch source read for %s: %v", sanitizeLogParam(sbomID), err)
+			logRequestErrorf(r, "ERROR: patch source read for %s: %v", sanitizeLogParam(sbomID), err)
 			writeError(w, http.StatusInternalServerError, "Failed to read SBOM")
 			return
 		}
@@ -112,7 +111,7 @@ func patchSBOMSourceHandler(cfg *config.Config, store sourceUpdater, reader sour
 				writeError(w, http.StatusNotFound, "SBOM not found")
 				return
 			}
-			log.Printf("ERROR: patch source update for %s: %v", sanitizeLogParam(sbomID), err)
+			logRequestErrorf(r, "ERROR: patch source update for %s: %v", sanitizeLogParam(sbomID), err)
 			writeError(w, http.StatusInternalServerError, "Failed to update SBOM")
 			return
 		}

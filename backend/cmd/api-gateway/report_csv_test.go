@@ -151,9 +151,21 @@ func TestVulnerabilityReportStreams(t *testing.T) {
 		items[i] = dto.VulnerabilityListItem{VulnID: "CVE-2024-1000", Severity: "LOW"}
 	}
 	rows := &fakeVulnRows{items: items}
-	rec, _ := runReport(t, "/api/v1/reports/vulnerabilities?format=csv", rows, nil)
+	report := vulnerabilityReportHandler(noParents, func(_ context.Context, _ string, _ clickhouse.VulnFilter) (vulnerabilityRows, error) {
+		return rows, nil
+	}, fixedNow)
+	h := loggingAndRequestIDMiddleware(
+		securityHeadersMiddleware(
+			rateLimitMiddleware(0,
+				corsMiddleware("*", authMiddleware(false, false, "", nil, report)),
+			),
+		),
+	)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/vulnerabilities?format=csv", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
 	if !rec.Flushed {
-		t.Error("rows were not flushed to the client while streaming")
+		t.Error("CSV flush was lost through the full gateway middleware chain")
 	}
 	if got := strings.Count(rec.Body.String(), "\n"); got != len(items)+1 {
 		t.Errorf("lines = %d, want %d", got, len(items)+1)

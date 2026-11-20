@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/csv"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -107,7 +106,7 @@ func vulnerabilityReportHandler(filter vulnFilterFunc, stream vulnerabilityStrea
 
 		rows, err := stream(r.Context(), scope, f)
 		if err != nil {
-			log.Printf("ERROR: vulnerability report: %v", err)
+			logRequestError(r, "ERROR: vulnerability report", err)
 			writeError(w, http.StatusInternalServerError, "Failed to export vulnerabilities")
 			return
 		}
@@ -124,7 +123,7 @@ func vulnerabilityReportHandler(filter vulnFilterFunc, stream vulnerabilityStrea
 		flush := func() bool {
 			cw.Flush()
 			if err := cw.Error(); err != nil {
-				log.Printf("WARNING: vulnerability report aborted by client: %v", err)
+				logRequestError(r, "WARNING: vulnerability report aborted by client", err)
 				return false
 			}
 			if flusher != nil {
@@ -134,13 +133,13 @@ func vulnerabilityReportHandler(filter vulnFilterFunc, stream vulnerabilityStrea
 		}
 
 		if err := cw.Write(vulnerabilityCSVHeader); err != nil {
-			log.Printf("WARNING: vulnerability report: %v", err)
+			logRequestError(r, "WARNING: vulnerability report", err)
 			return
 		}
 		n := 0
 		for rows.Next() {
 			if err := cw.Write(vulnerabilityCSVRecord(rows.Item())); err != nil {
-				log.Printf("WARNING: vulnerability report: %v", err)
+				logRequestError(r, "WARNING: vulnerability report", err)
 				return
 			}
 			n++
@@ -155,7 +154,7 @@ func vulnerabilityReportHandler(filter vulnFilterFunc, stream vulnerabilityStrea
 		// the file. Log it — the client sees a short CSV, and a half-written
 		// report must not pass silently on the server side either.
 		if err := rows.Err(); err != nil {
-			log.Printf("ERROR: vulnerability report truncated after %d rows: %v", n, err)
+			logRequestError(r, "ERROR: vulnerability report truncated after "+strconv.Itoa(n)+" rows", err)
 		}
 	}
 }
