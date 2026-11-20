@@ -21,6 +21,10 @@ spec:
             {{- end }}
         spec:
           restartPolicy: OnFailure
+          {{- with .Values.podSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           {{- if not .Values.gitSync.enabled }}
           affinity:
             podAffinity:
@@ -81,6 +85,7 @@ spec:
                 - name: sbom-data
                   mountPath: {{ .Values.sbomSource.mountPath }}
                   readOnly: true
+                {{- with include "bomhort.clickhouseTLS.volumeMount" . }}{{ . | trim | nindent 16 }}{{ end }}
           volumes:
             - name: sbom-data
               {{- if .Values.gitSync.enabled }}
@@ -89,4 +94,5 @@ spec:
               persistentVolumeClaim:
                 claimName: {{ .Values.sbomSource.pvcName }}
               {{- end }}
+            {{- with include "bomhort.clickhouseTLS.volume" . }}{{ . | trim | nindent 12 }}{{ end }}
 

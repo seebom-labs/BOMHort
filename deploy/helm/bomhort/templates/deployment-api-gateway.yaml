@@ -172,6 +172,7 @@ spec:
               mountPath: {{ .Values.originalStore.fs.mountPath }}
               readOnly: true
             {{- end }}
+            {{- with include "bomhort.clickhouseTLS.volumeMount" . }}{{ . | trim | nindent 12 }}{{ end }}
       volumes:
         - name: sbom-data
           {{- if .Values.gitSync.enabled }}
@@ -208,3 +209,4 @@ spec:
             # explicit rules, the automatic grouping still applies.
             optional: true
         {{- end }}
+        {{- with include "bomhort.clickhouseTLS.volume" . }}{{ . | trim | nindent 8 }}{{ end }}

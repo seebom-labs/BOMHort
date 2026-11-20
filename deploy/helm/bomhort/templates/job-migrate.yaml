@@ -34,11 +34,17 @@ template:
       app.kubernetes.io/component: migrate
   spec:
     restartPolicy: OnFailure
+    {{- with .Values.podSecurityContext }}
+    securityContext:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
     containers:
       - name: migrate
         image: {{ .Values.clickhouse.installation.podTemplate.containerImage }}
         command: ["/bin/sh", "/scripts/run-migrations.sh"]
         env:
+          - name: CH_SECURE
+            value: {{ .Values.clickhouse.tls.enabled | default false | quote }}
           - name: CH_HOST
             value: {{ .Values.clickhouse.host | quote }}
           - name: CH_PORT
@@ -59,6 +65,7 @@ template:
           - name: scripts
             mountPath: /scripts
             readOnly: true
+          {{- with include "bomhort.clickhouseTLS.volumeMount" . }}{{ . | trim | nindent 10 }}{{ end }}
     volumes:
       - name: migrations
         configMap:
@@ -75,4 +82,7 @@ template:
           items:
             - key: run-migrations.sh
               path: run-migrations.sh
+            - key: clickhouse-client.xml
+              path: clickhouse-client.xml
+      {{- with include "bomhort.clickhouseTLS.volume" . }}{{ . | trim | nindent 6 }}{{ end }}
 {{- end }}

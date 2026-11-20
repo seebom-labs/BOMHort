@@ -26,6 +26,51 @@ CI runs the migrations and every API query against that exact image and against 
 
 Running a newer ClickHouse via `clickhouse.installation.podTemplate.containerImage` works, but only 24.8 and 24.12 are tested. Older than 24.8 is unsupported.
 
+### ClickHouse TLS and client certificates
+
+Set TLS on the **client connection** with `clickhouse.tls.enabled`. Configure the host and native secure port exposed by your ClickHouse service (commonly `9440`). The chart mounts certificate material from an existing Kubernetes Secret into the API gateway, ingestion watcher, parsing worker, CVE refresher, and migration jobs. The private key is never stored in Helm values.
+
+Create a Secret with the server CA and, when the server requires mutual TLS, both client files:
+
+```sh
+kubectl -n bomhort create secret generic bomhort-clickhouse-tls \
+  --from-file=ca.crt=./ca.crt \
+  --from-file=client.crt=./client.crt \
+  --from-file=client.key=./client.key
+```
+
+Configure the chart:
+
+```yaml
+clickhouse:
+  host: clickhouse.example.com
+  port: 9440
+  tls:
+    enabled: true
+    skipVerify: false
+    existingSecret: bomhort-clickhouse-tls
+    caKey: ca.crt
+    clientCertKey: client.crt # omit for server-authenticated TLS only
+    clientKeyKey: client.key  # set together with clientCertKey
+```
+
+For a public CA, omit `existingSecret` and `caKey`; the clients use their system trust store. `skipVerify: true` disables server identity checks and is intended only for isolated development. The schema migration job and the target-side ClickHouse client in the data migration hook use the same TLS settings. This configures BOMHort's clients; enabling TLS on a ClickHouse Operator managed server remains a separate server-side ClickHouse configuration. `CLICKHOUSE_SECURE` and `CLICKHOUSE_SKIP_VERIFY` must be valid booleans, and certificate/key settings without TLS or an incomplete mTLS pair make the application fail at startup.
+
+Docker Compose accepts the same environment settings. Put the files under `CLICKHOUSE_TLS_DIR` (default `./certs/clickhouse`) and use container paths for file variables:
+
+```dotenv
+CLICKHOUSE_HOST=clickhouse.example.com
+CLICKHOUSE_PORT=9440
+CLICKHOUSE_SECURE=true
+CLICKHOUSE_SKIP_VERIFY=false
+CLICKHOUSE_TLS_DIR=./certs/clickhouse
+CLICKHOUSE_CA_FILE=/run/secrets/clickhouse-tls/ca.crt
+CLICKHOUSE_CERT_FILE=/run/secrets/clickhouse-tls/client.crt
+CLICKHOUSE_KEY_FILE=/run/secrets/clickhouse-tls/client.key
+```
+
+The Compose certificate directory is mounted read-only into every backend service. Leave all TLS variables at their defaults for the local plaintext ClickHouse service.
+
 ### Chart source: published release or working tree
 
 The examples on this page install from the working tree (`deploy/helm/bomhort/`). For a published release, use the OCI chart instead — it deploys the images of exactly that release:

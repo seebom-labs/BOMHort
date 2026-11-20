@@ -151,6 +151,17 @@ clickhouse:
     enabled: false
     secretName: ""
     key: ""
+  # Connect backend workloads to a TLS-enabled ClickHouse service. If custom
+  # trust or mTLS material is needed, store it in an existing Kubernetes Secret
+  # and name its data keys below; private key bytes never belong in values.
+  tls:
+    enabled: false
+    skipVerify: false
+    existingSecret: ""
+    mountPath: /etc/bomhort/clickhouse-tls
+    caKey: ""
+    clientCertKey: ""
+    clientKeyKey: ""
   cluster:
     name: bomhort-cluster
     shardsCount: 1

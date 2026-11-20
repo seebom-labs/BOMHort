@@ -6,10 +6,16 @@ metadata:
     app.kubernetes.io/name: bomhort
     app.kubernetes.io/instance: {{ .Release.Name }}
 data:
+  {{- include "bomhort.clickhouseTLS.validate" . }}
   CLICKHOUSE_HOST: {{ .Values.clickhouse.host | quote }}
   CLICKHOUSE_PORT: {{ .Values.clickhouse.port | quote }}
   CLICKHOUSE_DATABASE: {{ .Values.clickhouse.database | quote }}
   CLICKHOUSE_USER: {{ .Values.clickhouse.user | quote }}
+  CLICKHOUSE_SECURE: {{ .Values.clickhouse.tls.enabled | default false | quote }}
+  CLICKHOUSE_SKIP_VERIFY: {{ .Values.clickhouse.tls.skipVerify | default false | quote }}
+  CLICKHOUSE_CA_FILE: {{ include "bomhort.clickhouseTLS.caFile" . | quote }}
+  CLICKHOUSE_CERT_FILE: {{ include "bomhort.clickhouseTLS.clientCertFile" . | quote }}
+  CLICKHOUSE_KEY_FILE: {{ include "bomhort.clickhouseTLS.clientKeyFile" . | quote }}
   SBOM_DIR: {{ .Values.sbomSource.mountPath | quote }}
   {{- with .Values.ownership }}
   CLUSTER_NAME: {{ .cluster | default "" | quote }}

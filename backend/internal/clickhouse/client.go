@@ -29,6 +29,9 @@ type Client struct {
 
 // buildTLSConfig creates a *tls.Config according to the ClickHouse configuration.
 func buildTLSConfig(cfg *config.Config) (*tls.Config, error) {
+	if err := cfg.ValidateClickHouseTLS(); err != nil {
+		return nil, err
+	}
 	if !cfg.ClickHouseSecure {
 		return nil, nil
 	}
@@ -50,7 +53,7 @@ func buildTLSConfig(cfg *config.Config) (*tls.Config, error) {
 		tlsConfig.RootCAs = caPool
 	}
 
-	if cfg.ClickHouseCertFile != "" && cfg.ClickHouseKeyFile != "" {
+	if cfg.ClickHouseCertFile != "" {
 		cert, err := tls.LoadX509KeyPair(cfg.ClickHouseCertFile, cfg.ClickHouseKeyFile)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load ClickHouse client cert/key pair (%s, %s): %w", cfg.ClickHouseCertFile, cfg.ClickHouseKeyFile, err)

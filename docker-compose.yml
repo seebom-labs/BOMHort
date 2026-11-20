@@ -42,11 +42,16 @@ services:
     ports:
       - "8080:8080"
     environment:
-      CLICKHOUSE_HOST: clickhouse
-      CLICKHOUSE_PORT: "9000"
-      CLICKHOUSE_DATABASE: bomhort
-      CLICKHOUSE_USER: default
-      CLICKHOUSE_PASSWORD: ""
+      CLICKHOUSE_HOST: ${CLICKHOUSE_HOST:-clickhouse}
+      CLICKHOUSE_PORT: ${CLICKHOUSE_PORT:-9000}
+      CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-bomhort}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
+      CLICKHOUSE_SECURE: ${CLICKHOUSE_SECURE:-false}
+      CLICKHOUSE_SKIP_VERIFY: ${CLICKHOUSE_SKIP_VERIFY:-false}
+      CLICKHOUSE_CA_FILE: ${CLICKHOUSE_CA_FILE:-}
+      CLICKHOUSE_CERT_FILE: ${CLICKHOUSE_CERT_FILE:-}
+      CLICKHOUSE_KEY_FILE: ${CLICKHOUSE_KEY_FILE:-}
       # Per-query limits for the gateway only (#344-I); 0 or unset = no limit.
       CLICKHOUSE_MAX_EXECUTION_TIME: ${CLICKHOUSE_MAX_EXECUTION_TIME:-30}
       CLICKHOUSE_MAX_MEMORY_USAGE: ${CLICKHOUSE_MAX_MEMORY_USAGE:-0}
@@ -97,6 +102,7 @@ services:
       ORIGINAL_STORE_FS_PATH: /data/originals
     volumes:
       - ${SBOM_SOURCE_DIR:-./sboms}:/data/sboms:ro
+      - ${CLICKHOUSE_TLS_DIR:-./certs/clickhouse}:/run/secrets/clickhouse-tls:ro
       - ./sboms/license-exceptions.json:/data/config/license-exceptions.json:ro
       - ./sboms/project-groups.json:/data/config/project-groups.json:ro
       - ./sboms/license-policy.json:/data/config/license-policy.json:ro
@@ -113,11 +119,16 @@ services:
       dockerfile: Dockerfile
       target: ingestion-watcher
     environment:
-      CLICKHOUSE_HOST: clickhouse
-      CLICKHOUSE_PORT: "9000"
-      CLICKHOUSE_DATABASE: bomhort
-      CLICKHOUSE_USER: default
-      CLICKHOUSE_PASSWORD: ""
+      CLICKHOUSE_HOST: ${CLICKHOUSE_HOST:-clickhouse}
+      CLICKHOUSE_PORT: ${CLICKHOUSE_PORT:-9000}
+      CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-bomhort}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
+      CLICKHOUSE_SECURE: ${CLICKHOUSE_SECURE:-false}
+      CLICKHOUSE_SKIP_VERIFY: ${CLICKHOUSE_SKIP_VERIFY:-false}
+      CLICKHOUSE_CA_FILE: ${CLICKHOUSE_CA_FILE:-}
+      CLICKHOUSE_CERT_FILE: ${CLICKHOUSE_CERT_FILE:-}
+      CLICKHOUSE_KEY_FILE: ${CLICKHOUSE_KEY_FILE:-}
       SBOM_DIR: /data/sboms
       # Ownership dimensions (#131 cluster, #138 namespace, #57 project).
       # All default to "" (unassigned). INGEST_PATH_LAYOUT opts into deriving
@@ -146,6 +157,7 @@ services:
       S3_USE_SSL: ${S3_USE_SSL:-}
     volumes:
       - ${SBOM_SOURCE_DIR:-./sboms}:/data/sboms:ro
+      - ${CLICKHOUSE_TLS_DIR:-./certs/clickhouse}:/run/secrets/clickhouse-tls:ro
     depends_on:
       clickhouse:
         condition: service_healthy
@@ -159,11 +171,16 @@ services:
     deploy:
       replicas: ${WORKER_REPLICAS:-1}
     environment:
-      CLICKHOUSE_HOST: clickhouse
-      CLICKHOUSE_PORT: "9000"
-      CLICKHOUSE_DATABASE: bomhort
-      CLICKHOUSE_USER: default
-      CLICKHOUSE_PASSWORD: ""
+      CLICKHOUSE_HOST: ${CLICKHOUSE_HOST:-clickhouse}
+      CLICKHOUSE_PORT: ${CLICKHOUSE_PORT:-9000}
+      CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-bomhort}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
+      CLICKHOUSE_SECURE: ${CLICKHOUSE_SECURE:-false}
+      CLICKHOUSE_SKIP_VERIFY: ${CLICKHOUSE_SKIP_VERIFY:-false}
+      CLICKHOUSE_CA_FILE: ${CLICKHOUSE_CA_FILE:-}
+      CLICKHOUSE_CERT_FILE: ${CLICKHOUSE_CERT_FILE:-}
+      CLICKHOUSE_KEY_FILE: ${CLICKHOUSE_KEY_FILE:-}
       SBOM_DIR: /data/sboms
       # Ownership dimensions (#131 cluster, #138 namespace, #57 project).
       # All default to "" (unassigned). INGEST_PATH_LAYOUT opts into deriving
@@ -209,6 +226,7 @@ services:
       ORIGINAL_STORE_FS_PATH: /data/originals
     volumes:
       - ${SBOM_SOURCE_DIR:-./sboms}:/data/sboms:ro
+      - ${CLICKHOUSE_TLS_DIR:-./certs/clickhouse}:/run/secrets/clickhouse-tls:ro
       - ./sboms/license-exceptions.json:/data/config/license-exceptions.json:ro
       - ./sboms/license-policy.json:/data/config/license-policy.json:ro
       - originals_data:/data/originals
@@ -243,12 +261,19 @@ services:
       target: cve-refresher
     profiles: ["cve-refresh"]
     environment:
-      CLICKHOUSE_HOST: clickhouse
-      CLICKHOUSE_PORT: "9000"
-      CLICKHOUSE_DATABASE: bomhort
-      CLICKHOUSE_USER: default
-      CLICKHOUSE_PASSWORD: ""
+      CLICKHOUSE_HOST: ${CLICKHOUSE_HOST:-clickhouse}
+      CLICKHOUSE_PORT: ${CLICKHOUSE_PORT:-9000}
+      CLICKHOUSE_DATABASE: ${CLICKHOUSE_DATABASE:-bomhort}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
+      CLICKHOUSE_SECURE: ${CLICKHOUSE_SECURE:-false}
+      CLICKHOUSE_SKIP_VERIFY: ${CLICKHOUSE_SKIP_VERIFY:-false}
+      CLICKHOUSE_CA_FILE: ${CLICKHOUSE_CA_FILE:-}
+      CLICKHOUSE_CERT_FILE: ${CLICKHOUSE_CERT_FILE:-}
+      CLICKHOUSE_KEY_FILE: ${CLICKHOUSE_KEY_FILE:-}
       ADVISORY_SOURCES: ${ADVISORY_SOURCES:-}
+    volumes:
+      - ${CLICKHOUSE_TLS_DIR:-./certs/clickhouse}:/run/secrets/clickhouse-tls:ro
     depends_on:
       clickhouse:
         condition: service_healthy

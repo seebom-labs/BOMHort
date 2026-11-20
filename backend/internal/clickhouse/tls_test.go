@@ -57,6 +57,27 @@ func TestBuildTLSConfig(t *testing.T) {
 		}
 	})
 
+	t.Run("TLS options while secure is false are rejected", func(t *testing.T) {
+		cfg := &config.Config{ClickHouseCAFile: "ca.crt"}
+		if _, err := buildTLSConfig(cfg); err == nil {
+			t.Fatal("expected inconsistent TLS options to fail")
+		}
+	})
+
+	t.Run("client certificate without key is rejected", func(t *testing.T) {
+		cfg := &config.Config{ClickHouseSecure: true, ClickHouseCertFile: "client.crt"}
+		if _, err := buildTLSConfig(cfg); err == nil {
+			t.Fatal("expected incomplete client certificate pair to fail")
+		}
+	})
+
+	t.Run("client key without certificate is rejected", func(t *testing.T) {
+		cfg := &config.Config{ClickHouseSecure: true, ClickHouseKeyFile: "client.key"}
+		if _, err := buildTLSConfig(cfg); err == nil {
+			t.Fatal("expected incomplete client certificate pair to fail")
+		}
+	})
+
 	t.Run("secure true without custom CA", func(t *testing.T) {
 		cfg := &config.Config{
 			ClickHouseHost:       "ch.internal",

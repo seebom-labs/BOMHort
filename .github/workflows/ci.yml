@@ -38,6 +38,106 @@ jobs:
       - name: Test
         run: go test ./... -count=1 -race
 
+  clickhouse-tls:
+    name: ClickHouse verified TLS and mTLS
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: backend/go.mod
+
+      - name: Start TLS-only ClickHouse with required client certificates
+        env:
+          CLICKHOUSE_IMAGE: docker.io/clickhouse/clickhouse-server:24.8.14.39@sha256:1ffa82edee000a42c09313bd9f1293d94c570aee74babc1b3ca9983a35fa597b
+        run: |
+          set -euo pipefail
+          tls_dir="$RUNNER_TEMP/bomhort-clickhouse-tls"
+          mkdir -p "$tls_dir"
+
+          openssl req -x509 -newkey rsa:2048 -sha256 -days 1 -nodes \
+            -keyout "$tls_dir/ca.key" -out "$tls_dir/ca.crt" \
+            -subj "/CN=BOMHort test CA"
+
+          openssl req -newkey rsa:2048 -nodes \
+            -keyout "$tls_dir/server.key" -out "$tls_dir/server.csr" \
+            -subj "/CN=localhost"
+          printf 'subjectAltName=DNS:localhost,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n' > "$tls_dir/server.ext"
+          openssl x509 -req -sha256 -days 1 -in "$tls_dir/server.csr" \
+            -CA "$tls_dir/ca.crt" -CAkey "$tls_dir/ca.key" -CAcreateserial \
+            -out "$tls_dir/server.crt" -extfile "$tls_dir/server.ext"
+
+          openssl req -newkey rsa:2048 -nodes \
+            -keyout "$tls_dir/client.key" -out "$tls_dir/client.csr" \
+            -subj "/CN=BOMHort test client"
+          printf 'extendedKeyUsage=clientAuth\n' > "$tls_dir/client.ext"
+          openssl x509 -req -sha256 -days 1 -in "$tls_dir/client.csr" \
+            -CA "$tls_dir/ca.crt" -CAkey "$tls_dir/ca.key" -CAcreateserial \
+            -out "$tls_dir/client.crt" -extfile "$tls_dir/client.ext"
+          mkdir -p "$tls_dir/server"
+          cp "$tls_dir/server.crt" "$tls_dir/server.key" "$tls_dir/ca.crt" "$tls_dir/server/"
+          chmod 644 "$tls_dir/server"/* "$tls_dir"/*.crt
+
+          cat > "$tls_dir/clickhouse-tls.xml" <<'EOF'
+          <clickhouse>
+            <listen_host>0.0.0.0</listen_host>
+            <tcp_port>0</tcp_port>
+            <tcp_port_secure>9440</tcp_port_secure>
+            <openSSL>
+              <server>
+                <certificateFile>/etc/clickhouse-server/tls/server.crt</certificateFile>
+                <privateKeyFile>/etc/clickhouse-server/tls/server.key</privateKeyFile>
+                <caConfig>/etc/clickhouse-server/tls/ca.crt</caConfig>
+                <verificationMode>strict</verificationMode>
+              </server>
+            </openSSL>
+          </clickhouse>
+          EOF
+
+          docker run -d --name bomhort-clickhouse-tls -p 9440:9440 \
+            -e CLICKHOUSE_DB=bomhort \
+            -e CLICKHOUSE_USER=default \
+            -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 \
+            -v "$tls_dir/server:/etc/clickhouse-server/tls:ro" \
+            -v "$tls_dir/clickhouse-tls.xml:/etc/clickhouse-server/config.d/tls.xml:ro" \
+            "$CLICKHOUSE_IMAGE"
+
+          ready=false
+          for attempt in $(seq 1 60); do
+            output="$(timeout 3 openssl s_client -connect 127.0.0.1:9440 \
+              -CAfile "$tls_dir/ca.crt" -cert "$tls_dir/client.crt" \
+              -key "$tls_dir/client.key" -verify_hostname localhost \
+              -verify_return_error </dev/null 2>&1 || true)"
+            if grep -q 'Verify return code: 0 (ok)' <<<"$output"; then
+              ready=true
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" != true ]; then
+            docker logs bomhort-clickhouse-tls
+            exit 1
+          fi
+
+      - name: Exercise Go client certificate verification and mTLS
+        env:
+          CLICKHOUSE_TLS_INTEGRATION: "1"
+          CLICKHOUSE_HOST: localhost
+          CLICKHOUSE_PORT: "9440"
+          CLICKHOUSE_DATABASE: bomhort
+          CLICKHOUSE_CA_FILE: ${{ runner.temp }}/bomhort-clickhouse-tls/ca.crt
+          CLICKHOUSE_CERT_FILE: ${{ runner.temp }}/bomhort-clickhouse-tls/client.crt
+          CLICKHOUSE_KEY_FILE: ${{ runner.temp }}/bomhort-clickhouse-tls/client.key
+        run: go test ./internal/clickhouse -count=1 -run '^TestClickHouseVerifiedTLSIntegration$' -v
+
+      - name: Stop ClickHouse
+        if: always()
+        run: docker rm -f bomhort-clickhouse-tls || true
+
   # Every read query is only type-checked by the unit tests above — never
   # planned. Two 500-on-every-request regressions shipped that way (SBOM detail
   # #332/#347, scoped-VEX join #350/#351, cluster listing "FINAL AS s"), each

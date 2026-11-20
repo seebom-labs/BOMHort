@@ -241,14 +241,23 @@ const (
 
 // Load reads configuration from environment variables with sensible defaults.
 func Load() (*Config, error) {
+	clickHouseSecure, err := getEnvBoolStrict("CLICKHOUSE_SECURE", false)
+	if err != nil {
+		return nil, err
+	}
+	clickHouseSkipVerify, err := getEnvBoolStrict("CLICKHOUSE_SKIP_VERIFY", false)
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := &Config{
 		ClickHouseHost:        getEnv("CLICKHOUSE_HOST", "localhost"),
 		ClickHousePort:        getEnvInt("CLICKHOUSE_PORT", 9000),
 		ClickHouseDatabase:    getEnv("CLICKHOUSE_DATABASE", "bomhort"),
 		ClickHouseUser:        getEnv("CLICKHOUSE_USER", "default"),
 		ClickHousePassword:    getEnv("CLICKHOUSE_PASSWORD", ""),
-		ClickHouseSecure:      getEnvBool("CLICKHOUSE_SECURE", false),
-		ClickHouseSkipVerify:  getEnvBool("CLICKHOUSE_SKIP_VERIFY", false),
+		ClickHouseSecure:      clickHouseSecure,
+		ClickHouseSkipVerify:  clickHouseSkipVerify,
 		ClickHouseCAFile:      getEnv("CLICKHOUSE_CA_FILE", ""),
 		ClickHouseCertFile:    getEnv("CLICKHOUSE_CERT_FILE", ""),
 		ClickHouseKeyFile:     getEnv("CLICKHOUSE_KEY_FILE", ""),
@@ -300,6 +309,9 @@ func Load() (*Config, error) {
 		MCPAPIKey:         getEnv("MCP_API_KEY", ""),
 		MCPServiceToken:   getEnv("MCP_SERVICE_TOKEN", ""),
 		MCPRequestTimeout: getEnvInt("MCP_REQUEST_TIMEOUT_SECONDS", 30),
+	}
+	if err := cfg.ValidateClickHouseTLS(); err != nil {
+		return nil, err
 	}
 
 	if err := loadClickHouseLimits(cfg); err != nil {
@@ -433,6 +445,22 @@ func Load() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// ValidateClickHouseTLS rejects TLS options that would otherwise be ignored
+// and incomplete mutual-TLS credentials. It is also called by the connection
+// builder because some callers construct Config directly instead of using Load.
+func (c *Config) ValidateClickHouseTLS() error {
+	if !c.ClickHouseSecure {
+		if c.ClickHouseSkipVerify || c.ClickHouseCAFile != "" || c.ClickHouseCertFile != "" || c.ClickHouseKeyFile != "" {
+			return fmt.Errorf("ClickHouse TLS options require CLICKHOUSE_SECURE=true")
+		}
+		return nil
+	}
+	if (c.ClickHouseCertFile == "") != (c.ClickHouseKeyFile == "") {
+		return fmt.Errorf("CLICKHOUSE_CERT_FILE and CLICKHOUSE_KEY_FILE must be configured together")
+	}
+	return nil
 }
 
 // IngestLayout returns the parsed instance-wide ingestion path layout.
@@ -603,6 +631,18 @@ func getEnvBool(key string, fallback bool) bool {
 		return fallback
 	}
 	return val == "1" || val == "true" || val == "yes"
+}
+
+func getEnvBoolStrict(key string, fallback bool) (bool, error) {
+	val, ok := os.LookupEnv(key)
+	if !ok {
+		return fallback, nil
+	}
+	parsed, err := strconv.ParseBool(strings.TrimSpace(val))
+	if err != nil {
+		return false, fmt.Errorf("invalid %s %q (want a boolean such as true or false)", key, val)
+	}
+	return parsed, nil
 }
 
 func boolPtr(v bool) *bool { return &v }

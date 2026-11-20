@@ -23,6 +23,10 @@ spec:
         app.kubernetes.io/component: data-migration
     spec:
       restartPolicy: OnFailure
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: data-migration
           image: {{ .Values.clickhouse.installation.podTemplate.containerImage }}
@@ -31,6 +35,8 @@ spec:
             # --- New (target) ClickHouse ---
             - name: NEW_CH_HOST
               value: {{ .Values.clickhouse.host | quote }}
+            - name: NEW_CH_SECURE
+              value: {{ .Values.clickhouse.tls.enabled | default false | quote }}
             - name: NEW_CH_PORT
               value: {{ .Values.clickhouse.port | quote }}
             - name: NEW_CH_DATABASE
@@ -62,11 +68,18 @@ spec:
             - name: scripts
               mountPath: /scripts
               readOnly: true
+            {{- with include "bomhort.clickhouseTLS.volumeMount" . }}{{ . | trim | nindent 12 }}{{ end }}
       volumes:
         - name: scripts
           configMap:
             name: {{ .Release.Name }}-data-migration-scripts
             defaultMode: 0755
+            items:
+              - key: migrate-data.sh
+                path: migrate-data.sh
+              - key: clickhouse-client.xml
+                path: clickhouse-client.xml
+        {{- with include "bomhort.clickhouseTLS.volume" . }}{{ . | trim | nindent 8 }}{{ end }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -81,9 +94,19 @@ metadata:
     helm.sh/hook-weight: "5"
     helm.sh/hook-delete-policy: before-hook-creation
 data:
+  clickhouse-client.xml: |
+    {{- include "bomhort.clickhouseTLS.clientConfig" . | nindent 4 }}
   migrate-data.sh: |
     #!/bin/sh
     set -e
+
+    new_ch_client() {
+      if [ "${NEW_CH_SECURE:-false}" = "true" ]; then
+        clickhouse-client --secure --config-file=/scripts/clickhouse-client.xml "$@"
+      else
+        clickhouse-client "$@"
+      fi
+    }
 
     # ── Tables to migrate (order matters: parent tables first) ──
     TABLES="sboms sbom_packages vulnerabilities license_compliance ingestion_queue vex_statements cve_refresh_log github_license_cache github_repo_metadata registry_license_cache document_store"
@@ -98,7 +121,7 @@ data:
 
     # ── Wait for the NEW ClickHouse to be ready ──
     echo "⏳ Waiting for target ClickHouse ($NEW_CH_HOST) ..."
-    until clickhouse-client --host="$NEW_CH_HOST" --port="$NEW_CH_PORT" \
+    until new_ch_client --host="$NEW_CH_HOST" --port="$NEW_CH_PORT" \
           --user="$NEW_CH_USER" --password="$NEW_CH_PASSWORD" \
           --query="SELECT 1" >/dev/null 2>&1; do
       echo "  target not ready, retrying in 5s..."
@@ -145,7 +168,7 @@ data:
       fi
 
       # Check if the target table already has data (avoid duplicating).
-      DST_ROWS=$(clickhouse-client --host="$NEW_CH_HOST" --port="$NEW_CH_PORT" \
+      DST_ROWS=$(new_ch_client --host="$NEW_CH_HOST" --port="$NEW_CH_PORT" \
         --user="$NEW_CH_USER" --password="$NEW_CH_PASSWORD" \
         --database="$NEW_CH_DATABASE" \
         --query="SELECT count() FROM $TABLE" 2>/dev/null || echo "0")
@@ -157,12 +180,12 @@ data:
 
       # INSERT … SELECT FROM remote()
       echo "  ⏳ Copying $SRC_ROWS rows via remote() ..."
-      if clickhouse-client --host="$NEW_CH_HOST" --port="$NEW_CH_PORT" \
+      if new_ch_client --host="$NEW_CH_HOST" --port="$NEW_CH_PORT" \
         --user="$NEW_CH_USER" --password="$NEW_CH_PASSWORD" \
         --database="$NEW_CH_DATABASE" --multiquery \
         --query="SET log_queries=0; INSERT INTO $TABLE SELECT * FROM remote('$OLD_CH_HOST:$OLD_CH_PORT', '$OLD_CH_DATABASE', '$TABLE', '$OLD_CH_USER', '$OLD_CH_PASSWORD')"; then
 
-        NEW_ROWS=$(clickhouse-client --host="$NEW_CH_HOST" --port="$NEW_CH_PORT" \
+        NEW_ROWS=$(new_ch_client --host="$NEW_CH_HOST" --port="$NEW_CH_PORT" \
           --user="$NEW_CH_USER" --password="$NEW_CH_PASSWORD" \
           --database="$NEW_CH_DATABASE" \
           --query="SELECT count() FROM $TABLE")
