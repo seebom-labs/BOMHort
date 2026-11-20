@@ -7,7 +7,7 @@ metadata:
     app.kubernetes.io/component: api-gateway
     app.kubernetes.io/instance: {{ .Release.Name }}
 spec:
-  replicas: {{ .Values.apiGateway.replicas }}
+  replicas: {{ ternary 0 .Values.apiGateway.replicas .Values.maintenance.writersSuspended }}
   selector:
     matchLabels:
       app.kubernetes.io/name: bomhort

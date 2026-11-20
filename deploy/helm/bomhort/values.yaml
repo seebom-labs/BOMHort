@@ -12,6 +12,12 @@ image:
   tag: ""
   pullPolicy: IfNotPresent
 
+# Set true during a consistent backup or restore. Stops the API and parsing
+# worker and suspends the chart's CronJobs. Already-running CronJob Jobs must
+# still be deleted or allowed to finish by the operator.
+maintenance:
+  writersSuspended: false
+
 # GitHub API token for license resolution (optional, increases rate limit from 60 to 5000 req/h)
 github:
   token: ""
