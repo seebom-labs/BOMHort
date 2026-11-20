@@ -1,10 +1,12 @@
 {{- /*
-Security validation for ingress and authentication.
-Warns or fails when Ingress is enabled but API gateway authentication is disabled,
-preventing unintended public exposure of SBOMs and vulnerability data.
+Security validation for ingress and authentication. API authentication protects
+direct API paths. The bundled UI is intentionally public and its nginx proxy
+injects the service token on read requests, so a UI ingress path also needs
+external user authentication.
 */ -}}
 {{- if .Values.ingress.enabled }}
   {{- $authEnabled := false }}
+  {{- $uiIngress := false }}
   {{- if .Values.apiGateway }}
     {{- if .Values.apiGateway.auth }}
       {{- if .Values.apiGateway.auth.enabled }}
@@ -12,15 +14,18 @@ preventing unintended public exposure of SBOMs and vulnerability data.
       {{- end }}
     {{- end }}
   {{- end }}
-
-  {{- if not $authEnabled }}
-    {{- if .Values.ingress.requireAuth }}
-      {{- fail "\n[SECURITY ERROR] ingress.enabled=true but apiGateway.auth.enabled=false while ingress.requireAuth=true. Refusing to deploy publicly exposed unauthenticated API." }}
-    {{- else }}
-      {{- /*
-      Notice / Warning rendered during template evaluation or helm template inspection.
-      */ -}}
-      {{- $warning := "[SECURITY WARNING] Ingress is enabled but apiGateway.auth.enabled is false! SBOM data, packages, and vulnerability reports will be publicly accessible without authentication." }}
+  {{- range .Values.ingress.hosts }}
+    {{- range .paths }}
+      {{- if eq (.serviceSuffix | default "api-gateway") "ui" }}
+        {{- $uiIngress = true }}
+      {{- end }}
     {{- end }}
+  {{- end }}
+
+  {{- if and .Values.ingress.requireAuth (not $authEnabled) }}
+    {{- fail "[SECURITY ERROR] ingress.requireAuth=true requires apiGateway.auth.enabled=true to protect direct API paths." }}
+  {{- end }}
+  {{- if and .Values.ingress.requireAuth $uiIngress (not .Values.ingress.externalAuth.enabled) }}
+    {{- fail "[SECURITY ERROR] ingress.requireAuth=true cannot expose the bundled UI without external authentication. Configure authentication in the ingress/controller and set ingress.externalAuth.enabled=true, or remove the UI ingress path." }}
   {{- end }}
 {{- end }}
