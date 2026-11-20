@@ -515,6 +515,8 @@ cloned image identity, so separate sources remain distinguishable.
 - Vulnerability rows carry a `vex_status` field via LEFT JOIN
 - VEX statements API returns `affected_sboms` array with matched SBOMs
 
+**Export (#533):** `GET /api/v1/sboms/{id}/vex?format=openvex` and `GET /api/v1/projects/{name}/vex` hand the effective decisions out as one OpenVEX document (`internal/vex/export.go`, queries in `internal/clickhouse/vex_export.go`). Per finding the export picks what the vulnerability view shows — the newest scoped statement matching the finding's id or an alias, on its purl or product-wide — and states it for the finding; statements that match no finding are exported as stated. Each product is `urn:uuid:<sbom_id>`, which `ResolveSBOMByProductRef` resolves to exactly that SBOM (a namespace match can be shared by CycloneDX revisions, so an id match now ranks first), with the root purl as `identifiers.purl` for downstream consumers. The document is valid OpenVEX in every case: a timestamp even without statements (the newest ingest of the scope), required action/impact statements filled in with an explicit "none recorded", undefined statuses left out. `@id` is a UUIDv5 of the rest of the document, so any change, provenance included, gets a new `@id`. Round trips of multi-version exports depend on the per-product statement ids from #591. Re-uploading an export changes no effective status; avoiding the duplicate rows it adds is #336. Unsigned; CSAF, signing and OCI publish are follow-ups.
+
 ## 6. OSV Integration
 
 **Endpoint:** `POST https://api.osv.dev/v1/querybatch`  
