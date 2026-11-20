@@ -158,8 +158,14 @@ func Parse(r io.Reader, sourceFile string) (out *ParseResult, err error) {
 		// Shapes 2 and 3 are told apart by the worker, not here: only the
 		// sboms lookup can say whether a ref names a product or a component.
 		for _, product := range stmt.Products {
-			productRef := extractPURL(product)
-			matchPURLs := []string{productRef}
+			// The product's identity is its @id (the purl identifier only
+			// when it has none): it scopes the statement to an SBOM and keeps
+			// two products apart that share a purl identifier.
+			productRef := productIdentity(product)
+			// Without subcomponents the product itself is what the statement
+			// names: product-wide if the ref resolves to an SBOM, otherwise
+			// the matched component, preferring its purl identifier.
+			matchPURLs := []string{extractPURL(product)}
 			productWide := true
 			if len(product.Subcomponents) > 0 {
 				productWide = false
@@ -211,8 +217,42 @@ func Parse(r io.Reader, sourceFile string) (out *ParseResult, err error) {
 
 	return &ParseResult{
 		DocumentID: doc.ID,
-		Statements: result,
+		Statements: newestPerKey(result),
 	}, nil
+}
+
+// newestPerKey keeps one statement per id. A document may state the same
+// vulnerability for the same product and component more than once, as its
+// assessment changed; all of them share an id, and so a storage key
+// (vex_statements orders by vuln_id, product_purl, vex_id), and they are
+// ingested with the same ingested_at, which leaves the ReplacingMergeTree to
+// keep whichever row was inserted last rather than the newest decision. The
+// statement with the latest timestamp is kept; on equal timestamps the later
+// one in the document.
+func newestPerKey(stmts []models.VEXStatement) []models.VEXStatement {
+	out := make([]models.VEXStatement, 0, len(stmts))
+	at := make(map[uuid.UUID]int, len(stmts))
+	for _, s := range stmts {
+		i, seen := at[s.VEXID]
+		if !seen {
+			at[s.VEXID] = len(out)
+			out = append(out, s)
+			continue
+		}
+		if !s.VEXTimestamp.Before(out[i].VEXTimestamp) {
+			out[i] = s
+		}
+	}
+	return out
+}
+
+// productIdentity is the product's @id, or its purl identifier when it has
+// no @id.
+func productIdentity(p VEXProduct) string {
+	if id := strings.TrimSpace(p.ID); id != "" {
+		return id
+	}
+	return p.Identifiers["purl"]
 }
 
 // extractPURL extracts the PURL from a VEX product.
