@@ -30,6 +30,12 @@ jobs:
       - name: Run SPDX parser fuzz test
         run: go test ./internal/spdx/ -fuzz=FuzzParse -fuzztime=60s
 
+      - name: Run CycloneDX parser fuzz test
+        run: go test ./internal/cyclonedx/ -fuzz=FuzzParse -fuzztime=60s
+
+      - name: Run multi-format SBOM parser fuzz test
+        run: go test ./internal/sbom/ -fuzz=FuzzParse -fuzztime=60s
+
       - name: Run VEX parser fuzz test
         run: go test ./internal/vex/ -fuzz=FuzzParse -fuzztime=60s
 
