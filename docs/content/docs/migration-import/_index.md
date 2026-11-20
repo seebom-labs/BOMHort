@@ -127,11 +127,15 @@ response are kept in the statement's `status_notes`. The author is `imported`.
 the action statement of an `affected` one; for the other statuses it is added to
 the notes. Only `not_affected` suppresses a finding.
 
-Each statement carries its own time, taken from `analysis.lastUpdated` (or
-`firstIssued`). The document itself has no timestamp, so a statement whose
-analysis records no time never borrows another finding's date; it gets the time
-BOMHort ingests it. As everywhere in BOMHort, the newest statement for a
-finding wins.
+Each statement carries an explicit time: `analysis.lastUpdated` (or
+`firstIssued`). An analysis that records no time is dated by the SBOM it was
+exported with (`metadata.timestamp`, when the assessment existed at the latest),
+and the plan says how many were (`note: 2 analyses record no time; dated by the
+SBOM's metadata.timestamp (…)`). If neither records a time, the analysis is
+skipped and listed, rather than given a date. The document's own `timestamp`,
+which OpenVEX requires, is the newest statement time, so no statement ever
+takes another finding's date. As everywhere in BOMHort, the newest statement
+for a finding wins.
 
 ## Linking VEX to its SBOM
 

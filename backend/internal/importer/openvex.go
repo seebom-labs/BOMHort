@@ -52,6 +52,7 @@ type vexDocument struct {
 	Context    string         `json:"@context"`
 	ID         string         `json:"@id"`
 	Author     string         `json:"author"`
+	Timestamp  string         `json:"timestamp"`
 	Version    int            `json:"version"`
 	Tooling    string         `json:"tooling"`
 	Statements []vexStatement `json:"statements"`
@@ -59,7 +60,7 @@ type vexDocument struct {
 
 type vexStatement struct {
 	Vulnerability   vexVulnerability `json:"vulnerability"`
-	Timestamp       string           `json:"timestamp,omitempty"`
+	Timestamp       string           `json:"timestamp"`
 	Products        []vexProduct     `json:"products"`
 	Status          string           `json:"status"`
 	StatusNotes     string           `json:"status_notes,omitempty"`
@@ -90,6 +91,9 @@ type VEX struct {
 	ByStatus map[string]int
 	// Notes lists analyses that were not imported and why.
 	Notes []string
+	// DatedBySBOM counts the statements whose analysis records no time and
+	// that carry the SBOM's metadata.timestamp instead.
+	DatedBySBOM int
 }
 
 // Statements returns the number of statements in the document.
@@ -106,21 +110,41 @@ func (v VEX) Statements() int {
 // stored document_namespace, so the statements are scoped to the SBOM
 // whichever of the two is processed first.
 //
-// The output is a pure function of its input: no clock, no random IDs. Each
-// statement carries its own analysis time; there is deliberately no
-// document-level timestamp, because the VEX parser falls back to it for every
-// statement without one, and an undated decision would then inherit another
-// finding's date. A statement without a time gets the time BOMHort ingests
-// it. @id is derived from the content, so uploading the same analyses again
-// is a hash duplicate, while a changed analysis yields a new document.
-func BuildVEX(serial string, analyses []Analysis) (VEX, error) {
+// Every statement carries an explicit time, so the document timestamp that
+// OpenVEX requires (the newest of them) is never what a statement falls back
+// to, and an undated analysis never inherits another finding's date. The
+// time is the analysis's own (lastUpdated, else firstIssued); an analysis
+// that records none is dated by the SBOM it was exported with
+// (metadata.timestamp: the assessment existed by then), which DatedBySBOM
+// counts for the plan; without either it is skipped and noted.
+//
+// The output is a pure function of its input: no clock, no random IDs. @id is
+// derived from the content, so uploading the same analyses again is a hash
+// duplicate, while a changed analysis yields a new document.
+func BuildVEX(serial string, analyses []Analysis, sbomTime time.Time) (VEX, error) {
 	out := VEX{ByStatus: map[string]int{}}
 	stmts := make([]vexStatement, 0, len(analyses))
+	var latest time.Time
 	for _, a := range analyses {
-		stmt, err := statement(serial, a)
+		at := a.Updated
+		dated := false
+		if at.IsZero() {
+			if sbomTime.IsZero() {
+				out.Notes = append(out.Notes, fmt.Sprintf("skipped %s: neither the analysis nor the SBOM (metadata.timestamp) records a time", a.VulnID))
+				continue
+			}
+			at, dated = sbomTime, true
+		}
+		stmt, err := statement(serial, a, at)
 		if err != nil {
 			out.Notes = append(out.Notes, fmt.Sprintf("skipped %s: %v", a.VulnID, err))
 			continue
+		}
+		if dated {
+			out.DatedBySBOM++
+		}
+		if at.After(latest) {
+			latest = at
 		}
 		stmts = append(stmts, stmt)
 		out.ByStatus[stmt.Status]++
@@ -156,6 +180,7 @@ func BuildVEX(serial string, analyses []Analysis) (VEX, error) {
 		Context:    openVEXContext,
 		ID:         "urn:uuid:" + uuid.NewSHA1(uuid.NameSpaceURL, body).String(),
 		Author:     importAuthor,
+		Timestamp:  latest.UTC().Format(time.RFC3339),
 		Version:    1,
 		Tooling:    importTooling,
 		Statements: stmts,
@@ -168,8 +193,8 @@ func BuildVEX(serial string, analyses []Analysis) (VEX, error) {
 	return out, nil
 }
 
-// statement converts one analysis.
-func statement(serial string, a Analysis) (vexStatement, error) {
+// statement converts one analysis, dated at.
+func statement(serial string, a Analysis, at time.Time) (vexStatement, error) {
 	state := normalize(a.State)
 	status, ok := stateStatus[state]
 	if !ok {
@@ -195,9 +220,7 @@ func statement(serial string, a Analysis) (vexStatement, error) {
 		Products:      []vexProduct{{ID: serial, Subcomponents: subs}},
 		Status:        status,
 		StatusNotes:   sourceNotes(state, justification, responses),
-	}
-	if !a.Updated.IsZero() {
-		stmt.Timestamp = a.Updated.UTC().Format(time.RFC3339)
+		Timestamp:     at.UTC().Format(time.RFC3339),
 	}
 
 	// OpenVEX requires a justification or an impact statement for

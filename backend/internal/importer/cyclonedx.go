@@ -21,6 +21,7 @@ type cdxDocument struct {
 	BOMFormat    string `json:"bomFormat"`
 	SerialNumber string `json:"serialNumber"`
 	Metadata     struct {
+		Timestamp string        `json:"timestamp"`
 		Component *cdxComponent `json:"component"`
 	} `json:"metadata"`
 	Components      []cdxComponent     `json:"components"`
@@ -64,6 +65,12 @@ func parseCycloneDX(data []byte) (*cdxDocument, error) {
 		return nil, errNotCycloneDX
 	}
 	return &doc, nil
+}
+
+// timestamp is when the document was produced (metadata.timestamp), or the
+// zero time when it does not say.
+func (d *cdxDocument) timestamp() time.Time {
+	return latestTime(d.Metadata.Timestamp)
 }
 
 // name is the project name mapping entries match on: the root component's

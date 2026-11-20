@@ -7,6 +7,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Options configures a Run.
@@ -69,7 +70,7 @@ func Run(ctx context.Context, opts Options) (Summary, error) {
 			fmt.Fprintf(out, "  FAILED: read analyses: %v\n", err)
 			continue
 		}
-		vex, vexErr := BuildVEX(doc.SerialNumber, analyses)
+		vex, vexErr := BuildVEX(doc.SerialNumber, analyses, doc.timestamp())
 		if vexErr != nil && !errors.Is(vexErr, errNoSerial) {
 			sum.Failed++
 			fmt.Fprintf(out, "  FAILED: build VEX: %v\n", vexErr)
@@ -88,6 +89,10 @@ func Run(ctx context.Context, opts Options) (Summary, error) {
 			sum.VEX++
 			sum.Statements += vex.Statements()
 			fmt.Fprintf(out, "  VEX:  %s, %d statements (%s)\n", vexName, vex.Statements(), formatCounts(vex.ByStatus))
+		}
+		if vex.DatedBySBOM > 0 {
+			fmt.Fprintf(out, "  note: %d %s no time; dated by the SBOM's metadata.timestamp (%s)\n",
+				vex.DatedBySBOM, plural(vex.DatedBySBOM, "analysis records", "analyses record"), doc.timestamp().UTC().Format(time.RFC3339))
 		}
 		for _, n := range notes {
 			fmt.Fprintf(out, "  note: %s\n", n)
@@ -152,6 +157,13 @@ func formatCounts(counts map[string]int) string {
 		parts[i] = fmt.Sprintf("%s %d", k, counts[k])
 	}
 	return strings.Join(parts, ", ")
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 func orDefault(s, fallback string) string {

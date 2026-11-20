@@ -46,7 +46,7 @@ func exportDoc(i int) string {
 	return fmt.Sprintf(`{
   "bomFormat": "CycloneDX", "specVersion": "1.5",
   "serialNumber": "urn:uuid:00000000-0000-4000-8000-%012d",
-  "metadata": {"component": {"name": "service-%d", "version": "1.0.0"}},
+  "metadata": {"timestamp": "2024-05-02T09:00:00Z", "component": {"name": "service-%d", "version": "1.0.0"}},
   "components": [{"bom-ref": "lib", "name": "lib", "purl": "pkg:npm/lib-%d@1.0.0"}],
   "vulnerabilities": [{"id": "CVE-2024-%04d",
     "analysis": {"state": "not_affected", "justification": "code_not_present", "detail": "Reviewed by the security team."},
@@ -125,7 +125,7 @@ func TestRun_ImportsDirectoryExportOnce(t *testing.T) {
 func TestRun_DryRunUploadsNothing(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "a.cdx.json", exportDoc(1))
-	writeFile(t, dir, "b.cdx.json", `{"bomFormat":"CycloneDX","metadata":{"component":{"name":"b"}},
+	writeFile(t, dir, "b.cdx.json", `{"bomFormat":"CycloneDX","metadata":{"timestamp":"2024-05-02T09:00:00Z","component":{"name":"b"}},
 	  "components":[{"bom-ref":"x","purl":"pkg:npm/x@1"}],
 	  "vulnerabilities":[{"id":"CVE-1","analysis":{"state":"resolved"},"affects":[{"ref":"x"}]}]}`)
 	src, err := NewDirSource(dir)
@@ -145,6 +145,8 @@ func TestRun_DryRunUploadsNothing(t *testing.T) {
 		"a.openvex.json, 1 statements (not_affected 1)",
 		"VEX:  not generated: the SBOM has no serialNumber",
 		"project: from the document, tags: none",
+		// The analysis records no time of its own (#584 review).
+		"note: 1 analysis records no time; dated by the SBOM's metadata.timestamp (2024-05-02T09:00:00Z)",
 	} {
 		if !strings.Contains(plan, want) {
 			t.Errorf("plan lacks %q:\n%s", want, plan)

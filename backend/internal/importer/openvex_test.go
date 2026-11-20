@@ -7,10 +7,19 @@ import (
 	"testing"
 	"time"
 
+	json "github.com/goccy/go-json"
+
 	"github.com/seebom-labs/bomhort/backend/internal/vex"
 )
 
 const testSerial = "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79"
+
+// sbomTime is the metadata.timestamp of the SBOM the analyses come from.
+var sbomTime = time.Date(2024, 5, 2, 9, 0, 0, 0, time.UTC)
+
+func buildVEX(serial string, analyses []Analysis) (VEX, error) {
+	return BuildVEX(serial, analyses, sbomTime)
+}
 
 func TestBuildVEX_MapsStatesAndJustifications(t *testing.T) {
 	tests := []struct {
@@ -69,7 +78,7 @@ func TestBuildVEX_MapsStatesAndJustifications(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.a.VulnID = "CVE-2021-44228"
 			tc.a.PURLs = []string{"pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1"}
-			got, err := BuildVEX(testSerial, []Analysis{tc.a})
+			got, err := buildVEX(testSerial, []Analysis{tc.a})
 			if err != nil {
 				t.Fatalf("BuildVEX: %v", err)
 			}
@@ -97,7 +106,7 @@ func TestBuildVEX_MapsStatesAndJustifications(t *testing.T) {
 // The worker must scope the statements to the SBOM through its serialNumber
 // and match findings on the component purl.
 func TestBuildVEX_ScopedToSBOMBySerial(t *testing.T) {
-	got, err := BuildVEX(testSerial, []Analysis{{
+	got, err := buildVEX(testSerial, []Analysis{{
 		VulnID:  "CVE-2022-42889",
 		Aliases: []string{"GHSA-599f-7c49-w659"},
 		PURLs:   []string{"pkg:maven/org.apache.commons/commons-text@1.9", "pkg:maven/org.apache.commons/commons-text@1.9", "pkg:maven/other/lib@1.0"},
@@ -128,13 +137,13 @@ func TestBuildVEX_IsDeterministic(t *testing.T) {
 	a := Analysis{VulnID: "CVE-1", PURLs: []string{"pkg:npm/a@1"}, State: "not_affected", Justification: "code_not_present", Updated: updated}
 	b := Analysis{VulnID: "CVE-2", PURLs: []string{"pkg:npm/b@1"}, State: "resolved"}
 
-	first, err := BuildVEX(testSerial, []Analysis{a, b})
+	first, err := buildVEX(testSerial, []Analysis{a, b})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Same analyses in a different order: same bytes, so a rerun is a hash
 	// duplicate on upload.
-	second, err := BuildVEX(testSerial, []Analysis{b, a})
+	second, err := buildVEX(testSerial, []Analysis{b, a})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +157,7 @@ func TestBuildVEX_IsDeterministic(t *testing.T) {
 	// A changed decision must produce a new document (new @id), or the worker
 	// would skip it as already ingested.
 	a.Justification = "code_not_reachable"
-	changed, err := BuildVEX(testSerial, []Analysis{a, b})
+	changed, err := buildVEX(testSerial, []Analysis{a, b})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,51 +167,126 @@ func TestBuildVEX_IsDeterministic(t *testing.T) {
 }
 
 // An undated analysis must not inherit the date of another one in the same
-// document: the VEX parser falls back to the document timestamp for a
-// statement without its own, so the document must not carry one.
-func TestBuildVEX_UndatedStatementDoesNotInheritADate(t *testing.T) {
+// document. Every statement carries an explicit time, so the document
+// timestamp OpenVEX requires is never a fallback: the undated analysis is
+// dated by the SBOM it came with, and the plan says so (#584 review).
+func TestBuildVEX_UndatedAnalysisIsDatedByTheSBOM(t *testing.T) {
 	dated := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
 	got, err := BuildVEX(testSerial, []Analysis{
 		{VulnID: "CVE-1", PURLs: []string{"pkg:npm/a@1"}, State: "not_affected", Justification: "code_not_present", Updated: dated},
 		{VulnID: "CVE-2", PURLs: []string{"pkg:npm/b@1"}, State: "not_affected", Justification: "code_not_present"},
-	})
+	}, sbomTime)
 	if err != nil {
 		t.Fatal(err)
 	}
-	before := time.Now()
+	if got.DatedBySBOM != 1 {
+		t.Errorf("DatedBySBOM = %d, want 1", got.DatedBySBOM)
+	}
 	res, err := vex.Parse(bytes.NewReader(got.Data), "import.openvex.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, s := range res.Statements {
-		switch s.VulnID {
-		case "CVE-1":
-			if !s.VEXTimestamp.Equal(dated) {
-				t.Errorf("dated statement: timestamp %v, want %v", s.VEXTimestamp, dated)
-			}
-		case "CVE-2":
-			if s.VEXTimestamp.Equal(dated) || s.VEXTimestamp.Before(before.Add(-time.Minute)) {
-				t.Errorf("undated statement got %v; want the ingest time, not another finding's date", s.VEXTimestamp)
-			}
-		}
-	}
 	if len(res.Statements) != 2 {
 		t.Fatalf("parsed %d statements, want 2", len(res.Statements))
 	}
+	for _, s := range res.Statements {
+		want := dated
+		if s.VulnID == "CVE-2" {
+			want = sbomTime // its SBOM's date, not CVE-1's
+		}
+		if !s.VEXTimestamp.Equal(want) {
+			t.Errorf("%s: timestamp %v, want %v", s.VulnID, s.VEXTimestamp, want)
+		}
+	}
+	assertValidOpenVEX(t, got.Data, "2030-01-01T00:00:00Z")
 }
 
-func TestBuildVEX_NoTimestampsLeavesThemOut(t *testing.T) {
-	got, err := BuildVEX(testSerial, []Analysis{{VulnID: "CVE-1", PURLs: []string{"pkg:npm/a@1"}, State: "resolved"}})
+// Without a time on the analysis or the SBOM there is nothing trustworthy to
+// date the decision by: it is skipped and reported, not given a date.
+func TestBuildVEX_SkipsAnalysesWithoutAnyTime(t *testing.T) {
+	got, err := BuildVEX(testSerial, []Analysis{
+		{VulnID: "CVE-1", PURLs: []string{"pkg:npm/a@1"}, State: "resolved"},
+	}, time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(got.Data, []byte(`"timestamp"`)) {
-		t.Errorf("invented a timestamp:\n%s", got.Data)
+	if got.Data != nil || got.Statements() != 0 {
+		t.Errorf("generated %d statements: %s", got.Statements(), got.Data)
+	}
+	if len(got.Notes) != 1 || !strings.Contains(got.Notes[0], "neither the analysis nor the SBOM") {
+		t.Errorf("notes = %v", got.Notes)
+	}
+}
+
+// OpenVEX requires a document timestamp and statements with valid fields.
+func TestBuildVEX_DocumentIsValidOpenVEX(t *testing.T) {
+	got, err := buildVEX(testSerial, []Analysis{
+		{VulnID: "CVE-1", PURLs: []string{"pkg:npm/a@1"}, State: "not_affected"},
+		{VulnID: "CVE-2", PURLs: []string{"pkg:npm/b@1"}, State: "exploitable"},
+		{VulnID: "CVE-3", PURLs: []string{"pkg:npm/c@1"}, State: "in_triage"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertValidOpenVEX(t, got.Data, "2024-05-02T09:00:00Z")
+}
+
+// assertValidOpenVEX checks the MUST requirements of OpenVEX v0.2.0 that a
+// validating consumer enforces, and the document timestamp.
+func assertValidOpenVEX(t *testing.T, data []byte, wantTimestamp string) {
+	t.Helper()
+	var doc struct {
+		Context    string `json:"@context"`
+		ID         string `json:"@id"`
+		Author     string `json:"author"`
+		Timestamp  string `json:"timestamp"`
+		Version    int    `json:"version"`
+		Statements []struct {
+			Vulnerability struct {
+				Name string `json:"name"`
+			} `json:"vulnerability"`
+			Timestamp       string            `json:"timestamp"`
+			Products        []json.RawMessage `json:"products"`
+			Status          string            `json:"status"`
+			Justification   string            `json:"justification"`
+			ImpactStatement string            `json:"impact_statement"`
+			ActionStatement string            `json:"action_statement"`
+		} `json:"statements"`
+	}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc.Context != openVEXContext || doc.ID == "" || doc.Author == "" || doc.Version < 1 {
+		t.Errorf("document fields: %+v", doc)
+	}
+	if doc.Timestamp != wantTimestamp {
+		t.Errorf("document timestamp = %q, want %q", doc.Timestamp, wantTimestamp)
+	}
+	for _, s := range doc.Statements {
+		if _, err := time.Parse(time.RFC3339, s.Timestamp); err != nil {
+			t.Errorf("%s: statement timestamp %q", s.Vulnerability.Name, s.Timestamp)
+		}
+		if s.Vulnerability.Name == "" || len(s.Products) == 0 {
+			t.Errorf("statement without vulnerability or product: %+v", s)
+		}
+		switch s.Status {
+		case "not_affected":
+			if s.Justification == "" && s.ImpactStatement == "" {
+				t.Errorf("%s: not_affected without justification or impact statement", s.Vulnerability.Name)
+			}
+		case "affected":
+			if s.ActionStatement == "" {
+				t.Errorf("%s: affected without action statement", s.Vulnerability.Name)
+			}
+		case "fixed", "under_investigation":
+		default:
+			t.Errorf("%s: status %q", s.Vulnerability.Name, s.Status)
+		}
 	}
 }
 
 func TestBuildVEX_SkipsWhatItCannotMap(t *testing.T) {
-	got, err := BuildVEX(testSerial, []Analysis{
+	got, err := buildVEX(testSerial, []Analysis{
 		{VulnID: "CVE-1", PURLs: []string{"pkg:npm/a@1"}, State: "not_set"},
 		{VulnID: "CVE-2", PURLs: []string{"pkg:npm/b@1"}, State: "resolved"},
 	})
@@ -213,14 +297,14 @@ func TestBuildVEX_SkipsWhatItCannotMap(t *testing.T) {
 		t.Errorf("statements = %d, notes = %v", got.Statements(), got.Notes)
 	}
 
-	none, err := BuildVEX(testSerial, nil)
+	none, err := buildVEX(testSerial, nil)
 	if err != nil || none.Data != nil {
 		t.Errorf("no analyses: data = %q, err = %v; want no document", none.Data, err)
 	}
 }
 
 func TestBuildVEX_RequiresSerial(t *testing.T) {
-	got, err := BuildVEX("", []Analysis{{VulnID: "CVE-1", PURLs: []string{"pkg:npm/a@1"}, State: "resolved"}})
+	got, err := buildVEX("", []Analysis{{VulnID: "CVE-1", PURLs: []string{"pkg:npm/a@1"}, State: "resolved"}})
 	if !errors.Is(err, errNoSerial) {
 		t.Fatalf("err = %v, want errNoSerial", err)
 	}
