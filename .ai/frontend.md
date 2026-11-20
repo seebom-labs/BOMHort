@@ -1,0 +1,11 @@
+## Angular (Frontend)
+- Use strict TypeScript mode and standalone components.
+- Unit tests use **Vitest** (not Karma/Jasmine). Run via `npx ng test`.
+- Virtual scrolling uses `@angular/cdk` (`ScrollingModule`). Always implement for large lists of dependency nodes or vulnerabilities to prevent browser freezing.
+- Utilize OnPush change detection for data-heavy dashboard components to optimize rendering performance.
+- All routes are lazy-loaded standalone components (see `app.routes.ts`). Feature pages: `dashboard`, `fleet` (cluster → namespace → project tree with per-scope stats, backed by `GET /api/v1/fleet`), `sbom-explorer`, `vulnerability`, `search` (CVE impact, license compliance, dependency stats, version skew, package search + detail), `license-compliance`, `vex`, `archived-packages`.
+- Shared chart components live in `shared/charts/` (donut chart, horizontal bar chart).
+- UI supports **Dark Mode** (toggle in navbar, persisted to localStorage) and **Custom CSS Theming** (external `custom-theme.css` mountable without rebuild).
+- UI supports **Site Configuration** (`ui-config.json`): brand name, page title, dashboard texts, and disclaimer are configurable without rebuild. Loaded at startup via `APP_INITIALIZER` in `SiteConfigService`. Mount via Docker volume or Kubernetes ConfigMap (`ui.siteConfig` in Helm values).
+- License exemptions are visually distinct: green badge + orange text for exempted copyleft, red for violations.
+- Project grouping with clickable version tags is used in CVE Impact, VEX, and License Overview pages.

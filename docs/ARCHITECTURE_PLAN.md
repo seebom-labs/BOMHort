@@ -17,6 +17,12 @@ The API gateway also exposes the read-only Transparency Exchange API (TEA). It a
 ```
 bomhort/
 ├── AGENTS.md
+├── .ai/                        # Shared internal AI rules and review procedure
+├── CLAUDE.md                   # Claude adapter importing the small AGENTS.md
+├── .agents/skills/             # Tool-neutral/Codex review skill entry point
+├── .claude/skills/             # Claude review skill adapter
+├── .github/copilot-instructions.md # Copilot adapter to the shared root policy
+├── .github/instructions/       # Scoped Copilot adapters to shared rules
 ├── README.md
 ├── LICENSE
 ├── Makefile                    # dev, dev-reset, re-ingest, re-scan, ch-shell, etc.
