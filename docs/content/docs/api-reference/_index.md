@@ -339,6 +339,13 @@ This endpoint refuses every request with `403 Forbidden` unless `AUTH_ENABLED=tr
 
 **Body:** Raw SBOM or VEX JSON content (not multipart form data). Max size is `MAX_UPLOAD_SIZE_MB` (Helm: `apiGateway.maxUploadSizeMB`, default 50 MB); larger bodies are rejected with `413`.
 
+Concurrent requests are limited by `MAX_CONCURRENT_UPLOADS` (Helm:
+`apiGateway.maxConcurrentUploads`, default 10 per gateway replica). When every
+slot is busy, the endpoint returns `429` with `Retry-After: 5`. Set the limit
+to `0` to disable it. A stalled request body times out after two minutes without
+read progress; progress resets this idle timeout, so large uploads can continue
+longer.
+
 **Query Parameters:**
 
 | Parameter | Type | Description |
@@ -387,6 +394,7 @@ With `DEDUP_BY_IMAGE_DIGEST=true` (Helm: `apiGateway.dedupByImageDigest`, defaul
 - `400` — Missing `X-Filename` header, unsupported file extension, empty body, malformed image/source metadata, or content that fails validation (SBOM uploads must be a single well-formed JSON object; VEX uploads must be a valid OpenVEX document — see below)
 - `403` — `AUTH_ENABLED` is not `true` on this instance
 - `413` — Body exceeds `MAX_UPLOAD_SIZE_MB`
+- `429` — All concurrent upload slots are occupied; retry after the `Retry-After` value
 - `409` — Image digest reuse is enabled but identical content is still queued and has not been ingested yet
 - `500` — Storage (S3 or local) or ingestion-queue failure
 - `503` — No push-storage backend is configured (no `skipScan` S3 bucket, and `SBOM_DIR` isn't writable)

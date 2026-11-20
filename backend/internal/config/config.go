@@ -172,8 +172,8 @@ type Config struct {
 	BrandName    string   // Brand label for badges, resolved from ui-config.json or BRAND_NAME
 
 	// Push-model upload (#135)
-	MaxUploadSizeMB       int // Max accepted body size for POST /api/v1/sboms/upload, in MB (default 50)
-	MaxConcurrentUploads  int // Max concurrent uploads allowed (default 10; 0 = unlimited)
+	MaxUploadSizeMB      int // Max accepted body size for POST /api/v1/sboms/upload, in MB (default 50)
+	MaxConcurrentUploads int // Max concurrent uploads allowed (default 10; 0 = unlimited)
 
 	// Tier-2 fidelity capture (#256): where the original SBOM bytes are kept.
 	//   OriginalStoreBackend: "auto" (default) | "s3" | "fs" | "none"
@@ -292,6 +292,9 @@ func Load() (*Config, error) {
 		MCPAPIKey:         getEnv("MCP_API_KEY", ""),
 		MCPServiceToken:   getEnv("MCP_SERVICE_TOKEN", ""),
 		MCPRequestTimeout: getEnvInt("MCP_REQUEST_TIMEOUT_SECONDS", 30),
+	}
+	if cfg.MaxConcurrentUploads < 0 {
+		return nil, fmt.Errorf("invalid MAX_CONCURRENT_UPLOADS %d (want a non-negative integer; 0 disables the limit)", cfg.MaxConcurrentUploads)
 	}
 
 	if err := loadClickHouseLimits(cfg); err != nil {

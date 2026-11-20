@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -12,6 +13,7 @@ func TestLoad_Defaults(t *testing.T) {
 		"SBOM_DIR", "API_PORT", "WORKER_BATCH_SIZE", "SKIP_OSV", "SBOM_LIMIT",
 		"S3_BUCKETS", "S3_BUCKET",
 		"DEDUP_BY_IMAGE_DIGEST",
+		"MAX_CONCURRENT_UPLOADS",
 		"ORIGIN",
 	} {
 		os.Unsetenv(key)
@@ -129,6 +131,26 @@ func TestLoad_MaxUploadSizeMB_Default(t *testing.T) {
 	if cfg.MaxUploadSizeMB != 50 {
 		t.Errorf("expected default MaxUploadSizeMB=50, got %d", cfg.MaxUploadSizeMB)
 	}
+}
+
+func TestLoad_MaxConcurrentUploads(t *testing.T) {
+	t.Run("zero disables the limit", func(t *testing.T) {
+		t.Setenv("MAX_CONCURRENT_UPLOADS", "0")
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() error: %v", err)
+		}
+		if cfg.MaxConcurrentUploads != 0 {
+			t.Fatalf("MaxConcurrentUploads = %d, want 0", cfg.MaxConcurrentUploads)
+		}
+	})
+
+	t.Run("negative value is rejected", func(t *testing.T) {
+		t.Setenv("MAX_CONCURRENT_UPLOADS", "-1")
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "MAX_CONCURRENT_UPLOADS") {
+			t.Fatalf("Load() error = %v, want MAX_CONCURRENT_UPLOADS validation error", err)
+		}
+	})
 }
 
 func TestLoad_S3Buckets_SkipScan(t *testing.T) {

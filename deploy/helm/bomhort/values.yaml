@@ -424,6 +424,8 @@ apiGateway:
   # per-IP write budget. Lower it if the upload endpoint is exposed to
   # untrusted networks.
   maxUploadSizeMB: 50
+  # Simultaneous upload requests per API Gateway pod. 0 disables this limit.
+  maxConcurrentUploads: 10
   # Reuse parsed SBOM data for repeated image digests (#457). Uploads must
   # provide ?image=<ref>@sha256:<digest>; disabled by default.
   dedupByImageDigest: false

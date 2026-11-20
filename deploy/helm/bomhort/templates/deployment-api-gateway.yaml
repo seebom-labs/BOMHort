@@ -54,6 +54,13 @@ spec:
                 name: {{ .Release.Name }}-config
             - secretRef:
                 name: {{ .Release.Name }}-secret
+          {{- $maxConcurrentUploads := .Values.apiGateway.maxConcurrentUploads }}
+          {{- if not (or (kindIs "float64" $maxConcurrentUploads) (kindIs "int" $maxConcurrentUploads) (kindIs "int64" $maxConcurrentUploads)) }}
+          {{- fail (printf "apiGateway.maxConcurrentUploads must be a number (got %v)" $maxConcurrentUploads) }}
+          {{- end }}
+          {{- if lt (int64 $maxConcurrentUploads) 0 }}
+          {{- fail "apiGateway.maxConcurrentUploads must not be negative (0 = unlimited)" }}
+          {{- end }}
           {{- $queryLimits := list }}
           {{- range $key, $env := dict "maxExecutionTime" "CLICKHOUSE_MAX_EXECUTION_TIME" "maxMemoryUsage" "CLICKHOUSE_MAX_MEMORY_USAGE" "maxThreads" "CLICKHOUSE_MAX_THREADS" }}
           {{- $v := index ($.Values.apiGateway.queryLimits | default dict) $key }}
@@ -68,7 +75,7 @@ spec:
           {{- end }}
           {{- end }}
           {{- $exceptionsEnv := include "bomhort.licenseExceptions.env" . }}
-          {{- if or .Values.clickhouse.userPasswordSecret.enabled .Values.s3.credentialsSecret.enabled .Values.apiGateway.auth.enabled .Values.apiGateway.maxUploadSizeMB .Values.apiGateway.dedupByImageDigest $queryLimits $exceptionsEnv }}
+          {{- if or .Values.clickhouse.userPasswordSecret.enabled .Values.s3.credentialsSecret.enabled .Values.apiGateway.auth.enabled .Values.apiGateway.maxUploadSizeMB .Values.apiGateway.dedupByImageDigest $queryLimits $exceptionsEnv (hasKey .Values.apiGateway "maxConcurrentUploads") }}
           env:
             {{- if .Values.clickhouse.userPasswordSecret.enabled }}
             - name: CLICKHOUSE_PASSWORD
@@ -115,6 +122,8 @@ spec:
                   {{- end }}
                   optional: true
             {{- end }}
+            - name: MAX_CONCURRENT_UPLOADS
+              value: {{ $maxConcurrentUploads | quote }}
             {{- if .Values.apiGateway.maxUploadSizeMB }}
             - name: MAX_UPLOAD_SIZE_MB
               value: {{ .Values.apiGateway.maxUploadSizeMB | quote }}

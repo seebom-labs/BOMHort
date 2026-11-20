@@ -255,6 +255,19 @@ apiGateway:
   maxUploadSizeMB: 25
 ```
 
+**Concurrent upload budget.** `MAX_CONCURRENT_UPLOADS` defaults to `10` per
+API Gateway process. It bounds simultaneous upload requests on each replica;
+with multiple replicas, the deployment-wide maximum is the per-replica value
+multiplied by the replica count. Set `apiGateway.maxConcurrentUploads` in Helm
+or `MAX_CONCURRENT_UPLOADS` in the Compose `.env` file. Set it to `0` to disable
+the semaphore. When all slots are occupied, new uploads receive `429 Too Many
+Requests` with `Retry-After: 5`; clients should retry after that delay.
+
+The gateway also enforces a two-minute **idle body-read** timeout while an
+upload is arriving. Each body read resets it, so a large upload can take longer
+than two minutes as long as data continues to arrive. A stalled body releases
+its upload slot when the read times out.
+
 Image-digest deduplication is opt-in. Set `apiGateway.dedupByImageDigest: true`
 to reuse an already-ingested digest on uploads that provide
 `?image=<ref>@sha256:<digest>`. Same-ownership uploads are acknowledged as

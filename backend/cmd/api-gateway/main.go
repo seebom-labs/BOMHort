@@ -1603,7 +1603,43 @@ type uploadDeps struct {
 	// localWritable is true when cfg.SBOMDir/pushed is writable — the
 	// local-filesystem fallback used when useS3Push is false.
 	localWritable bool
+
+	// bodyReadTimeout overrides the idle body-read timeout in tests. Zero uses
+	// uploadBodyIdleTimeout; each successful read resets the deadline so a large
+	// upload that continues to make progress is not capped by a total duration.
+	bodyReadTimeout time.Duration
 }
+
+const uploadBodyIdleTimeout = 2 * time.Minute
+
+type uploadBodyDeadlineReader struct {
+	body       io.ReadCloser
+	controller *http.ResponseController
+	timeout    time.Duration
+	disabled   bool
+}
+
+func (r *uploadBodyDeadlineReader) Read(p []byte) (int, error) {
+	if !r.disabled && r.timeout > 0 {
+		if err := r.controller.SetReadDeadline(time.Now().Add(r.timeout)); err != nil {
+			if errors.Is(err, http.ErrNotSupported) {
+				r.disabled = true
+			} else {
+				return 0, err
+			}
+		}
+	}
+
+	n, err := r.body.Read(p)
+	if err != nil && !r.disabled {
+		// A timed-out body must not leave the connection's read deadline expired
+		// while the handler writes the error response.
+		_ = r.controller.SetReadDeadline(time.Time{})
+	}
+	return n, err
+}
+
+func (r *uploadBodyDeadlineReader) Close() error { return r.body.Close() }
 
 // uploadHandler implements push-model SBOM/VEX upload (#135). It authenticates
 // via the standard middleware chain, hashes and dedups the body against
@@ -1721,6 +1757,15 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 
 		maxBytes := int64(cfg.MaxUploadSizeMB) * 1024 * 1024
 		r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+		bodyReadTimeout := deps.bodyReadTimeout
+		if bodyReadTimeout <= 0 {
+			bodyReadTimeout = uploadBodyIdleTimeout
+		}
+		r.Body = &uploadBodyDeadlineReader{
+			body:       r.Body,
+			controller: http.NewResponseController(w),
+			timeout:    bodyReadTimeout,
+		}
 		hasher := sha256.New()
 		n, err := io.Copy(io.MultiWriter(tmp, hasher), r.Body)
 		if err != nil {
