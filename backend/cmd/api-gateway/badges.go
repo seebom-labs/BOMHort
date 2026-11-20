@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"html"
-	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -248,7 +247,7 @@ func handleProjectBadge(
 				writeError(w, http.StatusNotFound, "Project not found")
 				return
 			}
-			log.Printf("ERROR: project badge stats for %s (%s): %v", sanitizeLogParam(name), kind, err)
+			logRequestErrorf(r, "ERROR: project badge stats for %s (%s): %v", sanitizeLogParam(name), kind, err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch project badge")
 			return
 		}
@@ -256,7 +255,7 @@ func handleProjectBadge(
 		label, val, color := badgeData(cfg, stats)
 		svg, err := renderShieldBadge(label, val, color)
 		if err != nil {
-			log.Printf("ERROR: render %s badge for %s: %v", kind, sanitizeLogParam(name), err)
+			logRequestErrorf(r, "ERROR: render %s badge for %s: %v", kind, sanitizeLogParam(name), err)
 			writeError(w, http.StatusInternalServerError, "Failed to render badge")
 			return
 		}
