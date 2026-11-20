@@ -55,33 +55,43 @@ func scopeVEXStatements(ctx context.Context, resolver sbomResolver, job models.I
 
 	cache := make(map[string]string)
 	unresolved := make(map[string]struct{})
+	resolve := func(ref string) string {
+		if sbomID, seen := cache[ref]; seen {
+			return sbomID
+		}
+		sbomID, err := resolver.ResolveSBOMByProductRef(ctx, ref)
+		if err != nil {
+			log.Printf("  WARNING: VEX %s: failed to resolve product %q: %v", job.SourceFile, ref, err)
+			sbomID = ""
+		}
+		// Retry with the normalised repo-URL form: product IRIs like
+		// "git+https://host/org/repo.git@v1.2.3" should match the
+		// source_repo column, which stores the normalised URL (#332).
+		if sbomID == "" {
+			if norm, _ := sourcerepo.Normalize(ref); norm != "" && norm != ref {
+				sbomID, err = resolver.ResolveSBOMByProductRef(ctx, norm)
+				if err != nil {
+					log.Printf("  WARNING: VEX %s: failed to resolve product %q: %v", job.SourceFile, norm, err)
+					sbomID = ""
+				}
+			}
+		}
+		cache[ref] = sbomID
+		return sbomID
+	}
 
 	for i := range stmts {
 		ref := stmts[i].ProductRef
 		if ref == "" {
 			continue
 		}
-		sbomID, seen := cache[ref]
-		if !seen {
-			var err error
-			sbomID, err = resolver.ResolveSBOMByProductRef(ctx, ref)
-			if err != nil {
-				log.Printf("  WARNING: VEX %s: failed to resolve product %q: %v", job.SourceFile, ref, err)
-				sbomID = ""
-			}
-			// Retry with the normalised repo-URL form: product IRIs like
-			// "git+https://host/org/repo.git@v1.2.3" should match the
-			// source_repo column, which stores the normalised URL (#332).
-			if sbomID == "" {
-				if norm, _ := sourcerepo.Normalize(ref); norm != "" && norm != ref {
-					sbomID, err = resolver.ResolveSBOMByProductRef(ctx, norm)
-					if err != nil {
-						log.Printf("  WARNING: VEX %s: failed to resolve product %q: %v", job.SourceFile, norm, err)
-						sbomID = ""
-					}
-				}
-			}
-			cache[ref] = sbomID
+		sbomID := resolve(ref)
+		// The product ref is the product's @id. A product without
+		// subcomponents may also carry a purl identifier (it is then the
+		// ProductPURL); try that too, as it was the only ref tried before
+		// the @id was kept separately.
+		if sbomID == "" && stmts[i].ProductWide && stmts[i].ProductPURL != "" && stmts[i].ProductPURL != ref {
+			sbomID = resolve(stmts[i].ProductPURL)
 		}
 		if sbomID == "" {
 			unresolved[ref] = struct{}{}
