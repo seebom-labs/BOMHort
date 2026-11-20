@@ -21,6 +21,7 @@ spec:
       labels:
         app.kubernetes.io/name: bomhort
         app.kubernetes.io/component: data-migration
+        app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
       restartPolicy: OnFailure
       containers:

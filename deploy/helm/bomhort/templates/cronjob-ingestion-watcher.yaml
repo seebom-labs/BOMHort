@@ -16,6 +16,7 @@ spec:
           labels:
             app.kubernetes.io/name: bomhort
             app.kubernetes.io/component: ingestion-watcher
+            app.kubernetes.io/instance: {{ .Release.Name }}
             {{- if not .Values.gitSync.enabled }}
             bomhort.io/sbom-volume: "true"
             {{- end }}

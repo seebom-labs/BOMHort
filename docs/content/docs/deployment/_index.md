@@ -1084,6 +1084,36 @@ Do not use `ignoreDifferences` to hide changes to a Job's containers or
 volumes. If a Job's spec shows as changed under the same name, the chart is
 outdated: upgrade it rather than ignoring the diff.
 
+### Restricting ClickHouse network access
+
+The chart can optionally create a `NetworkPolicy` for the ClickHouse pods:
+
+```yaml
+clickhouse:
+  networkPolicy:
+    enabled: true
+    # Defaults assume the Altinity operator runs in kube-system with this label.
+    # Override both selectors to match your operator installation.
+    operatorNamespaceSelector:
+      kubernetes.io/metadata.name: kube-system
+    operatorPodSelector:
+      app.kubernetes.io/name: clickhouse-operator
+```
+
+The policy allows the BOMHort API, workers, and migration jobs to use the
+configured native ClickHouse port (9000 by default), the Altinity operator to
+use HTTP port 8123, and ClickHouse replicas in this installation to exchange
+replication traffic on port 9009. If the operator uses another namespace or
+pod labels, configure both selectors to match it. The operator namespace and
+pod selectors are combined, so both must match.
+
+NetworkPolicy enforcement depends on the cluster CNI; verify that the
+installed plugin enforces Kubernetes NetworkPolicy before enabling this
+option. The chart tests the rendered policy and the labels on each permitted
+BOMHort pod template, but the actual traffic rules must be validated in the
+target cluster, especially when using a non-default operator installation or
+multiple ClickHouse replicas.
+
 ---
 
 ## 10. Headless Mode (API-Only)
