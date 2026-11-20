@@ -277,14 +277,11 @@ jobs:
 
       - name: Install Calico CNI and wait for policy enforcement
         run: |
-          calico=https://raw.githubusercontent.com/projectcalico/calico/v3.33.1/manifests
-          kubectl create -f "$calico/v3_projectcalico_org-v1beta1.yaml"
-          kubectl create -f "$calico/tigera-operator.yaml"
-          kubectl rollout status deployment/tigera-operator -n tigera-operator --timeout=5m
-          kubectl create -f "$calico/custom-resources.yaml"
-          kubectl wait --for=condition=Available tigerastatus/calico --timeout=10m
+          calico=https://raw.githubusercontent.com/projectcalico/calico/v3.33.1/manifests/calico.yaml
+          kubectl create -f "$calico"
+          kubectl rollout status daemonset/calico-node -n kube-system --timeout=10m
+          kubectl rollout status deployment/calico-kube-controllers -n kube-system --timeout=5m
           kubectl wait --for=condition=Ready nodes --all --timeout=5m
-          kubectl rollout status daemonset/calico-node -n calico-system --timeout=5m
 
       - name: Verify the rendered policy under Calico
         run: bash hack/tests/networkpolicy-cni.sh
