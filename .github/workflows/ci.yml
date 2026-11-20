@@ -211,6 +211,92 @@ jobs:
       - name: Test license exceptions templates
         run: python3 -B -m unittest discover -s deploy/helm/tests -v
 
+  networkpolicy-changes:
+    name: Detect ClickHouse NetworkPolicy changes
+    runs-on: ubuntu-latest
+    outputs:
+      required: ${{ steps.filter.outputs.required }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - id: filter
+        name: Check changed paths
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          changed_paths="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- \
+            deploy/helm/bomhort \
+            deploy/helm/tests/test_networkpolicy_clickhouse.py \
+            hack/tests/networkpolicy-cni.sh \
+            .github/workflows/ci.yml)"
+          if [[ -n "$changed_paths" ]]; then
+            echo "required=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "required=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  networkpolicy-cni:
+    name: ClickHouse NetworkPolicy (Calico)
+    needs: networkpolicy-changes
+    if: needs.networkpolicy-changes.outputs.required == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.9'
+
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+
+      - name: Install kind
+        run: go install sigs.k8s.io/kind@v0.31.0
+
+      - name: Create kind cluster without the default CNI
+        run: |
+          cat > "$RUNNER_TEMP/kind.yaml" <<'YAML'
+          kind: Cluster
+          apiVersion: kind.x-k8s.io/v1alpha4
+          nodes:
+            - role: control-plane
+            - role: worker
+            - role: worker
+          networking:
+            disableDefaultCNI: true
+            podSubnet: 192.168.0.0/16
+          YAML
+          kind create cluster --name bomhort-netpol \
+            --image kindest/node:v1.35.0@sha256:452d707d4862f52530247495d180205e029056831160e22870e37e3f6c1ac31f \
+            --config "$RUNNER_TEMP/kind.yaml" --wait 180s
+
+      - name: Install Calico CNI and wait for policy enforcement
+        run: |
+          calico=https://raw.githubusercontent.com/projectcalico/calico/v3.33.1/manifests
+          kubectl create -f "$calico/v3_projectcalico_org-v1beta1.yaml"
+          kubectl create -f "$calico/tigera-operator.yaml"
+          kubectl rollout status deployment/tigera-operator -n tigera-operator --timeout=5m
+          kubectl create -f "$calico/custom-resources.yaml"
+          kubectl wait --for=condition=Available tigerastatus/calico --timeout=10m
+          kubectl wait --for=condition=Ready nodes --all --timeout=5m
+          kubectl rollout status daemonset/calico-node -n calico-system --timeout=5m
+
+      - name: Verify the rendered policy under Calico
+        run: bash hack/tests/networkpolicy-cni.sh
+
+      - name: Collect cluster state on failure
+        if: failure()
+        run: |
+          kubectl get nodes -o wide || true
+          kubectl get pods -A -o wide || true
+          kubectl get networkpolicies -A -o yaml || true
+          kubectl get events -A --sort-by=.lastTimestamp || true
+
   demo-sboms:
     name: Demo SBOM inventory
     runs-on: ubuntu-latest

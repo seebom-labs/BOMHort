@@ -1,7 +1,7 @@
 """Regression tests for the ClickHouse NetworkPolicy and its pod selectors.
 
-These tests render the chart (no Kubernetes cluster required). The separate
-networkpolicy-cni workflow also checks allowed and denied traffic under Calico.
+These tests render the chart (no Kubernetes cluster required). The CI Calico
+job also checks allowed and denied traffic under an enforcing CNI.
 """
 
 import re
