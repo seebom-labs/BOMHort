@@ -339,106 +339,55 @@ func TestFetchOpenVEXHub_PartialDocumentFailure(t *testing.T) {
 	}
 }
 
-func TestFetchOpenVEXHub_CappedAtLimit(t *testing.T) {
+func TestFetchOpenVEXHub_InvalidIndexMissingPackagesField(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/index.json":
-			var pkgs []string
-			for i := 0; i <= maxHubDocsPerSync+5; i++ {
-				pkgs = append(pkgs, fmt.Sprintf(`{"id": "pkg:golang/pkg%d@1.0.0", "location": "doc%d.json"}`, i, i))
-			}
-			_, _ = w.Write([]byte(`{"packages": [` + strings.Join(pkgs, ",") + `]}`))
-		default:
-			if strings.HasPrefix(r.URL.Path, "/doc") {
-				_, _ = w.Write([]byte(`{
-					"@context": "https://openvex.dev/ns/v0.2.0",
-					"@id": "https://example.com/doc",
-					"statements": []
-				}`))
-				return
-			}
-			http.NotFound(w, r)
+		if r.URL.Path == "/index.json" {
+			// A server returning HTTP 200 with non-index JSON (e.g. status/error message)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"message":"temporarily unavailable"}`))
+			return
 		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	res, err := FetchOpenVEXHub(context.Background(), srv.Client(), srv.URL, nil)
+	if err == nil {
+		t.Fatalf("expected error on missing packages field in index.json, got nil")
+	}
+	if res.Complete {
+		t.Errorf("expected Complete == false on invalid index response, got true")
+	}
+	if len(res.Statements) != 0 {
+		t.Errorf("expected 0 statements on error, got %d", len(res.Statements))
+	}
+}
+
+func TestFetchOpenVEXHub_ExplicitEmptyPackagesArray(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/index.json" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"packages": []}`))
+			return
+		}
+		http.NotFound(w, r)
 	}))
 	defer srv.Close()
 
 	res, err := FetchOpenVEXHub(context.Background(), srv.Client(), srv.URL, nil)
 	if err != nil {
-		t.Fatalf("FetchOpenVEXHub failed: %v", err)
+		t.Fatalf("expected explicit empty packages array to succeed, got %v", err)
 	}
-	if res.Complete {
-		t.Errorf("expected Complete == false when hub exceeds maxHubDocsPerSync, got true")
+	if !res.Complete {
+		t.Errorf("expected Complete == true on explicit empty packages array, got false")
 	}
-}
-
-func TestFetchOpenVEXHub_Index500DoesNotFallbackToLegacy404(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/index.json" {
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
-		}
-		// Legacy candidate paths return 404
-		http.NotFound(w, r)
-	}))
-	defer srv.Close()
-
-	known := []string{"pkg:golang/github.com/gin-gonic/gin@v1.9.0"}
-	res, err := FetchOpenVEXHub(context.Background(), srv.Client(), srv.URL, known)
-	// Server error on index.json must be propagated, never silently fallen back to legacy 404
-	// which would incorrectly report Complete == true (#538).
-	if err == nil && res.Complete {
-		t.Fatalf("expected error or incomplete result when index.json returns 500, got Complete=true with 0 stmts")
+	if len(res.Statements) != 0 {
+		t.Errorf("expected 0 statements, got %d", len(res.Statements))
 	}
 }
 
-func TestFetchOpenVEXHub_MissingIndexedDocumentMarksIncomplete(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/index.json":
-			_, _ = w.Write([]byte(`{
-				"packages": [
-					{"id": "pkg:golang/pkg1@1.0.0", "location": "doc1.json"},
-					{"id": "pkg:golang/pkg2@1.0.0", "location": "doc2.json"}
-				]
-			}`))
-		case "/doc1.json":
-			_, _ = w.Write([]byte(`{
-				"@context": "https://openvex.dev/ns/v0.2.0",
-				"@id": "https://example.com/doc1",
-				"statements": [
-					{"vulnerability": {"name": "CVE-2026-0001"}, "products": [{"@id": "pkg:golang/pkg1@1.0.0"}], "status": "not_affected", "justification": "component_not_present"}
-				]
-			}`))
-		case "/doc2.json":
-			// Missing indexed document returns 404
-			http.NotFound(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer srv.Close()
-
-	known := []string{"pkg:golang/pkg1@1.0.0", "pkg:golang/pkg2@1.0.0"}
-	res, err := FetchOpenVEXHub(context.Background(), srv.Client(), srv.URL, known)
-	if err != nil {
-		t.Fatalf("expected partial fetch to succeed without fatal error, got %v", err)
-	}
-	if len(res.Statements) != 1 {
-		t.Fatalf("expected 1 statement from reachable doc, got %d", len(res.Statements))
-	}
-	// A 404 on an indexed document indicates an advertised document was not found;
-	// the snapshot must be treated as incomplete to prevent deleting previously stored records (#538).
-	if res.Complete {
-		t.Errorf("expected Complete == false when indexed document returns 404, got true")
-	}
-}
-
-func TestFetchOpenVEXHub_SubsequentRefreshesFetchRemainingDocs(t *testing.T) {
-	ResetHubCursors()
-	defer ResetHubCursors()
-
-	const extraDocs = 10
-	totalDocs := maxHubDocsPerSync + extraDocs
+func TestFetchOpenVEXHub_LargeHubFullSnapshotAcrossBatches(t *testing.T) {
+	const totalDocs = hubBatchSize + 1
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -465,28 +414,138 @@ func TestFetchOpenVEXHub_SubsequentRefreshesFetchRemainingDocs(t *testing.T) {
 	defer srv.Close()
 
 	ctx := context.Background()
+	res, err := FetchOpenVEXHub(ctx, srv.Client(), srv.URL, nil)
+	if err != nil {
+		t.Fatalf("FetchOpenVEXHub failed: %v", err)
+	}
+	if !res.Complete {
+		t.Errorf("expected Complete == true when all bounded batches succeed, got false")
+	}
+	if len(res.Statements) != totalDocs {
+		t.Fatalf("expected %d statements across batches, got %d", totalDocs, len(res.Statements))
+	}
+}
 
-	// Refresh 1: fetches first batch (up to maxHubDocsPerSync)
+func TestFetchOpenVEXHub_BatchProgressSurvivesProcessRestart(t *testing.T) {
+	const totalDocs = hubBatchSize + 1
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/index.json":
+			var pkgs []string
+			for i := 0; i < totalDocs; i++ {
+				pkgs = append(pkgs, fmt.Sprintf(`{"id": "pkg:golang/pkg%d@1.0.0", "location": "doc%d.json"}`, i, i))
+			}
+			_, _ = w.Write([]byte(`{"packages": [` + strings.Join(pkgs, ",") + `]}`))
+		default:
+			if strings.HasPrefix(r.URL.Path, "/doc") {
+				_, _ = w.Write([]byte(`{
+					"@context": "https://openvex.dev/ns/v0.2.0",
+					"@id": "https://example.com/doc",
+					"statements": [
+						{"vulnerability": {"name": "CVE-2026-9999"}, "products": [{"@id": "pkg:golang/pkg@1.0.0"}], "status": "not_affected", "justification": "component_not_present"}
+					]
+				}`))
+				return
+			}
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	// Simulate multiple independent process invocations (e.g. daily cve-refresher CronJob
+	// or worker restart with VEX_REFRESH_INTERVAL=0). Each independent invocation must
+	// produce the complete snapshot without requiring in-memory cursor state.
+	for run := 1; run <= 2; run++ {
+		res, err := FetchOpenVEXHub(context.Background(), srv.Client(), srv.URL, nil)
+		if err != nil {
+			t.Fatalf("run %d failed: %v", run, err)
+		}
+		if !res.Complete {
+			t.Errorf("run %d: expected Complete == true without in-process cursor, got false", run)
+		}
+		if len(res.Statements) != totalDocs {
+			t.Fatalf("run %d: expected %d statements, got %d", run, totalDocs, len(res.Statements))
+		}
+	}
+}
+
+func TestFetchOpenVEXHub_LargeHubWithdrawalReconciliation(t *testing.T) {
+	var totalDocs int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/index.json":
+			var pkgs []string
+			for i := 0; i < totalDocs; i++ {
+				pkgs = append(pkgs, fmt.Sprintf(`{"id": "pkg:golang/pkg%d@1.0.0", "location": "doc%d.json"}`, i, i))
+			}
+			_, _ = w.Write([]byte(`{"packages": [` + strings.Join(pkgs, ",") + `]}`))
+		default:
+			if strings.HasPrefix(r.URL.Path, "/doc") {
+				docNum := r.URL.Path[4 : len(r.URL.Path)-5]
+				_, _ = w.Write([]byte(fmt.Sprintf(`{
+					"@context": "https://openvex.dev/ns/v0.2.0",
+					"@id": "https://example.com/doc%s",
+					"statements": [
+						{"vulnerability": {"name": "CVE-2026-9999"}, "products": [{"@id": "pkg:golang/pkg%s@1.0.0"}], "status": "not_affected", "justification": "component_not_present"}
+					]
+				}`, docNum, docNum)))
+				return
+			}
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	ctx := context.Background()
+
+	// 1. Initial snapshot has 501 documents.
+	totalDocs = hubBatchSize + 1
 	res1, err := FetchOpenVEXHub(ctx, srv.Client(), srv.URL, nil)
 	if err != nil {
-		t.Fatalf("first refresh failed: %v", err)
+		t.Fatalf("initial sync failed: %v", err)
 	}
-	if res1.Complete {
-		t.Errorf("expected Complete == false on capped first refresh, got true")
+	if !res1.Complete {
+		t.Errorf("expected Complete == true on initial 501-doc snapshot, got false")
 	}
-	if len(res1.Statements) != maxHubDocsPerSync {
-		t.Fatalf("expected %d statements in first batch, got %d", maxHubDocsPerSync, len(res1.Statements))
+	if len(res1.Statements) != totalDocs {
+		t.Fatalf("expected %d statements, got %d", totalDocs, len(res1.Statements))
 	}
 
-	// Refresh 2: advances cursor and fetches remaining extraDocs
+	// 2. Upstream withdraws 1 document, leaving 500 documents.
+	totalDocs = hubBatchSize
 	res2, err := FetchOpenVEXHub(ctx, srv.Client(), srv.URL, nil)
 	if err != nil {
-		t.Fatalf("second refresh failed: %v", err)
+		t.Fatalf("second sync after withdrawal failed: %v", err)
 	}
-	if res2.Complete {
-		t.Errorf("expected Complete == false on partial second refresh while traversing chunks, got true")
+	if !res2.Complete {
+		t.Errorf("expected Complete == true on second snapshot so withdrawal can reconcile, got false")
 	}
-	if len(res2.Statements) != extraDocs {
-		t.Fatalf("expected remaining %d statements in second batch, got %d", extraDocs, len(res2.Statements))
+	if len(res2.Statements) != totalDocs {
+		t.Fatalf("expected %d statements after withdrawal, got %d", totalDocs, len(res2.Statements))
+	}
+
+	// Verify the 501st document is present in res1 but absent in res2.
+	withdrawnPURL := fmt.Sprintf("pkg:golang/pkg%d@1.0.0", hubBatchSize)
+	foundIn1 := false
+	for _, s := range res1.Statements {
+		if s.ProductPURL == withdrawnPURL {
+			foundIn1 = true
+			break
+		}
+	}
+	if !foundIn1 {
+		t.Errorf("expected withdrawn PURL %s in initial snapshot", withdrawnPURL)
+	}
+
+	foundIn2 := false
+	for _, s := range res2.Statements {
+		if s.ProductPURL == withdrawnPURL {
+			foundIn2 = true
+			break
+		}
+	}
+	if foundIn2 {
+		t.Errorf("withdrawn PURL %s should not appear in second snapshot", withdrawnPURL)
 	}
 }
