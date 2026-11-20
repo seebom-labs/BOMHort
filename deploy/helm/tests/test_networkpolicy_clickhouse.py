@@ -1,8 +1,7 @@
 """Regression tests for the ClickHouse NetworkPolicy and its pod selectors.
 
-The tests render the chart (no Kubernetes cluster required). A live CNI test is
-still needed to verify enforcement and Altinity reconciliation in the target
-cluster.
+These tests render the chart (no Kubernetes cluster required). The separate
+networkpolicy-cni workflow also checks allowed and denied traffic under Calico.
 """
 
 import re
