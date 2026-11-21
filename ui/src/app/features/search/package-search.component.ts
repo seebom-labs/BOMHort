@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../../core/api.service';
 import { DependencySearchResponse, DependencySearchResult } from '../../core/api.models';
+import { purlEcosystem } from '../../shared/purl';
 import { EMPTY, Subject } from 'rxjs';
 import { catchError, debounceTime, distinctUntilChanged, map, switchMap } from 'rxjs/operators';
 
@@ -61,6 +62,7 @@ import { catchError, debounceTime, distinctUntilChanged, map, switchMap } from '
             </div>
             <a *ngIf="item.project_count > 5"
                [routerLink]="['/package-search', encodePackageName(item.package_name)]"
+               [queryParams]="purlEcosystem(item.purl) ? { ecosystem: purlEcosystem(item.purl) } : null"
                class="view-all-link">
               View all {{ item.project_count }} projects →
             </a>
@@ -218,6 +220,7 @@ import { catchError, debounceTime, distinctUntilChanged, map, switchMap } from '
   `]
 })
 export class PackageSearchComponent implements OnInit {
+  readonly purlEcosystem = purlEcosystem;
   searchQuery = '';
   data: DependencySearchResponse | null = null;
   loading = false;

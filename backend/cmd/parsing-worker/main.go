@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -560,7 +561,9 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 		}
 
 		if len(uncached) > 0 {
+			lookalikeWG.Add(1)
 			go func(pkgs []depsdev.PackageVersion) {
+				defer lookalikeWG.Done()
 				bgCtx := context.Background()
 				for _, pv := range pkgs {
 					ddResolver.SimilarlyNamedPackages(bgCtx, pv.System, pv.Name)
@@ -727,4 +730,12 @@ func captureOriginal(ctx context.Context, chClient *clickhouse.Client, store doc
 		}
 	}
 	return nil
+}
+
+// lookalikeWG tracks in-flight background lookalike lookups.
+var lookalikeWG sync.WaitGroup
+
+// WaitLookalikes blocks until in-flight background lookalike lookups complete.
+func WaitLookalikes() {
+	lookalikeWG.Wait()
 }
