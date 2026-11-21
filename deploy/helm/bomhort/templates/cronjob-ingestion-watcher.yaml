@@ -16,6 +16,7 @@ spec:
           labels:
             app.kubernetes.io/name: bomhort
             app.kubernetes.io/component: ingestion-watcher
+            app.kubernetes.io/instance: {{ .Release.Name }}
             {{- with include "bomhort.sbomSource.podLabel" (dict "root" . "originals" false) | trim }}{{ . | nindent 12 }}{{ end }}
         spec:
           restartPolicy: OnFailure

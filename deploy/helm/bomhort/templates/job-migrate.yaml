@@ -32,6 +32,7 @@ template:
     labels:
       app.kubernetes.io/name: bomhort
       app.kubernetes.io/component: migrate
+      app.kubernetes.io/instance: {{ .Release.Name }}
   spec:
     restartPolicy: OnFailure
     containers:

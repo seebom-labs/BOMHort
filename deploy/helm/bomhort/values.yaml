@@ -179,6 +179,18 @@ clickhouse:
     volumeClaimTemplate:
       dataStorage: 1Gi
       logStorage: 100Mi
+  # NetworkPolicy for ClickHouse ingress. Requires a CNI that enforces
+  # NetworkPolicy (for example, Calico or Cilium).
+  networkPolicy:
+    enabled: false
+    # The Altinity operator connects to ClickHouse over its HTTP port. The
+    # namespace selector defaults to the operator chart's usual namespace;
+    # override either selector when the operator is installed elsewhere or
+    # uses different pod labels.
+    operatorNamespaceSelector:
+      kubernetes.io/metadata.name: kube-system
+    operatorPodSelector:
+      app.kubernetes.io/name: clickhouse-operator
 
 # SBOM source via PVC (alternative to S3, for environments without S3 access)
 # With gitSync.enabled=false the chart creates this PVC empty; filling it

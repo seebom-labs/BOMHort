@@ -19,6 +19,7 @@ spec:
       labels:
         app.kubernetes.io/name: bomhort
         app.kubernetes.io/component: parsing-worker
+        app.kubernetes.io/instance: {{ .Release.Name }}
         {{- with include "bomhort.sbomSource.podLabel" (dict "root" . "originals" true) | trim }}{{ . | nindent 8 }}{{ end }}
     spec:
       serviceAccountName: {{ .Release.Name }}-parsing-worker

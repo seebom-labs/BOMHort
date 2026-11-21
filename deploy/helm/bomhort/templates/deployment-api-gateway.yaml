@@ -17,6 +17,7 @@ spec:
       labels:
         app.kubernetes.io/name: bomhort
         app.kubernetes.io/component: api-gateway
+        app.kubernetes.io/instance: {{ .Release.Name }}
         {{- with include "bomhort.sbomSource.podLabel" (dict "root" . "originals" true) | trim }}{{ . | nindent 8 }}{{ end }}
     spec:
       {{- if .Values.apiGateway.dedupByImageDigest }}
