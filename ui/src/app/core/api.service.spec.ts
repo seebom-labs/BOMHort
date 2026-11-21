@@ -51,6 +51,7 @@ describe('ApiService', () => {
       high_vulns: 10,
       medium_vulns: 15,
       low_vulns: 12,
+      compromised_packages: 0,
       license_breakdown: { permissive: 80, copyleft: 15, unknown: 5 },
       exempted_packages: 3,
       total_vex_statements: 10,

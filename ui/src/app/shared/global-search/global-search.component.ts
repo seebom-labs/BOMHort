@@ -8,6 +8,7 @@ import { ApiService } from '../../core/api.service';
 import { GlobalSearchResponse } from '../../core/api.models';
 import { VulnAliasesComponent } from '../vuln-aliases/vuln-aliases.component';
 import { primaryVulnId } from '../vuln-identity';
+import { purlEcosystem } from '../purl';
 
 interface SearchResultItem {
   type: 'package' | 'project' | 'vulnerability' | 'license';
@@ -58,6 +59,7 @@ interface SearchResultItem {
               <a class="result-item"
                  *ngFor="let pkg of data.packages"
                  [routerLink]="['/package-search', pkg.package_name]"
+                 [queryParams]="purlEcosystem(pkg.purl) ? { ecosystem: purlEcosystem(pkg.purl) } : null"
                  [class.active]="activeItem === pkg.package_name"
                  (click)="closeDropdown()">
                 <span class="item-label">{{ pkg.package_name }}</span>
@@ -281,6 +283,7 @@ interface SearchResultItem {
 })
 export class GlobalSearchComponent implements OnInit {
   readonly vulnLabel = primaryVulnId;
+  readonly purlEcosystem = purlEcosystem;
   searchQuery = '';
   data: GlobalSearchResponse | null = null;
   loading = false;
@@ -381,7 +384,13 @@ export class GlobalSearchComponent implements OnInit {
     if (!this.data) return;
     
     for (const pkg of this.data.packages) {
-      this.flatItems.push({ type: 'package', label: pkg.package_name, sublabel: '', link: ['/package-search', pkg.package_name] });
+      this.flatItems.push({
+        type: 'package',
+        label: pkg.package_name,
+        sublabel: '',
+        link: ['/package-search', pkg.package_name],
+        queryParams: purlEcosystem(pkg.purl) ? { ecosystem: purlEcosystem(pkg.purl) } : undefined,
+      });
     }
     for (const proj of this.data.projects) {
       this.flatItems.push({ type: 'project', label: proj.project_name, sublabel: '', link: ['/sboms', proj.latest_sbom_id] });

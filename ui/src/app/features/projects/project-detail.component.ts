@@ -24,6 +24,7 @@ import { ExploitBadgeComponent } from '../../shared/exploit-badge/exploit-badge.
 import { CweChipsComponent } from '../../shared/cwe-chips/cwe-chips.component';
 import { topCwes } from '../../shared/cwe-ids';
 import { primaryVulnId } from '../../shared/vuln-identity';
+import { purlEcosystem } from '../../shared/purl';
 
 type Tab = 'overview' | 'versions' | 'vulns' | 'packages' | 'subprojects';
 
@@ -352,8 +353,9 @@ export function splitPurl(purl: string): { pkg_name: string; pkg_version: string
         <cdk-virtual-scroll-viewport *ngIf="packages.length > 0" itemSize="48" class="viewport">
           <div *cdkVirtualFor="let pkg of packages; trackBy: trackByPackage" class="pkg-row">
             <div class="pkg-info">
-              <a [routerLink]="['/package-search', pkg.name]" class="pkg-name">{{ pkg.name }}</a>
+              <a [routerLink]="['/package-search', pkg.name]" [queryParams]="purlEcosystem(pkg.purl) ? { ecosystem: purlEcosystem(pkg.purl) } : null" class="pkg-name">{{ pkg.name }}</a>
               <span class="pkg-version">{{ pkg.version }}</span>
+              <span class="lookalike-tag" *ngIf="pkg.lookalike_of?.length" [title]="'Look-alike of popular package(s): ' + pkg.lookalike_of.join(', ')">look-alike: {{ pkg.lookalike_of.join(', ') }}</span>
             </div>
             <span class="reach" [class.all]="pkg.sbom_count === detail.sbom_count"
                   [title]="'Shipped in ' + pkg.sbom_count + ' of ' + detail.sbom_count + ' versions'">
@@ -542,6 +544,12 @@ export function splitPurl(purl: string): { pkg_name: string; pkg_version: string
     .pkg-name { font-weight: 600; font-size: 0.8rem; color: var(--accent); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .pkg-name:hover { text-decoration: underline; }
     .pkg-version { font-family: monospace; font-size: 0.72rem; color: var(--text-secondary); }
+    .lookalike-tag {
+      background: var(--severity-high-bg); color: var(--status-warning);
+      border: 1px solid var(--status-warning);
+      padding: 1px 6px; border-radius: 2px; font-size: 0.6rem; font-weight: 600;
+      flex-shrink: 0;
+    }
 
     .search-bar { position: relative; margin-bottom: 8px; }
     .search-input {
@@ -588,6 +596,7 @@ export function splitPurl(purl: string): { pkg_name: string; pkg_version: string
 })
 export class ProjectDetailComponent implements OnInit, OnDestroy {
   readonly vulnLabel = primaryVulnId;
+  readonly purlEcosystem = purlEcosystem;
   detail: ProjectDetail | null = null;
   notFound = false;
   requestedName = '';

@@ -68,6 +68,10 @@ import { ScopeMatrixComponent } from '../../shared/scope-matrix/scope-matrix.com
             <span class="kpi-value">{{ stats.total_vex_statements | number }}</span>
             <span class="kpi-label">VEX Statements</span>
           </div>
+          <div class="kpi-card" [class.warn]="(stats.compromised_packages ?? 0) > 0">
+            <span class="kpi-value">{{ (stats.compromised_packages ?? 0) | number }}</span>
+            <span class="kpi-label">Compromised Packages</span>
+          </div>
           <div class="kpi-card">
             <span class="kpi-value">{{ (stats.average_quality_score ?? 0) | number:'1.0-0' }}%</span>
             <span class="kpi-label">Avg Quality</span>
