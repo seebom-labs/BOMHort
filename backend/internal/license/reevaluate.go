@@ -19,18 +19,23 @@ import "sort"
 // exempted count, never a violation: a permissive license is compliant either
 // way.
 //
-// The category is kept as stored. Reclassifying a license is a policy change,
-// and the package lists of a formerly permissive license were never recorded,
-// so policy changes still need a re-scan.
+// PackageNames is populated from sbom_packages by the recheck query. It keeps
+// permissive results reversible: those rows intentionally store no violation
+// list, but a later policy may classify the same license as non-permissive.
 func Reevaluate(r Result, exceptions *ExceptionIndex, project string) Result {
-	names := make([]string, 0, len(r.NonCompliantPackages)+len(r.ExemptedPackages))
-	names = append(names, r.NonCompliantPackages...)
-	names = append(names, r.ExemptedPackages...)
+	names := r.PackageNames
+	if names == nil {
+		names = make([]string, 0, len(r.NonCompliantPackages)+len(r.ExemptedPackages))
+		names = append(names, r.NonCompliantPackages...)
+		names = append(names, r.ExemptedPackages...)
+	}
 
+	cat := Categorize(r.LicenseID)
 	out := Result{
 		LicenseID:    r.LicenseID,
-		Category:     r.Category,
+		Category:     cat,
 		PackageCount: r.PackageCount,
+		PackageNames: names,
 	}
 
 	if exceptions != nil {
@@ -40,7 +45,7 @@ func Reevaluate(r Result, exceptions *ExceptionIndex, project string) Result {
 			return out
 		}
 	}
-	if r.Category == CategoryPermissive {
+	if cat == CategoryPermissive {
 		return out
 	}
 	for _, name := range names {
@@ -53,11 +58,12 @@ func Reevaluate(r Result, exceptions *ExceptionIndex, project string) Result {
 	return out
 }
 
-// SameOutcome reports whether two results split their packages identically.
+// SameOutcome reports whether two results have identical category and package split.
 // Package order is not significant: Reevaluate regroups the stored lists, so
 // an unchanged outcome usually comes back in a different order.
 func SameOutcome(a, b Result) bool {
-	return a.ExemptionReason == b.ExemptionReason &&
+	return a.Category == b.Category &&
+		a.ExemptionReason == b.ExemptionReason &&
 		sameMultiset(a.NonCompliantPackages, b.NonCompliantPackages) &&
 		sameMultiset(a.ExemptedPackages, b.ExemptedPackages)
 }

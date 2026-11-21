@@ -52,7 +52,11 @@ func (c *Client) LatestLicenseRecheck(ctx context.Context) (*LicenseRecheckState
 // document name of its SBOM, which project-scoped exceptions match against.
 type StoredLicenseCompliance struct {
 	models.LicenseCompliance
-	DocumentName string
+	DocumentName          string
+	RootPURL              string
+	PackageNames          []string
+	PackagePURLs          []string
+	PackageLicenseSources []string
 }
 
 // EachLicenseCompliance streams the current license_compliance rows.
@@ -60,10 +64,34 @@ func (c *Client) EachLicenseCompliance(ctx context.Context, fn func(StoredLicens
 	rows, err := c.Conn.Query(ctx, `
 		SELECT lc.sbom_id, lc.source_file, lc.license_id, lc.category, lc.package_count,
 		       lc.non_compliant_packages, lc.exempted_packages, lc.exemption_reason,
-		       lc.cluster, lc.namespace, lc.project, s.document_name
+		       lc.cluster, lc.namespace, lc.project,
+		       if(lc.category = 'permissive',
+		           arrayMap(pair -> pair.1,
+		               arrayFilter(pair -> pair.2 = lc.license_id,
+		                   arrayZip(p.package_names, p.package_licenses, p.package_purls, p.package_license_sources))),
+		           CAST([], 'Array(String)')) AS package_names,
+		       if(lc.category = 'permissive',
+		           arrayMap(pair -> pair.3,
+		               arrayFilter(pair -> pair.2 = lc.license_id,
+		                   arrayZip(p.package_names, p.package_licenses, p.package_purls, p.package_license_sources))),
+		           CAST([], 'Array(String)')) AS package_purls,
+		       if(lc.category = 'permissive',
+		           arrayMap(pair -> pair.4,
+		               arrayFilter(pair -> pair.2 = lc.license_id,
+		                   arrayZip(p.package_names, p.package_licenses, p.package_purls, p.package_license_sources))),
+		           CAST([], 'Array(String)')) AS package_license_sources,
+		       s.root_purl, s.document_name
 		FROM license_compliance AS lc FINAL
 		LEFT JOIN (
-		    SELECT sbom_id, any(document_name) AS document_name
+		    SELECT sbom_id,
+		           package_names,
+		           arrayResize(package_licenses, length(package_names)) AS package_licenses,
+		           arrayResize(package_purls, length(package_names)) AS package_purls,
+		           arrayResize(package_license_sources, length(package_names)) AS package_license_sources
+		    FROM sbom_packages FINAL
+		) AS p ON p.sbom_id = lc.sbom_id
+		LEFT JOIN (
+		    SELECT sbom_id, any(document_name) AS document_name, any(root_purl) AS root_purl
 		    FROM sboms
 		    GROUP BY sbom_id
 		) AS s ON s.sbom_id = lc.sbom_id`)
@@ -75,7 +103,8 @@ func (c *Client) EachLicenseCompliance(ctx context.Context, fn func(StoredLicens
 		var r StoredLicenseCompliance
 		if err := rows.Scan(&r.SBOMID, &r.SourceFile, &r.LicenseID, &r.Category, &r.PackageCount,
 			&r.NonCompliantPackages, &r.ExemptedPackages, &r.ExemptionReason,
-			&r.Cluster, &r.Namespace, &r.Project, &r.DocumentName); err != nil {
+			&r.Cluster, &r.Namespace, &r.Project, &r.PackageNames, &r.PackagePURLs,
+			&r.PackageLicenseSources, &r.RootPURL, &r.DocumentName); err != nil {
 			return fmt.Errorf("scan license compliance: %w", err)
 		}
 		if err := fn(r); err != nil {

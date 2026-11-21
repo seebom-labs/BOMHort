@@ -363,16 +363,18 @@ licensePolicy:
   #   off              – no expression evaluation; compound strings that are
   #                      not listed verbatim in the policy stay "unknown".
   # Leave empty to defer to the policy file / built-in default (strict).
-  # Changing this only affects newly processed SBOMs; re-process to update
-  # stored compliance results.
+  # A change rolls the API and worker; the worker re-evaluates stored rows.
   expressionMode: ""
   # Name of a ConfigMap you manage yourself holding the policy JSON. When
   # set, the chart renders no policy ConfigMap and mounts this one instead.
-  # Mutually exclusive with custom. Same rollout caveat as
-  # licenseExceptions.existingConfigMap: content changes need a restart.
+  # Mutually exclusive with custom. Helm cannot hash its data; update
+  # rolloutChecksum when the external ConfigMap changes.
   existingConfigMap: ""
   # Key inside existingConfigMap that holds the policy JSON.
   existingConfigMapKey: license-policy.json
+  # Change this value when the externally managed policy ConfigMap changes to
+  # trigger a rollout and re-evaluate stored license compliance results.
+  rolloutChecksum: ""
 
 # Project groups – which parent (product) a project belongs to.
 #

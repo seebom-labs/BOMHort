@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"time"
@@ -68,12 +70,21 @@ const recheckStaleAfter = time.Hour
 // SBOMs with full OSV hydration finish in minutes; an hour is a dead worker.
 const staleClaimAfter = time.Hour
 
+// licenseRecheckDigest binds the exception rules to the active classifier.
+// Policy lists and expression mode can change independently of exceptions.
+func licenseRecheckDigest(exceptionDigest string) string {
+	combined := license.PolicyFingerprint() + ":" + exceptionDigest
+	digest := sha256.Sum256([]byte(combined))
+	return hex.EncodeToString(digest[:])
+}
+
 // ensureLicenseRecheck enqueues a recheck unless the latest one already
-// covers digest. A recheck for the same digest that failed, or whose worker
-// died while processing it, is queued again. Workers call it on every poll,
-// not only when they see a change, so neither a failed enqueue nor a failed
-// recheck is lost while the pods keep running.
-func ensureLicenseRecheck(ctx context.Context, store recheckStore, digest string, delay time.Duration, now time.Time) error {
+// covers the current exception and classification policy. A recheck for the
+// same digest that failed, or whose worker died while processing it, is
+// queued again. Workers call it on every poll, not only when they see a
+// change, so neither a failed enqueue nor a failed recheck is lost.
+func ensureLicenseRecheck(ctx context.Context, store recheckStore, exceptionDigest string, delay time.Duration, now time.Time) error {
+	digest := licenseRecheckDigest(exceptionDigest)
 	latest, err := store.LatestLicenseRecheck(ctx)
 	if err != nil {
 		return err
@@ -88,7 +99,7 @@ func ensureLicenseRecheck(ctx context.Context, store recheckStore, digest string
 	job := models.IngestionJob{
 		CreatedAt:  now,
 		JobID:      uuid.NewSHA1(recheckNamespace, []byte(prev+"|"+digest)),
-		SourceFile: "license-exceptions@" + shortDigest(digest),
+		SourceFile: "license-rules@" + shortDigest(digest),
 		SHA256Hash: digest,
 		JobType:    models.JobTypeLicenseRecheck,
 		RetryAfter: now.Add(delay),
@@ -96,7 +107,7 @@ func ensureLicenseRecheck(ctx context.Context, store recheckStore, digest string
 	if err := store.EnqueueJobs(ctx, []models.IngestionJob{job}); err != nil {
 		return fmt.Errorf("enqueue license recheck: %w", err)
 	}
-	log.Printf("License exceptions changed (%s): recheck of stored results queued, runs after %s",
+	log.Printf("License rules changed (%s): recheck of stored results queued, runs after %s",
 		shortDigest(digest), job.RetryAfter.Format(time.RFC3339))
 	return nil
 }
@@ -119,7 +130,8 @@ func recheckNeedsRetry(st *clickhouse.LicenseRecheckState, now time.Time) bool {
 // that a newer one has superseded completes without work, the newer one
 // covers it.
 func runLicenseRecheckJob(ctx context.Context, store recheckStore, job models.IngestionJob, rules rulesource.Snapshot[*license.ExceptionIndex], retry time.Duration) error {
-	if rules.Digest != job.SHA256Hash {
+	currentDigest := licenseRecheckDigest(rules.Digest)
+	if currentDigest != job.SHA256Hash {
 		latest, err := store.LatestLicenseRecheck(ctx)
 		if err != nil {
 			return err
@@ -130,7 +142,7 @@ func runLicenseRecheckJob(ctx context.Context, store recheckStore, job models.In
 		}
 		return &deferError{
 			until: time.Now().Add(retry),
-			cause: fmt.Errorf("license recheck for %s, but this worker has %s loaded", shortDigest(job.SHA256Hash), shortDigest(rules.Digest)),
+			cause: fmt.Errorf("license recheck for %s, but this worker has %s loaded", shortDigest(job.SHA256Hash), shortDigest(currentDigest)),
 		}
 	}
 	if err := processLicenseRecheckJob(ctx, store, rules.Value); err != nil {
@@ -170,20 +182,31 @@ func processLicenseRecheckJob(ctx context.Context, store recheckStore, exception
 	var changed []models.LicenseCompliance
 	err := store.EachLicenseCompliance(ctx, func(row clickhouse.StoredLicenseCompliance) error {
 		checked++
+		// Non-permissive rows already retain every checked package in their
+		// violation and exemption lists. Permissive rows recover them from
+		// sbom_packages while preserving the original root/first-party skips.
+		packageNames := permissivePackageNames(row)
 		stored := license.Result{
 			LicenseID:            row.LicenseID,
 			Category:             license.Category(row.Category),
 			PackageCount:         row.PackageCount,
+			PackageNames:         packageNames,
 			NonCompliantPackages: row.NonCompliantPackages,
 			ExemptedPackages:     row.ExemptedPackages,
 			ExemptionReason:      row.ExemptionReason,
 		}
 		next := license.Reevaluate(stored, exceptions, row.DocumentName)
+		if stored.Category == license.CategoryPermissive && next.Category != license.CategoryPermissive &&
+			row.PackageCount > 0 && len(packageNames) == 0 &&
+			len(row.NonCompliantPackages)+len(row.ExemptedPackages) == 0 {
+			return fmt.Errorf("cannot re-evaluate %s in SBOM %s: stored permissive result has no package identities in sbom_packages", row.LicenseID, row.SBOMID)
+		}
 		if license.SameOutcome(stored, next) {
 			return nil
 		}
 		m := row.LicenseCompliance
 		m.CheckedAt = now
+		m.Category = string(next.Category)
 		m.NonCompliantPackages = nonNil(next.NonCompliantPackages)
 		m.ExemptedPackages = nonNil(next.ExemptedPackages)
 		m.ExemptionReason = next.ExemptionReason
@@ -208,6 +231,31 @@ func nonNil(s []string) []string {
 		return []string{}
 	}
 	return s
+}
+
+// permissivePackageNames recovers identities from sbom_packages for a
+// permissive row, whose compliance result intentionally stored no package
+// names. Keep the same root and first-party exclusions as the ingest check.
+func permissivePackageNames(row clickhouse.StoredLicenseCompliance) []string {
+	if row.Category != string(license.CategoryPermissive) {
+		return nil
+	}
+	names := make([]string, 0, len(row.PackageNames))
+	for i, name := range row.PackageNames {
+		purl, source := "", ""
+		if i < len(row.PackagePURLs) {
+			purl = row.PackagePURLs[i]
+		}
+		if i < len(row.PackageLicenseSources) {
+			source = row.PackageLicenseSources[i]
+		}
+		if (row.RootPURL != "" && purl == row.RootPURL) ||
+			isFirstPartyPURL(purl) || source == license.ReasonFirstParty {
+			continue
+		}
+		names = append(names, name)
+	}
+	return names
 }
 
 // objectGetter avoids handing rulesource a typed nil: a nil *s3client.Client
