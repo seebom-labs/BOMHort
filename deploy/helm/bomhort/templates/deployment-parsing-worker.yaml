@@ -9,7 +9,7 @@ metadata:
 spec:
   strategy:
     type: Recreate
-  replicas: {{ .Values.parsingWorker.replicas }}
+  replicas: {{ ternary 0 .Values.parsingWorker.replicas .Values.maintenance.writersSuspended }}
   selector:
     matchLabels:
       app.kubernetes.io/name: bomhort
