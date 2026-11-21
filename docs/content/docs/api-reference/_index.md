@@ -790,6 +790,18 @@ License breakdown for a specific SBOM, grouped by license ID with package lists.
 
 `package_scopes` maps each listed package (from `packages` and `exempted_packages`) to its [dependency scope](#dependency-scope). Packages whose scope is `unknown` are left out of the map, and the map itself is omitted when no package has a recorded depth — a client reads a missing key as `unknown`.
 
+### `GET /api/v1/sboms/{id}/notices`
+
+Generates an attribution and copyright NOTICE text document for an SBOM (#530). Aggregates package licenses, discovered copyright attributions from ClearlyDefined, and canonical full SPDX license texts. All packages in the SBOM are retained in the document; packages without upstream copyright statements are explicitly noted for manual review.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `id` | UUID | SBOM identifier |
+
+**Response:** `200 OK` with `Content-Type: text/plain; charset=utf-8` and `Content-Disposition: attachment; filename="<document_name>-NOTICE.txt"`
+
 ### `GET /api/v1/sboms/{id}/dependencies`
 
 Dependency tree reconstructed as a flat array with parent→child index references.
@@ -1070,6 +1082,40 @@ How every package across all SBOMs got its license — or why it has none. One r
 ]
 ```
 
+### `GET /api/v1/licenses/discrepancies`
+
+List components where automated license scans (such as ClearlyDefined) discovered licenses differing from the component's declared license (#530). Declared licenses remain authoritative for compliance evaluation.
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `sbom_id` | UUID | - | Filter discrepancies to a specific SBOM |
+| `project` | string | - | Filter discrepancies by project name |
+| `cluster` | string | - | Filter discrepancies by cluster |
+| `namespace` | string | - | Filter discrepancies by namespace |
+| `page` | uint64 | 1 | Page number (1-based) |
+| `page_size` | uint64 | 100 | Items per page (max 500) |
+
+**Response:** `200 OK`
+```json
+[
+  {
+    "sbom_id": "a1b2c3d4-0000-0000-0000-000000000001",
+    "document_name": "payment-service",
+    "project": "payment-service",
+    "cluster": "prod-eu",
+    "namespace": "payments",
+    "package_name": "example-lib",
+    "package_version": "1.0.0",
+    "purl": "pkg:npm/example-lib@1.0.0",
+    "declared_license": "MIT",
+    "discovered_license": "GPL-2.0-only",
+    "source": "clearlydefined"
+  }
+]
+```
+
 ### `GET /api/v1/projects`
 
 Paginated list of projects. A project is its configured `project` label when set, otherwise derived from the source path or document name. Each project aggregates its SBOMs (versions), total packages, and vulnerability counts.
@@ -1275,6 +1321,24 @@ or PURL.
   "total": 12, "page": 1, "page_size": 50
 }
 ```
+
+### `GET /api/v1/projects/{name}/notices`
+
+Generates an attribution and copyright NOTICE text document across the latest version of a project (or a specific version requested via `?version=`) (#530).
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | Project name |
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `version` | string | latest | Project version (release / document version) |
+
+**Response:** `200 OK` with `Content-Type: text/plain; charset=utf-8` and `Content-Disposition: attachment; filename="<project>-<version>-NOTICE.txt"`
 
 ---
 

@@ -15,6 +15,7 @@ import type {
   ImageDetail,
   ImageListItem,
   LicenseComplianceItem,
+  LicenseDiscrepancyItem,
   LicenseExceptionsFile,
   LicenseSourceItem,
   NamespaceListItem,
@@ -276,6 +277,18 @@ export class BomhortApiClient {
 
   getLicenseSources(signal?: AbortSignal): Promise<LicenseSourceItem[]> {
     return this.get('/licenses/sources', signal);
+  }
+
+  getLicenseDiscrepancies(filter?: { sbom_id?: string; project?: string; cluster?: string; namespace?: string; search?: string; page?: number; page_size?: number }, signal?: AbortSignal): Promise<PaginatedResponse<LicenseDiscrepancyItem>> {
+    return this.get(`/licenses/discrepancies${query(filter || {})}`, signal);
+  }
+
+  getSbomNoticesUrl(id: string): string {
+    return `${this.baseUrl}/sboms/${encodeURIComponent(id)}/notices`;
+  }
+
+  getProjectNoticesUrl(name: string, version?: string): string {
+    return `${this.baseUrl}/projects/${encodeURIComponent(name)}/notices${query({ version })}`;
   }
 
   getProjectsWithLicenseViolations(signal?: AbortSignal): Promise<ProjectLicenseViolation[]> {

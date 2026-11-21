@@ -336,6 +336,21 @@
           "referenceLocator": "pkg:cargo/flaky-crate@1.0.0"
         }
       ]
+    },
+    {
+      "SPDXID": "SPDXRef-via-clearlydefined",
+      "name": "clearlydefined-pkg",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:npm/clearlydefined-pkg@1.0.0"
+        }
+      ]
     }
   ],
   "relationships": [
@@ -448,6 +463,11 @@
       "spdxElementId": "SPDXRef-root",
       "relationshipType": "DEPENDS_ON",
       "relatedSpdxElement": "SPDXRef-resolver-error"
+    },
+    {
+      "spdxElementId": "SPDXRef-root",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-via-clearlydefined"
     }
   ]
 }

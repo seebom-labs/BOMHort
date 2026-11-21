@@ -78,6 +78,7 @@ export function splitPurl(purl: string): { pkg_name: string; pkg_version: string
         <h1>{{ detail.project_name }}</h1>
         <span class="product-version" *ngIf="detail.latest_version" [title]="'Latest version: ' + detail.latest_version">{{ detail.latest_version }}</span>
         <span class="badge">{{ detail.sbom_count }} {{ detail.sbom_count === 1 ? 'version' : 'versions' }}</span>
+        <a class="download-btn" title="Download project attribution NOTICE file" [href]="getProjectNoticeUrl()" download>📄 NOTICE</a>
       </div>
 
       <!--
@@ -576,6 +577,11 @@ export function splitPurl(purl: string): { pkg_name: string; pkg_version: string
       font-family: inherit; transition: all 0.15s;
     }
     .btn-copy-badges:hover { border-color: var(--accent); color: var(--accent); }
+    .download-btn {
+      margin-left: auto; padding: 4px 10px; border: 1px solid var(--border); border-radius: 4px;
+      background: var(--surface); color: var(--text); font-size: 0.75rem; text-decoration: none; cursor: pointer;
+    }
+    .download-btn:hover { border-color: var(--accent); color: var(--accent); }
     .badges-code {
       margin: 0; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border);
       border-radius: 4px; font-size: 0.72rem; font-family: monospace; color: var(--text-secondary);
@@ -605,6 +611,11 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
   get licenseBadgeUrl(): string {
     if (!this.detail) return '';
     return `/api/v1/badges/projects/${encodeURIComponent(this.detail.project_name)}/licenses.svg`;
+  }
+
+  getProjectNoticeUrl(): string {
+    if (!this.detail) return '';
+    return this.api.getProjectNoticesUrl(this.detail.project_name);
   }
 
   get badgesMarkdown(): string {

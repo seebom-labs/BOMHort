@@ -166,3 +166,77 @@ func TestPersistRegistryCaches(t *testing.T) {
 	// Must not panic without a persistence backend.
 	persistRegistryCaches(context.Background(), nil, []registryResolver{{"npm", r}})
 }
+
+func TestApplyRegistryResolvers_NegativeCacheNotTreatedAsLicense(t *testing.T) {
+	// A batch resolver returning no definition (empty string in result map,
+	// retaining '!not-harvested' in its cache for Explain).
+	cd := &fakeBatchResolver{
+		known: map[string]string{
+			"pkg:npm/unharvested@1.0.0": "", // Not resolved
+		},
+		cache: map[string]string{
+			"npm/npmjs/-/unharvested/1.0.0": "!not-harvested",
+		},
+	}
+	resolvers := []registryResolver{{"clearlydefined", cd}}
+
+	purls := []string{"pkg:npm/unharvested@1.0.0"}
+	licenses := []string{"NOASSERTION"}
+	sources := []string{""}
+
+	counts := applyRegistryResolvers(context.Background(), resolvers, purls, licenses, sources)
+
+	// License must remain NOASSERTION, never rewritten to '!not-harvested' (#530).
+	if licenses[0] != "NOASSERTION" {
+		t.Errorf("licenses[0] = %q, want NOASSERTION", licenses[0])
+	}
+	if sources[0] != "" {
+		t.Errorf("sources[0] = %q, want empty (not clearlydefined)", sources[0])
+	}
+	if counts["clearlydefined"] != 0 {
+		t.Errorf("counts[clearlydefined] = %d, want 0", counts["clearlydefined"])
+	}
+}
+
+type fakePrivateFilterResolver struct {
+	fakeBatchResolver
+	privatePrefixes []string
+	checkedDiscs    []string
+}
+
+func (f *fakePrivateFilterResolver) IsPrivate(purl string) bool {
+	for _, p := range f.privatePrefixes {
+		if strings.HasPrefix(purl, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func (f *fakePrivateFilterResolver) CheckDiscrepanciesBatch(_ context.Context, purls, _ []string) []string {
+	f.checkedDiscs = append(f.checkedDiscs, purls...)
+	return make([]string, len(purls))
+}
+
+func TestDetectLicenseDiscrepancies_ExcludesPrivatePackages(t *testing.T) {
+	cd := &fakePrivateFilterResolver{
+		privatePrefixes: []string{"pkg:npm/%40acme-private/", "pkg:maven/com.acme.private/"},
+	}
+	resolvers := []registryResolver{{"clearlydefined", cd}}
+
+	purls := []string{
+		"pkg:npm/%40acme-private/billing@1.0.0",
+		"pkg:maven/com.acme.private/billing@1.0.0",
+		"pkg:npm/public-lib@2.0.0",
+	}
+	licenses := []string{"MIT", "Apache-2.0", "MIT"}
+
+	_ = detectLicenseDiscrepancies(context.Background(), resolvers, purls, licenses)
+
+	// Only public-lib should have been passed to CheckDiscrepanciesBatch;
+	// private packages must be blanked out to prevent leaking (#530).
+	wantPURLs := []string{"", "", "pkg:npm/public-lib@2.0.0"}
+	if !reflect.DeepEqual(cd.checkedDiscs, wantPURLs) {
+		t.Errorf("CheckDiscrepanciesBatch received %v, want %v", cd.checkedDiscs, wantPURLs)
+	}
+}

@@ -21,6 +21,7 @@ const calls: Record<string, unknown[]> = {
   getAffectedProjectsByCVE: ['CVE-2024-1', { namespace: 'payments' }],
   getLicenseCompliance: ['GPL-3.0-only'],
   getLicenseSources: [],
+  getLicenseDiscrepancies: [{ sbom_id: 'id-1' }],
   getProjectsWithLicenseViolations: [],
   getProjectLicenseViolationSummaries: ['pay'],
   getDependencyStats: [0], // 0 is a real value and must not be dropped like '' / undefined
@@ -93,11 +94,14 @@ describe('ApiService ↔ @bomhort/api-client parity', () => {
     expect(client.getSbomDownloadUrl('abc')).toBe(service.getSbomDownloadUrl('abc'));
     expect(client.vulnerabilityReportUrl('direct')).toBe(service.vulnerabilityReportUrl('direct'));
     expect(client.vulnerabilityReportUrl()).toBe(service.vulnerabilityReportUrl());
+    expect(client.getSbomNoticesUrl('abc')).toBe(service.getSbomNoticesUrl('abc'));
+    expect(client.getProjectNoticesUrl('prj', 'v1')).toBe(service.getProjectNoticesUrl('prj', 'v1'));
+    expect(client.getProjectNoticesUrl('prj')).toBe(service.getProjectNoticesUrl('prj'));
   });
 
   it('every ApiService method has a counterpart', () => {
     const own = Object.getOwnPropertyNames(ApiService.prototype).filter((n) => n !== 'constructor');
-    const covered = new Set([...Object.keys(calls), 'getSbomDownloadUrl', 'vulnerabilityReportUrl']);
+    const covered = new Set([...Object.keys(calls), 'getSbomDownloadUrl', 'vulnerabilityReportUrl', 'getSbomNoticesUrl', 'getProjectNoticesUrl']);
     expect(own.filter((n) => !covered.has(n))).toEqual([]);
     for (const n of own) expect(typeof (BomhortApiClient.prototype as never)[n]).toBe('function');
   });
