@@ -57,6 +57,23 @@ func TestGenerateNotice(t *testing.T) {
 	}
 }
 
+func TestGenerateNotice_IncludesTextsForCompoundLicenses(t *testing.T) {
+	notice := GenerateNotice("dual-licensed", []NoticePackage{{
+		Name: "dual-licensed-package", Version: "1.0.0", License: "MIT OR Apache-2.0",
+	}})
+	for _, id := range []string{"MIT", "Apache-2.0"} {
+		if !strings.Contains(notice, "License Terms: "+id) {
+			t.Errorf("notice missing appendix section for %s", id)
+		}
+		if !strings.Contains(notice, GetLicenseText(id)) {
+			t.Errorf("notice missing full text for %s", id)
+		}
+	}
+	if strings.Contains(notice, "License Terms: MIT OR Apache-2.0") {
+		t.Error("notice should append texts for the expression's identifiers, not the whole expression")
+	}
+}
+
 func TestGenerateNotice_DeduplicatesByPURL(t *testing.T) {
 	pkgs := []NoticePackage{
 		{

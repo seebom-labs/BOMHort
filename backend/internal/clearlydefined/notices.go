@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/seebom-labs/bomhort/backend/internal/license"
 )
 
 // NoticePackage represents a component with its resolved license and optional
@@ -80,7 +82,13 @@ func GenerateNotice(targetName string, pkgs []NoticePackage) string {
 		if p.License == "NOASSERTION" {
 			unresolvedLicenses++
 		} else if p.License != "" {
-			referencedLicenses[p.License] = true
+			ids := license.ExpressionIDs(p.License)
+			if len(ids) == 0 {
+				ids = []string{p.License}
+			}
+			for _, id := range ids {
+				referencedLicenses[id] = true
+			}
 		}
 	}
 

@@ -50,6 +50,7 @@ data:
   SKIP_PACKAGIST_RESOLVE: {{ .Values.parsingWorker.skipPackagistResolve | default false | quote }}
   SKIP_PYPI_RESOLVE: {{ .Values.parsingWorker.skipPyPIResolve | default false | quote }}
   SKIP_CLEARLYDEFINED_RESOLVE: {{ .Values.parsingWorker.skipClearlyDefinedResolve | default false | quote }}
+  PRIVATE_PACKAGE_PREFIXES: {{ .Values.parsingWorker.privatePackagePrefixes | default "" | quote }}
   SBOM_LIMIT: {{ .Values.ingestionWatcher.sbomLimit | quote }}
   {{- /* advisorySources may be absent on `helm upgrade --reuse-values` from
        a chart that predates it; that is "no feeds". Rendered as the

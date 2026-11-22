@@ -451,6 +451,7 @@ func TestResolveBatch_OversizedResponse_SplitsGracefully(t *testing.T) {
 				},
 			}
 		}
+
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(respMap)
 	})
@@ -477,5 +478,75 @@ func TestResolveBatch_OversizedResponse_SplitsGracefully(t *testing.T) {
 		if got[p] != "Apache-2.0" {
 			t.Errorf("ResolveBatch[%s] = %q, want Apache-2.0", p, got[p])
 		}
+	}
+}
+
+func TestFetchDefinitionsChunk_DoesNotSplitTransientFailures(t *testing.T) {
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	r := NewResolverWithRegistry(srv.URL)
+	coords := make([]Coordinate, maxBatchSize)
+	for i := range coords {
+		coord, ok := CoordinateFromPURL(fmt.Sprintf("pkg:npm/pkg-%d@1.0.0", i))
+		if !ok {
+			t.Fatalf("failed to parse test PURL at index %d", i)
+		}
+		coords[i] = coord
+	}
+
+	err := r.fetchDefinitionsBatch(context.Background(), coords)
+	if err == nil || !strings.Contains(err.Error(), "503") {
+		t.Fatalf("fetchDefinitionsBatch error = %v, want HTTP 503", err)
+	}
+	if requests != 1 {
+		t.Errorf("transient failure caused %d requests, want one", requests)
+	}
+}
+
+func TestFetchDefinitionsChunk_SplitsPayloadTooLarge(t *testing.T) {
+	requests := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /definitions", func(w http.ResponseWriter, req *http.Request) {
+		requests++
+		var coordStrings []string
+		if err := json.NewDecoder(req.Body).Decode(&coordStrings); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if len(coordStrings) > 25 {
+			http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		definitions := make(map[string]any, len(coordStrings))
+		for _, coord := range coordStrings {
+			definitions[coord] = map[string]any{"licensed": map[string]string{"declared": "MIT"}}
+		}
+		_ = json.NewEncoder(w).Encode(definitions)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	r := NewResolverWithRegistry(srv.URL)
+	coords := make([]Coordinate, maxBatchSize)
+	for i := range coords {
+		coord, ok := CoordinateFromPURL(fmt.Sprintf("pkg:npm/pkg-%d@1.0.0", i))
+		if !ok {
+			t.Fatalf("failed to parse test PURL at index %d", i)
+		}
+		coords[i] = coord
+	}
+	if err := r.fetchDefinitionsBatch(context.Background(), coords); err != nil {
+		t.Fatalf("fetchDefinitionsBatch() error = %v", err)
+	}
+	if requests != 3 {
+		t.Errorf("payload split made %d requests, want 3", requests)
+	}
+	if lic, _, ok := r.Load(CacheKey(coords[0])); !ok || lic != "MIT" {
+		t.Errorf("split response license = %q, cached=%v; want MIT", lic, ok)
 	}
 }

@@ -252,7 +252,7 @@ describe('LicenseViolationsComponent', () => {
     expect(element.querySelector('[role="alert"]')).toBeNull();
   });
 
-  it('supports pagination and server-side search across discrepancies', async () => {
+  it('supports pagination and keeps the discrepancy search mounted while searching', async () => {
     const api = TestBed.inject(ApiService);
     vi.spyOn(api, 'getProjectLicenseViolationSummaries').mockReturnValue(of([]));
     vi.spyOn(api, 'getLicenseExceptions').mockReturnValue(of({
@@ -296,6 +296,10 @@ describe('LicenseViolationsComponent', () => {
     searchInput.value = 'lib-501';
     searchInput.dispatchEvent(new Event('input'));
     fixture.detectChanges();
+
+    expect(element.querySelector('input.search-box[placeholder*="discrepancies"]')).toBe(searchInput);
+    expect(searchInput.value).toBe('lib-501');
+    await new Promise((resolve) => setTimeout(resolve, 300));
 
     expect(spy).toHaveBeenCalledWith(expect.objectContaining({
       search: 'lib-501',

@@ -431,6 +431,7 @@ parsingWorker:
   skipPackagistResolve: false # Skip Packagist license resolution for unknown Composer licenses
   skipPyPIResolve: false    # Skip PyPI license resolution for unknown Python licenses
   skipClearlyDefinedResolve: false # Skip ClearlyDefined license resolution and discrepancy check
+  privatePackagePrefixes: "" # Comma-separated private package PURL prefixes excluded from public resolvers
   resources:
     requests:
       cpu: 250m

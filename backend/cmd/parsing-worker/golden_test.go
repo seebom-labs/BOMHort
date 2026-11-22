@@ -111,7 +111,7 @@ func TestLicensePipelineGolden(t *testing.T) {
 	}
 
 	sources, _, err := resolvePackageLicenses(context.Background(), github, resolvers,
-		pkgs.PackagePURLs, pkgs.PackageLicenses, pkgs.RootIndices)
+		pkgs.PackagePURLs, pkgs.PackageLicenses, pkgs.RootIndices, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
