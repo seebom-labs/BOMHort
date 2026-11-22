@@ -90,7 +90,7 @@ func TestApplyRegistryResolvers(t *testing.T) {
 	licenses := []string{"NOASSERTION", "", "NONE", "NOASSERTION", "NOASSERTION", "BSD-3-Clause"}
 
 	sources := make([]string, len(licenses))
-	counts := applyRegistryResolvers(context.Background(), resolvers, purls, licenses, sources)
+	counts := applyRegistryResolvers(context.Background(), resolvers, purls, licenses, sources, nil)
 
 	want := []string{"MIT", "", "Apache-2.0", "NOASSERTION", "NOASSERTION", "BSD-3-Clause"}
 	if !reflect.DeepEqual(licenses, want) {
@@ -124,7 +124,7 @@ func TestApplyRegistryResolvers_BatchResolverRunsAfterNPMForStillUnknownLicenses
 	purls := []string{"pkg:npm/a@1", "pkg:npm/b@1", "pkg:maven/g/a@1", "pkg:cargo/skip@1"}
 	licenses := []string{"NOASSERTION", "", "NONE", "MIT"}
 
-	counts := applyRegistryResolvers(context.Background(), resolvers, purls, licenses, nil)
+	counts := applyRegistryResolvers(context.Background(), resolvers, purls, licenses, nil, nil)
 
 	wantLicenses := []string{"MIT", "ISC", "Apache-2.0", "MIT"}
 	if !reflect.DeepEqual(licenses, wantLicenses) {
@@ -143,7 +143,7 @@ func TestApplyRegistryResolvers_LicensesShorterThanPURLs(t *testing.T) {
 	r := &fakeResolver{prefix: "pkg:npm/", known: map[string]string{"pkg:npm/a@1": "MIT"}}
 	purls := []string{"pkg:npm/a@1", "pkg:npm/b@1"}
 	licenses := []string{"NOASSERTION"}
-	applyRegistryResolvers(context.Background(), []registryResolver{{"npm", r}}, purls, licenses, []string{""})
+	applyRegistryResolvers(context.Background(), []registryResolver{{"npm", r}}, purls, licenses, []string{""}, nil)
 	if licenses[0] != "MIT" || len(licenses) != 1 {
 		t.Errorf("got %v", licenses)
 	}
@@ -184,7 +184,7 @@ func TestApplyRegistryResolvers_NegativeCacheNotTreatedAsLicense(t *testing.T) {
 	licenses := []string{"NOASSERTION"}
 	sources := []string{""}
 
-	counts := applyRegistryResolvers(context.Background(), resolvers, purls, licenses, sources)
+	counts := applyRegistryResolvers(context.Background(), resolvers, purls, licenses, sources, nil)
 
 	// License must remain NOASSERTION, never rewritten to '!not-harvested' (#530).
 	if licenses[0] != "NOASSERTION" {

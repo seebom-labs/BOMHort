@@ -72,6 +72,7 @@ services:
       EXCEPTIONS_FILE: /data/config/license-exceptions.json
       PROJECT_GROUPS_FILE: /data/config/project-groups.json
       LICENSE_POLICY_FILE: /data/config/license-policy.json
+      PRIVATE_PACKAGE_PREFIXES: ${PRIVATE_PACKAGE_PREFIXES:-}
       # strict (default) | permissive-wins | off — how compound SPDX expressions
       # ("Apache-2.0 AND MIT") are classified. Overrides the policy file.
       LICENSE_EXPRESSION_MODE: ${LICENSE_EXPRESSION_MODE:-}
@@ -187,6 +188,7 @@ services:
       SKIP_PACKAGIST_RESOLVE: ${SKIP_PACKAGIST_RESOLVE:-false}
       SKIP_PYPI_RESOLVE: ${SKIP_PYPI_RESOLVE:-false}
       SKIP_CLEARLYDEFINED_RESOLVE: ${SKIP_CLEARLYDEFINED_RESOLVE:-false}
+      PRIVATE_PACKAGE_PREFIXES: ${PRIVATE_PACKAGE_PREFIXES:-}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       EXCEPTIONS_FILE: /data/config/license-exceptions.json
       LICENSE_POLICY_FILE: /data/config/license-policy.json

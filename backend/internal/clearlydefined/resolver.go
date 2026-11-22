@@ -7,6 +7,7 @@ package clearlydefined
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -503,7 +504,9 @@ func (r *Resolver) ResolveBatch(ctx context.Context, purls []string) map[string]
 	}
 
 	if len(uncached) > 0 {
-		_ = r.fetchDefinitionsBatch(ctx, uncached)
+		if err := r.fetchDefinitionsBatch(ctx, uncached); err != nil {
+			log.Printf("ClearlyDefined license batch lookup failed: %v", err)
+		}
 		for key, plist := range purlByCoord {
 			lic, _, _ := r.Load(key)
 			if lic != "" {
@@ -618,7 +621,9 @@ func (r *Resolver) CheckDiscrepanciesBatch(ctx context.Context, purls, declaredL
 	}
 
 	if len(uncached) > 0 {
-		_ = r.fetchDefinitionsBatch(ctx, uncached)
+		if err := r.fetchDefinitionsBatch(ctx, uncached); err != nil {
+			log.Printf("ClearlyDefined discrepancy batch lookup failed: %v", err)
+		}
 		for key, indices := range coordIndices {
 			if discVal, ok := r.discovered.Load(key); ok {
 				for _, idx := range indices {
@@ -786,16 +791,17 @@ func (r *Resolver) fetchDefinitionsChunk(ctx context.Context, chunk []Coordinate
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		if len(chunk) > 1 {
+		if len(chunk) > 1 && (resp.StatusCode == http.StatusRequestEntityTooLarge || resp.StatusCode == http.StatusNotFound) {
 			mid := len(chunk) / 2
-			_ = r.fetchDefinitionsChunk(ctx, chunk[:mid])
-			_ = r.fetchDefinitionsChunk(ctx, chunk[mid:])
-			return nil
+			leftErr := r.fetchDefinitionsChunk(ctx, chunk[:mid])
+			rightErr := r.fetchDefinitionsChunk(ctx, chunk[mid:])
+			return errors.Join(leftErr, rightErr)
 		}
 		if resp.StatusCode == http.StatusNotFound && len(chunk) == 1 {
 			r.StoreResult(CacheKey(chunk[0]), "", license.ReasonNotHarvested)
+			return nil
 		}
-		return nil
+		return fmt.Errorf("ClearlyDefined definitions request returned HTTP %d", resp.StatusCode)
 	}
 
 	var res map[string]definitionResponse
@@ -805,9 +811,9 @@ func (r *Resolver) fetchDefinitionsChunk(ctx context.Context, chunk []Coordinate
 		// Split recursively if multiple coordinates; fall back to per-coordinate GET if single.
 		if len(chunk) > 1 {
 			mid := len(chunk) / 2
-			_ = r.fetchDefinitionsChunk(ctx, chunk[:mid])
-			_ = r.fetchDefinitionsChunk(ctx, chunk[mid:])
-			return nil
+			leftErr := r.fetchDefinitionsChunk(ctx, chunk[:mid])
+			rightErr := r.fetchDefinitionsChunk(ctx, chunk[mid:])
+			return errors.Join(leftErr, rightErr)
 		}
 		lic, reason := r.fetchDefinition(ctx, chunk[0])
 		r.StoreResult(CacheKey(chunk[0]), lic, reason)
@@ -890,7 +896,9 @@ func (r *Resolver) PopulateAttributions(ctx context.Context, pkgs []NoticePackag
 	}
 
 	if len(uncached) > 0 {
-		_ = r.fetchDefinitionsBatch(ctx, uncached)
+		if err := r.fetchDefinitionsBatch(ctx, uncached); err != nil {
+			log.Printf("ClearlyDefined attribution batch lookup failed: %v", err)
+		}
 		for i := range pkgs {
 			if len(pkgs[i].CopyrightParties) > 0 {
 				continue

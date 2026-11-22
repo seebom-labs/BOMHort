@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/seebom-labs/bomhort/backend/internal/clearlydefined"
 	"github.com/seebom-labs/bomhort/backend/internal/license"
 )
 
@@ -30,7 +31,7 @@ type githubLookup func(ctx context.Context, purl string) (string, error)
 // function returns it and the caller must not insert anything — licenses may
 // already be partially rewritten. Resolution runs before every ClickHouse
 // insert, so aborting here leaves no trace of the SBOM.
-func resolvePackageLicenses(ctx context.Context, github githubLookup, resolvers []registryResolver, purls, licenses []string, roots []uint32) (sources []string, counts map[string]int, err error) {
+func resolvePackageLicenses(ctx context.Context, github githubLookup, resolvers []registryResolver, purls, licenses []string, roots []uint32, privatePrefixes []string) (sources []string, counts map[string]int, err error) {
 	sources = make([]string, len(licenses))
 	for i, lic := range licenses {
 		if !isUnknownLicense(lic) {
@@ -41,7 +42,7 @@ func resolvePackageLicenses(ctx context.Context, github githubLookup, resolvers 
 	counts = map[string]int{}
 	if github != nil {
 		for i, lic := range licenses {
-			if !isUnknownLicense(lic) || i >= len(purls) || purls[i] == "" {
+			if !isUnknownLicense(lic) || i >= len(purls) || purls[i] == "" || clearlydefined.IsPrivatePackage(purls[i], privatePrefixes) {
 				continue
 			}
 			spdx, err := github(ctx, purls[i])
@@ -56,7 +57,7 @@ func resolvePackageLicenses(ctx context.Context, github githubLookup, resolvers 
 		}
 	}
 
-	for name, n := range applyRegistryResolvers(ctx, resolvers, purls, licenses, sources) {
+	for name, n := range applyRegistryResolvers(ctx, resolvers, purls, licenses, sources, privatePrefixes) {
 		counts[name] += n
 	}
 

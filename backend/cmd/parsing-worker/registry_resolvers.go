@@ -152,10 +152,9 @@ type privateFilter interface {
 // purls of other ecosystems, so all packages can be offered to all resolvers.
 // Private and first-party packages are never sent to external resolvers (#530).
 // Returns the number of packages resolved per resolver name.
-func applyRegistryResolvers(ctx context.Context, resolvers []registryResolver, purls, licenses, sources []string) map[string]int {
+func applyRegistryResolvers(ctx context.Context, resolvers []registryResolver, purls, licenses, sources, privatePrefixes []string) map[string]int {
 	counts := make(map[string]int, len(resolvers))
 	for _, rr := range resolvers {
-		pf, hasPF := rr.resolver.(privateFilter)
 		if batch, ok := rr.resolver.(batchLicenseResolver); ok {
 			unknownPURLs := make([]string, 0, len(licenses))
 			for i, lic := range licenses {
@@ -165,7 +164,7 @@ func applyRegistryResolvers(ctx context.Context, resolvers []registryResolver, p
 				if i >= len(purls) || purls[i] == "" {
 					continue
 				}
-				if hasPF && pf.IsPrivate(purls[i]) {
+				if clearlydefined.IsPrivatePackage(purls[i], privatePrefixes) {
 					continue
 				}
 				unknownPURLs = append(unknownPURLs, purls[i])
@@ -179,6 +178,9 @@ func applyRegistryResolvers(ctx context.Context, resolvers []registryResolver, p
 					continue
 				}
 				if i >= len(purls) || purls[i] == "" {
+					continue
+				}
+				if clearlydefined.IsPrivatePackage(purls[i], privatePrefixes) {
 					continue
 				}
 				if spdx := resolved[purls[i]]; spdx != "" {
@@ -196,7 +198,7 @@ func applyRegistryResolvers(ctx context.Context, resolvers []registryResolver, p
 			if i >= len(purls) || purls[i] == "" {
 				continue
 			}
-			if hasPF && pf.IsPrivate(purls[i]) {
+			if clearlydefined.IsPrivatePackage(purls[i], privatePrefixes) {
 				continue
 			}
 			if spdx := rr.resolver.Resolve(ctx, purls[i]); spdx != "" {

@@ -1,12 +1,15 @@
-import { Component, OnInit, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, ChangeDetectionStrategy, ChangeDetectorRef, DestroyRef } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { ScrollingModule } from '@angular/cdk/scrolling';
 import { ApiService } from '../../core/api.service';
 import { ProjectLicenseViolationSummary, LicenseExceptionsFile, LicenseDiscrepancyItem } from '../../core/api.models';
-import { distinctUntilChanged, map, switchMap } from 'rxjs';
+import { EMPTY, Subject, distinctUntilChanged, map, switchMap, timer } from 'rxjs';
+import { catchError } from 'rxjs/operators';
 
 type Tab = 'non-compliant' | 'exceptions' | 'discrepancies';
+type DiscrepancyQuery = { page: number; search: string; debounce: boolean };
 
 @Component({
   selector: 'app-license-violations',
@@ -112,14 +115,14 @@ type Tab = 'non-compliant' | 'exceptions' | 'discrepancies';
           is never overridden and continues to govern compliance.
         </div>
 
+        <input type="search" class="search-box" placeholder="Filter discrepancies by package or license…"
+               aria-label="Filter discrepancies by package or license"
+               [value]="discrepancySearch" (input)="onDiscrepancySearch($any($event.target).value)">
+
         <p *ngIf="discrepanciesError" role="alert" class="load-error">{{ discrepanciesError }}</p>
         <p *ngIf="discrepanciesLoading" class="loading-hint">Loading license discrepancies…</p>
 
         <ng-container *ngIf="!discrepanciesLoading && !discrepanciesError">
-          <input type="search" class="search-box" placeholder="Filter discrepancies by package or license…"
-                 aria-label="Filter discrepancies by package or license"
-                 [value]="discrepancySearch" (input)="onDiscrepancySearch($any($event.target).value)">
-
           <cdk-virtual-scroll-viewport *ngIf="discrepancies.length > 0" itemSize="80" class="viewport">
             <div *cdkVirtualFor="let d of discrepancies; trackBy: trackByDiscrepancy" class="discrepancy-card">
               <div class="disc-header">
@@ -262,6 +265,7 @@ export class LicenseViolationsComponent implements OnInit {
   discrepancyPageSize = 50;
   discrepanciesLoading = false;
   discrepanciesError = '';
+  private readonly discrepancyQueries = new Subject<DiscrepancyQuery>();
   search = '';
   discrepancySearch = '';
   exceptionsFile: LicenseExceptionsFile = {
@@ -274,6 +278,7 @@ export class LicenseViolationsComponent implements OnInit {
   constructor(
     private readonly api: ApiService,
     private readonly cdr: ChangeDetectorRef,
+    private readonly destroyRef: DestroyRef,
     private readonly route: ActivatedRoute,
     private readonly router: Router,
   ) {}
@@ -293,33 +298,44 @@ export class LicenseViolationsComponent implements OnInit {
   onDiscrepancySearch(term: string): void {
     this.discrepancySearch = term;
     this.discrepancyPage = 1;
-    this.loadDiscrepancies();
+    this.loadDiscrepancies(true);
   }
 
-  loadDiscrepancies(): void {
+  loadDiscrepancies(debounce = false): void {
     this.discrepanciesLoading = true;
     this.discrepanciesError = '';
     this.cdr.markForCheck();
-    this.api.getLicenseDiscrepancies({
+    this.discrepancyQueries.next({
       page: this.discrepancyPage,
-      page_size: this.discrepancyPageSize,
       search: this.discrepancySearch.trim(),
-    }).subscribe({
-      next: (resp) => {
-        this.discrepancies = resp.data || [];
-        this.totalDiscrepancies = resp.total || 0;
-        this.discrepanciesLoading = false;
-        this.cdr.markForCheck();
-      },
-      error: () => {
-        this.discrepanciesLoading = false;
-        this.discrepanciesError = 'Could not load license discrepancies. Check API availability.';
-        this.cdr.markForCheck();
-      },
+      debounce,
     });
   }
 
   ngOnInit(): void {
+    this.discrepancyQueries.pipe(
+      switchMap((query) => {
+        const request = () => this.api.getLicenseDiscrepancies({
+          page: query.page,
+          page_size: this.discrepancyPageSize,
+          search: query.search,
+        });
+        return (query.debounce ? timer(250).pipe(switchMap(request)) : request()).pipe(
+          catchError(() => {
+            this.discrepanciesLoading = false;
+            this.discrepanciesError = 'Could not load license discrepancies. Check API availability.';
+            this.cdr.markForCheck();
+            return EMPTY;
+          }),
+        );
+      }),
+      takeUntilDestroyed(this.destroyRef),
+    ).subscribe((resp) => {
+      this.discrepancies = resp.data || [];
+      this.totalDiscrepancies = resp.total || 0;
+      this.discrepanciesLoading = false;
+      this.cdr.markForCheck();
+    });
     this.api.getLicenseExceptions().subscribe({
       next: (exceptions) => { this.exceptionsFile = exceptions; this.cdr.markForCheck(); },
       error: () => this.fail(),
@@ -363,4 +379,3 @@ export class LicenseViolationsComponent implements OnInit {
   trackByViolation(_i: number, v: ProjectLicenseViolationSummary): string { return v.sbom_id; }
   trackByDiscrepancy(_i: number, d: LicenseDiscrepancyItem): string { return `${d.sbom_id}:${d.package_name}:${d.package_version}`; }
 }
-
