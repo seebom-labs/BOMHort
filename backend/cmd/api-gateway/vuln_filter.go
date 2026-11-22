@@ -11,6 +11,7 @@ import (
 	"github.com/seebom-labs/bomhort/backend/internal/projectgroup"
 	tagpkg "github.com/seebom-labs/bomhort/backend/internal/tags"
 	"github.com/seebom-labs/bomhort/backend/pkg/dto"
+	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
 
 // vulnFilterFunc reads the ownership filters (#459) of a vulnerability
@@ -87,6 +88,13 @@ func newVulnFilter(assignments func(context.Context) (map[string]projectgroup.As
 			return f, http.StatusBadRequest, "Invalid cwe (expected CWE-<number>)"
 		}
 		f.CWE = cwe
+		kind := strings.TrimSpace(q.Get("kind"))
+		if kind != "" {
+			if kind != models.FindingKindVulnerability && kind != models.FindingKindMalicious {
+				return f, http.StatusBadRequest, "Invalid kind (expected vulnerability or malicious)"
+			}
+			f.Kind = kind
+		}
 		if len(parents) > 0 {
 			a, err := assignments(r.Context())
 			if err != nil {

@@ -90,7 +90,7 @@ func TestCloneImageSBOMCopiesRelatedRowsAndIsIdempotent(t *testing.T) {
 	if id != targetID.String() {
 		t.Fatalf("clone ID = %s, want deterministic %s", id, targetID)
 	}
-	clonedVulns, err := c.QuerySBOMVulnerabilities(ctx, id, "", "", "")
+	clonedVulns, err := c.QuerySBOMVulnerabilities(ctx, id, "", "", "", "")
 	if err != nil {
 		t.Fatalf("query cloned vulnerabilities: %v", err)
 	}

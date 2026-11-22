@@ -52,6 +52,9 @@ type DashboardStats struct {
 	AverageQualityScore float64 `json:"average_quality_score"`
 	// OriginBreakdown splits the estate's SBOMs by how they were produced (#455).
 	OriginBreakdown map[string]uint64 `json:"origin_breakdown,omitempty"`
+	// CompromisedPackages is the count of distinct packages affected by
+	// malicious findings (finding_kind = 'malicious').
+	CompromisedPackages uint64 `json:"compromised_packages"`
 }
 
 // SBOMListItem is the response DTO for listing SBOMs.
@@ -199,6 +202,10 @@ type VulnerabilityListItem struct {
 	// ScopeReason explains why dependency_scope is "unknown" (e.g. "no-dependency-graph", #537).
 	ScopeReason string `json:"scope_reason,omitempty"`
 
+	// FindingKind distinguishes normal software vulnerabilities ("vulnerability")
+	// from intentionally compromised or malicious packages ("malicious", e.g. MAL-*).
+	FindingKind string `json:"finding_kind,omitempty"`
+
 	// Reachability evidence (#535): "reachable", "not_reachable", or "unknown".
 	Reachability   string `json:"reachability,omitempty"`
 	EvidenceSource string `json:"evidence_source,omitempty"`
@@ -252,10 +259,11 @@ type DependencyNode struct {
 	LicenseSource string   `json:"license_source,omitempty"`
 	Children      []uint32 `json:"children"`
 	// DependencyScope / DependencyDepth: see VulnerabilityListItem.
-	DependencyScope string  `json:"dependency_scope"`
-	DependencyDepth *uint16 `json:"dependency_depth,omitempty"`
+	DependencyScope string   `json:"dependency_scope"`
+	DependencyDepth *uint16  `json:"dependency_depth,omitempty"`
 	// ScopeReason explains why dependency_scope is "unknown" (e.g. "no-dependency-graph", #537).
-	ScopeReason string `json:"scope_reason,omitempty"`
+	ScopeReason string   `json:"scope_reason,omitempty"`
+	LookalikeOf []string `json:"lookalike_of,omitempty"`
 }
 
 // LicenseSourceItem is one row of GET /api/v1/licenses/sources: how many
@@ -545,6 +553,7 @@ type PackageDetailResponse struct {
 	Projects      []DependencySearchProject `json:"projects"`
 	Page          uint64                    `json:"page"`
 	PageSize      uint64                    `json:"page_size"`
+	LookalikeOf   []string                  `json:"lookalike_of,omitempty"`
 }
 
 // GlobalSearchPackage is a package hit in the global search response.
@@ -800,7 +809,8 @@ type ProjectPackageItem struct {
 	SBOMCount uint64 `json:"sbom_count"`
 	// VulnCount is the number of distinct vulnerability ids on this component
 	// anywhere in the project.
-	VulnCount uint64 `json:"vuln_count"`
+	VulnCount   uint64   `json:"vuln_count"`
+	LookalikeOf []string `json:"lookalike_of,omitempty"`
 }
 
 // TagListItem describes one grouping label and its reach, powering a

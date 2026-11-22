@@ -430,7 +430,12 @@ func main() {
 			writeError(w, http.StatusBadRequest, "Invalid cwe (expected CWE-<number>)")
 			return
 		}
-		vulns, err := chClient.QuerySBOMVulnerabilities(r.Context(), sbomID, scope, reachability, cwe)
+		kind := strings.TrimSpace(r.URL.Query().Get("kind"))
+		if kind != "" && kind != models.FindingKindVulnerability && kind != models.FindingKindMalicious {
+			writeError(w, http.StatusBadRequest, "Invalid kind (expected vulnerability or malicious)")
+			return
+		}
+		vulns, err := chClient.QuerySBOMVulnerabilities(r.Context(), sbomID, scope, reachability, cwe, kind)
 		if err != nil {
 			log.Printf("ERROR: sbom vulns for %s: %v", sanitizeLogParam(sbomID), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch SBOM vulnerabilities")
@@ -713,7 +718,12 @@ func main() {
 			writeError(w, http.StatusBadRequest, invalidExploitMsg)
 			return
 		}
-		items, err := chClient.QueryProjectVulnerabilities(r.Context(), name, scope)
+		kind := strings.TrimSpace(r.URL.Query().Get("kind"))
+		if kind != "" && kind != models.FindingKindVulnerability && kind != models.FindingKindMalicious {
+			writeError(w, http.StatusBadRequest, "Invalid kind (expected vulnerability or malicious)")
+			return
+		}
+		items, err := chClient.QueryProjectVulnerabilities(r.Context(), name, scope, kind)
 		if err != nil {
 			log.Printf("ERROR: project vulnerabilities for %s: %v", sanitizeLogParam(name), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch project vulnerabilities")
@@ -918,7 +928,11 @@ func main() {
 		page, _ := strconv.ParseUint(r.URL.Query().Get("page"), 10, 64)
 		pageSize, _ := strconv.ParseUint(r.URL.Query().Get("page_size"), 10, 64)
 		pageSize = clampPageSize(pageSize)
-		result, err := chClient.QueryPackageDetail(r.Context(), name, page, pageSize)
+		ecosystem := strings.TrimSpace(r.URL.Query().Get("ecosystem"))
+		if ecosystem == "" {
+			ecosystem = strings.TrimSpace(r.URL.Query().Get("system"))
+		}
+		result, err := chClient.QueryPackageDetail(r.Context(), name, ecosystem, page, pageSize)
 		if err != nil {
 			log.Printf("ERROR: package detail name=%s: %v", sanitizeLogParam(name), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch package detail")
