@@ -300,7 +300,8 @@ func TestVulnerabilityListSQLProjectionGuards(t *testing.T) {
 
 	expectedCols := []string{
 		"sbom_id", "vuln_id", "product_purl", "status",
-		"action_statement", "action_statement_timestamp", "author", "vex_timestamp",
+		"justification", "action_statement", "impact_statement",
+		"action_statement_timestamp", "author", "tooling", "vex_id", "vex_timestamp",
 	}
 	for _, col := range expectedCols {
 		if !strings.Contains(sProjection, col) {
