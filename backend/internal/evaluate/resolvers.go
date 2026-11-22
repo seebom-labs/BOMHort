@@ -121,14 +121,18 @@ type CachePersister interface {
 	InsertRegistryLicenseCache(ctx context.Context, registry string, entries map[string]string) error
 }
 
-// PersistRegistryCaches writes every resolver's cache (including negative
-// results with their reasons) to registry_license_cache.
+// PersistRegistryCaches writes newly added or modified resolver cache entries
+// to registry_license_cache.
 func PersistRegistryCaches(ctx context.Context, store CachePersister, resolvers []RegistryResolver) {
 	if store == nil {
 		return
 	}
 	for _, rr := range resolvers {
-		if entries := rr.Resolver.CacheEntries(); len(entries) > 0 {
+		if exporter, ok := rr.Resolver.(interface{ NewCacheEntries() map[string]string }); ok {
+			if entries := exporter.NewCacheEntries(); len(entries) > 0 {
+				_ = store.InsertRegistryLicenseCache(ctx, rr.Name, entries)
+			}
+		} else if entries := rr.Resolver.CacheEntries(); len(entries) > 0 {
 			_ = store.InsertRegistryLicenseCache(ctx, rr.Name, entries)
 		}
 	}

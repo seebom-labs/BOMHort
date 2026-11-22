@@ -103,6 +103,10 @@ type Resolver struct {
 	metadataCache sync.Map // map[string]*RepoMetadata
 	limiter       *tokenBucket
 
+	newMu       sync.Mutex
+	newLicenses map[string]string
+	newMetadata map[string]*RepoMetadata
+
 	mu               sync.Mutex
 	rateLimitedUntil time.Time
 }
@@ -173,6 +177,7 @@ func (r *Resolver) ResolveErr(ctx context.Context, purl string) (string, error) 
 	}
 
 	r.licenseCache.Store(key, spdxID)
+	r.recordNewLicense(key, spdxID)
 
 	if spdxID != "" {
 		log.Printf("  GitHub license resolved: %s/%s → %s", owner, repo, spdxID)
@@ -224,6 +229,8 @@ func (r *Resolver) ResolveWithMetadataErr(ctx context.Context, purl string) (*Re
 	if meta != nil {
 		r.metadataCache.Store(key, meta)
 		r.licenseCache.Store(key, meta.SPDXID) // Also populate license cache
+		r.recordNewMetadata(key, meta)
+		r.recordNewLicense(key, meta.SPDXID)
 
 		if meta.Archived {
 			log.Printf("  ⚠️  GitHub repo ARCHIVED: %s/%s", owner, repo)
@@ -233,7 +240,9 @@ func (r *Resolver) ResolveWithMetadataErr(ctx context.Context, purl string) (*Re
 		}
 	} else {
 		// Cache negative result
-		r.metadataCache.Store(key, &RepoMetadata{Repo: key})
+		neg := &RepoMetadata{Repo: key}
+		r.metadataCache.Store(key, neg)
+		r.recordNewMetadata(key, neg)
 	}
 
 	return meta, nil
@@ -269,6 +278,55 @@ func (r *Resolver) PreloadMetadataCache(entries []*RepoMetadata) {
 			r.licenseCache.Store(strings.ToLower(m.Repo), m.SPDXID)
 		}
 	}
+}
+
+func (r *Resolver) recordNewLicense(key, spdxID string) {
+	r.newMu.Lock()
+	defer r.newMu.Unlock()
+	if r.newLicenses == nil {
+		r.newLicenses = make(map[string]string)
+	}
+	r.newLicenses[key] = spdxID
+}
+
+func (r *Resolver) recordNewMetadata(key string, meta *RepoMetadata) {
+	r.newMu.Lock()
+	defer r.newMu.Unlock()
+	if r.newMetadata == nil {
+		r.newMetadata = make(map[string]*RepoMetadata)
+	}
+	r.newMetadata[key] = meta
+}
+
+// NewCacheEntries returns and drains newly fetched license entries since the last call.
+// Preloaded entries are excluded, ensuring only new lookups are persisted.
+func (r *Resolver) NewCacheEntries() map[string]string {
+	r.newMu.Lock()
+	defer r.newMu.Unlock()
+	if len(r.newLicenses) == 0 {
+		return nil
+	}
+	out := r.newLicenses
+	r.newLicenses = nil
+	return out
+}
+
+// NewMetadataCacheEntries returns and drains newly fetched repo metadata entries since the last call.
+// Preloaded entries are excluded, ensuring only new lookups are persisted.
+func (r *Resolver) NewMetadataCacheEntries() []*RepoMetadata {
+	r.newMu.Lock()
+	defer r.newMu.Unlock()
+	if len(r.newMetadata) == 0 {
+		return nil
+	}
+	out := make([]*RepoMetadata, 0, len(r.newMetadata))
+	for _, m := range r.newMetadata {
+		if m != nil {
+			out = append(out, m)
+		}
+	}
+	r.newMetadata = nil
+	return out
 }
 
 // CacheEntries returns all cached license entries (for persisting to ClickHouse).

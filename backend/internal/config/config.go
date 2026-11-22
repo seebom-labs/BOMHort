@@ -390,6 +390,13 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid ORIGIN: %w", err)
 	}
 
+	if cfg.ScanMaxPURLs <= 0 {
+		return nil, fmt.Errorf("invalid SCAN_MAX_PURLS %d: must be positive", cfg.ScanMaxPURLs)
+	}
+	if cfg.ScanTimeout <= 0 {
+		return nil, fmt.Errorf("invalid SCAN_TIMEOUT %d: must be positive", cfg.ScanTimeout)
+	}
+
 	// Fail fast on a malformed layout rather than ingesting a whole fleet with
 	// empty namespace/project columns: the DEFAULT '' makes that mistake
 	// invisible, and fixing it afterwards requires a full re-ingest.

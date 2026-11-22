@@ -56,12 +56,34 @@ spec:
           {{- $queryLimits = append $queryLimits (dict "name" $env "value" (int64 $v | toString)) }}
           {{- end }}
           {{- end }}
+          {{- $scanTimeout := index .Values.apiGateway "scanTimeout" }}
+          {{- if not (kindIs "invalid" $scanTimeout) }}
+          {{- if le (int64 $scanTimeout) 0 }}
+          {{- fail "apiGateway.scanTimeout must be positive" }}
+          {{- end }}
+          {{- end }}
+          {{- $scanMaxPurls := index .Values.apiGateway "scanMaxPurls" }}
+          {{- if not (kindIs "invalid" $scanMaxPurls) }}
+          {{- if le (int64 $scanMaxPurls) 0 }}
+          {{- fail "apiGateway.scanMaxPurls must be positive" }}
+          {{- end }}
+          {{- end }}
+          {{- $hasScanTimeout := and (not (kindIs "invalid" $scanTimeout)) (gt (int64 $scanTimeout) 0) }}
+          {{- $hasScanMaxPurls := and (not (kindIs "invalid" $scanMaxPurls)) (gt (int64 $scanMaxPurls) 0) }}
           {{- $exceptionsEnv := include "bomhort.licenseExceptions.env" . }}
-          {{- if or .Values.clickhouse.userPasswordSecret.enabled .Values.s3.credentialsSecret.enabled .Values.apiGateway.auth.enabled .Values.apiGateway.maxUploadSizeMB .Values.apiGateway.teaBaseUrl .Values.apiGateway.dedupByImageDigest $queryLimits $exceptionsEnv }}
+          {{- if or .Values.clickhouse.userPasswordSecret.enabled .Values.s3.credentialsSecret.enabled .Values.apiGateway.auth.enabled .Values.apiGateway.maxUploadSizeMB $hasScanTimeout $hasScanMaxPurls .Values.apiGateway.teaBaseUrl .Values.apiGateway.dedupByImageDigest $queryLimits $exceptionsEnv }}
           env:
             {{- if .Values.apiGateway.teaBaseUrl }}
             - name: TEA_BASE_URL
               value: {{ .Values.apiGateway.teaBaseUrl | quote }}
+            {{- end }}
+            {{- if $hasScanTimeout }}
+            - name: SCAN_TIMEOUT
+              value: {{ $scanTimeout | quote }}
+            {{- end }}
+            {{- if $hasScanMaxPurls }}
+            - name: SCAN_MAX_PURLS
+              value: {{ $scanMaxPurls | quote }}
             {{- end }}
             {{- if .Values.clickhouse.userPasswordSecret.enabled }}
             - name: CLICKHOUSE_PASSWORD

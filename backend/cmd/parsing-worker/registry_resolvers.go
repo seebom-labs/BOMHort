@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
+	"log"
 
-	"github.com/seebom-labs/bomhort/backend/internal/clearlydefined"
 	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
 	"github.com/seebom-labs/bomhort/backend/internal/config"
 	"github.com/seebom-labs/bomhort/backend/internal/evaluate"

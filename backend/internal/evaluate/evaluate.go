@@ -31,6 +31,10 @@ var (
 	// ErrOSVUnavailable is returned when OSV querying, hydration, or enrichment
 	// fails under StrictOSV mode, preventing false-clean policy evaluations.
 	ErrOSVUnavailable = errors.New("osv vulnerability check failed")
+
+	// ErrInvalidSBOM is returned when a document cannot be parsed into a
+	// recognized SBOM format or contains no packages to evaluate.
+	ErrInvalidSBOM = errors.New("invalid SBOM")
 )
 
 // OSVClient abstracts the OSV client methods needed for vulnerability evaluation.
@@ -80,6 +84,12 @@ func Evaluate(ctx context.Context, r io.Reader, opts Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	if parsed == nil || parsed.SBOM.SPDXVersion == "" {
+		return nil, fmt.Errorf("%w: unrecognized or missing SBOM format specification", ErrInvalidSBOM)
+	}
+	if len(parsed.Packages.PackageNames) == 0 {
+		return nil, fmt.Errorf("%w: SBOM contains no packages to evaluate", ErrInvalidSBOM)
+	}
 	return EvaluateParsed(ctx, parsed, opts)
 }
 
@@ -87,6 +97,21 @@ func Evaluate(ctx context.Context, r io.Reader, opts Options) (*Result, error) {
 func EvaluateParsed(ctx context.Context, parsed *sbom.ParseResult, opts Options) (*Result, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+
+	if parsed == nil || parsed.SBOM.SPDXVersion == "" {
+		return nil, fmt.Errorf("%w: unrecognized or missing SBOM format specification", ErrInvalidSBOM)
+	}
+	if len(parsed.Packages.PackageNames) == 0 {
+		return nil, fmt.Errorf("%w: SBOM contains no packages to evaluate", ErrInvalidSBOM)
+	}
+
+	// When StrictOSV is enabled and a vulnerability policy threshold is requested,
+	// vulnerability checking cannot be skipped or offline without making the gate incomplete.
+	if opts.StrictOSV && isVulnThreshold(opts.FailOn) {
+		if opts.SkipOSV || opts.OSVClient == nil {
+			return nil, fmt.Errorf("%w: vulnerability check is unavailable or skipped (SKIP_OSV=true) but required for fail_on=%s", ErrOSVUnavailable, opts.FailOn)
+		}
 	}
 
 	// 1. Count distinct PURLs and enforce cap if configured.
@@ -336,6 +361,10 @@ func ScanVulnerabilities(ctx context.Context, src OSVClient, matcher *advisory.M
 			continue
 		}
 
+		if strict && len(resp.Results) < len(chunk) {
+			return nil, fmt.Errorf("%w: incomplete osv batch response: received %d results for %d queries", ErrOSVUnavailable, len(resp.Results), len(chunk))
+		}
+
 		for j, qr := range resp.Results {
 			if j >= len(chunk) || len(qr.Vulns) == 0 {
 				continue
@@ -460,6 +489,20 @@ func EvaluatePolicy(failOn string, summary dto.ScanSummary) (result, reason stri
 		return "fail", "policy failure: " + strings.Join(failures, "; "), nil
 	}
 	return "pass", "", nil
+}
+
+func isVulnThreshold(failOn string) bool {
+	if failOn == "" {
+		return false
+	}
+	parts := strings.Split(failOn, ",")
+	for _, p := range parts {
+		switch strings.ToLower(strings.TrimSpace(p)) {
+		case "critical", "high", "medium", "low":
+			return true
+		}
+	}
+	return false
 }
 
 func scopeFields(depth uint16) (string, *uint16) {

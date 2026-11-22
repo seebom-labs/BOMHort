@@ -25,6 +25,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/seebom-labs/bomhort/backend/internal/advisory"
 	"github.com/seebom-labs/bomhort/backend/internal/claimlock"
 	"github.com/seebom-labs/bomhort/backend/internal/clearlydefined"
 	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
@@ -177,8 +178,22 @@ func main() {
 	var ghResolver *gh.Resolver
 	if !cfg.SkipGitHubResolve {
 		ghResolver = gh.NewResolver(cfg.GitHubToken)
+		if chClient != nil {
+			if cached, err := chClient.QueryGitHubLicenseCache(context.Background()); err == nil && len(cached) > 0 {
+				ghResolver.PreloadCache(cached)
+				log.Printf("Preloaded %d GitHub license cache entries", len(cached))
+			}
+			if meta, err := chClient.QueryGitHubRepoMetadata(context.Background()); err == nil && len(meta) > 0 {
+				ghResolver.PreloadMetadataCache(meta)
+				log.Printf("Preloaded %d GitHub repo metadata entries", len(meta))
+			}
+		}
 	}
 	registryResolvers := evaluate.NewRegistryResolvers(context.Background(), cfg, chClient, ghResolver)
+	var advisoryMatcher *advisory.Matcher
+	if chClient != nil && len(cfg.AdvisorySources) > 0 {
+		advisoryMatcher = advisory.NewMatcher(cfg.AdvisorySources, chClient)
+	}
 
 	mux := http.NewServeMux()
 
@@ -1196,6 +1211,7 @@ func main() {
 		cfg:               cfg,
 		chClient:          chClient,
 		osvClient:         osvClient,
+		matcher:           advisoryMatcher,
 		ghResolver:        ghResolver,
 		registryResolvers: registryResolvers,
 		exceptions:        func() *license.ExceptionIndex { return exceptions.Current().Value },

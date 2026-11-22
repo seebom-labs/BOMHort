@@ -534,6 +534,7 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 		}
 	}
 	if len(evalResult.FeedVEX) > 0 {
+		own.applyVEXStatements(evalResult.FeedVEX)
 		log.Printf("  %d findings marked not_affected by an advisory feed", len(evalResult.FeedVEX))
 		if err := chClient.InsertVEXStatements(ctx, evalResult.FeedVEX); err != nil {
 			return err

@@ -10,10 +10,11 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
-	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
+	"github.com/seebom-labs/bomhort/backend/internal/advisory"
 	"github.com/seebom-labs/bomhort/backend/internal/config"
 	"github.com/seebom-labs/bomhort/backend/internal/evaluate"
 	gh "github.com/seebom-labs/bomhort/backend/internal/github"
@@ -22,14 +23,27 @@ import (
 	"github.com/seebom-labs/bomhort/backend/pkg/dto"
 )
 
+type scanStore interface {
+	evaluate.CachePersister
+	InsertGitHubLicenseCache(ctx context.Context, entries map[string]string) error
+	InsertGitHubRepoMetadata(ctx context.Context, entries []*gh.RepoMetadata) error
+}
+
 type scanDeps struct {
 	cfg               *config.Config
-	chClient          *clickhouse.Client
+	chClient          scanStore
 	osvClient         evaluate.OSVClient
+	matcher           *advisory.Matcher
 	ghResolver        *gh.Resolver
 	registryResolvers []evaluate.RegistryResolver
 	exceptions        func() *license.ExceptionIndex
 }
+
+// maxConcurrentScans bounds simultaneous in-flight evaluations on the gateway
+// so concurrent heavy scans cannot exhaust CPU or memory.
+const maxConcurrentScans = 10
+
+var scanSemaphore = make(chan struct{}, maxConcurrentScans)
 
 // scanHandler implements stateless SBOM evaluation (POST /api/v1/scan, #513).
 // It accepts an SBOM payload, evaluates findings, license compliance, and summary
@@ -54,11 +68,36 @@ func scanHandler(deps scanDeps) http.HandlerFunc {
 			return
 		}
 
+		scanTimeout := time.Duration(deps.cfg.ScanTimeout) * time.Second
+		if scanTimeout <= 0 {
+			scanTimeout = 60 * time.Second
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), scanTimeout)
+		defer cancel()
+
+		// Enforce a real read deadline covering the request body read so a slow
+		// client cannot hold the handler indefinitely (#513).
+		rc := http.NewResponseController(w)
+		_ = rc.SetReadDeadline(time.Now().Add(scanTimeout))
+
+		// Bound concurrent scans so large or slow requests cannot exhaust the gateway.
+		select {
+		case scanSemaphore <- struct{}{}:
+			defer func() { <-scanSemaphore }()
+		case <-ctx.Done():
+			writeError(w, http.StatusGatewayTimeout, "Scan capacity unavailable: timeout waiting for active scans")
+			return
+		}
+
 		maxBytes := int64(deps.cfg.MaxUploadSizeMB) * 1024 * 1024
 		r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
 
 		raw, err := io.ReadAll(r.Body)
 		if err != nil {
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) {
+				writeError(w, http.StatusGatewayTimeout, "Scan execution timed out reading request body")
+				return
+			}
 			var maxBytesErr *http.MaxBytesError
 			if errors.As(err, &maxBytesErr) {
 				writeError(w, http.StatusRequestEntityTooLarge, "Scan body exceeds max size of "+strconv.Itoa(deps.cfg.MaxUploadSizeMB)+"MB")
@@ -89,13 +128,6 @@ func scanHandler(deps scanDeps) http.HandlerFunc {
 			return
 		}
 
-		scanTimeout := time.Duration(deps.cfg.ScanTimeout) * time.Second
-		if scanTimeout <= 0 {
-			scanTimeout = 60 * time.Second
-		}
-		ctx, cancel := context.WithTimeout(r.Context(), scanTimeout)
-		defer cancel()
-
 		var ghLookup evaluate.GitHubLookup
 		if deps.ghResolver != nil {
 			ghLookup = func(ctx context.Context, purl string) (string, error) {
@@ -123,6 +155,7 @@ func scanHandler(deps scanDeps) http.HandlerFunc {
 			StrictOSV:         true,
 			FailOn:            failOn,
 			OSVClient:         deps.osvClient,
+			Matcher:           deps.matcher,
 			GitHubLookup:      ghLookup,
 			RegistryResolvers: deps.registryResolvers,
 			Exceptions:        deps.exceptions,
@@ -136,7 +169,7 @@ func scanHandler(deps scanDeps) http.HandlerFunc {
 				writeError(w, http.StatusRequestEntityTooLarge, err.Error())
 				return
 			}
-			if errors.Is(err, evaluate.ErrInvalidFailOn) {
+			if errors.Is(err, evaluate.ErrInvalidFailOn) || errors.Is(err, evaluate.ErrInvalidSBOM) {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
 			}
@@ -154,13 +187,13 @@ func scanHandler(deps scanDeps) http.HandlerFunc {
 			return
 		}
 
-		// Best-effort cache persistence to ClickHouse.
+		// Best-effort cache persistence to ClickHouse (new entries only, #513).
 		if deps.chClient != nil {
 			if deps.ghResolver != nil {
-				if entries := deps.ghResolver.CacheEntries(); len(entries) > 0 {
+				if entries := deps.ghResolver.NewCacheEntries(); len(entries) > 0 {
 					_ = deps.chClient.InsertGitHubLicenseCache(ctx, entries)
 				}
-				if metaEntries := deps.ghResolver.MetadataCacheEntries(); len(metaEntries) > 0 {
+				if metaEntries := deps.ghResolver.NewMetadataCacheEntries(); len(metaEntries) > 0 {
 					_ = deps.chClient.InsertGitHubRepoMetadata(ctx, metaEntries)
 				}
 			}

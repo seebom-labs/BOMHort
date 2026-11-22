@@ -451,6 +451,12 @@ apiGateway:
   # per-IP write budget. Lower it if the upload endpoint is exposed to
   # untrusted networks.
   maxUploadSizeMB: 50
+  # Stateless SBOM evaluation bounds (POST /api/v1/scan, #513).
+  # Timeout in seconds. Injected as SCAN_TIMEOUT (default 60).
+  scanTimeout: 60
+  # Maximum distinct PURLs accepted per scan request (#513).
+  # Injected as SCAN_MAX_PURLS (default 2000).
+  scanMaxPurls: 2000
   # Transparency Exchange API (TEA Beta 2, #534).
   # Advertised base URL in /.well-known/tea. Empty = auto-detected from request.
   teaBaseUrl: ""

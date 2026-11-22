@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -518,13 +519,13 @@ func TestLoad_SBOMDirDisabled(t *testing.T) {
 		rel  string
 		want string
 	}{
-		{"pushed/a.spdx.json", "/tmp/sboms/pushed/a.spdx.json"},
-		{"direct.spdx.json", "/tmp/sboms/direct.spdx.json"},
-		{"..dots.spdx.json", "/tmp/sboms/..dots.spdx.json"},
-		{"...json", "/tmp/sboms/...json"},
-		{"..data/file.spdx.json", "/tmp/sboms/..data/file.spdx.json"},
-		{" lead.spdx.json", "/tmp/sboms/ lead.spdx.json"},
-		{"trail.spdx.json ", "/tmp/sboms/trail.spdx.json "},
+		{"pushed/a.spdx.json", filepath.FromSlash("/tmp/sboms/pushed/a.spdx.json")},
+		{"direct.spdx.json", filepath.FromSlash("/tmp/sboms/direct.spdx.json")},
+		{"..dots.spdx.json", filepath.FromSlash("/tmp/sboms/..dots.spdx.json")},
+		{"...json", filepath.FromSlash("/tmp/sboms/...json")},
+		{"..data/file.spdx.json", filepath.FromSlash("/tmp/sboms/..data/file.spdx.json")},
+		{" lead.spdx.json", filepath.FromSlash("/tmp/sboms/ lead.spdx.json")},
+		{"trail.spdx.json ", filepath.FromSlash("/tmp/sboms/trail.spdx.json ")},
 	} {
 		if got, err := cfg.LocalSBOMPath(good.rel); err != nil || got != good.want {
 			t.Errorf("LocalSBOMPath(%q) = %q, %v; want %q", good.rel, got, err, good.want)
@@ -559,4 +560,41 @@ func TestLoad_SBOMDirDisabled(t *testing.T) {
 	if got, err := cfg.LocalSBOMPath("pushed/a.spdx.json"); err == nil {
 		t.Errorf("LocalSBOMPath = %q, want an error without a shared directory", got)
 	}
+}
+
+func TestLoad_ScanConfigValidation(t *testing.T) {
+	t.Run("defaults", func(t *testing.T) {
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() error: %v", err)
+		}
+		if cfg.ScanTimeout != 60 {
+			t.Errorf("ScanTimeout = %d, want 60", cfg.ScanTimeout)
+		}
+		if cfg.ScanMaxPURLs != 2000 {
+			t.Errorf("ScanMaxPURLs = %d, want 2000", cfg.ScanMaxPURLs)
+		}
+	})
+
+	t.Run("invalid_max_purls", func(t *testing.T) {
+		t.Setenv("SCAN_MAX_PURLS", "0")
+		if _, err := Load(); err == nil {
+			t.Error("expected error for SCAN_MAX_PURLS=0")
+		}
+		t.Setenv("SCAN_MAX_PURLS", "-10")
+		if _, err := Load(); err == nil {
+			t.Error("expected error for negative SCAN_MAX_PURLS")
+		}
+	})
+
+	t.Run("invalid_timeout", func(t *testing.T) {
+		t.Setenv("SCAN_TIMEOUT", "0")
+		if _, err := Load(); err == nil {
+			t.Error("expected error for SCAN_TIMEOUT=0")
+		}
+		t.Setenv("SCAN_TIMEOUT", "-5")
+		if _, err := Load(); err == nil {
+			t.Error("expected error for negative SCAN_TIMEOUT")
+		}
+	})
 }

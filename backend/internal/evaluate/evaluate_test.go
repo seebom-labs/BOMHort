@@ -413,3 +413,52 @@ func (m *mockOSVWithHydrateErr) HydrateVulns(_ context.Context, _ []string) (map
 	}
 	return map[string]*osv.VulnEntry{}, nil
 }
+
+func TestEvaluate_RejectsEmptyOrNonSBOMJSON(t *testing.T) {
+	opts := Options{SourceFile: "test.json", StrictOSV: true}
+
+	for _, invalid := range []string{"{}", `{"foo":"bar"}`, `{"version": 1}`} {
+		_, err := Evaluate(context.Background(), strings.NewReader(invalid), opts)
+		if !errors.Is(err, ErrInvalidSBOM) {
+			t.Errorf("Evaluate(%q) error = %v, want ErrInvalidSBOM", invalid, err)
+		}
+	}
+}
+
+func TestScanVulnerabilities_StrictRejectsIncompleteBatch(t *testing.T) {
+	mock := &mockOSV{
+		batchResp: &osv.BatchResponse{
+			Results: []osv.QueryResult{{}}, // 1 result for 2 PURLs
+		},
+	}
+	purls := []string{"pkg:npm/foo@1.0.0", "pkg:npm/bar@1.0.0"}
+
+	// Strict mode must reject incomplete batch answers
+	_, err := ScanVulnerabilities(context.Background(), mock, nil, purls, true)
+	if !errors.Is(err, ErrOSVUnavailable) {
+		t.Fatalf("ScanVulnerabilities strict incomplete = %v, want ErrOSVUnavailable", err)
+	}
+
+	// Non-strict (worker) mode continues best effort
+	findings, err := ScanVulnerabilities(context.Background(), mock, nil, purls, false)
+	if err != nil {
+		t.Fatalf("ScanVulnerabilities non-strict error: %v", err)
+	}
+	if len(findings) != 0 {
+		t.Errorf("expected 0 findings, got %d", len(findings))
+	}
+}
+
+func TestEvaluate_StrictOSVRequiresOSVForVulnThreshold(t *testing.T) {
+	opts := Options{
+		SourceFile: "sample.spdx.json",
+		SkipOSV:    true,
+		StrictOSV:  true,
+		FailOn:     "high",
+	}
+
+	_, err := Evaluate(context.Background(), strings.NewReader(sampleSPDX), opts)
+	if !errors.Is(err, ErrOSVUnavailable) {
+		t.Fatalf("Evaluate with SkipOSV=true and FailOn=high error = %v, want ErrOSVUnavailable", err)
+	}
+}

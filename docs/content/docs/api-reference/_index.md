@@ -502,16 +502,16 @@ Like the upload endpoint, `/api/v1/scan` refuses requests with `403 Forbidden` u
 ```json
 {
   "policy_result": "fail",
-  "policy_reason": "Found 1 high severity vulnerability; found 1 license violation",
+  "policy_reason": "policy failure: 1 high severity vulnerability findings; 1 non-compliant license violations",
   "summary": {
     "package_count": 42,
     "vuln_count": 2,
-    "critical_count": 0,
-    "high_count": 1,
-    "medium_count": 1,
-    "low_count": 0,
+    "critical_vulns": 0,
+    "high_vulns": 1,
+    "medium_vulns": 1,
+    "low_vulns": 0,
     "license_violations": 1,
-    "unresolved_licenses": 0
+    "license_exemptions": 0
   },
   "vulnerabilities": [
     {
@@ -527,11 +527,15 @@ Like the upload endpoint, `/api/v1/scan` refuses requests with `403 Forbidden` u
   ],
   "license_compliance": [
     {
-      "package_name": "bar",
-      "package_version": "2.0.0",
-      "license": "GPL-3.0-only",
-      "status": "non-compliant",
-      "reason": "Restricted license without approved exception"
+      "license_id": "GPL-3.0-only",
+      "category": "copyleft",
+      "package_count": 1,
+      "packages": [
+        "bar@2.0.0"
+      ],
+      "package_scopes": {
+        "bar@2.0.0": "direct"
+      }
     }
   ]
 }

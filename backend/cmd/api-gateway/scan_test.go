@@ -7,11 +7,16 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/seebom-labs/bomhort/backend/internal/advisory"
 	"github.com/seebom-labs/bomhort/backend/internal/config"
+	"github.com/seebom-labs/bomhort/backend/internal/evaluate"
+	gh "github.com/seebom-labs/bomhort/backend/internal/github"
+	"github.com/seebom-labs/bomhort/backend/internal/license"
 	"github.com/seebom-labs/bomhort/backend/internal/osv"
 	"github.com/seebom-labs/bomhort/backend/pkg/dto"
 )
@@ -23,7 +28,7 @@ type mockOSVScanner struct {
 	delay     time.Duration
 }
 
-func (m *mockOSVScanner) QueryBatch(ctx context.Context, _ []string) (*osv.BatchResponse, error) {
+func (m *mockOSVScanner) QueryBatch(ctx context.Context, purls []string) (*osv.BatchResponse, error) {
 	if m.delay > 0 {
 		select {
 		case <-time.After(m.delay):
@@ -37,7 +42,7 @@ func (m *mockOSVScanner) QueryBatch(ctx context.Context, _ []string) (*osv.Batch
 	if m.batchResp != nil {
 		return m.batchResp, nil
 	}
-	return &osv.BatchResponse{}, nil
+	return &osv.BatchResponse{Results: make([]osv.QueryResult, len(purls))}, nil
 }
 
 func (m *mockOSVScanner) HydrateVulns(_ context.Context, _ []string) (map[string]*osv.VulnEntry, error) {
@@ -414,5 +419,350 @@ func TestScanHandler_OSVUnavailable_IncompleteHydration(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "Vulnerability check unavailable") {
 		t.Errorf("expected error message to explain vulnerability check unavailable, got %s", rec.Body.String())
+	}
+}
+
+func TestScanHandler_RejectsEmptyObjectAndInvalidSBOM(t *testing.T) {
+	cfg := &config.Config{
+		AuthEnabled:     true,
+		MaxUploadSizeMB: 10,
+	}
+	handler := scanHandler(scanDeps{cfg: cfg})
+
+	req := httptest.NewRequest(http.MethodPost, scanPath, strings.NewReader("{}"))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for empty JSON object {}, got %d", rec.Code)
+	}
+	if !strings.Contains(strings.ToLower(rec.Body.String()), "invalid sbom") {
+		t.Errorf("expected error message to mention Invalid SBOM, got %s", rec.Body.String())
+	}
+
+	req2 := httptest.NewRequest(http.MethodPost, scanPath, strings.NewReader(`{"not":"an_sbom"}`))
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, req2)
+
+	if rec2.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for non-SBOM JSON object, got %d", rec2.Code)
+	}
+	if !strings.Contains(strings.ToLower(rec2.Body.String()), "invalid sbom") {
+		t.Errorf("expected error message to mention Invalid SBOM, got %s", rec2.Body.String())
+	}
+}
+
+func TestScanHandler_SkipOSVWithVulnGateFails(t *testing.T) {
+	cfg := &config.Config{
+		AuthEnabled:     true,
+		MaxUploadSizeMB: 10,
+		SkipOSV:         true,
+	}
+	handler := scanHandler(scanDeps{
+		cfg:       cfg,
+		osvClient: nil,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, scanPath+"?fail_on=critical", strings.NewReader(testSPDX))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502 Bad Gateway when SkipOSV=true with vulnerability gate, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Vulnerability check unavailable") {
+		t.Errorf("expected error to explain vulnerability check unavailable, got %s", rec.Body.String())
+	}
+}
+
+type testFeedStore struct {
+	recs []advisory.StoredRecord
+}
+
+func (s testFeedStore) LookupAdvisoryRecords(_ context.Context, _, _ []string) ([]advisory.StoredRecord, error) {
+	return s.recs, nil
+}
+
+func TestScanHandler_AdvisoryMatcher(t *testing.T) {
+	cfg := &config.Config{
+		AuthEnabled:     true,
+		MaxUploadSizeMB: 10,
+		ScanTimeout:     10,
+	}
+	rec := osv.VulnEntry{
+		ID:      "CGA-1234",
+		Summary: "Advisory finding from feed",
+		Aliases: []string{"CVE-2026-9999"},
+		Affected: []osv.Affected{
+			{
+				Package: osv.AffectedPackage{
+					Ecosystem: "npm",
+					Name:      "leftpad",
+					PURL:      "pkg:npm/leftpad",
+				},
+				Ranges: []osv.Range{
+					{
+						Type:   "SEMVER",
+						Events: []osv.Event{{Introduced: "0"}},
+					},
+				},
+			},
+		},
+	}
+	matcher := advisory.NewMatcher(
+		[]advisory.Source{{Name: "vendor-feed", Index: "https://example.com/feed.json", Prefixes: []string{"pkg:npm"}}},
+		testFeedStore{recs: []advisory.StoredRecord{{Source: "vendor-feed", Record: rec}}},
+	)
+	mock := &mockOSVScanner{
+		batchResp: &osv.BatchResponse{
+			Results: []osv.QueryResult{
+				{},
+				{},
+			},
+		},
+	}
+	handler := scanHandler(scanDeps{
+		cfg:       cfg,
+		osvClient: mock,
+		matcher:   matcher,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, scanPath+"?fail_on=license", strings.NewReader(testSPDX))
+	recHttp := httptest.NewRecorder()
+	handler.ServeHTTP(recHttp, req)
+
+	if recHttp.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK with advisory matcher, got %d (body: %s)", recHttp.Code, recHttp.Body.String())
+	}
+
+	var resp dto.ScanResponse
+	if err := json.Unmarshal(recHttp.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	found := false
+	for _, v := range resp.Vulnerabilities {
+		if v.VulnID == "CGA-1234" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected finding CGA-1234 from advisory matcher in vulnerabilities, got: %+v", resp.Vulnerabilities)
+	}
+}
+
+type delayedReader struct{}
+
+func (d *delayedReader) Read(p []byte) (int, error) {
+	return 0, os.ErrDeadlineExceeded
+}
+
+func TestScanHandler_SlowBodyReadTimeout(t *testing.T) {
+	cfg := &config.Config{
+		AuthEnabled:     true,
+		MaxUploadSizeMB: 10,
+		ScanTimeout:     1,
+	}
+	handler := scanHandler(scanDeps{
+		cfg:       cfg,
+		osvClient: &mockOSVScanner{},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, scanPath, &delayedReader{})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusGatewayTimeout {
+		t.Fatalf("expected 504 Gateway Timeout for slow body read, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+}
+
+type mockScanStore struct {
+	registryInserts map[string]map[string]string
+	ghLicenseCalls  int
+	ghMetaCalls     int
+}
+
+func newMockScanStore() *mockScanStore {
+	return &mockScanStore{
+		registryInserts: make(map[string]map[string]string),
+	}
+}
+
+func (m *mockScanStore) InsertRegistryLicenseCache(_ context.Context, ecosystem string, entries map[string]string) error {
+	if m.registryInserts[ecosystem] == nil {
+		m.registryInserts[ecosystem] = make(map[string]string)
+	}
+	for k, v := range entries {
+		m.registryInserts[ecosystem][k] = v
+	}
+	return nil
+}
+
+func (m *mockScanStore) InsertGitHubLicenseCache(_ context.Context, entries map[string]string) error {
+	m.ghLicenseCalls += len(entries)
+	return nil
+}
+
+func (m *mockScanStore) InsertGitHubRepoMetadata(_ context.Context, entries []*gh.RepoMetadata) error {
+	m.ghMetaCalls += len(entries)
+	return nil
+}
+
+type dummyResolver struct {
+	license.ResolverCache
+	name string
+}
+
+func (d *dummyResolver) Resolve(_ context.Context, purl string) string {
+	if lic, _, ok := d.Load(purl); ok {
+		return lic
+	}
+	d.StoreResult(purl, "MIT", "")
+	return "MIT"
+}
+
+const unknownLicenseSPDX = `{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "test-service",
+  "documentNamespace": "https://example.com/test-service-1.0",
+  "packages": [
+    {
+      "name": "leftpad",
+      "SPDXID": "SPDXRef-Package-Leftpad",
+      "versionInfo": "1.3.0",
+      "downloadLocation": "NONE",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:npm/leftpad@1.3.0"
+        }
+      ]
+    }
+  ]
+}`
+
+func TestScanHandler_WarmCacheDoesNotPersistTwice(t *testing.T) {
+	cfg := &config.Config{
+		AuthEnabled:     true,
+		MaxUploadSizeMB: 10,
+		ScanTimeout:     10,
+	}
+	store := newMockScanStore()
+	res := &dummyResolver{name: "npm"}
+	deps := scanDeps{
+		cfg:       cfg,
+		chClient:  store,
+		osvClient: &mockOSVScanner{},
+		registryResolvers: []evaluate.RegistryResolver{
+			{Name: "npm", Resolver: res},
+		},
+	}
+	handler := scanHandler(deps)
+
+	req1 := httptest.NewRequest(http.MethodPost, scanPath, strings.NewReader(unknownLicenseSPDX))
+	rec1 := httptest.NewRecorder()
+	handler.ServeHTTP(rec1, req1)
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("first scan: expected 200, got %d (body: %s)", rec1.Code, rec1.Body.String())
+	}
+
+	if len(store.registryInserts["npm"]) == 0 {
+		t.Fatal("expected new entries to be persisted on cold scan")
+	}
+
+	store.registryInserts = make(map[string]map[string]string)
+
+	req2 := httptest.NewRequest(http.MethodPost, scanPath, strings.NewReader(unknownLicenseSPDX))
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("second scan: expected 200, got %d (body: %s)", rec2.Code, rec2.Body.String())
+	}
+
+	if len(store.registryInserts["npm"]) > 0 {
+		t.Fatalf("expected 0 new entries persisted on warm scan, got: %v", store.registryInserts["npm"])
+	}
+}
+
+func TestScanHandler_ResponseDocContract(t *testing.T) {
+	cfg := &config.Config{
+		AuthEnabled:     true,
+		MaxUploadSizeMB: 10,
+		ScanTimeout:     10,
+	}
+	handler := scanHandler(scanDeps{
+		cfg:       cfg,
+		osvClient: &mockOSVScanner{},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, scanPath+"?fail_on=license", strings.NewReader(testSPDX))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var raw map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("failed to decode JSON response: %v", err)
+	}
+
+	for _, key := range []string{"policy_result", "policy_reason", "summary", "vulnerabilities", "license_compliance"} {
+		if _, ok := raw[key]; !ok {
+			t.Errorf("missing top-level key %q in scan response", key)
+		}
+	}
+
+	summary, ok := raw["summary"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("summary is not a JSON object")
+	}
+
+	expectedSummaryFields := []string{
+		"package_count",
+		"vuln_count",
+		"critical_vulns",
+		"high_vulns",
+		"medium_vulns",
+		"low_vulns",
+		"license_violations",
+		"license_exemptions",
+	}
+	for _, field := range expectedSummaryFields {
+		if _, ok := summary[field]; !ok {
+			t.Errorf("missing summary field %q", field)
+		}
+	}
+
+	if _, ok := summary["critical_count"]; ok {
+		t.Errorf("summary should not contain critical_count")
+	}
+	if _, ok := summary["high_count"]; ok {
+		t.Errorf("summary should not contain high_count")
+	}
+
+	lc, ok := raw["license_compliance"].([]interface{})
+	if !ok {
+		t.Fatalf("license_compliance is not an array")
+	}
+	if len(lc) == 0 {
+		t.Fatalf("expected at least one license_compliance entry")
+	}
+	firstLC, ok := lc[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("license_compliance[0] is not a JSON object")
+	}
+	for _, field := range []string{"license_id", "category", "package_count", "packages", "package_scopes"} {
+		if _, ok := firstLC[field]; !ok {
+			t.Errorf("missing license_compliance field %q", field)
+		}
 	}
 }
