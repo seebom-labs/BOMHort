@@ -138,15 +138,15 @@ func main() {
 		log.Printf("WARNING: no upload storage available — POST %s will return 503 until either S3_BUCKETS has a skipScan bucket or SBOM_DIR (%s) is writable", uploadPath, cfg.SBOMDir)
 	}
 
-	var exceptionsS3 rulesource.ObjectGetter
+	var rulesourceS3 rulesource.ObjectGetter
 	if s3c != nil {
-		exceptionsS3 = s3c
+		rulesourceS3 = s3c
 	}
 	exceptions, err := watchExceptions(context.Background(), rulesource.Options{
 		Source: cfg.ExceptionsSource,
 		Paths:  []string{cfg.ExceptionsFile, cfg.SBOMDir + "/license-exceptions.json"},
 		Token:  cfg.ExceptionsSourceToken,
-		S3:     exceptionsS3,
+		S3:     rulesourceS3,
 	}, cfg.ExceptionsRefreshInterval)
 	if err != nil {
 		log.Fatalf("Invalid license exceptions source: %v", err)
@@ -156,7 +156,7 @@ func main() {
 		Source: cfg.PrivateVulnerabilitiesSource,
 		Paths:  []string{cfg.PrivateVulnerabilitiesFile, cfg.SBOMDir + "/private-vulnerabilities.json"},
 		Token:  cfg.PrivateVulnerabilitiesSourceToken,
-		S3:     exceptionsS3,
+		S3:     rulesourceS3,
 	}, cfg.PrivateVulnerabilitiesRefreshInterval)
 	if err != nil {
 		log.Fatalf("Invalid private vulnerabilities source: %v", err)

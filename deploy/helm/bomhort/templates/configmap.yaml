@@ -67,6 +67,9 @@ data:
   EXCEPTIONS_FILE: {{ include "bomhort.licenseExceptions.file" . | quote }}
   EXCEPTIONS_SOURCE: {{ include "bomhort.licenseExceptions.source" . | quote }}
   EXCEPTIONS_REFRESH_INTERVAL: {{ include "bomhort.licenseExceptions.refreshInterval" . | quote }}
+  PRIVATE_VULNERABILITIES_FILE: {{ include "bomhort.privateVulnerabilities.file" . | quote }}
+  PRIVATE_VULNERABILITIES_SOURCE: {{ include "bomhort.privateVulnerabilities.source" . | quote }}
+  PRIVATE_VULNERABILITIES_REFRESH_INTERVAL: {{ include "bomhort.privateVulnerabilities.refreshInterval" . | quote }}
   {{- /* projectGroups may be absent on `helm upgrade --reuse-values` from a
        chart that predates it; treat that as disabled (automatic grouping
        still works without a mapping file). */}}
