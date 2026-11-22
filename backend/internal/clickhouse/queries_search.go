@@ -312,7 +312,7 @@ func (c *Client) QuerySBOMDetail(ctx context.Context, sbomID string) (*dto.SBOMD
 	err := c.Conn.QueryRow(ctx, `
 		SELECT
 			s.sbom_id, s.source_file, s.spdx_version, s.document_name, s.document_version, s.ingested_at,
-			s.source_repo, s.source_ref, s.image_ref, s.image_digest,
+			s.source_repo, s.source_ref, s.image_ref, s.image_digest, s.extra_fields,
 			s.cluster, s.namespace, s.project, s.origin,
 			ifNull(p.pkg_count, 0) AS package_count,
 			s.quality_score, s.quality_flags
@@ -326,7 +326,7 @@ func (c *Client) QuerySBOMDetail(ctx context.Context, sbomID string) (*dto.SBOMD
 	`, sbomID).Scan(
 		&detail.SBOMID, &detail.SourceFile, &detail.SPDXVersion,
 		&detail.DocumentName, &detail.DocumentVersion, &ingestedAt,
-		&detail.SourceRepo, &detail.SourceRef, &detail.ImageRef, &detail.ImageDigest,
+		&detail.SourceRepo, &detail.SourceRef, &detail.ImageRef, &detail.ImageDigest, &detail.ExtraFields,
 		&detail.Cluster, &detail.Namespace, &detail.Project, &detail.Origin,
 		&detail.PackageCount,
 		&detail.QualityScore, &detail.QualityFlags,
@@ -341,6 +341,9 @@ func (c *Client) QuerySBOMDetail(ctx context.Context, sbomID string) (*dto.SBOMD
 		return nil, fmt.Errorf("failed to query sbom detail for %s: %w", sbomID, err)
 	}
 	detail.IngestedAt = ingestedAt.Format(time.RFC3339)
+	if len(detail.ExtraFields) == 0 {
+		detail.ExtraFields = nil
+	}
 
 	// Severity breakdown for this SBOM, split by dependency scope.
 	sevRows, err := c.Conn.Query(ctx,

@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ScrollingModule } from '@angular/cdk/scrolling';
 import { RouterModule, ActivatedRoute, Router } from '@angular/router';
-import { Subject } from 'rxjs';
+import { Subject, Subscription } from 'rxjs';
 import { debounceTime, distinctUntilChanged, takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../core/api.service';
 import { SBOMListItem, ProjectGroupItem } from '../../core/api.models';
@@ -36,7 +36,7 @@ export type SbomViewMode = 'flat' | 'grouped';
           already one project's versions, so grouping it into a single row
           would collapse the page into the thing you clicked to get here.
         -->
-        <div class="view-toggle" *ngIf="!projectScope" role="group" aria-label="View mode">
+        <div class="view-toggle" *ngIf="!projectScope && !extraField" role="group" aria-label="View mode">
           <button
             type="button"
             class="toggle-btn"
@@ -64,6 +64,18 @@ export type SbomViewMode = 'flat' | 'grouped';
         Versions of
         <a [routerLink]="['/projects', projectScope]" class="scope-link">{{ projectScope }}</a>
         <a routerLink="/sboms" class="scope-clear" title="Show all SBOMs">✕ clear</a>
+      </div>
+
+      <!--
+        Extra-field filter, reached from a value on an SBOM's detail
+        page. Like the project scope it is an identity filter, so it is named
+        explicitly. The value is untrusted producer input and only shown as text.
+      -->
+      <div class="scope-banner" *ngIf="extraField">
+        SBOMs with <code>{{ extraField }}</code>
+        <ng-container *ngIf="extraValue"> = <code class="extra-value">{{ extraValue }}</code></ng-container>
+        <a [routerLink]="[]" [queryParams]="{ extra_field: null, extra_value: null }" queryParamsHandling="merge"
+           class="scope-clear" title="Remove this filter">✕ clear</a>
       </div>
 
       <div class="search-bar">
@@ -99,6 +111,10 @@ export type SbomViewMode = 'flat' | 'grouped';
       <div class="mode-hint" *ngIf="viewMode === 'grouped' && searchTerm">
         Matching project and parent names. Switch to <strong>Documents</strong> to search by file path.
       </div>
+
+      <p *ngIf="error" role="alert">
+        {{ error }} <button type="button" (click)="retry()">Retry</button>
+      </p>
 
       <!-- Flat: one row per document -->
       <cdk-virtual-scroll-viewport
@@ -163,17 +179,20 @@ export type SbomViewMode = 'flat' | 'grouped';
       -->
       <app-parent-group-list *ngIf="viewMode === 'grouped'" [groups]="groups" />
 
-      <div *ngIf="!loading && total > 0 && loadedCount < total" class="load-more">
+      <div *ngIf="!loading && !error && total > 0 && loadedCount < total" class="load-more">
         <button (click)="loadMore()" class="load-more-btn">
           Load more ({{ loadedCount | number }} / {{ total | number }})
         </button>
       </div>
 
-      <div *ngIf="!loading && total === 0 && searchTerm" class="empty-search">
+      <div *ngIf="!loading && !error && total === 0 && searchTerm" class="empty-search">
         No {{ viewMode === 'grouped' ? 'projects' : 'SBOMs' }} matching "{{ searchTerm }}"<span *ngIf="projectScope"> in {{ projectScope }}</span>
       </div>
-      <div *ngIf="!loading && total === 0 && !searchTerm && projectScope" class="empty-search">
+      <div *ngIf="!loading && !error && total === 0 && !searchTerm && projectScope" class="empty-search">
         No SBOMs resolve to project "{{ projectScope }}"
+      </div>
+      <div *ngIf="!loading && !error && total === 0 && !searchTerm && !projectScope && extraField" class="empty-search">
+        No SBOMs carry {{ extraField }}<span *ngIf="extraValue"> = "{{ extraValue }}"</span>
       </div>
     </div>
   `,
@@ -278,14 +297,21 @@ export class SbomListComponent implements OnInit, OnDestroy {
   total = 0;
   searchTerm = '';
   loading = false;
+  error = '';
   /** Exact project identity from ?project= (#398); '' = unscoped. */
   projectScope = '';
   /** Minimum quality score filter (#537). 0 = all. */
   minQuality = 0;
+  /** Extra-field filter from ?extra_field= / ?extra_value=; '' = none. */
+  extraField = '';
+  extraValue = '';
   /** #58. Linkable via ?view=grouped so a grouped list can be shared. */
   viewMode: SbomViewMode = 'flat';
 
   private page = 1;
+  private failedAppend = false;
+  private lastSearch = '';
+  private request?: Subscription;
   private loadedOnce = false;
   private readonly pageSize = 100;
   private readonly searchSubject = new Subject<string>();
@@ -317,11 +343,16 @@ export class SbomListComponent implements OnInit, OnDestroy {
       const search = params.get('search') || '';
       const minQualityRaw = parseInt(params.get('min_quality') || '0', 10);
       const minQuality = isNaN(minQualityRaw) || minQualityRaw < 0 ? 0 : minQualityRaw;
+      const extraField = params.get('extra_field') || '';
+      // A value means nothing without its field; the API would reject it.
+      const extraValue = extraField ? params.get('extra_value') || '' : '';
       // A project scope is a list of that project's versions; grouping it
       // would collapse the page into the row that was clicked to open it.
-      const view: SbomViewMode = !project && params.get('view') === 'grouped' ? 'grouped' : 'flat';
+      // The extra-field filter only exists on the document listing.
+      const view: SbomViewMode = !project && !extraField && params.get('view') === 'grouped' ? 'grouped' : 'flat';
 
-      const changed = project !== this.projectScope || search !== this.searchTerm || view !== this.viewMode || minQuality !== this.minQuality;
+      const changed = project !== this.projectScope || search !== this.searchTerm || view !== this.viewMode
+        || minQuality !== this.minQuality || extraField !== this.extraField || extraValue !== this.extraValue;
       if (this.loadedOnce && !changed) {
         return;
       }
@@ -329,6 +360,8 @@ export class SbomListComponent implements OnInit, OnDestroy {
         this.resetRows();
       }
       this.projectScope = project;
+      this.extraField = extraField;
+      this.extraValue = extraValue;
       this.searchTerm = search;
       this.minQuality = minQuality;
       this.viewMode = view;
@@ -338,6 +371,7 @@ export class SbomListComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.request?.unsubscribe();
     this.destroy$.next();
     this.destroy$.complete();
   }
@@ -388,8 +422,13 @@ export class SbomListComponent implements OnInit, OnDestroy {
   }
 
   loadMore(): void {
-    this.page++;
-    this.load(this.searchTerm, true);
+    if (!this.loading) {
+      this.load(this.lastSearch, true);
+    }
+  }
+
+  retry(): void {
+    this.load(this.lastSearch, this.failedAppend);
   }
 
   onScroll(): void {
@@ -400,6 +439,7 @@ export class SbomListComponent implements OnInit, OnDestroy {
 
   private resetRows(): void {
     this.page = 1;
+    this.total = 0;
     this.sboms = [];
     this.groups = [];
     // The grouped child owns its expansion state; a new listing invalidates
@@ -408,25 +448,45 @@ export class SbomListComponent implements OnInit, OnDestroy {
   }
 
   private load(search: string, append = false): void {
+    this.request?.unsubscribe();
+    this.lastSearch = search;
     this.loading = true;
+    this.error = '';
     this.cdr.markForCheck();
+    const page = append ? this.page + 1 : 1;
 
     if (this.viewMode === 'grouped') {
-      this.api.getProjectGroups(this.page, this.pageSize, search).subscribe((response) => {
-        this.groups = append ? [...this.groups, ...response.data] : response.data;
-        this.total = response.total;
-        this.loading = false;
-        this.cdr.markForCheck();
+      this.request = this.api.getProjectGroups(page, this.pageSize, search).subscribe({
+        next: (response) => {
+          this.groups = append ? [...this.groups, ...response.data] : response.data;
+          this.page = page;
+          this.total = response.total;
+          this.loading = false;
+          this.cdr.markForCheck();
+        },
+        error: () => this.loadFailed(append),
       });
       return;
     }
 
-    this.api.getSboms(this.page, this.pageSize, search, this.projectScope, this.minQuality).subscribe((response) => {
-      this.sboms = append ? [...this.sboms, ...response.data] : response.data;
-      this.total = response.total;
-      this.loading = false;
-      this.cdr.markForCheck();
+    const field = this.extraField ? { extra_field: this.extraField, extra_value: this.extraValue } : {};
+    this.request = this.api.getSboms(page, this.pageSize, search, this.projectScope, this.minQuality, field).subscribe({
+      next: (response) => {
+        this.sboms = append ? [...this.sboms, ...response.data] : response.data;
+        this.page = page;
+        this.total = response.total;
+        this.loading = false;
+        this.cdr.markForCheck();
+      },
+      error: () => this.loadFailed(append),
     });
+  }
+
+  private loadFailed(append: boolean): void {
+    this.failedAppend = append;
+    this.error = `Could not load ${this.viewMode === 'grouped' ? 'projects' : 'SBOMs'}.`;
+    this.loading = false;
+    this.cdr.markForCheck();
   }
 
   trackBySbom(_index: number, item: SBOMListItem): string {
@@ -445,8 +505,6 @@ export class SbomListComponent implements OnInit, OnDestroy {
     document.body.removeChild(a);
   }
 }
-
-
 
 
 

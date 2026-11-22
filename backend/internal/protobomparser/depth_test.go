@@ -23,7 +23,7 @@ func TestParse_SPDXDescribesBecomesRootIndices(t *testing.T) {
 		]
 	}`)
 
-	res, err := Parse(spdxJSON, "t.spdx.json", "h")
+	res, err := Parse(spdxJSON, "t.spdx.json", "h", "")
 	if err != nil {
 		t.Fatal(err)
 	}

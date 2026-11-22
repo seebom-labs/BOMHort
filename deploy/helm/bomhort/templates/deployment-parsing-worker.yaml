@@ -96,6 +96,9 @@ spec:
               subPath: license-policy.json
               readOnly: true
             {{- end }}
+            - name: extra-fields
+              mountPath: {{ .Values.extraFields.mountDir }}
+              readOnly: true
             {{- if .Values.originalStore.fs.enabled }}
             - name: originals
               mountPath: {{ .Values.originalStore.fs.mountPath }}
@@ -122,3 +125,6 @@ spec:
             {{- end }}
         {{- end }}
         {{- end }}
+        - name: extra-fields
+          configMap:
+            name: {{ .Release.Name }}-extra-fields

@@ -22,13 +22,14 @@ import { VulnAliasesComponent } from '../../shared/vuln-aliases/vuln-aliases.com
 import { AdvisoryBadgeComponent } from '../../shared/advisory-badge/advisory-badge.component';
 import { ExploitBadgeComponent } from '../../shared/exploit-badge/exploit-badge.component';
 import { primaryVulnId } from '../../shared/vuln-identity';
+import { ExtraFieldEntry, ExtraFieldsComponent, extraFieldList } from './extra-fields.component';
 
 type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
 
 @Component({
   selector: 'app-sbom-detail',
   standalone: true,
-  imports: [CommonModule, ScrollingModule, RouterModule, ScopeBadgeComponent, VulnAliasesComponent, ExploitBadgeComponent, ScopeMatrixComponent, AdvisoryBadgeComponent],
+  imports: [CommonModule, ScrollingModule, RouterModule, ScopeBadgeComponent, VulnAliasesComponent, ExploitBadgeComponent, ScopeMatrixComponent, AdvisoryBadgeComponent, ExtraFieldsComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="sbom-detail" *ngIf="detail">
@@ -56,6 +57,8 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
         <span *ngIf="detail.image_ref" class="image-ref">{{ detail.image_ref }}</span>
         <code *ngIf="detail.image_digest" class="image-digest" [title]="detail.image_digest">{{ detail.image_digest }}</code>
       </div>
+
+      <app-extra-fields [fields]="extraFields"></app-extra-fields>
 
       <div class="stats-row">
         <div class="stat"><strong>{{ detail.package_count | number }}</strong> packages</div>
@@ -543,6 +546,8 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
 export class SbomDetailComponent implements OnInit {
   readonly vulnLabel = primaryVulnId;
   detail: SBOMDetail | null = null;
+  /** Extra fields of `detail`, computed once per load. */
+  extraFields: ExtraFieldEntry[] = [];
   vulns: VulnerabilityListItem[] = [];
   vexStatements: VEXStatementItem[] = [];
   licenses: SBOMLicenseBreakdownItem[] = [];
@@ -570,6 +575,7 @@ export class SbomDetailComponent implements OnInit {
       archived: this.api.getArchivedPackages(sbomId).pipe(catchError(() => of([] as ArchivedPackageInfo[]))),
     }).subscribe(({ detail, vulns, licenses, deps, vex, archived }) => {
       this.detail = detail;
+      this.extraFields = extraFieldList(detail?.extra_fields);
       this.vulns = vulns;
       this.vexStatements = vex;
       this.licenses = licenses;
@@ -717,4 +723,3 @@ interface FlatDep {
   scope: DependencyScope;
   depth?: number;
 }
-

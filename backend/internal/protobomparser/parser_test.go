@@ -28,7 +28,7 @@ func TestParse_CycloneDX(t *testing.T) {
 		"dependencies": []
 	}`)
 
-	result, err := Parse(cdxJSON, "test.cdx.json", "protobom-test-hash")
+	result, err := Parse(cdxJSON, "test.cdx.json", "protobom-test-hash", "")
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestParse_SPDX(t *testing.T) {
 		"relationships": []
 	}`)
 
-	result, err := Parse(spdxJSON, "test.spdx.json", "spdx-proto-hash")
+	result, err := Parse(spdxJSON, "test.spdx.json", "spdx-proto-hash", "")
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}

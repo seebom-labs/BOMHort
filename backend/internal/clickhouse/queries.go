@@ -184,6 +184,14 @@ func (c *Client) QueryDashboardStats(ctx context.Context, f VulnFilter) (*dto.Da
 	return stats, nil
 }
 
+// ExtraFieldFilter narrows the SBOM listing by an extra field. Name
+// alone keeps SBOMs that carry the field at all; Name plus Value keeps SBOMs
+// where one of the field's values equals Value exactly. The zero value does
+// not filter.
+type ExtraFieldFilter struct {
+	Name, Value string
+}
+
 // QuerySBOMs fetches a paginated list of SBOMs with package and vulnerability counts.
 //
 // search, when non-empty, matches document_name or source_file (substring,
@@ -193,18 +201,19 @@ func (c *Client) QueryDashboardStats(ctx context.Context, f VulnFilter) (*dto.Da
 // kubernetes" is eleven documents and not every path containing the word.
 // origin (#455), when non-empty, restricts to SBOMs produced with that origin class.
 // minQuality (#537), when > 0, restricts the list to SBOMs with quality_score >= minQuality.
+// field, when set, narrows to SBOMs carrying an extra field (see ExtraFieldFilter).
 // The filters compose.
-func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, project, origin string, minQuality uint8) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
-	return c.querySBOMs(ctx, page, pageSize, search, project, origin, minQuality, "", "")
+func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, project, origin string, minQuality uint8, field ExtraFieldFilter) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
+	return c.querySBOMs(ctx, page, pageSize, search, project, origin, minQuality, "", "", field)
 }
 
 // QuerySBOMsByImage adds digest and image-reference prefix filters to the
 // regular SBOM listing filters.
-func (c *Client) QuerySBOMsByImage(ctx context.Context, page, pageSize uint64, search, project, origin string, minQuality uint8, digest, imagePrefix string) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
-	return c.querySBOMs(ctx, page, pageSize, search, project, origin, minQuality, digest, imagePrefix)
+func (c *Client) QuerySBOMsByImage(ctx context.Context, page, pageSize uint64, search, project, origin string, minQuality uint8, digest, imagePrefix string, field ExtraFieldFilter) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
+	return c.querySBOMs(ctx, page, pageSize, search, project, origin, minQuality, digest, imagePrefix, field)
 }
 
-func (c *Client) querySBOMs(ctx context.Context, page, pageSize uint64, search, project, origin string, minQuality uint8, digest, imagePrefix string) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
+func (c *Client) querySBOMs(ctx context.Context, page, pageSize uint64, search, project, origin string, minQuality uint8, digest, imagePrefix string, field ExtraFieldFilter) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
 	if page == 0 {
 		page = 1
 	}
@@ -239,6 +248,14 @@ func (c *Client) querySBOMs(ctx context.Context, page, pageSize uint64, search, 
 	if imagePrefix != "" {
 		conds = append(conds, "startsWith(s.image_ref, ?)")
 		whereArgs = append(whereArgs, imagePrefix)
+	}
+	switch {
+	case field.Name != "" && field.Value != "":
+		conds = append(conds, "has(s.extra_fields[?], ?)")
+		whereArgs = append(whereArgs, field.Name, field.Value)
+	case field.Name != "":
+		conds = append(conds, "mapContains(s.extra_fields, ?)")
+		whereArgs = append(whereArgs, field.Name)
 	}
 	whereClause := ""
 	if len(conds) > 0 {

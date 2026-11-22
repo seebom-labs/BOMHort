@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-extra-fields
+  labels:
+    app.kubernetes.io/name: bomhort
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  extra-fields.json: |-
+    {{ .Values.extraFields.config | mustToPrettyJson | nindent 4 }}

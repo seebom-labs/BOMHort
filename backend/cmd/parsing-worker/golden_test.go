@@ -70,7 +70,7 @@ func TestLicensePipelineGolden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := sbom.Parse(strings.NewReader(string(raw)), "license_golden.spdx.json", "sha")
+	result, err := sbom.Parse(strings.NewReader(string(raw)), "license_golden.spdx.json", "sha", false)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}

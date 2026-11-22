@@ -28,7 +28,7 @@ func TestParse_SPDXDepthsFromDescribedRoot(t *testing.T) {
 		]
 	}`
 
-	result, err := Parse(strings.NewReader(spdxJSON), "app.spdx.json", "h")
+	result, err := Parse(strings.NewReader(spdxJSON), "app.spdx.json", "h", false)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestParse_CycloneDXDepthsFromMetadataComponent(t *testing.T) {
 		]
 	}`
 
-	result, err := Parse(strings.NewReader(cdxJSON), "app.cdx.json", "h")
+	result, err := Parse(strings.NewReader(cdxJSON), "app.cdx.json", "h", false)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestParse_NoGraphLeavesDepthsUnknown(t *testing.T) {
 			{"type": "library", "bom-ref": "b", "name": "b", "version": "1", "purl": "pkg:npm/b@1"}
 		]
 	}`
-	result, err := Parse(strings.NewReader(cdxJSON), "flat.cdx.json", "h")
+	result, err := Parse(strings.NewReader(cdxJSON), "flat.cdx.json", "h", false)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}

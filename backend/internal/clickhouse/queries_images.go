@@ -284,14 +284,14 @@ func (c *Client) CloneImageSBOM(ctx context.Context, source ImageSBOMRef, digest
 			ingested_at, sbom_id, source_file, spdx_version, document_name, document_namespace,
 			sha256_hash, creation_date, creator_tools, cluster, namespace, project,
 			source_repo, source_ref, document_version, tags, parent, root_purl, supplier,
-			origin, image_ref, image_digest, quality_score, quality_flags
+			origin, image_ref, image_digest, quality_score, quality_flags, extra_fields
 		)
 		SELECT now(), ?, source_file, spdx_version, document_name, document_namespace,
 		       sha256_hash, creation_date, creator_tools, ?, ?, ?,
 		       if(? != '', ?, source_repo), if(? != '', ?, source_ref),
 		       document_version, arraySort(arrayDistinct(arrayConcat(tags, ?))),
 		       if(? != '', ?, parent), root_purl, supplier, ?,
-		       ?, ?, quality_score, quality_flags
+		       ?, ?, quality_score, quality_flags, extra_fields
 		FROM sboms FINAL WHERE sbom_id = ?`,
 		targetID, cluster, namespace, project,
 		sourceRepo, sourceRepo, sourceRef, sourceRef, tags, parent, parent,

@@ -39,6 +39,7 @@ func TestCloneImageSBOMCopiesRelatedRowsAndIsIdempotent(t *testing.T) {
 		CreationDate: now, CreatorTools: []string{}, Tags: []string{}, QualityFlags: []string{},
 		Cluster: "source-cluster", ImageRef: "registry.example/source",
 		ImageDigest: digest,
+		ExtraFields: map[string][]string{"owner_contact": {"team-a@example.com"}},
 	}
 	if err := c.InsertSBOM(ctx, &source); err != nil {
 		t.Fatal(err)
@@ -123,6 +124,39 @@ func TestCloneImageSBOMCopiesRelatedRowsAndIsIdempotent(t *testing.T) {
 	}
 	if imageRef != "registry.example/target" || cluster != "target-cluster" || origin != "ci" {
 		t.Errorf("clone identity = %q / %q / %q", imageRef, cluster, origin)
+	}
+	// Document-derived fields come from the source SBOM, not the new identity.
+	var extra map[string][]string
+	if err := c.Conn.QueryRow(ctx, "SELECT extra_fields FROM sboms FINAL WHERE sbom_id = ?", targetID).Scan(&extra); err != nil {
+		t.Fatal(err)
+	}
+	if got := extra["owner_contact"]; len(got) != 1 || got[0] != "team-a@example.com" {
+		t.Errorf("cloned extra_fields = %v, want owner_contact copied from the source", extra)
+	}
+	sbomDetail, err := c.QuerySBOMDetail(ctx, id)
+	if err != nil {
+		t.Fatalf("QuerySBOMDetail: %v", err)
+	}
+	if sbomDetail.Cluster != "target-cluster" || sbomDetail.Origin != "ci" ||
+		sbomDetail.ImageRef != "registry.example/target" || sbomDetail.ImageDigest != digest ||
+		len(sbomDetail.ExtraFields["owner_contact"]) != 1 || sbomDetail.ExtraFields["owner_contact"][0] != "team-a@example.com" {
+		t.Errorf("SBOM detail lost identity or extra fields: %+v", sbomDetail)
+	}
+	list, err := c.QuerySBOMsByImage(ctx, 1, 10, "clone-test", "app", "ci", 0, digest, "registry.example/target",
+		ExtraFieldFilter{Name: "owner_contact", Value: "team-a@example.com"})
+	if err != nil {
+		t.Fatalf("QuerySBOMsByImage with combined filters: %v", err)
+	}
+	if len(list.Data) != 1 || list.Data[0].SBOMID != id {
+		t.Errorf("combined filters returned %+v, want cloned SBOM %s", list.Data, id)
+	}
+	noMatch, err := c.QuerySBOMsByImage(ctx, 1, 10, "clone-test", "app", "ci", 0, digest, "registry.example/target",
+		ExtraFieldFilter{Name: "owner_contact", Value: "other@example.com"})
+	if err != nil {
+		t.Fatalf("QuerySBOMsByImage with mismatched extra field: %v", err)
+	}
+	if len(noMatch.Data) != 0 {
+		t.Errorf("combined filters included a mismatched extra field: %+v", noMatch.Data)
 	}
 	detail, err := c.QueryImage(ctx, digest, 1, 10)
 	if err != nil {
