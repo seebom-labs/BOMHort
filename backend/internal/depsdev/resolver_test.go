@@ -318,6 +318,31 @@ func TestResolveBatch_VersionlessUsesDefaultVersion(t *testing.T) {
 	}
 }
 
+func TestTransientFailureIsRetried(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte(`{"licenses":["Apache-2.0"]}`))
+	}))
+	defer srv.Close()
+
+	r := NewResolverWithBaseURL(srv.URL)
+	ctx := context.Background()
+	if got := r.Resolve(ctx, "pkg:maven/com.example/flaky@1.0.0"); got != "" {
+		t.Fatalf("503: got %q, want empty", got)
+	}
+	if _, found := r.LoadValue("MAVEN:com.example:flaky@1.0.0"); found {
+		t.Fatal("503 must not be cached")
+	}
+	if got := r.Resolve(ctx, "pkg:maven/com.example/flaky@1.0.0"); got != "Apache-2.0" {
+		t.Errorf("retry: got %q, want Apache-2.0", got)
+	}
+}
+
 // Responses larger than maxResponseSize are cut off and fail to decode, like
 // any other unreadable response: no license, and nothing cached.
 func TestOversizedResponseIsNotDecoded(t *testing.T) {
