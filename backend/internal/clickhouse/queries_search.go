@@ -57,7 +57,6 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 		kindAnd = " AND v.finding_kind = ?"
 		args = append(args, kind)
 	}
-	}
 	rows, err := c.Conn.Query(ctx, `
 		SELECT
 			v.vuln_id, v.severity, v.purl, v.summary,
@@ -919,12 +918,31 @@ func (c *Client) QueryPackageDetail(ctx context.Context, packageName, ecosystem 
 			LIMIT 1
 		`, ecosystem, packageName).Scan(&lookalikes)
 	} else {
-		_ = c.Conn.QueryRow(ctx, `
-			SELECT lookalikes
+		// When ecosystem is omitted, only return candidates if exactly one
+		// ecosystem defines this package in lookalike_cache; if ambiguous,
+		// avoid returning arbitrary candidates from another ecosystem (#531).
+		rows, err := c.Conn.Query(ctx, `
+			SELECT system, lookalikes
 			FROM lookalike_cache FINAL
 			WHERE package = ?
-			LIMIT 1
-		`, packageName).Scan(&lookalikes)
+			LIMIT 2
+		`, packageName)
+		if err == nil {
+			defer rows.Close()
+			var systems []string
+			var cand []string
+			for rows.Next() {
+				var sys string
+				var lks []string
+				if err := rows.Scan(&sys, &lks); err == nil {
+					systems = append(systems, sys)
+					cand = lks
+				}
+			}
+			if len(systems) == 1 {
+				lookalikes = cand
+			}
+		}
 	}
 
 	return &dto.PackageDetailResponse{

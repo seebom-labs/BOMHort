@@ -765,7 +765,6 @@ export interface OwnerFilter {
 export interface VulnListFilter extends OwnerFilter {
   exploit?: 'available' | '';
 }
-}
 
 export interface ClusterListItem {
   name: string;

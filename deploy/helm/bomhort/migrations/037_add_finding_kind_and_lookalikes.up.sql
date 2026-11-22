@@ -1,4 +1,4 @@
--- 033_add_finding_kind_and_lookalikes.up.sql
+-- 037_add_finding_kind_and_lookalikes.up.sql
 -- Malicious-package findings (MAL-) and package look-alike names (#531).
 --
 -- vulnerabilities.finding_kind distinguishes standard software vulnerabilities
@@ -40,8 +40,8 @@ INSERT INTO vulnerabilities
 SELECT v.* REPLACE ('malicious' AS finding_kind, 'CRITICAL' AS severity)
 FROM vulnerabilities v FINAL
 WHERE startsWith(v.vuln_id, 'MAL-') AND (v.finding_kind != 'malicious' OR v.severity != 'CRITICAL')
-  AND (SELECT count() FROM data_migrations FINAL WHERE name = '033_backfill_malicious_findings') = 0;
+  AND (SELECT count() FROM data_migrations FINAL WHERE name = '037_backfill_malicious_findings') = 0;
 
 INSERT INTO data_migrations (name)
-SELECT '033_backfill_malicious_findings'
-WHERE (SELECT count() FROM data_migrations FINAL WHERE name = '033_backfill_malicious_findings') = 0;
+SELECT '037_backfill_malicious_findings'
+WHERE (SELECT count() FROM data_migrations FINAL WHERE name = '037_backfill_malicious_findings') = 0;

@@ -49,5 +49,4 @@ func TestBuildVulnerability(t *testing.T) {
 	if malV.Severity != "CRITICAL" {
 		t.Fatalf("expected severity 'CRITICAL' for MAL- entry, got %q", malV.Severity)
 	}
-	}
 }

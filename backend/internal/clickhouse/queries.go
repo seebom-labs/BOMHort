@@ -8,6 +8,7 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/seebom-labs/bomhort/backend/internal/depgraph"
+	"github.com/seebom-labs/bomhort/backend/internal/depsdev"
 	"github.com/seebom-labs/bomhort/backend/pkg/dto"
 )
 
@@ -924,6 +925,41 @@ func (c *Client) QuerySBOMDependencies(ctx context.Context, sbomID string) ([]dt
 		}
 	}
 
+	// When lookalikes were not resolved at ingest time (e.g. cold-cache ingest),
+	// supplement from lookalike_cache so the eventual lookups become visible to
+	// already-ingested SBOMs without waiting for re-scan (#531).
+	var missingPkgs []string
+	seenMissing := make(map[string]bool)
+	for i, purl := range purls {
+		if purl == "" {
+			continue
+		}
+		if i >= len(lookalikes) || lookalikes[i] == "" {
+			if pv, ok := depsdev.ExtractPackage(purl); ok && !seenMissing[pv.Name] {
+				seenMissing[pv.Name] = true
+				missingPkgs = append(missingPkgs, pv.Name)
+			}
+		}
+	}
+
+	cachedLookalikes := make(map[string][]string)
+	if len(missingPkgs) > 0 {
+		if rows, err := c.Conn.Query(ctx, `
+			SELECT lower(system), package, lookalikes
+			FROM lookalike_cache FINAL
+			WHERE package IN (?)
+		`, missingPkgs); err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var sys, pkg string
+				var lks []string
+				if err := rows.Scan(&sys, &pkg, &lks); err == nil && len(lks) > 0 {
+					cachedLookalikes[sys+":"+pkg] = lks
+				}
+			}
+		}
+	}
+
 	nodes := make([]dto.DependencyNode, len(names))
 	for i := range names {
 		idx := uint32(i)
@@ -958,6 +994,13 @@ func (c *Client) QuerySBOMDependencies(ctx context.Context, sbomID string) ([]dt
 			for _, part := range strings.Split(lookalikes[i], ",") {
 				if s := strings.TrimSpace(part); s != "" {
 					nodeLookalikes = append(nodeLookalikes, s)
+				}
+			}
+		} else if purl != "" {
+			if pv, ok := depsdev.ExtractPackage(purl); ok {
+				key := strings.ToLower(pv.System) + ":" + pv.Name
+				if lks, ok := cachedLookalikes[key]; ok {
+					nodeLookalikes = lks
 				}
 			}
 		}

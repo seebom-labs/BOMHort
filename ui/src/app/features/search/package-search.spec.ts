@@ -126,6 +126,18 @@ describe('PackageSearch Models', () => {
     expect(detail.lookalike_of).toEqual(['lodash']);
   });
 
+  it('should support ecosystem parameter in package detail', () => {
+    const detail: PackageDetailResponse = {
+      package_name: 'requests',
+      total_projects: 2,
+      page: 1,
+      page_size: 50,
+      projects: [],
+      lookalike_of: ['reqeusts'],
+    };
+    expect(detail.lookalike_of).toEqual(['reqeusts']);
+  });
+
   it('should encode package names with slashes for URL routing', () => {
     const packageName = 'golang.org/x/net';
     const encoded = encodeURIComponent(packageName);

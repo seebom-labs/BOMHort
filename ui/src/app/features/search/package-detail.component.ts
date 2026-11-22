@@ -153,6 +153,7 @@ import { PackageDetailResponse } from '../../core/api.models';
 })
 export class PackageDetailComponent implements OnInit {
   packageName = '';
+  ecosystem = '';
   data: PackageDetailResponse | null = null;
   loading = false;
   currentPage = 1;
@@ -166,8 +167,17 @@ export class PackageDetailComponent implements OnInit {
   ngOnInit(): void {
     this.route.paramMap.subscribe(params => {
       this.packageName = decodeURIComponent(params.get('name') || '');
+      this.ecosystem = this.route.snapshot.queryParamMap.get('ecosystem') || '';
       this.currentPage = 1;
       this.loadData();
+    });
+    this.route.queryParamMap.subscribe(params => {
+      const eco = params.get('ecosystem') || '';
+      if (eco !== this.ecosystem) {
+        this.ecosystem = eco;
+        this.currentPage = 1;
+        this.loadData();
+      }
     });
   }
 
@@ -187,7 +197,7 @@ export class PackageDetailComponent implements OnInit {
     this.loading = true;
     this.cdr.markForCheck();
 
-    this.api.getPackageDetail(this.packageName, this.currentPage, 50).subscribe({
+    this.api.getPackageDetail(this.packageName, this.currentPage, 50, this.ecosystem).subscribe({
       next: (resp) => {
         this.data = resp;
         this.loading = false;
