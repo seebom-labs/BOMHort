@@ -5,6 +5,16 @@ import (
 	"strings"
 )
 
+// CompareFunc orders two versions of one ecosystem: <0, 0 or >0. ok is false
+// when either version cannot be read in that ecosystem's syntax.
+type CompareFunc = compareFunc
+
+// ComparatorFor returns the version order of a PURL type for an ECOSYSTEM
+// range, or nil when BOMHort has no comparator for it.
+func ComparatorFor(purlType string) CompareFunc {
+	return comparatorFor(purlType)
+}
+
 // compareFunc orders two versions of one ecosystem: <0, 0 or >0. ok is false
 // when either version cannot be read in that ecosystem's syntax; a range is
 // then not evaluated rather than guessed.
@@ -58,6 +68,12 @@ func parseSemver(v string) (semver, bool) {
 		s.core[i] = n
 	}
 	return s, true
+}
+
+// CompareSemver implements SemVer 2.0 precedence. OSV uses it for every range
+// of type SEMVER, whatever the ecosystem.
+func CompareSemver(a, b string) (int, bool) {
+	return compareSemver(a, b)
 }
 
 // compareSemver implements SemVer 2.0 precedence. OSV uses it for every range

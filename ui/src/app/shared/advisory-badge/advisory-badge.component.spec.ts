@@ -31,6 +31,15 @@ describe('AdvisoryBadgeComponent', () => {
     expect(el?.title).toContain('/usr/lib/libxml2.so.2 (x86_64)');
   });
 
+  it('renders private advisory badge with custom styling and title', () => {
+    const el = render({
+      advisory_source: 'private',
+    });
+    expect(el?.textContent?.trim()).toBe('private');
+    expect(el?.classList.contains('advisory-private')).toBe(true);
+    expect(el?.title).toBe('Private advisory');
+  });
+
   it('labels every status of the vocabulary', () => {
     expect(advisoryStatusLabel('fix_not_planned')).toBe('Fix not planned');
     expect(advisoryStatusLabel('under_investigation')).toBe('Under investigation');

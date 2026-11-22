@@ -315,6 +315,10 @@ export class BomhortApiClient {
     return this.get('/license-exceptions', signal);
   }
 
+  getPrivateVulnerabilities(signal?: AbortSignal): Promise<any[]> {
+    return this.get('/private-vulnerabilities', signal);
+  }
+
   getArchivedPackages(sbomId?: string, signal?: AbortSignal): Promise<ArchivedPackageInfo[]> {
     return this.get(`/packages/archived${query({ sbom_id: sbomId })}`, signal);
   }

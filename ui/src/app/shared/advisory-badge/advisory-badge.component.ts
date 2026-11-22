@@ -27,7 +27,7 @@ export function advisoryStatusLabel(status: string | undefined): string {
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (source) {
-      <span class="advisory-badge" [class]="'advisory-badge advisory-' + (vuln?.advisory_status || 'affected')"
+      <span class="advisory-badge" [class]="'advisory-badge advisory-' + (vuln?.advisory_status || 'affected') + (source === 'private' ? ' advisory-private' : '')"
             [title]="title">{{ label }}</span>
     }
   `,
@@ -43,6 +43,11 @@ export function advisoryStatusLabel(status: string | undefined): string {
     }
     .advisory-fix_not_planned { background: var(--severity-critical-bg); color: var(--status-error); }
     .advisory-not_affected { background: var(--status-success-bg); color: var(--status-success); }
+    .advisory-private {
+      background: var(--surface-secondary, rgba(147, 51, 234, 0.15));
+      color: var(--primary, #9333ea);
+      border: 1px solid var(--primary, rgba(147, 51, 234, 0.3));
+    }
   `],
 })
 export class AdvisoryBadgeComponent {
@@ -60,7 +65,7 @@ export class AdvisoryBadgeComponent {
   }
 
   get title(): string {
-    const lines = [`Decided by advisory feed "${this.source}"`];
+    const lines = [this.source === 'private' ? 'Private advisory' : `Decided by advisory feed "${this.source}"`];
     for (const c of this.vuln?.advisory_components ?? []) {
       const where = [c.location, c.architecture && `(${c.architecture})`].filter(Boolean).join(' ');
       if (where) lines.push(where);

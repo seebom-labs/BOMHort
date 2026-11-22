@@ -758,6 +758,7 @@ export interface OwnerFilter {
  */
 export interface VulnListFilter extends OwnerFilter {
   exploit?: 'available' | '';
+  source?: 'private' | 'osv' | string;
 }
 
 export interface ClusterListItem {

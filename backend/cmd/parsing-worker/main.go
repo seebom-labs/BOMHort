@@ -23,6 +23,7 @@ import (
 	gh "github.com/seebom-labs/bomhort/backend/internal/github"
 	"github.com/seebom-labs/bomhort/backend/internal/license"
 	"github.com/seebom-labs/bomhort/backend/internal/osv"
+	"github.com/seebom-labs/bomhort/backend/internal/privatevuln"
 	"github.com/seebom-labs/bomhort/backend/internal/rulesource"
 	s3client "github.com/seebom-labs/bomhort/backend/internal/s3"
 	"github.com/seebom-labs/bomhort/backend/internal/sbom"
@@ -186,6 +187,23 @@ func main() {
 		}
 	}()
 
+	// Private vulnerability advisories.
+	privateVulns, err := privatevuln.Watch(rulesource.Options{
+		Source: cfg.PrivateVulnerabilitiesSource,
+		Paths:  []string{cfg.PrivateVulnerabilitiesFile, cfg.SBOMDir + "/private-vulnerabilities.json"},
+		Token:  cfg.PrivateVulnerabilitiesSourceToken,
+		S3:     objectGetter(s3c),
+	})
+	if err != nil {
+		log.Fatalf("Invalid private vulnerabilities source: %v", err)
+	}
+	if _, err := privateVulns.Refresh(ctx); err != nil {
+		log.Fatalf("Invalid private vulnerabilities configuration: %v", err)
+	}
+	go privateVulns.Run(ctx, cfg.PrivateVulnerabilitiesRefreshInterval, func(s rulesource.Snapshot[*privatevuln.Index]) {
+		log.Printf("Private vulnerabilities reloaded from %s (%s)", s.Source, s.Digest[:12])
+	})
+
 	// Handle graceful shutdown.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
@@ -251,7 +269,7 @@ func main() {
 		// by a cancelled write is never claimed again.
 		statusCtx := context.WithoutCancel(ctx)
 		for _, job := range jobs {
-			if err := processJob(ctx, cfg, chClient, osvClient, exceptions, ghResolver, registryResolvers, s3c, originals, job); err != nil {
+			if err := processJob(ctx, cfg, chClient, osvClient, exceptions, privateVulns, ghResolver, registryResolvers, s3c, originals, job); err != nil {
 				var deferErr *deferError
 				if errors.As(err, &deferErr) {
 					log.Printf("Deferred %s until %s: %v", job.SourceFile, deferErr.until.Format(time.RFC3339), deferErr.cause)
@@ -285,7 +303,7 @@ func main() {
 	}
 }
 
-func processJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, rules *license.ExceptionsWatcher, ghResolver *gh.Resolver, registryResolvers []registryResolver, s3c *s3client.Client, originals docstore.Store, job models.IngestionJob) error {
+func processJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, rules *license.ExceptionsWatcher, pvtWatcher *privatevuln.Watcher, ghResolver *gh.Resolver, registryResolvers []registryResolver, s3c *s3client.Client, originals docstore.Store, job models.IngestionJob) error {
 	// Determine how to open the file: S3 URI or local path.
 	openFile := func() (io.ReadCloser, error) {
 		if strings.HasPrefix(job.SourceFile, "s3://") {
@@ -317,8 +335,14 @@ func processJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Cl
 	// Read at check time, not now: a job that runs long still applies the
 	// rules current when its results are written.
 	exceptions := func() *license.ExceptionIndex { return rules.Current().Value }
+	privateVulns := func() *privatevuln.Index {
+		if pvtWatcher == nil {
+			return nil
+		}
+		return pvtWatcher.Current().Value
+	}
 
-	return processSBOMJob(ctx, cfg, chClient, osvClient, exceptions, ghResolver, registryResolvers, openFile, originals, job)
+	return processSBOMJob(ctx, cfg, chClient, osvClient, exceptions, privateVulns, ghResolver, registryResolvers, openFile, originals, job)
 }
 
 func processVEXJob(ctx context.Context, chClient *clickhouse.Client, openFile func() (io.ReadCloser, error), job models.IngestionJob) error {
@@ -420,7 +444,7 @@ func excludeIndices(names, licenses []string, skip []uint32) ([]string, []string
 	return outNames, outLics
 }
 
-func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, exceptions func() *license.ExceptionIndex, ghResolver *gh.Resolver, registryResolvers []registryResolver, openFile func() (io.ReadCloser, error), originals docstore.Store, job models.IngestionJob) error {
+func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, exceptions func() *license.ExceptionIndex, privateVulns func() *privatevuln.Index, ghResolver *gh.Resolver, registryResolvers []registryResolver, openFile func() (io.ReadCloser, error), originals docstore.Store, job models.IngestionJob) error {
 
 	// 1. Read the whole document once. The bytes are needed twice — for the
 	// parser and for the Tier-2 original capture (#256) — and sbom.Parse reads
@@ -548,6 +572,11 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 		findings, err := scanVulnerabilities(ctx, osvClient, advisory.NewMatcher(cfg.AdvisorySources, chClient), purls)
 		if err != nil {
 			return err
+		}
+		if privateVulns != nil {
+			if pvtIdx := privateVulns(); pvtIdx != nil {
+				findings = append(findings, pvtIdx.Match(purls)...)
+			}
 		}
 		var vulns []models.Vulnerability
 		var feedVEX []models.VEXStatement

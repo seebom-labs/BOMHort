@@ -267,6 +267,10 @@ export class ApiService {
     return this.http.get<LicenseExceptionsFile>(`${this.baseUrl}/license-exceptions`);
   }
 
+  getPrivateVulnerabilities(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.baseUrl}/private-vulnerabilities`);
+  }
+
   getArchivedRepos(page = 1, pageSize = 20): Observable<PaginatedResponse<ArchivedRepoGroup>> {
     const params = new HttpParams().set('page', page.toString()).set('page_size', pageSize.toString());
     return this.http.get<PaginatedResponse<ArchivedRepoGroup>>(`${this.baseUrl}/packages/archived/repos`, { params });

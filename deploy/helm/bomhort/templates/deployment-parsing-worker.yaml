@@ -64,7 +64,8 @@ spec:
                 fieldRef:
                   fieldPath: metadata.namespace
           {{- $exceptionsEnv := include "bomhort.licenseExceptions.env" . }}
-          {{- if or .Values.s3.credentialsSecret.enabled $exceptionsEnv }}
+          {{- $privateVulnsEnv := include "bomhort.privateVulnerabilities.env" . }}
+          {{- if or .Values.s3.credentialsSecret.enabled $exceptionsEnv $privateVulnsEnv }}
           {{- if .Values.s3.credentialsSecret.enabled }}
             - name: S3_ACCESS_KEY
               valueFrom:
@@ -78,6 +79,7 @@ spec:
                   key: {{ .Values.s3.credentialsSecret.secretKeyKey }}
           {{- end }}
           {{- with $exceptionsEnv }}{{ . | trim | nindent 12 }}{{ end }}
+          {{- with $privateVulnsEnv }}{{ . | trim | nindent 12 }}{{ end }}
           {{- end }}
           resources:
             {{- toYaml .Values.parsingWorker.resources | nindent 12 }}
@@ -90,6 +92,7 @@ spec:
             {{- /* No rollout checksum: the pods re-read the mounted
                  directory and re-check stored results themselves. */}}
             {{- with include "bomhort.licenseExceptions.volumeMount" . }}{{ . | trim | nindent 12 }}{{ end }}
+            {{- with include "bomhort.privateVulnerabilities.volumeMount" . }}{{ . | trim | nindent 12 }}{{ end }}
             {{- if .Values.licensePolicy.enabled }}
             - name: license-policy
               mountPath: {{ .Values.licensePolicy.mountPath }}
@@ -108,6 +111,7 @@ spec:
             claimName: {{ .Values.originalStore.fs.pvcName }}
         {{- end }}
         {{- with include "bomhort.licenseExceptions.volume" . }}{{ . | trim | nindent 8 }}{{ end }}
+        {{- with include "bomhort.privateVulnerabilities.volume" . }}{{ . | trim | nindent 8 }}{{ end }}
         {{- with .Values.licensePolicy }}
         {{- if .enabled }}
         - name: license-policy

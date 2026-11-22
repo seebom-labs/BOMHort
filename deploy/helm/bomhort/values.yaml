@@ -347,6 +347,23 @@ licenseExceptions:
   # rules are then read once at startup.
   refreshInterval: 60s
 
+# Private vulnerability advisories in OSV schema (#515).
+privateVulnerabilities:
+  enabled: true
+  # File the pods read inside a directory of its own.
+  mountPath: /data/config/private-vulnerabilities/private-vulnerabilities.json
+  # Array of OSV VulnEntry objects (YAML or JSON string). Empty array by default.
+  custom: []
+  # Name of a ConfigMap managed outside the chart. Mutually exclusive with custom and source.
+  existingConfigMap: ""
+  existingConfigMapKey: private-vulnerabilities.json
+  # Read from an https:// URL or s3://bucket/key URI. Mutually exclusive with custom and existingConfigMap.
+  source: ""
+  sourceTokenSecret:
+    name: ""
+    key: token
+  refreshInterval: 60s
+
 # License policy – defines permissive/copyleft classification (ConfigMap, read-only)
 licensePolicy:
   enabled: true

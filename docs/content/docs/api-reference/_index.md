@@ -883,6 +883,7 @@ Paginated list of all discovered vulnerabilities across all SBOMs. Each item car
 | `reachability` | string | all | Filter by reachability evidence: `reachable`, `not_reachable`, or `unknown` (#535) |
 | `exploit` | string | — | `available`: only findings with [public exploit code](#exploit-code) |
 | `cwe` | string | all | Only findings of this weakness class, e.g. `CWE-79` (#409). Case-insensitive; normalised to `CWE-<number>`. |
+| `source` | string | all | Filter by advisory source: `private`, `osv`, or configured advisory feed name (#515) |
 
 The ownership filters (#459) take comma-separated values: values within one parameter are ORed, parameters are ANDed (`?cluster=prod-eu,prod-us&tag=sandbox` = SBOMs in either cluster that carry `sandbox`). Ownership is read from the SBOM, so it matches the project and fleet views. A value longer than 200 characters is a `400`.
 
@@ -995,6 +996,7 @@ Every finding of [`GET /api/v1/vulnerabilities`](#get-apiv1vulnerabilities) as a
 | `reachability` | string | all | Filter by reachability evidence: `reachable`, `not_reachable`, or `unknown` (#535) |
 | `exploit` | string | — | `available`: only findings with [public exploit code](#exploit-code) |
 | `cwe` | string | all | Only findings of this weakness class, e.g. `CWE-79` (#409). Case-insensitive; normalised to `CWE-<number>`. |
+| `source` | string | all | Filter by advisory source: `private`, `osv`, or configured advisory feed name (#515) |
 
 The ownership filters work as on the JSON listing.
 
@@ -1467,6 +1469,44 @@ outage keeps serving it. Missing optional files return an empty document. An
 existing empty primary file takes precedence over any fallback file. Stored
 compliance results follow configuration changes automatically: the workers
 re-check them in the background ([Retroactive application](/docs/license-exceptions/#retroactive-application)).
+
+### `GET /api/v1/private-vulnerabilities`
+
+Configured private vulnerability advisories (read-only, loaded from the configured
+`PRIVATE_VULNERABILITIES_FILE` or `PRIVATE_VULNERABILITIES_SOURCE` in OSV schema and
+reloaded every `PRIVATE_VULNERABILITIES_REFRESH_INTERVAL`).
+
+Advisory entries use the OSV format with org-prefixed IDs (e.g. `BOMHORT-2024-001`,
+`ORG-SEC-123`) and never public `CVE-` or `GHSA-` prefixes.
+
+**Response:** `200 OK`
+```json
+[
+  {
+    "id": "BOMHORT-2024-001",
+    "summary": "Internal flaw in custom authentication middleware",
+    "details": "A timing vulnerability exists in internal token verification.",
+    "affected": [
+      {
+        "package": {
+          "name": "internal-auth",
+          "ecosystem": "npm",
+          "purl": "pkg:npm/internal-auth"
+        },
+        "ranges": [
+          {
+            "type": "SEMVER",
+            "events": [
+              {"introduced": "0"},
+              {"fixed": "2.1.0"}
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]
+```
 
 ### `GET /api/v1/license-policy`
 

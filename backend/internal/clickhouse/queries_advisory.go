@@ -154,6 +154,34 @@ func (c *Client) QueryFindingsUnderPrefixes(ctx context.Context, prefixes []stri
 	return out, nil
 }
 
+// QueryFindingsByAdvisorySource returns stored findings whose advisory_source
+// matches source (e.g. "private").
+func (c *Client) QueryFindingsByAdvisorySource(ctx context.Context, source string) ([]StoredFindingRow, error) {
+	rows, err := c.Conn.Query(ctx, `
+		SELECT sbom_id, purl, vuln_id, aliases, advisory_source, advisory_status,
+			cluster, namespace, project
+		FROM vulnerabilities FINAL
+		WHERE advisory_source = ?
+	`, source)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query findings by advisory source: %w", err)
+	}
+	defer rows.Close()
+	var out []StoredFindingRow
+	for rows.Next() {
+		var r StoredFindingRow
+		if err := rows.Scan(&r.SBOMID, &r.PURL, &r.VulnID, &r.Aliases, &r.AdvisorySource, &r.AdvisoryStatus,
+			&r.Cluster, &r.Namespace, &r.Project); err != nil {
+			return nil, fmt.Errorf("failed to scan stored finding: %w", err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read stored findings: %w", err)
+	}
+	return out, nil
+}
+
 // closeFindingsChunk bounds the keys of one DELETE mutation.
 const closeFindingsChunk = 1000
 

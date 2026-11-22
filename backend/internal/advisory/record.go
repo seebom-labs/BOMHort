@@ -117,6 +117,14 @@ func declaredStatus(a osv.Affected, comps []Component, p purl) string {
 	return ""
 }
 
+// InRange evaluates whether version is affected by entry a, following the
+// OSV evaluation algorithm. ok is false when the entry cannot be evaluated
+// for this package (unknown range type, no comparator, unparsable version):
+// the caller then leaves the decision to osv.dev.
+func InRange(a osv.Affected, p PURL) (affected, ok bool) {
+	return inRange(a, p)
+}
+
 // inRange evaluates whether version is affected by entry a, following the
 // OSV evaluation algorithm. ok is false when the entry cannot be evaluated
 // for this package (unknown range type, no comparator, unparsable version):
@@ -220,6 +228,11 @@ func evalRange(events []osv.Event, v string, cmp compareFunc) (affected, ok bool
 		}
 	}
 	return affected, true
+}
+
+// FixedIn returns the first fixed version an affected entry names.
+func FixedIn(a osv.Affected) string {
+	return fixedIn(a)
 }
 
 // fixedIn returns the first fixed version an affected entry names.

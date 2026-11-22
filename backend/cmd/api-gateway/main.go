@@ -152,6 +152,16 @@ func main() {
 		log.Fatalf("Invalid license exceptions source: %v", err)
 	}
 
+	privateVulns, err := watchPrivateVulnerabilities(context.Background(), rulesource.Options{
+		Source: cfg.PrivateVulnerabilitiesSource,
+		Paths:  []string{cfg.PrivateVulnerabilitiesFile, cfg.SBOMDir + "/private-vulnerabilities.json"},
+		Token:  cfg.PrivateVulnerabilitiesSourceToken,
+		S3:     exceptionsS3,
+	}, cfg.PrivateVulnerabilitiesRefreshInterval)
+	if err != nil {
+		log.Fatalf("Invalid private vulnerabilities source: %v", err)
+	}
+
 	// Load license policy (permissive/copyleft classification).
 	if perm, copy, err := license.LoadPolicy(cfg.LicensePolicyFile); err == nil {
 		log.Printf("Loaded license policy: %d permissive, %d copyleft", perm, copy)
@@ -430,6 +440,11 @@ func main() {
 			writeError(w, http.StatusBadRequest, "Invalid cwe (expected CWE-<number>)")
 			return
 		}
+		source, ok := parseSource(r.URL.Query().Get("source"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Invalid source (expected private or osv)")
+			return
+		}
 		vulns, err := chClient.QuerySBOMVulnerabilities(r.Context(), sbomID, scope, reachability, cwe)
 		if err != nil {
 			log.Printf("ERROR: sbom vulns for %s: %v", sanitizeLogParam(sbomID), err)
@@ -438,6 +453,15 @@ func main() {
 		}
 		if exploitOnly {
 			vulns = onlyExploitable(vulns)
+		}
+		if source != "" {
+			filtered := make([]dto.VulnerabilityListItem, 0, len(vulns))
+			for _, v := range vulns {
+				if strings.EqualFold(v.AdvisorySource, source) {
+					filtered = append(filtered, v)
+				}
+			}
+			vulns = filtered
 		}
 		writeJSON(w, http.StatusOK, vulns)
 	})
@@ -713,6 +737,11 @@ func main() {
 			writeError(w, http.StatusBadRequest, invalidExploitMsg)
 			return
 		}
+		source, ok := parseSource(r.URL.Query().Get("source"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Invalid source (expected private or osv)")
+			return
+		}
 		items, err := chClient.QueryProjectVulnerabilities(r.Context(), name, scope)
 		if err != nil {
 			log.Printf("ERROR: project vulnerabilities for %s: %v", sanitizeLogParam(name), err)
@@ -721,6 +750,15 @@ func main() {
 		}
 		if exploitOnly {
 			items = onlyExploitable(items)
+		}
+		if source != "" {
+			filtered := make([]dto.VulnerabilityListItem, 0, len(items))
+			for _, it := range items {
+				if strings.EqualFold(it.AdvisorySource, source) {
+					filtered = append(filtered, it)
+				}
+			}
+			items = filtered
 		}
 		writeJSON(w, http.StatusOK, items)
 	})
@@ -870,6 +908,9 @@ func main() {
 
 	// ── License Exceptions (read-only from config file or SBOM dir) ────
 	mux.HandleFunc("GET /api/v1/license-exceptions", licenseExceptionsHandler(exceptions))
+
+	// ── Private Vulnerabilities (read-only OSV schema from config file or source) ──
+	mux.HandleFunc("GET /api/v1/private-vulnerabilities", privateVulnerabilitiesHandler(privateVulns))
 
 	// ── License Policy (read-only, permissive/copyleft classification) ─
 	mux.HandleFunc("GET /api/v1/license-policy", func(w http.ResponseWriter, r *http.Request) {

@@ -144,6 +144,15 @@ type Config struct {
 	// a ConfigMap edit or a new remote version takes effect without a
 	// restart. 0 disables polling.
 	ExceptionsRefreshInterval time.Duration
+	// PrivateVulnerabilitiesFile is the path to private-vulnerabilities.json.
+	PrivateVulnerabilitiesFile string
+	// PrivateVulnerabilitiesSource replaces PrivateVulnerabilitiesFile with
+	// a remote document: an https:// URL or an s3://bucket/key URI.
+	PrivateVulnerabilitiesSource      string
+	PrivateVulnerabilitiesSourceToken string
+	// PrivateVulnerabilitiesRefreshInterval is how often the private advisories
+	// are re-read. 0 disables polling.
+	PrivateVulnerabilitiesRefreshInterval time.Duration
 	// ProjectGroupsFile is the optional mapping file that assigns projects
 	// to parents explicitly (internal/projectgroup). A missing file means
 	// "no explicit rules"; the automatic grouping still applies.
@@ -289,7 +298,8 @@ func Load() (*Config, error) {
 		PrivatePackagePrefixes:    parseCSV(getEnv("PRIVATE_PACKAGE_PREFIXES", "")),
 		SBOMLimit:                 getEnvInt("SBOM_LIMIT", 0),
 		IgnorePrefix:              getEnv("SBOM_IGNORE_PREFIX", "_"),
-		ExceptionsFile:            getEnv("EXCEPTIONS_FILE", "/data/config/license-exceptions.json"),
+		ExceptionsFile:             getEnv("EXCEPTIONS_FILE", "/data/config/license-exceptions.json"),
+		PrivateVulnerabilitiesFile: getEnv("PRIVATE_VULNERABILITIES_FILE", "/data/config/private-vulnerabilities.json"),
 		ProjectGroupsFile:         getEnv("PROJECT_GROUPS_FILE", "/data/config/project-groups.json"),
 		LicensePolicyFile:         getEnv("LICENSE_POLICY_FILE", "/data/config/license-policy.json"),
 		LicenseExpressionMode:     strings.ToLower(strings.TrimSpace(getEnv("LICENSE_EXPRESSION_MODE", ""))),
@@ -373,6 +383,14 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid EXCEPTIONS_REFRESH_INTERVAL %q (want a duration such as 60s, or 0 to disable)", os.Getenv("EXCEPTIONS_REFRESH_INTERVAL"))
 	}
 	cfg.ExceptionsRefreshInterval = interval
+
+	cfg.PrivateVulnerabilitiesSource = strings.TrimSpace(getEnv("PRIVATE_VULNERABILITIES_SOURCE", ""))
+	cfg.PrivateVulnerabilitiesSourceToken = getEnv("PRIVATE_VULNERABILITIES_SOURCE_TOKEN", "")
+	pvtInterval, err := time.ParseDuration(getEnv("PRIVATE_VULNERABILITIES_REFRESH_INTERVAL", "60s"))
+	if err != nil || pvtInterval < 0 {
+		return nil, fmt.Errorf("invalid PRIVATE_VULNERABILITIES_REFRESH_INTERVAL %q (want a duration such as 60s, or 0 to disable)", os.Getenv("PRIVATE_VULNERABILITIES_REFRESH_INTERVAL"))
+	}
+	cfg.PrivateVulnerabilitiesRefreshInterval = pvtInterval
 
 	switch cfg.LicenseExpressionMode {
 	case "", "strict", "permissive-wins", "off":

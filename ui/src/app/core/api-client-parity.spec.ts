@@ -28,6 +28,7 @@ const calls: Record<string, unknown[]> = {
   getVersionSkew: [1, 20, 'lodash'],
   getVEXStatements: [1, 50],
   getLicenseExceptions: [],
+  getPrivateVulnerabilities: [],
   getArchivedPackages: ['id-1'],
   getArchivedRepos: [2, 20],
   searchPackages: ['net', 2, 10],
