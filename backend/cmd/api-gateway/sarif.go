@@ -3,11 +3,14 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"path"
 	"sort"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/seebom-labs/bomhort/backend/pkg/dto"
 )
 
@@ -62,12 +65,13 @@ type SARIFMultiformatMessageString struct {
 
 // SARIFResult represents a single finding.
 type SARIFResult struct {
-	RuleID       string                        `json:"ruleId"`
-	Level        string                        `json:"level,omitempty"`
-	Message      SARIFMultiformatMessageString `json:"message"`
-	Locations    []SARIFLocation               `json:"locations,omitempty"`
-	Properties   map[string]interface{}        `json:"properties,omitempty"`
-	Suppressions []SARIFSuppression            `json:"suppressions,omitempty"`
+	RuleID          string                        `json:"ruleId"`
+	Level           string                        `json:"level,omitempty"`
+	CorrelationGUID string                        `json:"correlationGuid,omitempty"`
+	Message         SARIFMultiformatMessageString `json:"message"`
+	Locations       []SARIFLocation               `json:"locations,omitempty"`
+	Properties      map[string]interface{}        `json:"properties,omitempty"`
+	Suppressions    []SARIFSuppression            `json:"suppressions,omitempty"`
 }
 
 // SARIFLocation describes the physical location of a finding.
@@ -104,19 +108,60 @@ func sarifLevel(severity string) string {
 	}
 }
 
-func sarifSecuritySeverity(severity string) string {
-	switch strings.ToUpper(strings.TrimSpace(severity)) {
+func severityRank(sev string) int {
+	switch strings.ToUpper(strings.TrimSpace(sev)) {
 	case "CRITICAL":
-		return "9.5"
+		return 4
 	case "HIGH":
-		return "7.5"
+		return 3
 	case "MEDIUM":
-		return "5.0"
+		return 2
 	case "LOW":
-		return "2.0"
+		return 1
 	default:
-		return ""
+		return 0
 	}
+}
+
+// stableCorrelationGUID generates a deterministic GUID for a finding based on
+// its vulnerability identifier and target package URL.
+func stableCorrelationGUID(ruleID, purl string) string {
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(ruleID+":"+purl)).String()
+}
+
+// cleanArtifactLocation extracts a stable repository-relative path from a
+// finding's source file path. Pushed upload prefixes (such as pushed/<uuid>-...)
+// and S3 push URI prefixes are stripped so the result corresponds to the file
+// within the repository checkout. If no valid repository path can be derived
+// (e.g. non-pushed S3 object URI or absolute path), ok is false.
+func cleanArtifactLocation(sourceFile string) (string, bool) {
+	if sourceFile == "" {
+		return "", false
+	}
+	s := strings.TrimSpace(sourceFile)
+	s = strings.ReplaceAll(s, "\\", "/")
+
+	if strings.HasPrefix(s, "s3://") {
+		idx := strings.Index(s, "/pushed/")
+		if idx >= 0 {
+			s = s[idx+1:]
+		} else {
+			return "", false
+		}
+	}
+
+	if strings.HasPrefix(s, "pushed/") {
+		s = strings.TrimPrefix(s, "pushed/")
+		if len(s) > 37 && s[36] == '-' && isValidUUID(s[:36]) {
+			s = s[37:]
+		}
+	}
+
+	s = path.Clean(s)
+	if s == "" || s == "." || s == "/" || path.IsAbs(s) || strings.HasPrefix(s, "../") || strings.Contains(s, "://") || strings.HasPrefix(s, "pkg:") {
+		return "", false
+	}
+	return s, true
 }
 
 func parsePURLPkg(purl string) (name, ver string) {
@@ -160,117 +205,58 @@ func isVEXSuppressed(status string) bool {
 	return status == "not_affected" || status == "fixed"
 }
 
-func buildSARIF(items []dto.VulnerabilityListItem) SARIFLog {
-	rulesMap := make(map[string]SARIFRule)
-	results := make([]SARIFResult, 0, len(items))
+// isSuppressed checks whether a finding should be marked suppressed in SARIF.
+// For project-level aggregates across multiple SBOM versions, suppression is
+// only granted if all affected versions are covered by a suppressing VEX statement.
+func isSuppressed(v dto.VulnerabilityListItem) bool {
+	if !isVEXSuppressed(v.VEXStatus) {
+		return false
+	}
+	if v.AffectedSBOMs > 1 && v.VEXAffectedSBOMs < v.AffectedSBOMs {
+		return false
+	}
+	return true
+}
 
+type ruleAgg struct {
+	ruleID   string
+	summary  string
+	maxCVSS  *float64
+	maxLevel int
+}
+
+func aggregateRules(items []dto.VulnerabilityListItem) []SARIFRule {
+	rulesMap := make(map[string]*ruleAgg)
 	for _, v := range items {
 		ruleID := v.VulnID
 		if ruleID == "" {
 			ruleID = "UNKNOWN"
 		}
-
 		summary := v.Summary
 		if summary == "" {
 			summary = ruleID
 		}
-		if existing, ok := rulesMap[ruleID]; !ok {
-			r := SARIFRule{
-				ID: ruleID,
-				ShortDescription: &SARIFMultiformatMessageString{
-					Text: summary,
-				},
-				HelpURI: "https://osv.dev/vulnerability/" + ruleID,
+		sevRank := severityRank(v.Severity)
+		if agg, ok := rulesMap[ruleID]; !ok {
+			rulesMap[ruleID] = &ruleAgg{
+				ruleID:   ruleID,
+				summary:  summary,
+				maxCVSS:  v.CVSSScore,
+				maxLevel: sevRank,
 			}
-			secSev := sarifSecuritySeverity(v.Severity)
-			if secSev != "" {
-				r.Properties = map[string]interface{}{
-					"security-severity": secSev,
+		} else {
+			if (agg.summary == "" || agg.summary == ruleID) && summary != ruleID {
+				agg.summary = summary
+			}
+			if v.CVSSScore != nil {
+				if agg.maxCVSS == nil || *v.CVSSScore > *agg.maxCVSS {
+					agg.maxCVSS = v.CVSSScore
 				}
 			}
-			rulesMap[ruleID] = r
-		} else {
-			if existing.ShortDescription != nil && existing.ShortDescription.Text == ruleID && summary != ruleID {
-				existing.ShortDescription.Text = summary
-			}
-			if existing.Properties == nil {
-				secSev := sarifSecuritySeverity(v.Severity)
-				if secSev != "" {
-					existing.Properties = map[string]interface{}{
-						"security-severity": secSev,
-					}
-				}
-			}
-			rulesMap[ruleID] = existing
-		}
-
-		pkg := formatPackage(v.PURL)
-		var msgText string
-		if v.FixedVersion != "" {
-			msgText = fmt.Sprintf("%s is affected by %s (fixed in: %s)", pkg, ruleID, v.FixedVersion)
-		} else {
-			msgText = fmt.Sprintf("%s is affected by %s (no fix available)", pkg, ruleID)
-		}
-
-		uri := v.SourceFile
-		if uri == "" {
-			uri = v.PURL
-		}
-		if uri == "" {
-			uri = "unknown"
-		}
-
-		res := SARIFResult{
-			RuleID: ruleID,
-			Level:  sarifLevel(v.Severity),
-			Message: SARIFMultiformatMessageString{
-				Text: msgText,
-			},
-			Locations: []SARIFLocation{
-				{
-					PhysicalLocation: SARIFPhysicalLocation{
-						ArtifactLocation: SARIFArtifactLocation{
-							URI: uri,
-						},
-					},
-				},
-			},
-		}
-
-		props := map[string]interface{}{}
-		if v.PURL != "" {
-			props["purl"] = v.PURL
-		}
-		if v.DependencyDepth != nil {
-			props["dependency_depth"] = *v.DependencyDepth
-		}
-		if v.DependencyScope != "" {
-			props["dependency_scope"] = v.DependencyScope
-		}
-		if v.VEXStatus != "" {
-			props["vex_status"] = v.VEXStatus
-		}
-		if len(v.Aliases) > 0 {
-			props["aliases"] = v.Aliases
-		}
-		if len(props) > 0 {
-			res.Properties = props
-		}
-
-		if isVEXSuppressed(v.VEXStatus) {
-			justification := v.VEXStatus
-			if v.VEXJustification != "" {
-				justification += ": " + v.VEXJustification
-			}
-			res.Suppressions = []SARIFSuppression{
-				{
-					Kind:          "external",
-					Justification: justification,
-				},
+			if sevRank > agg.maxLevel {
+				agg.maxLevel = sevRank
 			}
 		}
-
-		results = append(results, res)
 	}
 
 	ruleKeys := make([]string, 0, len(rulesMap))
@@ -281,7 +267,104 @@ func buildSARIF(items []dto.VulnerabilityListItem) SARIFLog {
 
 	rules := make([]SARIFRule, 0, len(ruleKeys))
 	for _, k := range ruleKeys {
-		rules = append(rules, rulesMap[k])
+		agg := rulesMap[k]
+		r := SARIFRule{
+			ID: agg.ruleID,
+			ShortDescription: &SARIFMultiformatMessageString{
+				Text: agg.summary,
+			},
+			HelpURI: "https://osv.dev/vulnerability/" + agg.ruleID,
+		}
+		if agg.maxCVSS != nil {
+			r.Properties = map[string]interface{}{
+				"security-severity": fmt.Sprintf("%.1f", *agg.maxCVSS),
+			}
+		}
+		rules = append(rules, r)
+	}
+	return rules
+}
+
+func buildSARIFResult(v dto.VulnerabilityListItem) SARIFResult {
+	ruleID := v.VulnID
+	if ruleID == "" {
+		ruleID = "UNKNOWN"
+	}
+	pkg := formatPackage(v.PURL)
+	var msgText string
+	if v.FixedVersion != "" {
+		msgText = fmt.Sprintf("%s is affected by %s (fixed in: %s)", pkg, ruleID, v.FixedVersion)
+	} else {
+		msgText = fmt.Sprintf("%s is affected by %s (no fix available)", pkg, ruleID)
+	}
+
+	var locations []SARIFLocation
+	if loc, ok := cleanArtifactLocation(v.SourceFile); ok {
+		locations = []SARIFLocation{
+			{
+				PhysicalLocation: SARIFPhysicalLocation{
+					ArtifactLocation: SARIFArtifactLocation{
+						URI: loc,
+					},
+				},
+			},
+		}
+	}
+
+	res := SARIFResult{
+		RuleID:          ruleID,
+		Level:           sarifLevel(v.Severity),
+		CorrelationGUID: stableCorrelationGUID(ruleID, v.PURL),
+		Message: SARIFMultiformatMessageString{
+			Text: msgText,
+		},
+		Locations: locations,
+	}
+
+	props := make(map[string]interface{})
+	if v.PURL != "" {
+		props["purl"] = v.PURL
+	}
+	if v.DependencyDepth != nil {
+		props["dependency_depth"] = *v.DependencyDepth
+	}
+	if v.DependencyScope != "" {
+		props["dependency_scope"] = v.DependencyScope
+	}
+	if v.VEXStatus != "" {
+		props["vex_status"] = v.VEXStatus
+	}
+	if len(v.Aliases) > 0 {
+		props["aliases"] = v.Aliases
+	}
+	if len(locations) == 0 && v.SourceFile != "" {
+		props["source_file"] = v.SourceFile
+	}
+	if len(props) > 0 {
+		res.Properties = props
+	}
+
+	if isSuppressed(v) {
+		justification := v.VEXStatus
+		if v.VEXJustification != "" {
+			justification += ": " + v.VEXJustification
+		}
+		res.Suppressions = []SARIFSuppression{
+			{
+				Kind:          "external",
+				Justification: justification,
+			},
+		}
+	}
+
+	return res
+}
+
+func buildSARIF(items []dto.VulnerabilityListItem) SARIFLog {
+	rules := aggregateRules(items)
+	results := make([]SARIFResult, 0, len(items))
+	for _, v := range items {
+		results = append(results, buildSARIFResult(v))
 	}
 
 	return SARIFLog{
@@ -303,11 +386,69 @@ func buildSARIF(items []dto.VulnerabilityListItem) SARIFLog {
 	}
 }
 
+// writeSARIFStream writes a SARIF 2.1.0 document to w without building a complete
+// in-memory slice of SARIFResult objects, bounding gateway memory usage.
+func writeSARIFStream(w io.Writer, items []dto.VulnerabilityListItem) error {
+	rules := aggregateRules(items)
+	rulesJSON, err := json.Marshal(rules)
+	if err != nil {
+		return err
+	}
+
+	if _, err := io.WriteString(w, `{"$schema":"`+sarifSchemaURI+`","version":"`+sarifSchemaVersion+`","runs":[{"tool":{"driver":{"name":"`+sarifToolName+`","version":"`+version+`","informationUri":"`+sarifInfoURI+`","rules":`); err != nil {
+		return err
+	}
+	if _, err := w.Write(rulesJSON); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, `}},"results":[`); err != nil {
+		return err
+	}
+
+	enc := json.NewEncoder(w)
+	for i, v := range items {
+		if i > 0 {
+			if _, err := io.WriteString(w, ","); err != nil {
+				return err
+			}
+		}
+		res := buildSARIFResult(v)
+		if err := enc.Encode(res); err != nil {
+			return err
+		}
+	}
+
+	_, err = io.WriteString(w, "]}]}")
+	return err
+}
+
+func writeEmptySARIF(w http.ResponseWriter, status int) {
+	w.Header().Set("Content-Type", sarifContentType)
+	w.WriteHeader(status)
+	logData := SARIFLog{
+		Schema:  sarifSchemaURI,
+		Version: sarifSchemaVersion,
+		Runs: []SARIFRun{
+			{
+				Tool: SARIFTool{
+					Driver: SARIFDriver{
+						Name:           sarifToolName,
+						Version:        version,
+						InformationURI: sarifInfoURI,
+						Rules:          []SARIFRule{},
+					},
+				},
+				Results: []SARIFResult{},
+			},
+		},
+	}
+	_ = json.NewEncoder(w).Encode(logData)
+}
+
 func writeSARIF(w http.ResponseWriter, status int, items []dto.VulnerabilityListItem) {
 	w.Header().Set("Content-Type", sarifContentType)
 	w.WriteHeader(status)
-	logData := buildSARIF(items)
-	if err := json.NewEncoder(w).Encode(logData); err != nil {
-		log.Printf("ERROR: Failed to encode SARIF response: %v", err)
+	if err := writeSARIFStream(w, items); err != nil {
+		log.Printf("ERROR: Failed to write SARIF stream: %v", err)
 	}
 }

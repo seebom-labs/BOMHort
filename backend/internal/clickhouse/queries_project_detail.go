@@ -290,7 +290,8 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 			ifNull(vx.vex_author, '')            AS vex_author,
 			ifNull(vx.vex_tooling, '')           AS vex_tooling,
 			f.has_no_dep_graph                   AS has_no_dep_graph,
-			f.reachability, f.evidence_source, f.evidence_ref, f.evidence_at
+			f.reachability, f.evidence_source, f.evidence_ref, f.evidence_at,
+			ifNull(vx.vex_suppressed_sboms, 0)   AS vex_suppressed_sboms
 		FROM (
 			SELECT
 				v.vuln_id AS vuln_id, v.purl AS purl,
@@ -327,7 +328,8 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 				argMax(toString(st.vex_id), st.vex_timestamp) AS vex_statement_id,
 				argMax(st.author, st.vex_timestamp)          AS vex_author,
 				argMax(st.tooling, st.vex_timestamp)         AS vex_tooling,
-				max(st.vex_timestamp)                        AS winning_timestamp
+				max(st.vex_timestamp)                        AS winning_timestamp,
+				uniqExactIf(st.sbom_id, st.status IN ('not_affected', 'fixed')) AS vex_suppressed_sboms
 			FROM (
 				SELECT DISTINCT vuln_id, purl,
 					arrayJoin(arrayConcat([vuln_id], aliases)) AS match_id
@@ -366,6 +368,7 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 			&item.VEXStatementID, &item.VEXAuthor, &item.VEXTooling,
 			&hasNoDepGraph,
 			&item.Reachability, &item.EvidenceSource, &item.EvidenceRef, &evidenceAt,
+			&item.VEXAffectedSBOMs,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan project vulnerability row: %w", err)
 		}

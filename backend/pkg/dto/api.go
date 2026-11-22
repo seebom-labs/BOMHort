@@ -145,6 +145,9 @@ type VulnerabilityListItem struct {
 	// (e.g. NVD-sourced entries that list none).
 	CWEIDs       []string `json:"cwe_ids,omitempty"`
 	Severity     string   `json:"severity"`
+	// CVSSScore (#512) is the numeric CVSS base score (0.0 to 10.0) from the
+	// advisory. Omitted when not available.
+	CVSSScore    *float64 `json:"cvss_score,omitempty"`
 	PURL         string   `json:"purl"`
 	Summary      string   `json:"summary"`
 	FixedVersion string   `json:"fixed_version"`
@@ -188,6 +191,10 @@ type VulnerabilityListItem struct {
 	// the project's SBOMs carry this (vuln_id, purl) pair. Omitted on
 	// per-SBOM listings where it would always be 1.
 	AffectedSBOMs uint64 `json:"affected_sboms,omitempty"`
+	// VEXAffectedSBOMs (#512) is how many of the project's affected SBOMs carry
+	// a suppressing VEX statement ('not_affected' or 'fixed'). Only populated
+	// on project-level listings.
+	VEXAffectedSBOMs uint64 `json:"vex_affected_sboms,omitempty"`
 	// DependencyScope says how the affected package is pulled in: "root",
 	// "direct", "transitive" or "unknown" (no relationship graph, or ingested
 	// before depths were recorded). DependencyDepth is the shortest path

@@ -987,6 +987,8 @@ Every finding of [`GET /api/v1/vulnerabilities`](#get-apiv1vulnerabilities) as a
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `format` | string | ✅ | `csv` or `sarif` (#512). Anything else is a `400`. |
+| `limit` | integer | - | Maximum results to export (SARIF only, default 25000, capped at 25000 for GitHub Code Scanning compatibility, #512). |
+| `offset` | integer | - | Number of findings to skip for partitioned exports (SARIF only, #512). |
 | `scope` | string | — | Only `root`, `direct`, `transitive` or `unknown` findings (see [Dependency scope](#dependency-scope)) |
 | `cluster` | string | — | Only findings of SBOMs in these clusters |
 | `namespace` | string | — | Only findings of SBOMs in these namespaces |
@@ -1003,7 +1005,7 @@ A legacy `vex_filter` parameter is ignored, as on the JSON listing.
 
 **Response (CSV):** `200 OK`, `Content-Type: text/csv; charset=utf-8`, `Content-Disposition: attachment; filename="bomhort-vulnerabilities-<YYYY-MM-DD>.csv"` (UTC date).
 
-**Response (SARIF, #512):** `200 OK`, `Content-Type: application/sarif+json`, `Content-Disposition: attachment; filename="bomhort-vulnerabilities-<YYYY-MM-DD>.sarif"` (UTC date). OASIS SARIF 2.1.0 format with unique rules per vulnerability id, severity mapping, physical locations, and external suppressions for findings with VEX not_affected or fixed status.
+**Response (SARIF, #512):** `200 OK`, `Content-Type: application/sarif+json`, `Content-Disposition: attachment; filename="bomhort-vulnerabilities-<YYYY-MM-DD>.sarif"` (UTC date). OASIS SARIF 2.1.0 format with unique rules per vulnerability id, deterministic severity and CVSS score mapping, repository-relative physical locations, and external suppressions for findings with VEX not_affected or fixed status. Capped at 25,000 results per export to comply with GitHub Code Scanning upload bounds; reports with >25,000 findings return `400` when unpartitioned, instructing clients to use `?limit=25000&offset=0`. Partitioned responses provide `X-Has-More` and standard `Link: <...>; rel="next"` headers.
 
 ```csv
 cve_id,vuln_id,aliases,severity,purl,summary,fixed_version,source_file,discovered_at,dependency_scope,dependency_depth,remediation_status,reachability,evidence_source,evidence_ref,evidence_at,exploit_available,exploit_sources,action_statement,action_statement_timestamp,vex_author
