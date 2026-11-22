@@ -31,6 +31,33 @@ make ui-dev   # Terminal 4
 
 See the [Development Guide](https://docs.bomhort.dev/docs/development/) for details.
 
+## AI-assisted development and reviews
+
+All AI tools must follow [AGENTS.md](AGENTS.md) and use the
+[guardrail and skill inventory](.ai/README.md) before development or review.
+Configure your tool to load the applicable rules and skills; when discovery is
+unsupported, provide them explicitly. Codex, Claude and Copilot entry points
+are included; for another tool, supply the root instructions explicitly.
+Contributors remain responsible for verifying the output.
+
+Read the [AI usage policy](docs/content/docs/development/ai-policy.md).
+BOMHort is not a venue for unsolicited AI experiments or bulk cleanup PRs.
+Broad AI-suggested refactoring requires a maintainer request; propose non-trivial
+changes in an issue/discussion first and align with the project architecture.
+Submissions need a real problem, human understanding and verified provenance,
+not just an AI-generated claim that the code could be improved.
+
+For AI-assisted PR reviews, follow [.ai/review.md](.ai/review.md).
+Executable changes require a **disposable local stack and real end-to-end
+tests**; UI changes also require browser, visual/accessibility and performance
+analysis. Include exact commands, outcomes and evidence for the reviewed head
+commit. Missing Docker/browser access or skipped tests means an incomplete
+review, not a pass. Only strictly non-executable documentation changes qualify
+for the procedure's documented exception.
+
+Never run destructive demos/resets on shared data. AI findings do not replace
+human approval, required CI, or the existing OWNERS/Prow merge gate.
+
 ## Coding Standards
 
 ### Go (Backend)
@@ -242,4 +269,3 @@ All contributors must follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 ## License
 
 By contributing to BOMHort, you agree that your contributions will be licensed under the [Apache License 2.0](LICENSE).
-

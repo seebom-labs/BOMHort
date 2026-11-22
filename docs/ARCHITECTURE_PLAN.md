@@ -17,6 +17,12 @@ The API gateway also exposes the read-only Transparency Exchange API (TEA). It a
 ```
 bomhort/
 ├── AGENTS.md
+├── .ai/                        # Shared internal AI rules and review procedure
+├── CLAUDE.md                   # Claude adapter importing the small AGENTS.md
+├── .agents/skills/             # Tool-neutral/Codex review skill entry point
+├── .claude/skills/             # Claude review skill adapter
+├── .github/copilot-instructions.md # Copilot adapter to the shared root policy
+├── .github/instructions/       # Scoped Copilot adapters to shared rules
 ├── README.md
 ├── LICENSE
 ├── Makefile                    # dev, dev-reset, re-ingest, re-scan, ch-shell, etc.
@@ -112,7 +118,6 @@ bomhort/
         ├── configmap.yaml
         ├── configmap-license-exceptions.yaml
         ├── configmap-license-policy.yaml
-        ├── configmap-custom-theme.yaml
         ├── configmap-migrations.yaml
         ├── configmap-nginx.yaml
         ├── configmap-ui-config.yaml
@@ -571,7 +576,7 @@ Moved to Section 10 for comprehensive coverage including exemptions and visual r
 - 60+ CSS custom properties in `styles.scss` (layout, brand, navbar, text, severity, status, license, charts)
 - **Dark Mode Toggle** in the navbar (top right), persisted to `localStorage`, respects `prefers-color-scheme`
 - **Custom Theme CSS:** External `custom-theme.css` mountable without Angular rebuild. Overrides any CSS variables.
-  - K8s: `bomhort-custom-theme` ConfigMap (`ui.customTheme.enabled: true`)
+  - K8s: a ConfigMap you manage yourself (`ui.customTheme.enabled: true`, `ui.customTheme.existingConfigMap` / `existingConfigMapKey`)
   - Local: `CUSTOM_THEME=./my-theme.css` in `.env`
 - **Site Configuration (ui-config.json):** All UI texts (brand name, page title, dashboard title/description/disclaimer, footer) configurable via external JSON file without Angular rebuild. Loaded via `APP_INITIALIZER` at app startup. Missing keys fall back to built-in defaults.
   - K8s: `bomhort-ui-config` ConfigMap (`ui.siteConfig.enabled: true`, content via `ui.siteConfig.content.*` in Helm values)
