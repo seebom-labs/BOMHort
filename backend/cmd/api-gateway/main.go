@@ -410,6 +410,11 @@ func main() {
 			writeError(w, http.StatusBadRequest, "Invalid SBOM ID")
 			return
 		}
+		format := r.URL.Query().Get("format")
+		if format != "" && format != "sarif" {
+			writeError(w, http.StatusBadRequest, "Invalid format (expected sarif)")
+			return
+		}
 		scope, ok := parseScope(r.URL.Query().Get("scope"))
 		if !ok {
 			writeError(w, http.StatusBadRequest, "Invalid scope (expected direct, transitive, root or unknown)")
@@ -438,6 +443,11 @@ func main() {
 		}
 		if exploitOnly {
 			vulns = onlyExploitable(vulns)
+		}
+		if format == "sarif" {
+			writeSARIF(w, http.StatusOK, vulns)
+			return
+		}
 		}
 		writeJSON(w, http.StatusOK, vulns)
 	})
@@ -703,6 +713,11 @@ func main() {
 			writeError(w, http.StatusBadRequest, "Invalid project name")
 			return
 		}
+		format := r.URL.Query().Get("format")
+		if format != "" && format != "sarif" {
+			writeError(w, http.StatusBadRequest, "Invalid format (expected sarif)")
+			return
+		}
 		scope, ok := parseScope(r.URL.Query().Get("scope"))
 		if !ok {
 			writeError(w, http.StatusBadRequest, "Invalid scope (expected direct, transitive, root or unknown)")
@@ -721,6 +736,11 @@ func main() {
 		}
 		if exploitOnly {
 			items = onlyExploitable(items)
+		}
+		if format == "sarif" {
+			writeSARIF(w, http.StatusOK, items)
+			return
+		}
 		}
 		writeJSON(w, http.StatusOK, items)
 	})
