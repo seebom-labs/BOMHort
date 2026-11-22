@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"log"
 	"os"
 	"sync"
 	"time"
@@ -275,4 +276,66 @@ func (l *kubernetesLocker) WithLock(ctx context.Context, fn func(context.Context
 			}
 		}
 	})
+}
+
+// RunLeader runs fn only on the single worker replica that holds leaseName.
+// In-cluster, it competes for the Kubernetes Lease using client-go leader election.
+// Outside Kubernetes (e.g. local Docker or unit tests), it runs fn in this process directly.
+// If leadership is lost, the context passed to fn is cancelled and another replica takes over.
+func RunLeader(ctx context.Context, workerID, leaseName string, fn func(leaderCtx context.Context)) error {
+	namespace := os.Getenv("POD_NAMESPACE")
+	if namespace == "" {
+		if os.Getenv("KUBERNETES_SERVICE_HOST") == "" {
+			go fn(ctx)
+			return nil
+		}
+		return errors.New("POD_NAMESPACE is required for Kubernetes leader election")
+	}
+	cfg, err := rest.InClusterConfig()
+	if err != nil {
+		return fmt.Errorf("load in-cluster config for leader election: %w", err)
+	}
+	client, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return fmt.Errorf("create Kubernetes client for leader election: %w", err)
+	}
+	return runLeaderWithClient(ctx, client, namespace, leaseName, workerID, fn)
+}
+
+func runLeaderWithClient(ctx context.Context, client kubernetes.Interface, namespace, leaseName, workerID string, fn func(leaderCtx context.Context)) error {
+	lock, err := resourcelock.New(
+		resourcelock.LeasesResourceLock,
+		namespace,
+		leaseName,
+		client.CoreV1(),
+		client.CoordinationV1(),
+		resourcelock.ResourceLockConfig{Identity: workerID + "/" + uuid.NewString()},
+	)
+	if err != nil {
+		return fmt.Errorf("create Kubernetes Lease lock: %w", err)
+	}
+
+	elector, err := leaderelection.NewLeaderElector(leaderelection.LeaderElectionConfig{
+		Lock:            lock,
+		LeaseDuration:   leaseDuration,
+		RenewDeadline:   renewDeadline,
+		RetryPeriod:     retryPeriod,
+		ReleaseOnCancel: true,
+		Name:            leaseName,
+		Callbacks: leaderelection.LeaderCallbacks{
+			OnStartedLeading: func(leaderCtx context.Context) {
+				log.Printf("Leader lease %q acquired by %s (sync owner)", leaseName, workerID)
+				fn(leaderCtx)
+			},
+			OnStoppedLeading: func() {
+				log.Printf("Leader lease %q released by %s", leaseName, workerID)
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("configure Kubernetes leader election: %w", err)
+	}
+
+	go elector.Run(ctx)
+	return nil
 }
