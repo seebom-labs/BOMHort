@@ -30,7 +30,7 @@
     "@angular/build": "^22.2.7",
     "@angular/cli": "^22.2.7",
     "@angular/compiler-cli": "^22.2.6",
-    "@playwright/test": "^1.65.0",
+    "@playwright/test": "^1.65.1",
     "jsdom": "^31.0.1",
     "prettier": "^3.10.1",
     "typescript": "~6.0.3",
