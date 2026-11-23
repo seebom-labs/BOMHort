@@ -52,7 +52,7 @@ func (c *Client) QueryLicenseDiscrepancies(ctx context.Context, sbomID, project,
 	searchWhere := ""
 	var searchArgs []any
 	if search != "" {
-		pattern := "%" + search + "%"
+		pattern := "%" + escapeLikePattern(search) + "%"
 		searchWhere = "AND (name ILIKE ? OR ver ILIKE ? OR purl ILIKE ? OR coalesce(s.document_name, '') ILIKE ? OR lic ILIKE ? OR disc ILIKE ?)"
 		searchArgs = append(searchArgs, pattern, pattern, pattern, pattern, pattern, pattern)
 	}
