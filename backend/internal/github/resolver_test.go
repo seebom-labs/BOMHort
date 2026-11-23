@@ -398,11 +398,11 @@ func TestFetch_InvalidOwnerRepo(t *testing.T) {
 
 	for _, p := range invalidPairs {
 		owner, repo := p[0], p[1]
-		if _, err := resolver.fetchLicense(ctx, owner, repo); err == nil {
-			t.Errorf("fetchLicense(%q, %q) expected error, got nil", owner, repo)
+		if lic, err := resolver.fetchLicense(ctx, owner, repo); err != nil || lic != "" {
+			t.Errorf("fetchLicense(%q, %q) = %q, %v; want \"\", nil", owner, repo, lic, err)
 		}
-		if _, err := resolver.fetchRepoMetadata(ctx, owner, repo); err == nil {
-			t.Errorf("fetchRepoMetadata(%q, %q) expected error, got nil", owner, repo)
+		if meta, err := resolver.fetchRepoMetadata(ctx, owner, repo); err != nil || meta != nil {
+			t.Errorf("fetchRepoMetadata(%q, %q) = %+v, %v; want nil, nil", owner, repo, meta, err)
 		}
 	}
 }

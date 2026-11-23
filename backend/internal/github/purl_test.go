@@ -192,6 +192,20 @@ func TestExtractGitHubRepo(t *testing.T) {
 			wantRepo:  "",
 			wantOK:    false,
 		},
+		{
+			name:      "invalid gopkg.in 1-part format (path traversal in package)",
+			purl:      "pkg:golang/gopkg.in/..v1@v1.0.0",
+			wantOwner: "",
+			wantRepo:  "",
+			wantOK:    false,
+		},
+		{
+			name:      "invalid gopkg.in 2-part format (path traversal in user)",
+			purl:      "pkg:golang/gopkg.in/../pkg.v1@v1.0.0",
+			wantOwner: "",
+			wantRepo:  "",
+			wantOK:    false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -245,6 +259,8 @@ func TestExtractGitHubRepo_GopkgInRedirectRule(t *testing.T) {
 		{"pkg:golang/gopkg.in/yaml.v3@v3.0.1", "go-yaml", "yaml", true},
 		{"pkg:golang/gopkg.in/noversion@v1.0.0", "", "", false},
 		{"pkg:golang/gopkg.in/user/pkg.vx@v1.0.0", "", "", false},
+		{"pkg:golang/gopkg.in/..v1@v1.0.0", "", "", false},
+		{"pkg:golang/gopkg.in/../pkg.v1@v1.0.0", "", "", false},
 	}
 	for _, tc := range tests {
 		owner, repo, ok := ExtractGitHubRepo(tc.purl)
