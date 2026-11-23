@@ -5,6 +5,8 @@ import (
 	"log"
 	"net/http"
 	"strings"
+
+	"github.com/seebom-labs/bomhort/backend/internal/sanitize"
 )
 
 // httpGuard wraps the MCP Streamable HTTP handler with the two checks the
@@ -65,17 +67,7 @@ func validBearer(r *http.Request, token string) bool {
 }
 
 // sanitizeHeader strips control characters and truncates, so a hostile Origin
-// cannot forge log lines. Mirrors sanitizeLogParam in the API gateway.
+// cannot forge log lines. Uses the shared sanitize.LogParam helper.
 func sanitizeHeader(v string) string {
-	var b strings.Builder
-	for _, r := range v {
-		if r == '\n' || r == '\r' || r < 0x20 || r == 0x7f {
-			continue
-		}
-		b.WriteRune(r)
-		if b.Len() >= 200 {
-			break
-		}
-	}
-	return b.String()
+	return sanitize.LogParam(v)
 }
