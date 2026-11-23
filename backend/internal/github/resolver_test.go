@@ -385,7 +385,19 @@ func TestOversizedResponseIsNotDecoded(t *testing.T) {
 }
 
 func TestFetch_InvalidOwnerRepo(t *testing.T) {
-	resolver := newTestResolver()
+	var requestCount int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		t.Errorf("unexpected outbound HTTP request for invalid owner/repo: %s %s", r.Method, r.URL.RequestURI())
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	resolver := &Resolver{
+		apiBase:    server.URL,
+		httpClient: server.Client(),
+		limiter:    newTokenBucket(1000, 100),
+	}
 	ctx := context.Background()
 
 	invalidPairs := [][2]string{
@@ -404,5 +416,9 @@ func TestFetch_InvalidOwnerRepo(t *testing.T) {
 		if meta, err := resolver.fetchRepoMetadata(ctx, owner, repo); err != nil || meta != nil {
 			t.Errorf("fetchRepoMetadata(%q, %q) = %+v, %v; want nil, nil", owner, repo, meta, err)
 		}
+	}
+
+	if requestCount > 0 {
+		t.Fatalf("expected 0 HTTP requests for invalid owner/repo pairs, got %d", requestCount)
 	}
 }

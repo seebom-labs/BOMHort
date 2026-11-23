@@ -180,13 +180,12 @@ func stripGoVersionSuffix(path string) string {
 
 // ValidOwner reports whether s is a valid GitHub user or organization name.
 // GitHub usernames may only contain alphanumeric characters, hyphens, or underscores,
-// cannot begin or end with a hyphen or dot, cannot be "." or "..", and have a
-// maximum length of 39 characters.
+// cannot begin or end with a hyphen, and have a maximum length of 39 characters.
 func ValidOwner(s string) bool {
-	if len(s) == 0 || len(s) > 39 || strings.Contains(s, "..") {
+	if len(s) == 0 || len(s) > 39 {
 		return false
 	}
-	if s[0] == '-' || s[len(s)-1] == '-' || s[0] == '.' || s[len(s)-1] == '.' {
+	if s[0] == '-' || s[len(s)-1] == '-' {
 		return false
 	}
 	for i := 0; i < len(s); i++ {
