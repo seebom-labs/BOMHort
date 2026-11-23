@@ -21,6 +21,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
 
@@ -190,7 +191,7 @@ func main() {
 		}
 		stats, err := chClient.QueryDashboardStats(r.Context(), f)
 		if err != nil {
-			log.Printf("ERROR: dashboard stats: %v", err)
+			logRequestError(r, "ERROR: dashboard stats", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch dashboard stats")
 			return
 		}
@@ -226,7 +227,7 @@ func main() {
 
 		resp, err := chClient.QuerySBOMsByImage(r.Context(), page, pageSize, search, project, originVal, minQuality, digest, imagePrefix)
 		if err != nil {
-			log.Printf("ERROR: list sboms: %v", err)
+			logRequestErrorf(r, "ERROR: list sboms: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch SBOMs")
 			return
 		}
@@ -238,7 +239,7 @@ func main() {
 		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
 		resp, err := chClient.QueryImages(r.Context(), page, pageSize)
 		if err != nil {
-			log.Printf("ERROR: list images: %v", err)
+			logRequestErrorf(r, "ERROR: list images: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch images")
 			return
 		}
@@ -253,7 +254,7 @@ func main() {
 		if !includeBody {
 			exists, err := chClient.ImageExists(r.Context(), digest)
 			if err != nil {
-				log.Printf("ERROR: image existence: %v", err)
+				logRequestErrorf(r, "ERROR: image existence: %v", err)
 				writeError(w, http.StatusInternalServerError, "Failed to check image")
 				return
 			}
@@ -272,7 +273,7 @@ func main() {
 			return
 		}
 		if err != nil {
-			log.Printf("ERROR: image detail: %v", err)
+			logRequestErrorf(r, "ERROR: image detail: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch image")
 			return
 		}
@@ -316,7 +317,7 @@ func main() {
 	mux.HandleFunc("GET /api/v1/licenses/compliance", func(w http.ResponseWriter, r *http.Request) {
 		items, err := chClient.QueryLicenseCompliance(r.Context(), r.URL.Query().Get("license"))
 		if err != nil {
-			log.Printf("ERROR: license compliance: %v", err)
+			logRequestErrorf(r, "ERROR: license compliance: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch license compliance")
 			return
 		}
@@ -327,7 +328,7 @@ func main() {
 	mux.HandleFunc("GET /api/v1/licenses/sources", func(w http.ResponseWriter, r *http.Request) {
 		items, err := chClient.QueryLicenseSources(r.Context())
 		if err != nil {
-			log.Printf("ERROR: license sources: %v", err)
+			logRequestErrorf(r, "ERROR: license sources: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch license sources")
 			return
 		}
@@ -371,7 +372,7 @@ func main() {
 				writeError(w, http.StatusNotFound, "SBOM not found")
 				return
 			}
-			log.Printf("ERROR: sbom dependencies for %s: %v", sanitizeLogParam(sbomID), err)
+			logRequestErrorf(r, "ERROR: sbom dependencies for %s: %v", sanitizeLogParam(sbomID), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch dependencies")
 			return
 		}
@@ -394,7 +395,7 @@ func main() {
 				writeError(w, http.StatusNotFound, "SBOM not found")
 				return
 			}
-			log.Printf("ERROR: sbom detail for %s: %v", sanitizeLogParam(sbomID), err)
+			logRequestErrorf(r, "ERROR: sbom detail for %s: %v", sanitizeLogParam(sbomID), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch SBOM detail")
 			return
 		}
@@ -430,7 +431,7 @@ func main() {
 		}
 		vulns, err := chClient.QuerySBOMVulnerabilities(r.Context(), sbomID, scope, reachability, cwe)
 		if err != nil {
-			log.Printf("ERROR: sbom vulns for %s: %v", sanitizeLogParam(sbomID), err)
+			logRequestErrorf(r, "ERROR: sbom vulns for %s: %v", sanitizeLogParam(sbomID), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch SBOM vulnerabilities")
 			return
 		}
@@ -443,7 +444,7 @@ func main() {
 	// Reachability evidence ingest for a specific SBOM (#535).
 	mux.HandleFunc("POST /api/v1/sboms/{id}/evidence", func(w http.ResponseWriter, r *http.Request) {
 		if !cfg.AuthEnabled {
-			log.Printf("AUTH: rejected evidence ingest from %s -- AUTH_ENABLED=false", clientIP(r))
+			log.Printf("AUTH: rejected evidence ingest from %s -- AUTH_ENABLED=false", sanitizeLogParam(clientIP(r)))
 			writeError(w, http.StatusForbidden, "Evidence ingest requires AUTH_ENABLED=true")
 			return
 		}
@@ -468,7 +469,7 @@ func main() {
 				writeError(w, http.StatusNotFound, "SBOM not found")
 				return
 			}
-			log.Printf("ERROR: apply evidence for %s: %v", sanitizeLogParam(sbomID), err)
+			logRequestErrorf(r, "ERROR: apply evidence for %s: %v", sanitizeLogParam(sbomID), err)
 			writeError(w, http.StatusInternalServerError, "Failed to apply evidence")
 			return
 		}
@@ -484,7 +485,7 @@ func main() {
 		}
 		stmts, err := chClient.QuerySBOMVEXStatements(r.Context(), sbomID)
 		if err != nil {
-			log.Printf("ERROR: sbom vex statements for %s: %v", sanitizeLogParam(sbomID), err)
+			logRequestErrorf(r, "ERROR: sbom vex statements for %s: %v", sanitizeLogParam(sbomID), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch VEX statements")
 			return
 		}
@@ -499,7 +500,7 @@ func main() {
 		}
 		licenses, err := chClient.QuerySBOMLicenses(r.Context(), sbomID)
 		if err != nil {
-			log.Printf("ERROR: sbom licenses for %s: %v", sanitizeLogParam(sbomID), err)
+			logRequestErrorf(r, "ERROR: sbom licenses for %s: %v", sanitizeLogParam(sbomID), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch SBOM licenses")
 			return
 		}
@@ -542,7 +543,7 @@ func main() {
 		if r.URL.Query().Get("summary") == "true" {
 			summaries, err := chClient.QueryProjectLicenseViolationSummaries(r.Context(), excIdx, r.URL.Query().Get("search"))
 			if err != nil {
-				log.Printf("ERROR: license violation summaries: %v", err)
+				logRequestErrorf(r, "ERROR: license violation summaries: %v", err)
 				writeError(w, http.StatusInternalServerError, "Failed to fetch license violations")
 				return
 			}
@@ -551,7 +552,7 @@ func main() {
 		}
 		violations, err := chClient.QueryProjectsWithLicenseViolations(r.Context(), excIdx)
 		if err != nil {
-			log.Printf("ERROR: license violations: %v", err)
+			logRequestErrorf(r, "ERROR: license violations: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch license violations")
 			return
 		}
@@ -581,7 +582,7 @@ func main() {
 		if err != nil {
 			// The flat list still works without parents; the grouped one
 			// does not.
-			log.Printf("ERROR: resolve project parents: %v", err)
+			logRequestErrorf(r, "ERROR: resolve project parents: %v", err)
 			if groupBy == "parent" {
 				writeError(w, http.StatusInternalServerError, "Failed to group projects")
 				return
@@ -597,7 +598,7 @@ func main() {
 		if groupBy == "parent" {
 			resp, err := chClient.QueryProjectGroups(r.Context(), assignments, page, pageSize, search, tag, originVal)
 			if err != nil {
-				log.Printf("ERROR: list project groups: %v", err)
+				logRequestErrorf(r, "ERROR: list project groups: %v", err)
 				writeError(w, http.StatusInternalServerError, "Failed to fetch project groups")
 				return
 			}
@@ -607,7 +608,7 @@ func main() {
 
 		resp, err := chClient.QueryProjects(r.Context(), page, pageSize, search, tag, originVal)
 		if err != nil {
-			log.Printf("ERROR: list projects: %v", err)
+			logRequestErrorf(r, "ERROR: list projects: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch projects")
 			return
 		}
@@ -620,7 +621,7 @@ func main() {
 	mux.HandleFunc("GET /api/v1/tags", func(w http.ResponseWriter, r *http.Request) {
 		items, err := chClient.QueryTags(r.Context())
 		if err != nil {
-			log.Printf("ERROR: list tags: %v", err)
+			logRequestErrorf(r, "ERROR: list tags: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch tags")
 			return
 		}
@@ -666,12 +667,12 @@ func main() {
 				writeError(w, http.StatusNotFound, "Project not found")
 				return
 			}
-			log.Printf("ERROR: project detail for %s: %v", sanitizeLogParam(name), err)
+			logRequestErrorf(r, "ERROR: project detail for %s: %v", sanitizeLogParam(name), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch project")
 			return
 		}
 		if assignments, err := parents.Assignments(r.Context()); err != nil {
-			log.Printf("ERROR: resolve project parents: %v", err)
+			logRequestErrorf(r, "ERROR: resolve project parents: %v", err)
 		} else {
 			clickhouse.AnnotateProjectDetail(detail, assignments)
 		}
@@ -688,7 +689,7 @@ func main() {
 		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
 		resp, err := chClient.QueryProjectSBOMs(r.Context(), name, page, pageSize)
 		if err != nil {
-			log.Printf("ERROR: project sboms for %s: %v", sanitizeLogParam(name), err)
+			logRequestErrorf(r, "ERROR: project sboms for %s: %v", sanitizeLogParam(name), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch project SBOMs")
 			return
 		}
@@ -713,7 +714,7 @@ func main() {
 		}
 		items, err := chClient.QueryProjectVulnerabilities(r.Context(), name, scope)
 		if err != nil {
-			log.Printf("ERROR: project vulnerabilities for %s: %v", sanitizeLogParam(name), err)
+			logRequestErrorf(r, "ERROR: project vulnerabilities for %s: %v", sanitizeLogParam(name), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch project vulnerabilities")
 			return
 		}
@@ -734,7 +735,7 @@ func main() {
 		search := sanitizeSearchTerm(r.URL.Query().Get("search"))
 		resp, err := chClient.QueryProjectPackages(r.Context(), name, page, pageSize, search)
 		if err != nil {
-			log.Printf("ERROR: project packages for %s: %v", sanitizeLogParam(name), err)
+			logRequestErrorf(r, "ERROR: project packages for %s: %v", sanitizeLogParam(name), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch project packages")
 			return
 		}
@@ -808,7 +809,7 @@ func main() {
 		}
 		projects, err := chClient.QueryAffectedProjectsByCVE(r.Context(), vulnID, f)
 		if err != nil {
-			log.Printf("ERROR: affected projects for %s: %v", sanitizeLogParam(vulnID), err)
+			logRequestErrorf(r, "ERROR: affected projects for %s: %v", sanitizeLogParam(vulnID), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch affected projects")
 			return
 		}
@@ -820,7 +821,7 @@ func main() {
 		limit := clampPageSize(parseUint64(r.URL.Query().Get("limit"), 50))
 		stats, err := chClient.QueryDependencyStats(r.Context(), limit)
 		if err != nil {
-			log.Printf("ERROR: dependency stats: %v", err)
+			logRequestErrorf(r, "ERROR: dependency stats: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch dependency stats")
 			return
 		}
@@ -834,7 +835,7 @@ func main() {
 		search := sanitizeSearchTerm(r.URL.Query().Get("search"))
 		resp, err := chClient.QueryVersionSkew(r.Context(), page, pageSize, search)
 		if err != nil {
-			log.Printf("ERROR: version skew: %v", err)
+			logRequestErrorf(r, "ERROR: version skew: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch version skew data")
 			return
 		}
@@ -845,7 +846,7 @@ func main() {
 	mux.HandleFunc("GET /api/v1/stats/quality", func(w http.ResponseWriter, r *http.Request) {
 		stats, err := chClient.QueryQualityStats(r.Context())
 		if err != nil {
-			log.Printf("ERROR: quality stats: %v", err)
+			logRequestErrorf(r, "ERROR: quality stats: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch quality stats")
 			return
 		}
@@ -859,7 +860,7 @@ func main() {
 
 		resp, err := chClient.QueryVEXStatements(r.Context(), page, pageSize)
 		if err != nil {
-			log.Printf("ERROR: list vex statements: %v", err)
+			logRequestErrorf(r, "ERROR: list vex statements: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch VEX statements")
 			return
 		}
@@ -881,7 +882,7 @@ func main() {
 		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 20))
 		resp, err := chClient.QueryArchivedRepos(r.Context(), page, pageSize)
 		if err != nil {
-			log.Printf("ERROR: archived repos: %v", err)
+			logRequestErrorf(r, "ERROR: archived repos: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch archived repositories")
 			return
 		}
@@ -900,7 +901,7 @@ func main() {
 		pageSize = clampPageSize(pageSize)
 		result, err := chClient.QueryDependencySearch(r.Context(), q, page, pageSize)
 		if err != nil {
-			log.Printf("ERROR: package search q=%s: %v", sanitizeLogParam(q), err)
+			logRequestErrorf(r, "ERROR: package search q=%s: %v", sanitizeLogParam(q), err)
 			writeError(w, http.StatusInternalServerError, "Failed to search packages")
 			return
 		}
@@ -918,7 +919,7 @@ func main() {
 		pageSize = clampPageSize(pageSize)
 		result, err := chClient.QueryPackageDetail(r.Context(), name, page, pageSize)
 		if err != nil {
-			log.Printf("ERROR: package detail name=%s: %v", sanitizeLogParam(name), err)
+			logRequestErrorf(r, "ERROR: package detail name=%s: %v", sanitizeLogParam(name), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch package detail")
 			return
 		}
@@ -936,7 +937,7 @@ func main() {
 		limit := clampSearchLimit(parseUint64(r.URL.Query().Get("limit"), 5))
 		result, err := chClient.QueryGlobalSearch(r.Context(), q, limit)
 		if err != nil {
-			log.Printf("ERROR: global search q=%s: %v", sanitizeLogParam(q), err)
+			logRequestErrorf(r, "ERROR: global search q=%s: %v", sanitizeLogParam(q), err)
 			writeError(w, http.StatusInternalServerError, "Failed to perform search")
 			return
 		}
@@ -949,7 +950,7 @@ func main() {
 	mux.HandleFunc("GET /api/v1/clusters", func(w http.ResponseWriter, r *http.Request) {
 		clusters, err := chClient.QueryClusters(r.Context())
 		if err != nil {
-			log.Printf("ERROR: list clusters: %v", err)
+			logRequestErrorf(r, "ERROR: list clusters: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch clusters")
 			return
 		}
@@ -965,7 +966,7 @@ func main() {
 		}
 		stats, err := chClient.QueryClusterStats(r.Context(), name)
 		if err != nil {
-			log.Printf("ERROR: cluster stats for %s: %v", sanitizeLogParam(name), err)
+			logRequestErrorf(r, "ERROR: cluster stats for %s: %v", sanitizeLogParam(name), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch cluster stats")
 			return
 		}
@@ -996,7 +997,7 @@ func main() {
 		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
 		resp, err := chClient.QueryClusterSBOMs(r.Context(), name, page, pageSize, originVal)
 		if err != nil {
-			log.Printf("ERROR: cluster sboms for %s: %v", sanitizeLogParam(name), err)
+			logRequestErrorf(r, "ERROR: cluster sboms for %s: %v", sanitizeLogParam(name), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch cluster SBOMs")
 			return
 		}
@@ -1017,7 +1018,7 @@ func main() {
 		}
 		namespaces, err := chClient.QueryNamespaces(r.Context(), cluster)
 		if err != nil {
-			log.Printf("ERROR: list namespaces cluster=%s: %v", sanitizeLogParam(cluster), err)
+			logRequestErrorf(r, "ERROR: list namespaces cluster=%s: %v", sanitizeLogParam(cluster), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch namespaces")
 			return
 		}
@@ -1034,7 +1035,7 @@ func main() {
 		}
 		stats, err := chClient.QueryNamespaceStats(r.Context(), name, cluster)
 		if err != nil {
-			log.Printf("ERROR: namespace stats for %s: %v", sanitizeLogParam(name), err)
+			logRequestErrorf(r, "ERROR: namespace stats for %s: %v", sanitizeLogParam(name), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch namespace stats")
 			return
 		}
@@ -1067,7 +1068,7 @@ func main() {
 		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
 		resp, err := chClient.QueryNamespaceSBOMs(r.Context(), name, cluster, originVal, page, pageSize)
 		if err != nil {
-			log.Printf("ERROR: namespace sboms for %s: %v", sanitizeLogParam(name), err)
+			logRequestErrorf(r, "ERROR: namespace sboms for %s: %v", sanitizeLogParam(name), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch namespace SBOMs")
 			return
 		}
@@ -1085,7 +1086,7 @@ func main() {
 		}
 		tree, err := chClient.QueryFleetTree(r.Context(), originVal)
 		if err != nil {
-			log.Printf("ERROR: fleet tree: %v", err)
+			logRequestErrorf(r, "ERROR: fleet tree: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch fleet tree")
 			return
 		}
@@ -1103,7 +1104,7 @@ func main() {
 
 		sourceFile, err := chClient.QuerySBOMSourceFile(r.Context(), sbomID)
 		if err != nil || sourceFile == "" {
-			log.Printf("ERROR: sbom download lookup for %s: %v", sanitizeLogParam(sbomID), err)
+			logRequestErrorf(r, "ERROR: sbom download lookup for %s: %v", sanitizeLogParam(sbomID), err)
 			writeError(w, http.StatusNotFound, "SBOM not found")
 			return
 		}
@@ -1132,13 +1133,13 @@ func main() {
 			}
 			bucket, key, parseErr := s3client.ParseURI(sourceFile)
 			if parseErr != nil {
-				log.Printf("ERROR: sbom download parse URI %s: %v", sanitizeLogParam(sourceFile), parseErr)
+				logRequestErrorf(r, "ERROR: sbom download parse URI %s: %v", sanitizeLogParam(sourceFile), parseErr)
 				writeError(w, http.StatusInternalServerError, "Invalid source file path")
 				return
 			}
 			rc, err = s3c.GetObject(r.Context(), bucket, key)
 			if err != nil {
-				log.Printf("ERROR: sbom download S3 get %s: %v", sanitizeLogParam(sourceFile), err)
+				logRequestErrorf(r, "ERROR: sbom download S3 get %s: %v", sanitizeLogParam(sourceFile), err)
 				writeError(w, http.StatusNotFound, "SBOM file not found in storage")
 				return
 			}
@@ -1147,7 +1148,7 @@ func main() {
 			absPath := filepath.Join(cfg.SBOMDir, sourceFile)
 			f, openErr := os.Open(absPath)
 			if openErr != nil {
-				log.Printf("ERROR: sbom download local open %s: %v", sanitizeLogParam(absPath), openErr)
+				logRequestErrorf(r, "ERROR: sbom download local open %s: %v", sanitizeLogParam(absPath), openErr)
 				writeError(w, http.StatusNotFound, "SBOM file not found in storage")
 				return
 			}
@@ -1159,7 +1160,7 @@ func main() {
 		w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
 		w.WriteHeader(http.StatusOK)
 		if _, err := io.Copy(w, rc); err != nil {
-			log.Printf("ERROR: sbom download stream for %s: %v", sanitizeLogParam(sbomID), err)
+			logRequestErrorf(r, "ERROR: sbom download stream for %s: %v", sanitizeLogParam(sbomID), err)
 		}
 	})
 
@@ -1203,12 +1204,14 @@ func main() {
 	mux.Handle("HEAD /tea", teaHandler)
 
 	// CORS + security middleware for Angular dev server.
-	// Order (outermost first): security headers → rate limit → CORS → auth → mux.
-	// Auth sits closest to the mux so 401s still get CORS + security headers.
-	handler := securityHeadersMiddleware(
-		rateLimitMiddleware(cfg.RateLimitMax,
-			corsMiddleware(cfg.CORSAllowedOrigins,
-				authMiddleware(cfg.AuthEnabled, cfg.BadgesPublic, cfg.ServiceToken, cfg.APIKeys, mux),
+	// Order (outermost first): request logging/ID → security headers → rate limit → CORS → auth → mux.
+	// Auth sits closest to the mux so 401s still get CORS + security headers + request tracking.
+	handler := loggingAndRequestIDMiddleware(
+		securityHeadersMiddleware(
+			rateLimitMiddleware(cfg.RateLimitMax,
+				corsMiddleware(cfg.CORSAllowedOrigins,
+					authMiddleware(cfg.AuthEnabled, cfg.BadgesPublic, cfg.ServiceToken, cfg.APIKeys, mux),
+				),
 			),
 		),
 	)
@@ -1257,7 +1260,7 @@ func archivedPackagesHandler(query func(context.Context, string) ([]clickhouse.A
 		}
 		packages, err := query(r.Context(), sbomID)
 		if err != nil {
-			log.Printf("ERROR: archived packages: %v", err)
+			logRequestErrorf(r, "ERROR: archived packages: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch archived packages")
 			return
 		}
@@ -1411,12 +1414,131 @@ func isValidVulnID(s string) bool {
 
 // sanitizeLogParam strips newlines and control characters to prevent log injection.
 func sanitizeLogParam(s string) string {
-	s = strings.ReplaceAll(s, "\n", "")
-	s = strings.ReplaceAll(s, "\r", "")
-	if len(s) > 200 {
-		s = s[:200] + "..."
+	const maxRunes = 200
+	var out strings.Builder
+	count := 0
+	truncated := false
+	for _, r := range s {
+		if unicode.IsControl(r) {
+			continue
+		}
+		if count == maxRunes {
+			truncated = true
+			break
+		}
+		out.WriteRune(r)
+		count++
 	}
-	return s
+	if truncated {
+		out.WriteString("...")
+	}
+	return out.String()
+}
+
+// responseRecorder wraps http.ResponseWriter to capture the HTTP status code.
+type responseRecorder struct {
+	http.ResponseWriter
+	statusCode  int
+	wroteHeader bool
+}
+
+func (rec *responseRecorder) WriteHeader(code int) {
+	if rec.wroteHeader {
+		return
+	}
+	rec.wroteHeader = true
+	rec.statusCode = code
+	rec.ResponseWriter.WriteHeader(code)
+}
+
+func (rec *responseRecorder) Write(p []byte) (int, error) {
+	if !rec.wroteHeader {
+		rec.WriteHeader(http.StatusOK)
+	}
+	return rec.ResponseWriter.Write(p)
+}
+
+// Unwrap lets http.ResponseController reach optional features such as
+// Hijack and deadlines on the underlying server writer.
+func (rec *responseRecorder) Unwrap() http.ResponseWriter { return rec.ResponseWriter }
+
+type flushingResponseRecorder struct {
+	*responseRecorder
+	flusher http.Flusher
+}
+
+func (rec *flushingResponseRecorder) Flush() {
+	if !rec.wroteHeader {
+		rec.WriteHeader(http.StatusOK)
+	}
+	rec.flusher.Flush()
+}
+
+func newResponseRecorder(w http.ResponseWriter) (*responseRecorder, http.ResponseWriter) {
+	rec := &responseRecorder{ResponseWriter: w, statusCode: http.StatusOK}
+	if flusher, ok := w.(http.Flusher); ok {
+		return rec, &flushingResponseRecorder{responseRecorder: rec, flusher: flusher}
+	}
+	return rec, rec
+}
+
+type requestIDContextKey struct{}
+
+func requestIDFromContext(ctx context.Context) string {
+	id, _ := ctx.Value(requestIDContextKey{}).(string)
+	return id
+}
+
+func logRequestError(r *http.Request, message string, err error) {
+	message = sanitizeLogParam(message)
+	errText := ""
+	if err != nil {
+		errText = sanitizeLogParam(err.Error())
+	}
+	if reqID := requestIDFromContext(r.Context()); reqID != "" {
+		log.Printf("%s req_id=%s: %s", message, sanitizeLogParam(reqID), errText)
+		return
+	}
+	log.Printf("%s: %s", message, errText)
+}
+
+func logRequestErrorf(r *http.Request, format string, args ...any) {
+	message := sanitizeLogParam(fmt.Sprintf(format, args...))
+	if reqID := requestIDFromContext(r.Context()); reqID != "" {
+		log.Printf("req_id=%s %s", sanitizeLogParam(reqID), message)
+		return
+	}
+	log.Print(message)
+}
+
+// loggingAndRequestIDMiddleware injects or propagates X-Request-ID, tags the
+// request context, and writes a redacted access log entry upon completion.
+// Authorization headers and request/response bodies are never logged.
+func loggingAndRequestIDMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqID := sanitizeLogParam(strings.TrimSpace(r.Header.Get("X-Request-ID")))
+		if reqID == "" || len(reqID) > 64 {
+			reqID = uuid.NewString()
+		}
+
+		w.Header().Set("X-Request-ID", reqID)
+
+		rec, wrappedWriter := newResponseRecorder(w)
+
+		start := time.Now()
+		ctx := context.WithValue(r.Context(), requestIDContextKey{}, reqID)
+		next.ServeHTTP(wrappedWriter, r.WithContext(ctx))
+		duration := time.Since(start)
+
+		log.Printf("ACCESS: %s %s status=%d duration=%s ip=%s req_id=%s",
+			sanitizeLogParam(r.Method),
+			sanitizeLogParam(r.URL.Path),
+			rec.statusCode,
+			duration,
+			sanitizeLogParam(clientIP(r)),
+			reqID,
+		)
+	})
 }
 
 // securityHeadersMiddleware adds standard security headers to every response.
@@ -1455,7 +1577,8 @@ func corsMiddleware(allowedOrigins string, next http.Handler) http.Handler {
 			allowedMethods = "GET, POST, OPTIONS"
 		}
 		w.Header().Set("Access-Control-Allow-Methods", allowedMethods)
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Service-Token, X-API-Key, X-Filename, X-Evidence-Ref")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Service-Token, X-API-Key, X-Filename, X-Evidence-Ref, X-Request-ID")
+		w.Header().Set("Access-Control-Expose-Headers", "X-Request-ID")
 		w.Header().Set("Access-Control-Max-Age", "86400")
 
 		if r.Method == http.MethodOptions {
@@ -1606,7 +1729,7 @@ func authMiddleware(enabled bool, badgesPublic bool, serviceToken string, apiKey
 
 		if len(presented) == 0 {
 			log.Printf("AUTH: missing credential on %s %s from %s",
-				sanitizeLogParam(r.Method), sanitizeLogParam(r.URL.Path), clientIP(r))
+				sanitizeLogParam(r.Method), sanitizeLogParam(r.URL.Path), sanitizeLogParam(clientIP(r)))
 			w.Header().Set("WWW-Authenticate", `Bearer realm="bomhort"`)
 			writeError(w, http.StatusUnauthorized, "Authentication required")
 			return
@@ -1627,7 +1750,7 @@ func authMiddleware(enabled bool, badgesPublic bool, serviceToken string, apiKey
 		}
 
 		log.Printf("AUTH: invalid credential on %s %s from %s",
-			sanitizeLogParam(r.Method), sanitizeLogParam(r.URL.Path), clientIP(r))
+			sanitizeLogParam(r.Method), sanitizeLogParam(r.URL.Path), sanitizeLogParam(clientIP(r)))
 		writeError(w, http.StatusUnauthorized, "Invalid credentials")
 	})
 }
@@ -1677,7 +1800,7 @@ func readyzHandler(p pinger) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
 		if err := p.Ping(ctx); err != nil {
-			log.Printf("ERROR: readiness check failed: %v", err)
+			logRequestErrorf(r, "ERROR: readiness check failed: %v", err)
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte(`{"status":"unavailable","reason":"clickhouse"}`))
 			return
@@ -1824,7 +1947,7 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 		// regardless of whether the global middleware would otherwise let the
 		// request through.
 		if !cfg.AuthEnabled {
-			log.Printf("AUTH: rejected upload from %s — AUTH_ENABLED=false", clientIP(r))
+			log.Printf("AUTH: rejected upload from %s — AUTH_ENABLED=false", sanitizeLogParam(clientIP(r)))
 			writeError(w, http.StatusForbidden, "Upload requires AUTH_ENABLED=true")
 			return
 		}
@@ -1887,14 +2010,14 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 		if !useS3Push {
 			stagingDir = filepath.Join(cfg.SBOMDir, "pushed")
 			if err := os.MkdirAll(stagingDir, 0o755); err != nil {
-				log.Printf("ERROR: upload mkdir %s: %v", sanitizeLogParam(stagingDir), err)
+				logRequestErrorf(r, "ERROR: upload mkdir %s: %v", sanitizeLogParam(stagingDir), err)
 				writeError(w, http.StatusInternalServerError, "Failed to store upload")
 				return
 			}
 		}
 		tmp, err := os.CreateTemp(stagingDir, "upload-*.tmp")
 		if err != nil {
-			log.Printf("ERROR: upload tempfile create in %q: %v", sanitizeLogParam(stagingDir), err)
+			logRequestErrorf(r, "ERROR: upload tempfile create in %q: %v", sanitizeLogParam(stagingDir), err)
 			writeError(w, http.StatusInternalServerError, "Failed to store upload")
 			return
 		}
@@ -1914,7 +2037,7 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 				writeError(w, http.StatusRequestEntityTooLarge, "Upload exceeds max size of "+strconv.Itoa(cfg.MaxUploadSizeMB)+"MB")
 				return
 			}
-			log.Printf("ERROR: upload read for %s: %v", sanitizeLogParam(filename), err)
+			logRequestErrorf(r, "ERROR: upload read for %s: %v", sanitizeLogParam(filename), err)
 			writeError(w, http.StatusInternalServerError, "Failed to read upload body")
 			return
 		}
@@ -1933,7 +2056,7 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			// worker's SBOMExists/VEXDocumentExists guards make a duplicate harmless.
 			exists, err := store.HashExists(r.Context(), hash)
 			if err != nil {
-				log.Printf("ERROR: upload hash check for %s: %v", sanitizeLogParam(filename), err)
+				logRequestErrorf(r, "ERROR: upload hash check for %s: %v", sanitizeLogParam(filename), err)
 				writeError(w, http.StatusInternalServerError, "Failed to check for duplicate upload")
 				return
 			}
@@ -1953,7 +2076,7 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			// here — duplicating it would undercut the point of the push model,
 			// which is to reuse the existing ingestion pipeline unmodified.
 			if _, err := tmp.Seek(0, io.SeekStart); err != nil {
-				log.Printf("ERROR: upload seek for %s: %v", sanitizeLogParam(filename), err)
+				logRequestErrorf(r, "ERROR: upload seek for %s: %v", sanitizeLogParam(filename), err)
 				writeError(w, http.StatusInternalServerError, "Failed to validate upload")
 				return
 			}
@@ -2064,7 +2187,7 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			if cfg.DedupByImageDigest && imageDigest != "" {
 				matchingOwner, err := store.FindImageByDigestOwner(r.Context(), imageDigest, imageRef, cluster, namespace, project, uploadOrigin)
 				if err != nil {
-					log.Printf("ERROR: image dedup check: %v", err)
+					logRequestErrorf(r, "ERROR: image dedup check: %v", err)
 					writeError(w, http.StatusInternalServerError, "Failed to check for duplicate image")
 					return
 				}
@@ -2080,7 +2203,7 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 				}
 				pendingJob, err := store.FindPendingImageJob(r.Context(), imageDigest, imageRef, cluster, namespace, project, uploadOrigin)
 				if err != nil {
-					log.Printf("ERROR: pending image job lookup: %v", err)
+					logRequestErrorf(r, "ERROR: pending image job lookup: %v", err)
 					writeError(w, http.StatusInternalServerError, "Failed to check for a pending image upload")
 					return
 				}
@@ -2094,14 +2217,14 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 				}
 				existingImage, err := store.FindImageByDigest(r.Context(), imageDigest)
 				if err != nil {
-					log.Printf("ERROR: image lookup for digest reuse: %v", err)
+					logRequestErrorf(r, "ERROR: image lookup for digest reuse: %v", err)
 					writeError(w, http.StatusInternalServerError, "Failed to look up existing image")
 					return
 				}
 				if existingImage == nil && exists {
 					existingImage, err = store.FindSBOMByHash(r.Context(), hash)
 					if err != nil {
-						log.Printf("ERROR: source SBOM lookup for image reuse: %v", err)
+						logRequestErrorf(r, "ERROR: source SBOM lookup for image reuse: %v", err)
 						writeError(w, http.StatusInternalServerError, "Failed to look up existing SBOM")
 						return
 					}
@@ -2113,7 +2236,7 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 				if existingImage != nil {
 					sbomID, err := store.CloneImageSBOM(r.Context(), *existingImage, imageDigest, imageRef, sourceRepoHdr, sourceRefHdr, cluster, namespace, project, parent, uploadOrigin, uploadTags)
 					if err != nil {
-						log.Printf("ERROR: clone image SBOM: %v", err)
+						logRequestErrorf(r, "ERROR: clone image SBOM: %v", err)
 						writeError(w, http.StatusInternalServerError, "Failed to reuse existing image SBOM")
 						return
 					}
@@ -2136,13 +2259,13 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			var sourceFile string
 			if useS3Push {
 				if _, err := tmp.Seek(0, io.SeekStart); err != nil {
-					log.Printf("ERROR: upload seek for %s: %v", sanitizeLogParam(filename), err)
+					logRequestErrorf(r, "ERROR: upload seek for %s: %v", sanitizeLogParam(filename), err)
 					writeError(w, http.StatusInternalServerError, "Failed to store upload")
 					return
 				}
 				key := path.Join(pushBucket.Prefix, "pushed", uuid.New().String()+"-"+filename)
 				if err := s3Store.PutObject(r.Context(), pushBucket.Name, key, tmp, n); err != nil {
-					log.Printf("ERROR: upload S3 put %s/%s: %v", sanitizeLogParam(pushBucket.Name), sanitizeLogParam(key), err)
+					logRequestErrorf(r, "ERROR: upload S3 put %s/%s: %v", sanitizeLogParam(pushBucket.Name), sanitizeLogParam(key), err)
 					writeError(w, http.StatusInternalServerError, "Failed to store upload")
 					return
 				}
@@ -2151,12 +2274,12 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 				relPath := filepath.Join("pushed", uuid.New().String()+"-"+filename)
 				absPath := filepath.Join(cfg.SBOMDir, relPath)
 				if err := tmp.Close(); err != nil {
-					log.Printf("ERROR: upload close for %s: %v", sanitizeLogParam(relPath), err)
+					logRequestErrorf(r, "ERROR: upload close for %s: %v", sanitizeLogParam(relPath), err)
 					writeError(w, http.StatusInternalServerError, "Failed to store upload")
 					return
 				}
 				if err := os.Rename(tmpPath, absPath); err != nil {
-					log.Printf("ERROR: upload rename %s -> %s: %v", sanitizeLogParam(tmpPath), sanitizeLogParam(relPath), err)
+					logRequestErrorf(r, "ERROR: upload rename %s -> %s: %v", sanitizeLogParam(tmpPath), sanitizeLogParam(relPath), err)
 					writeError(w, http.StatusInternalServerError, "Failed to store upload")
 					return
 				}
@@ -2191,7 +2314,7 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			// ClickHouse async_insert=1 with wait_for_async_insert=1 rather than
 			// buffering job rows in the gateway.
 			if err := store.EnqueueJobs(r.Context(), []models.IngestionJob{job}); err != nil {
-				log.Printf("ERROR: upload enqueue for %s: %v", sanitizeLogParam(sourceFile), err)
+				logRequestErrorf(r, "ERROR: upload enqueue for %s: %v", sanitizeLogParam(sourceFile), err)
 				// Best-effort cleanup so a failed enqueue doesn't leave an orphaned
 				// file/object behind. Deliberately not r.Context(): the request
 				// context may already be cancelled (that can be *why* the enqueue
@@ -2244,7 +2367,7 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			return nil
 		})
 		if lockErr != nil {
-			log.Printf("ERROR: image deduplication lock: %v", lockErr)
+			logRequestErrorf(r, "ERROR: image deduplication lock: %v", lockErr)
 			writeError(w, http.StatusServiceUnavailable, "Image deduplication is busy; retry the upload")
 			return
 		}
@@ -2255,7 +2378,7 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 		}
 		w.WriteHeader(recorder.Code)
 		if _, err := io.Copy(w, recorder.Body); err != nil {
-			log.Printf("ERROR: write buffered image upload response: %v", err)
+			logRequestErrorf(r, "ERROR: write buffered image upload response: %v", err)
 		}
 	}
 }
@@ -2270,7 +2393,7 @@ func serveStoredOriginal(w http.ResponseWriter, r *http.Request, chClient *click
 	doc, err := chClient.QueryStoredDocument(r.Context(), sbomID)
 	if err != nil {
 		if !errors.Is(err, clickhouse.ErrDocumentNotStored) {
-			log.Printf("WARNING: stored-original lookup for %s: %v", sanitizeLogParam(sbomID), err)
+			logRequestErrorf(r, "WARNING: stored-original lookup for %s: %v", sanitizeLogParam(sbomID), err)
 		}
 		return false
 	}
@@ -2294,7 +2417,7 @@ func serveStoredOriginal(w http.ResponseWriter, r *http.Request, chClient *click
 		rc, err2 = store.Get(r.Context(), doc.StorageRef)
 	}
 	if err2 != nil {
-		log.Printf("WARNING: stored-original open for %s (%s): %v — falling back to source file", sanitizeLogParam(sbomID), sanitizeLogParam(doc.StorageRef), err2)
+		logRequestErrorf(r, "WARNING: stored-original open for %s (%s): %v — falling back to source file", sanitizeLogParam(sbomID), sanitizeLogParam(doc.StorageRef), err2)
 		return false
 	}
 	defer rc.Close()
@@ -2332,7 +2455,7 @@ func serveStoredOriginal(w http.ResponseWriter, r *http.Request, chClient *click
 	w.Header().Set("X-BOMHort-Original", "true")
 	w.WriteHeader(http.StatusOK)
 	if _, err := io.Copy(w, rc); err != nil {
-		log.Printf("ERROR: stored-original stream for %s: %v", sanitizeLogParam(sbomID), err)
+		logRequestErrorf(r, "ERROR: stored-original stream for %s: %v", sanitizeLogParam(sbomID), err)
 	}
 	return true
 }

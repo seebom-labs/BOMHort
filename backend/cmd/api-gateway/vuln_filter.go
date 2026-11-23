@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 
@@ -90,7 +89,7 @@ func newVulnFilter(assignments func(context.Context) (map[string]projectgroup.As
 		if len(parents) > 0 {
 			a, err := assignments(r.Context())
 			if err != nil {
-				log.Printf("ERROR: resolve parents: %v", err)
+				logRequestError(r, "ERROR: resolve parents", err)
 				return f, http.StatusInternalServerError, "Failed to resolve parents"
 			}
 			f.ParentMembers = parentMembers(parents, a)
@@ -135,7 +134,7 @@ func vulnListHandler(chClient *clickhouse.Client, filter vulnFilterFunc, preset 
 
 		resp, err := chClient.QueryVulnerabilities(r.Context(), page, pageSize, scope, f)
 		if err != nil {
-			log.Printf("ERROR: list vulnerabilities: %v", err)
+			logRequestError(r, "ERROR: list vulnerabilities", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch vulnerabilities")
 			return
 		}
