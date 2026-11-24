@@ -45,15 +45,15 @@ type OSVClient interface {
 
 // Options configures the evaluation run.
 type Options struct {
-	SourceFile        string
-	SHA256Hash        string
-	MaxPURLs          int
-	SkipOSV           bool
-	StrictOSV         bool
-	FailOn            string
-	OSVClient         OSVClient
-	Matcher           *advisory.Matcher
-	GitHubLookup      GitHubLookup
+	SourceFile             string
+	SHA256Hash             string
+	MaxPURLs               int
+	SkipOSV                bool
+	StrictOSV              bool
+	FailOn                 string
+	OSVClient              OSVClient
+	Matcher                *advisory.Matcher
+	GitHubLookup           GitHubLookup
 	RegistryResolvers      []RegistryResolver
 	Exceptions             func() *license.ExceptionIndex
 	PrivatePackagePrefixes []string
@@ -140,6 +140,7 @@ func EvaluateParsed(ctx context.Context, parsed *sbom.ParseResult, opts Options)
 	// 3. Query OSV for vulnerabilities.
 	var vulns []models.Vulnerability
 	var feedVEX []models.VEXStatement
+	var suppressed []bool
 	var findings []dto.VulnerabilityListItem
 	if !opts.SkipOSV && opts.OSVClient != nil && len(uniquePURLs) > 0 {
 		purls := make([]string, 0, len(uniquePURLs))
@@ -157,25 +158,50 @@ func EvaluateParsed(ctx context.Context, parsed *sbom.ParseResult, opts Options)
 			minDepth := depgraph.MinDepthForPURL(parsed.Packages.PackagePURLs, parsed.Packages.PackageDepths, f.PURL)
 			v := f.Vulnerability(parsed.SBOM.SBOMID, opts.SourceFile, minDepth)
 			vulns = append(vulns, v)
+
+			var vexStatus, vexImpact, vexAuthor, vexTooling string
+			isSuppressed := false
 			if st, ok := f.NotAffectedStatement(v); ok {
 				feedVEX = append(feedVEX, st)
+				isSuppressed = true
+				vexStatus = st.Status
+				vexImpact = st.ImpactStatement
+				vexAuthor = st.Author
+				vexTooling = st.Tooling
+			}
+			suppressed = append(suppressed, isSuppressed)
+
+			var advComps []dto.AdvisoryComponent
+			for _, c := range f.Components {
+				advComps = append(advComps, dto.AdvisoryComponent{
+					PURL:         c.PURL,
+					Location:     c.Location,
+					Architecture: c.Architecture,
+				})
 			}
 
 			normAliases := normalizeAliases(v.VulnID, v.Aliases)
 			cveID := osvutil.CVEID(v.VulnID, normAliases)
 			scope, depthPtr := scopeFields(v.DependencyDepth)
 			findings = append(findings, dto.VulnerabilityListItem{
-				VulnID:          v.VulnID,
-				CVEID:           cveID,
-				Aliases:         normAliases,
-				Severity:        v.Severity,
-				PURL:            v.PURL,
-				Summary:         v.Summary,
-				FixedVersion:    v.FixedVersion,
-				SourceFile:      v.SourceFile,
-				DiscoveredAt:    v.DiscoveredAt.Format(time.RFC3339),
-				DependencyScope: scope,
-				DependencyDepth: depthPtr,
+				VulnID:             v.VulnID,
+				CVEID:              cveID,
+				Aliases:            normAliases,
+				Severity:           v.Severity,
+				PURL:               v.PURL,
+				Summary:            v.Summary,
+				FixedVersion:       v.FixedVersion,
+				SourceFile:         v.SourceFile,
+				DiscoveredAt:       v.DiscoveredAt.Format(time.RFC3339),
+				AdvisorySource:     v.AdvisorySource,
+				AdvisoryStatus:     v.AdvisoryStatus,
+				AdvisoryComponents: advComps,
+				VEXStatus:          vexStatus,
+				VEXImpactStatement: vexImpact,
+				VEXAuthor:          vexAuthor,
+				VEXTooling:         vexTooling,
+				DependencyScope:    scope,
+				DependencyDepth:    depthPtr,
 			})
 		}
 	}
@@ -262,13 +288,16 @@ func EvaluateParsed(ctx context.Context, parsed *sbom.ParseResult, opts Options)
 		licBreakdown = append(licBreakdown, item)
 	}
 
-	// 5. Aggregate Summary.
+	// 5. Aggregate Summary (exclude findings marked not_affected by an authoritative feed).
 	summary := dto.ScanSummary{
 		PackageCount:   uint64(len(parsed.Packages.PackageNames)),
-		VulnCount:      uint64(len(vulns)),
 		ScopeBreakdown: make(map[string]dto.SeverityCounts),
 	}
-	for _, v := range vulns {
+	for i, v := range vulns {
+		if i < len(suppressed) && suppressed[i] {
+			continue
+		}
+		summary.VulnCount++
 		sev := strings.ToUpper(v.Severity)
 		switch sev {
 		case "CRITICAL":

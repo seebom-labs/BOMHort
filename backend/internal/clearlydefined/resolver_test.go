@@ -757,3 +757,26 @@ func TestResolver_HostilePURL_NoOutboundRequest(t *testing.T) {
 		t.Fatalf("expected 0 HTTP requests for hostile PURLs, got %d", requestCount)
 	}
 }
+
+func TestNewCacheEntries_ExcludesPreloadedAndDrains(t *testing.T) {
+	r := NewResolver()
+	r.PreloadCache(map[string]string{
+		"npm/npmjs/-/warm-pkg/1.0.0": "MIT",
+	})
+
+	if got := r.NewCacheEntries(); len(got) != 0 {
+		t.Fatalf("expected 0 new entries after PreloadCache, got %d", len(got))
+	}
+
+	r.StoreResult("npm/npmjs/-/fresh-pkg/2.0.0", "Apache-2.0", "")
+	first := r.NewCacheEntries()
+	if len(first) != 1 || first["npm/npmjs/-/fresh-pkg/2.0.0"] != "Apache-2.0" {
+		t.Fatalf("NewCacheEntries() = %v, want only fresh-pkg=Apache-2.0", first)
+	}
+	if _, leaked := first["npm/npmjs/-/warm-pkg/1.0.0"]; leaked {
+		t.Fatal("preloaded entry unexpectedly returned as new")
+	}
+	if second := r.NewCacheEntries(); len(second) != 0 {
+		t.Fatalf("expected drained cache on second call, got %v", second)
+	}
+}

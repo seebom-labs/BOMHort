@@ -479,7 +479,7 @@ Like the upload endpoint, `/api/v1/scan` refuses requests with `403 Forbidden` u
 
 | Header | Required | Description |
 |--------|----------|-------------|
-| `X-Filename` | Optional | Original filename (e.g. `my-app.spdx.json`). Used for logging and context. Defaults to `sbom.json` if omitted. |
+| `X-Filename` | Optional | Original filename (e.g. `my-app.spdx.json`). Used for logging and context. Defaults to `scan.json` if omitted. |
 | `Authorization` / `X-Service-Token` / `X-API-Key` | Required | Authentication credential (see [Authentication](#authentication)). |
 
 **Body:** Raw SBOM JSON content (SPDX 2.2/2.3 or CycloneDX 1.4-1.6, plain or in-toto attestation envelope). The maximum payload size is governed by `MAX_UPLOAD_SIZE_MB` (default 50 MB); oversized payloads return `413 Request Entity Too Large`.
@@ -502,7 +502,7 @@ Like the upload endpoint, `/api/v1/scan` refuses requests with `403 Forbidden` u
 ```json
 {
   "policy_result": "fail",
-  "policy_reason": "policy failure: 1 high severity vulnerability findings; 1 non-compliant license violations",
+  "policy_reason": "policy failure: 1 high or critical vulnerability findings; 1 non-compliant license violations",
   "summary": {
     "package_count": 42,
     "vuln_count": 2,
@@ -521,6 +521,9 @@ Like the upload endpoint, `/api/v1/scan` refuses requests with `403 Forbidden` u
       "purl": "pkg:npm/foo@1.0.0",
       "summary": "Example vulnerability",
       "fixed_version": "1.0.1",
+      "source_file": "scan.json",
+      "discovered_at": "2026-10-01T12:00:00Z",
+      "advisory_source": "osv",
       "dependency_scope": "direct",
       "dependency_depth": 1
     }

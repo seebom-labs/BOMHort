@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/seebom-labs/bomhort/backend/internal/advisory"
+	"github.com/seebom-labs/bomhort/backend/internal/clearlydefined"
 	"github.com/seebom-labs/bomhort/backend/internal/config"
 	"github.com/seebom-labs/bomhort/backend/internal/evaluate"
 	gh "github.com/seebom-labs/bomhort/backend/internal/github"
@@ -550,6 +551,126 @@ func TestScanHandler_AdvisoryMatcher(t *testing.T) {
 	if !found {
 		t.Errorf("expected finding CGA-1234 from advisory matcher in vulnerabilities, got: %+v", resp.Vulnerabilities)
 	}
+
+	// Verify feed-closed (not_affected) findings do not fail the policy gate.
+	closedRec := osv.VulnEntry{
+		ID:      "CGA-CLOSED-1",
+		Summary: "Closed by distro feed",
+		Aliases: []string{"CVE-2026-8888"},
+		Affected: []osv.Affected{
+			{
+				Package: osv.AffectedPackage{
+					Ecosystem: "npm",
+					Name:      "leftpad",
+					PURL:      "pkg:npm/leftpad",
+				},
+				DatabaseSpecific: map[string]interface{}{
+					"status": "not_affected",
+				},
+				Ranges: []osv.Range{
+					{
+						Type:   "SEMVER",
+						Events: []osv.Event{{Introduced: "0"}},
+					},
+				},
+			},
+		},
+	}
+	closedMatcher := advisory.NewMatcher(
+		[]advisory.Source{{Name: "vendor-feed", Index: "https://example.com/feed.json", Prefixes: []string{"pkg:npm"}}},
+		testFeedStore{recs: []advisory.StoredRecord{{Source: "vendor-feed", Record: closedRec}}},
+	)
+	closedMock := &mockOSVScanner{
+		batchResp: &osv.BatchResponse{
+			Results: []osv.QueryResult{
+				{},
+				{Vulns: []osv.VulnEntry{{ID: "CVE-2026-8888"}}},
+			},
+		},
+		hydrated: map[string]*osv.VulnEntry{
+			"CVE-2026-8888": {
+				ID:               "CVE-2026-8888",
+				Summary:          "Upstream HIGH",
+				DatabaseSpecific: map[string]interface{}{"severity": "HIGH"},
+			},
+		},
+	}
+	closedHandler := scanHandler(scanDeps{
+		cfg:       cfg,
+		osvClient: closedMock,
+		matcher:   closedMatcher,
+	})
+
+	reqClosed := httptest.NewRequest(http.MethodPost, scanPath+"?fail_on=high", strings.NewReader(testSPDX))
+	recClosed := httptest.NewRecorder()
+	closedHandler.ServeHTTP(recClosed, reqClosed)
+	if recClosed.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for feed-closed finding, got %d (body: %s)", recClosed.Code, recClosed.Body.String())
+	}
+	var respClosed dto.ScanResponse
+	if err := json.Unmarshal(recClosed.Body.Bytes(), &respClosed); err != nil {
+		t.Fatalf("failed to decode closed response: %v", err)
+	}
+	if respClosed.PolicyResult != "pass" {
+		t.Errorf("expected policy_result pass when feed closed finding as not_affected, got %s (%s)", respClosed.PolicyResult, respClosed.PolicyReason)
+	}
+	if respClosed.Summary.HighVulns != 0 || respClosed.Summary.VulnCount != 0 {
+		t.Errorf("expected 0 active vulns in summary for feed-closed finding, got vuln_count=%d high=%d", respClosed.Summary.VulnCount, respClosed.Summary.HighVulns)
+	}
+	if len(respClosed.Vulnerabilities) != 1 || respClosed.Vulnerabilities[0].VEXStatus != "not_affected" {
+		t.Errorf("expected finding annotated with vex_status=not_affected, got: %+v", respClosed.Vulnerabilities)
+	}
+}
+
+func TestScanHandler_PrivatePackagesNeverQueriedExternally(t *testing.T) {
+	cfg := &config.Config{
+		AuthEnabled:            true,
+		MaxUploadSizeMB:        10,
+		ScanTimeout:            10,
+		PrivatePackagePrefixes: []string{"@acme-internal/"},
+	}
+	privateSPDX := `{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "priv-app",
+  "documentNamespace": "https://example.com/priv-app-1.0",
+  "packages": [
+    {
+      "name": "@acme-internal/secret-lib",
+      "SPDXID": "SPDXRef-Package-Priv",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "NONE",
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:npm/%40acme-internal/secret-lib@1.0.0"
+        }
+      ]
+    }
+  ]
+}`
+	res := &dummyResolver{name: "npm"}
+	handler := scanHandler(scanDeps{
+		cfg:       cfg,
+		osvClient: &mockOSVScanner{},
+		registryResolvers: []evaluate.RegistryResolver{
+			{Name: "npm", Resolver: res},
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, scanPath, strings.NewReader(privateSPDX))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+	if entries := res.NewCacheEntries(); len(entries) != 0 {
+		t.Fatalf("expected 0 external registry lookups for private package, got: %v", entries)
+	}
 }
 
 type delayedReader struct{}
@@ -656,12 +777,17 @@ func TestScanHandler_WarmCacheDoesNotPersistTwice(t *testing.T) {
 	}
 	store := newMockScanStore()
 	res := &dummyResolver{name: "npm"}
+	cdRes := clearlydefined.NewResolverWithRegistry("http://127.0.0.1:0")
+	cdRes.PreloadCache(map[string]string{
+		"npm/npmjs/-/preloaded-dep/1.0.0": "MIT",
+	})
 	deps := scanDeps{
 		cfg:       cfg,
 		chClient:  store,
 		osvClient: &mockOSVScanner{},
 		registryResolvers: []evaluate.RegistryResolver{
 			{Name: "npm", Resolver: res},
+			{Name: "clearlydefined", Resolver: cdRes},
 		},
 	}
 	handler := scanHandler(deps)
@@ -688,6 +814,9 @@ func TestScanHandler_WarmCacheDoesNotPersistTwice(t *testing.T) {
 
 	if len(store.registryInserts["npm"]) > 0 {
 		t.Fatalf("expected 0 new entries persisted on warm scan, got: %v", store.registryInserts["npm"])
+	}
+	if len(store.registryInserts["clearlydefined"]) > 0 {
+		t.Fatalf("expected 0 preloaded clearlydefined entries persisted on warm scan, got: %v", store.registryInserts["clearlydefined"])
 	}
 }
 

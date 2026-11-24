@@ -148,17 +148,18 @@ func scanHandler(deps scanDeps) http.HandlerFunc {
 		hash := hex.EncodeToString(hasher.Sum(nil))
 
 		evalResult, err := evaluate.Evaluate(ctx, bytes.NewReader(raw), evaluate.Options{
-			SourceFile:        filename,
-			SHA256Hash:        hash,
-			MaxPURLs:          deps.cfg.ScanMaxPURLs,
-			SkipOSV:           deps.cfg.SkipOSV,
-			StrictOSV:         true,
-			FailOn:            failOn,
-			OSVClient:         deps.osvClient,
-			Matcher:           deps.matcher,
-			GitHubLookup:      ghLookup,
-			RegistryResolvers: deps.registryResolvers,
-			Exceptions:        deps.exceptions,
+			SourceFile:             filename,
+			SHA256Hash:             hash,
+			MaxPURLs:               deps.cfg.ScanMaxPURLs,
+			SkipOSV:                deps.cfg.SkipOSV,
+			StrictOSV:              true,
+			FailOn:                 failOn,
+			OSVClient:              deps.osvClient,
+			Matcher:                deps.matcher,
+			GitHubLookup:           ghLookup,
+			RegistryResolvers:      deps.registryResolvers,
+			Exceptions:             deps.exceptions,
+			PrivatePackagePrefixes: deps.cfg.PrivatePackagePrefixes,
 		})
 		if err != nil {
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) {
