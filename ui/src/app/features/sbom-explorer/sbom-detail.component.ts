@@ -22,13 +22,15 @@ import { VulnAliasesComponent } from '../../shared/vuln-aliases/vuln-aliases.com
 import { AdvisoryBadgeComponent } from '../../shared/advisory-badge/advisory-badge.component';
 import { ExploitBadgeComponent } from '../../shared/exploit-badge/exploit-badge.component';
 import { primaryVulnId } from '../../shared/vuln-identity';
+import { FlatDep } from './dependency-tree';
+import { DependencyTreeComponent, LicenseFlag } from './dependency-tree.component';
 
 type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
 
 @Component({
   selector: 'app-sbom-detail',
   standalone: true,
-  imports: [CommonModule, ScrollingModule, RouterModule, ScopeBadgeComponent, VulnAliasesComponent, ExploitBadgeComponent, ScopeMatrixComponent, AdvisoryBadgeComponent],
+  imports: [CommonModule, ScrollingModule, RouterModule, ScopeBadgeComponent, VulnAliasesComponent, ExploitBadgeComponent, ScopeMatrixComponent, AdvisoryBadgeComponent, DependencyTreeComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="sbom-detail" *ngIf="detail">
@@ -218,32 +220,10 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
         </div>
       </div>
 
-      <!-- Dependencies Tab -->
+      <!-- Dependencies Tab: tree or list (#56). -->
       <div *ngIf="activeTab === 'deps'" class="tab-content">
-        <div class="dep-table-header">
-          <span class="dep-col-name">Package</span>
-          <span class="dep-col-scope">Scope</span>
-          <span class="dep-col-version">Version</span>
-          <span class="dep-col-license">License</span>
-        </div>
-        <cdk-virtual-scroll-viewport itemSize="44" class="viewport">
-          <div *cdkVirtualFor="let node of flatDeps; trackBy: trackByDep" class="dep-row"
-               [style.padding-left.px]="12 + node.level * 24">
-            <span class="dep-name" [title]="node.purl || node.name">
-              {{ node.name }}
-              <span class="archived-tag" *ngIf="isArchivedPurl(node.purl)" title="This package uses an archived GitHub repository"> ARCHIVED</span>
-            </span>
-            <span class="dep-scope"><app-scope-badge [scope]="node.scope" [depth]="node.depth"></app-scope-badge></span>
-            <span class="dep-version">{{ node.version }}</span>
-            <span class="dep-license"
-                  [title]="node.licenseTitle"
-                  [class.copyleft]="isCopyleft(node.license) && !isExemptedLicense(node.license)"
-                  [class.exempted]="isCopyleft(node.license) && isExemptedLicense(node.license)">
-              {{ node.license || '—' }}
-              <span class="dep-exempted-tag" *ngIf="isCopyleft(node.license) && isExemptedLicense(node.license)">✓</span>
-            </span>
-          </div>
-        </cdk-virtual-scroll-viewport>
+        <app-dependency-tree [nodes]="deps" [deps]="flatDeps" [vulns]="vulns"
+                             [licenseFlag]="licenseFlag" [isArchived]="archivedFlag"></app-dependency-tree>
       </div>
 
       <!-- VEX Tab (#350): every statement scoped to this SBOM; unscoped
@@ -471,46 +451,7 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
     .lic-pkg-link:hover { text-decoration: underline; }
     .lic-pkg-link.exempted-link { color: var(--status-success); }
     .lic-no-packages { font-size: 0.75rem; color: var(--text-muted); margin: 0; font-style: italic; }
-    .dep-table-header {
-      display: flex; align-items: center; gap: 16px; padding: 8px 12px;
-      background: var(--bg); border-radius: 2px; font-weight: 600; font-size: 0.7rem;
-      color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em;
-      margin-bottom: 2px; border-bottom: 1px solid var(--border);
-    }
-    .dep-col-name { flex: 1; min-width: 0; }
-    .dep-col-scope, .dep-scope { width: 90px; flex-shrink: 0; }
-    .dep-col-version { width: 140px; flex-shrink: 0; }
-    .dep-col-license { width: 180px; flex-shrink: 0; }
-    .dep-row {
-      height: 42px; display: flex; align-items: center; gap: 16px;
-      padding: 0 12px; border-bottom: 1px solid var(--border); font-size: 0.82rem;
-      transition: background 0.1s;
-    }
-    .dep-row:hover { background: var(--surface-alt); }
-    .dep-name {
-      font-weight: 500; flex: 1; min-width: 0;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-      display: flex; align-items: center; gap: 8px;
-    }
-    .archived-tag {
-      background: var(--severity-high); color: #fff;
-      padding: 1px 6px; border-radius: 2px; font-size: 0.6rem; font-weight: 600;
-      flex-shrink: 0;
-    }
-    .dep-version {
-      color: var(--text-secondary); width: 140px; flex-shrink: 0;
-      font-family: monospace; font-size: 0.78rem;
-    }
-    .dep-license {
-      color: var(--status-success); font-size: 0.75rem;
-      width: 180px; flex-shrink: 0; display: flex; align-items: center; gap: 4px;
-    }
-    .copyleft { color: var(--severity-critical); }
     .exempted { color: var(--status-warning); }
-    .dep-exempted-tag {
-      font-size: 0.6rem; font-weight: 700; color: var(--status-success);
-      background: var(--status-success-bg); padding: 0 3px; border-radius: 2px;
-    }
     .vex-content { overflow-y: auto; }
     .vex-empty { font-size: 0.8rem; color: var(--text-muted); }
     .vex-empty code { font-size: 0.72rem; background: var(--bg); padding: 1px 5px; border-radius: 2px; }
@@ -547,7 +488,13 @@ export class SbomDetailComponent implements OnInit {
   vulns: VulnerabilityListItem[] = [];
   vexStatements: VEXStatementItem[] = [];
   licenses: SBOMLicenseBreakdownItem[] = [];
+  /** The dependency graph as the API returns it (#56). */
+  deps: DependencyNode[] = [];
   flatDeps: FlatDep[] = [];
+  /** License and archived flags for the dependency rows; this page owns the data behind them. */
+  readonly licenseFlag = (license: string): LicenseFlag =>
+    !this.isCopyleft(license) ? '' : this.isExemptedLicense(license) ? 'exempted' : 'copyleft';
+  readonly archivedFlag = (purl: string): boolean => this.isArchivedPurl(purl);
   activeTab: Tab = 'vulns';
   expandedLicense: string | null = null;
   private archivedRepos = new Set<string>();
@@ -576,6 +523,7 @@ export class SbomDetailComponent implements OnInit {
       this.licenses = licenses;
       this.buildExemptedSet();
       this.buildArchivedSet(archived || []);
+      this.deps = deps;
       this.flatDeps = this.flattenTree(deps);
       this.cdr.markForCheck();
     });
@@ -593,7 +541,6 @@ export class SbomDetailComponent implements OnInit {
   isAutomated(s: VEXStatementItem): boolean {
     return !!s.tooling || (s.role || '').toLowerCase().includes('automat');
   }
-  trackByDep(_i: number, d: FlatDep): number { return d.index; }
   trackByLicense(_i: number, lic: SBOMLicenseBreakdownItem): string { return lic.license_id; }
 
   downloadSbom(): void {
@@ -712,15 +659,4 @@ export class SbomDetailComponent implements OnInit {
   }
 }
 
-interface FlatDep {
-  name: string;
-  version: string;
-  license: string;
-  licenseTitle: string;
-  purl: string;
-  level: number;
-  index: number;
-  scope: DependencyScope;
-  depth?: number;
-}
 

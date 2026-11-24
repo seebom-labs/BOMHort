@@ -184,3 +184,51 @@ func TestIsValidScope(t *testing.T) {
 		}
 	}
 }
+
+// Children is the parent→child view of the same edges Compute walks (#56):
+// reverse types are turned around, non-dependency types left out.
+func TestChildren_NormalisesRelationships(t *testing.T) {
+	got := Children(6,
+		[]uint32{0, 2, 0, 3, 0, 1, 4, 9, 1},
+		[]uint32{1, 0, 5, 1, 1, 1, 0, 1, 3},
+		[]string{
+			"DEPENDS_ON",     // 0 → 1
+			"DEPENDENCY_OF",  // 2 is a dependency of 0: 0 → 2
+			"DESCRIBES",      // not a dependency
+			"CONTAINED_BY",   // 3 is contained by 1: 1 → 3
+			"DEPENDS_ON",     // duplicate of the first edge
+			"DEPENDS_ON",     // self-reference
+			"GENERATED_FROM", // not a dependency
+			"DEPENDS_ON",     // out of range
+			"CONTAINS",       // 1 → 3 again, other spelling
+		})
+	want := [][]uint32{{1, 2}, {3}, nil, nil, nil, nil}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestChildren_AgreesWithCompute(t *testing.T) {
+	src := []uint32{1, 2, 0, 3}
+	tgt := []uint32{0, 1, 3, 4}
+	types := []string{"DEPENDENCY_OF", "RUNTIME_DEPENDENCY_OF", "DEPENDS_ON", "DEPENDS_ON"}
+	depths := Compute(5, src, tgt, types, []uint32{0}, nil)
+	for parent, children := range Children(5, src, tgt, types) {
+		for _, c := range children {
+			// A tree drawn from Children never shows a child above its
+			// parent's depth + 1: the edge is one the depth walk followed.
+			if depths[c] > depths[parent]+1 {
+				t.Errorf("edge %d → %d: depth %d below parent depth %d", parent, c, depths[c], depths[parent])
+			}
+		}
+	}
+}
+
+func TestChildren_Empty(t *testing.T) {
+	if got := Children(0, nil, nil, nil); len(got) != 0 {
+		t.Errorf("Children(0) = %v", got)
+	}
+	if got := Children(2, nil, nil, nil); !reflect.DeepEqual(got, [][]uint32{nil, nil}) {
+		t.Errorf("no relationships: %v", got)
+	}
+}
