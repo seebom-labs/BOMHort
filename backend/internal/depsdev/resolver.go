@@ -16,7 +16,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-	"unicode"
 
 	json "github.com/goccy/go-json"
 
@@ -486,7 +485,7 @@ func NormalizeLicenseDetails(details []licenseDetail) string {
 	}
 	if len(parts) > 1 {
 		for i, lic := range parts {
-			parts[i] = parenthesizeIfCompound(lic)
+			parts[i] = license.ParenthesizeCompound(lic)
 		}
 	}
 	return strings.Join(parts, " AND ")
@@ -510,7 +509,7 @@ func NormalizeLicenses(licenses []string) string {
 	}
 	if len(parts) > 1 {
 		for i, lic := range parts {
-			parts[i] = parenthesizeIfCompound(lic)
+			parts[i] = license.ParenthesizeCompound(lic)
 		}
 	}
 	return strings.Join(parts, " AND ")
@@ -526,25 +525,6 @@ func cleanLicense(lic string) string {
 		return ""
 	}
 	return lic
-}
-
-func parenthesizeIfCompound(lic string) string {
-	if !containsOperator(lic) || (strings.HasPrefix(lic, "(") && strings.HasSuffix(lic, ")")) {
-		return lic
-	}
-	return "(" + lic + ")"
-}
-
-func containsOperator(lic string) bool {
-	for _, field := range strings.FieldsFunc(lic, func(r rune) bool {
-		return unicode.IsSpace(r) || r == '(' || r == ')'
-	}) {
-		switch strings.ToUpper(field) {
-		case "AND", "OR", "WITH":
-			return true
-		}
-	}
-	return false
 }
 
 // ExtractPackageVersion maps supported package URLs to deps.dev version keys.
