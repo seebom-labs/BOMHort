@@ -86,9 +86,9 @@ func TestRequeueStaleJobs(t *testing.T) {
 		// EnqueueJobs always writes 'pending'; a dead worker's claim row is
 		// what ClaimJobs would have written, so write it the same way.
 		if err := c.Conn.Exec(ctx, `INSERT INTO ingestion_queue (`+queueColumns+`)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			claimed, j.JobID, j.SourceFile, j.SHA256Hash, j.Status, j.JobType, j.ClaimedBy, j.ClaimedAt, (*time.Time)(nil), "",
-			"", "", "", "", "", "", []string{}, "", time.Time{}); err != nil {
+			"", "", "", "", "", "", []string{}, "", "", "", "", time.Time{}); err != nil {
 			t.Fatalf("insert claim: %v", err)
 		}
 		return j
