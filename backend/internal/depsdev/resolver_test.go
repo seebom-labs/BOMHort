@@ -61,6 +61,9 @@ func TestNormalizeLicenses(t *testing.T) {
 		{"single", []string{"Apache-2.0"}, "Apache-2.0"},
 		{"compound single", []string{"Unicode-DFS-2016 AND (Apache-2.0 OR MIT)"}, "Unicode-DFS-2016 AND (Apache-2.0 OR MIT)"},
 		{"multiple", []string{"MIT OR Apache-2.0", "BSD-3-Clause"}, "(MIT OR Apache-2.0) AND BSD-3-Clause"},
+		{"multiple compound with outer parens on parts", []string{"(MIT) OR (Apache-2.0)", "GPL-3.0-only"}, "((MIT) OR (Apache-2.0)) AND GPL-3.0-only"},
+		{"multiple compound with newlines", []string{"MIT\nOR\nApache-2.0", "GPL-3.0-only"}, "(MIT\nOR\nApache-2.0) AND GPL-3.0-only"},
+		{"multiple compound without spaces around parens", []string{"(MIT)OR(Apache-2.0)", "GPL-3.0-only"}, "((MIT)OR(Apache-2.0)) AND GPL-3.0-only"},
 		{"non-standard", []string{"non-standard"}, ""},
 		{"empty entries", []string{"", "  "}, ""},
 	}
