@@ -63,6 +63,74 @@ func TestCoordinateFromPURL(t *testing.T) {
 			purl:   "pkg:npm/no-version",
 			wantOK: false,
 		},
+		{
+			purl:   "pkg:npm/lodash@..",
+			wantOK: false,
+		},
+		{
+			purl:   "pkg:npm/lodash@.",
+			wantOK: false,
+		},
+		{
+			purl:   "pkg:npm/left-pad@file:../left-pad",
+			wantOK: false,
+		},
+		{
+			purl:   "pkg:pypi/requests@..",
+			wantOK: false,
+		},
+		{
+			purl:   "pkg:nuget/Moq@..",
+			wantOK: false,
+		},
+		{
+			purl:   "pkg:maven/org.apache/commons@..",
+			wantOK: false,
+		},
+		{
+			purl:   "pkg:cargo/serde@..",
+			wantOK: false,
+		},
+		{
+			purl:   "pkg:golang/github.com/foo/bar@..",
+			wantOK: false,
+		},
+		{
+			purl:   "pkg:npm/%40..%2Fcore@1.0.0",
+			wantOK: false,
+		},
+		{
+			purl:   "pkg:npm/..%2Fcore@1.0.0",
+			wantOK: false,
+		},
+		{
+			purl:   "pkg:maven/..%2Fartifact@1.0.0",
+			wantOK: false,
+		},
+		{
+			purl:   "pkg:gem/foo%20bar@1.0.0",
+			wantOK: false,
+		},
+		{
+			purl:   "pkg:npm/foo%5Cbar@1.0.0",
+			wantOK: false,
+		},
+		{
+			purl:   "pkg:github/owner/..@v1",
+			wantOK: false,
+		},
+		{
+			purl:   "pkg:composer/vendor/..@1.0",
+			wantOK: false,
+		},
+		{
+			purl:   "pkg:npm/foo@1.0.0%0A",
+			wantOK: false,
+		},
+		{
+			purl:   "pkg:npm/is-odd@3.0.1%0A",
+			wantOK: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -548,5 +616,144 @@ func TestFetchDefinitionsChunk_SplitsPayloadTooLarge(t *testing.T) {
 	}
 	if lic, _, ok := r.Load(CacheKey(coords[0])); !ok || lic != "MIT" {
 		t.Errorf("split response license = %q, cached=%v; want MIT", lic, ok)
+	}
+}
+
+func TestCoordinate_Valid(t *testing.T) {
+	tests := []struct {
+		name  string
+		coord Coordinate
+		want  bool
+	}{
+		{
+			name:  "valid standard coordinate",
+			coord: Coordinate{Type: "npm", Provider: "npmjs", Namespace: "-", Name: "lodash", Revision: "4.17.21"},
+			want:  true,
+		},
+		{
+			name:  "valid scoped npm",
+			coord: Coordinate{Type: "npm", Provider: "npmjs", Namespace: "@angular", Name: "core", Revision: "17.0.0"},
+			want:  true,
+		},
+		{
+			name:  "empty type",
+			coord: Coordinate{Type: "", Provider: "npmjs", Namespace: "-", Name: "lodash", Revision: "4.17.21"},
+			want:  false,
+		},
+		{
+			name:  "empty name",
+			coord: Coordinate{Type: "npm", Provider: "npmjs", Namespace: "-", Name: "", Revision: "4.17.21"},
+			want:  false,
+		},
+		{
+			name:  "dot-dot revision",
+			coord: Coordinate{Type: "npm", Provider: "npmjs", Namespace: "-", Name: "lodash", Revision: ".."},
+			want:  false,
+		},
+		{
+			name:  "dot revision",
+			coord: Coordinate{Type: "npm", Provider: "npmjs", Namespace: "-", Name: "lodash", Revision: "."},
+			want:  false,
+		},
+		{
+			name:  "file protocol path in revision",
+			coord: Coordinate{Type: "npm", Provider: "npmjs", Namespace: "-", Name: "left-pad", Revision: "file:../left-pad"},
+			want:  false,
+		},
+		{
+			name:  "dot-dot in namespace",
+			coord: Coordinate{Type: "maven", Provider: "mavencentral", Namespace: "..", Name: "artifact", Revision: "1.0.0"},
+			want:  false,
+		},
+		{
+			name:  "dot-dot in name",
+			coord: Coordinate{Type: "npm", Provider: "npmjs", Namespace: "-", Name: "foo..bar", Revision: "1.0.0"},
+			want:  false,
+		},
+		{
+			name:  "slash in name",
+			coord: Coordinate{Type: "npm", Provider: "npmjs", Namespace: "-", Name: "foo/bar", Revision: "1.0.0"},
+			want:  false,
+		},
+		{
+			name:  "backslash in name",
+			coord: Coordinate{Type: "npm", Provider: "npmjs", Namespace: "-", Name: "foo\\bar", Revision: "1.0.0"},
+			want:  false,
+		},
+		{
+			name:  "whitespace in namespace",
+			coord: Coordinate{Type: "maven", Provider: "mavencentral", Namespace: "org apache", Name: "commons", Revision: "1.0.0"},
+			want:  false,
+		},
+		{
+			name:  "newline in revision",
+			coord: Coordinate{Type: "npm", Provider: "npmjs", Namespace: "-", Name: "lodash", Revision: "1.0.0\n"},
+			want:  false,
+		},
+		{
+			name:  "internal newline in revision",
+			coord: Coordinate{Type: "npm", Provider: "npmjs", Namespace: "-", Name: "lodash", Revision: "1.0\n0"},
+			want:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.coord.Valid(); got != tt.want {
+				t.Errorf("Coordinate.Valid() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolver_HostilePURL_NoOutboundRequest(t *testing.T) {
+	var requestCount int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		t.Errorf("unexpected outbound HTTP request: %s %s", r.Method, r.URL.RequestURI())
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	r := NewResolverWithRegistry(srv.URL)
+	ctx := context.Background()
+
+	hostilePURLs := []string{
+		"pkg:npm/lodash@..",
+		"pkg:npm/lodash@.",
+		"pkg:npm/left-pad@file:../left-pad",
+		"pkg:pypi/requests@..",
+		"pkg:nuget/Moq@..",
+		"pkg:maven/org.apache/commons@..",
+		"pkg:maven/..%2Fartifact@1.0.0",
+		"pkg:npm/%40..%2Fcore@1.0.0",
+		"pkg:npm/..%2Fcore@1.0.0",
+		"pkg:gem/foo%20bar@1.0.0",
+		"pkg:npm/foo%5Cbar@1.0.0",
+		"pkg:github/owner/..@v1",
+		"pkg:composer/vendor/..@1.0",
+		"pkg:npm/foo@1.0.0%0A",
+		"pkg:npm/is-odd@3.0.1%0A",
+	}
+
+	for _, p := range hostilePURLs {
+		if lic := r.Resolve(ctx, p); lic != "" {
+			t.Errorf("Resolve(%q) = %q, want empty", p, lic)
+		}
+	}
+
+	batchRes := r.ResolveBatch(ctx, hostilePURLs)
+	if len(batchRes) != 0 {
+		t.Errorf("ResolveBatch() = %v, want empty map", batchRes)
+	}
+
+	pkgs := make([]NoticePackage, len(hostilePURLs))
+	for i, p := range hostilePURLs {
+		pkgs[i] = NoticePackage{PURL: p}
+	}
+	r.PopulateAttributions(ctx, pkgs)
+
+	if requestCount > 0 {
+		t.Fatalf("expected 0 HTTP requests for hostile PURLs, got %d", requestCount)
 	}
 }
