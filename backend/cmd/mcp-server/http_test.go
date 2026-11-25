@@ -121,10 +121,10 @@ func TestGuardWithoutTokenRejectsEverything(t *testing.T) {
 	}
 }
 
-func TestSanitizeHeaderStripsControlCharacters(t *testing.T) {
-	got := sanitizeHeader("https://evil\r\nWARN: forged log line")
-	if strings.ContainsAny(got, "\r\n") {
-		t.Errorf("sanitizeHeader kept newlines: %q", got)
+func TestSanitizeHeaderMakesHiddenCharactersVisible(t *testing.T) {
+	got := sanitizeHeader("https://evil\r\n\u202e\u200bWARN: forged log line")
+	if got != "https://evil<U+000D><U+000A><U+202E><U+200B>WARN: forged log line" {
+		t.Errorf("sanitizeHeader = %q", got)
 	}
 	if len(sanitizeHeader(strings.Repeat("a", 500))) > 200 {
 		t.Error("sanitizeHeader did not truncate")
