@@ -310,9 +310,10 @@ Two things limit this (GHSA-c9hv-fhrv-j87v):
 * Tool-result strings show hidden characters as `<U+200B>`-style code points
   rather than deleting them. This covers controls, format characters,
   variation selectors, private-use and unassigned characters, non-ASCII spaces
-  and known blank characters. Newlines and tabs remain unchanged. Literal `<`
-  is shown as `<U+003C>` so the representation is reversible and map keys stay
-  distinct.
+  and known blank characters. Newlines and tabs remain unchanged. Ordinary
+  `<` remains unchanged; a literal marker-shaped string such as `<U+200B>` has
+  its opening bracket escaped as `<U+003C>` so map keys stay distinct and the
+  representation remains reversible.
   Copy these markers exactly into tool inputs: the server restores the original
   characters for lookups and filters. To enter a literal marker manually, use
   `<U+003C>` for its opening `<`. Protocol-level errors are not tool results.

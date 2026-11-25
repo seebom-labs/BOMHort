@@ -36,7 +36,7 @@ func TestScrubStringRoundTrip(t *testing.T) {
 	for _, r := range []rune{
 		'\ufe00', '\ufe0f', '\U000e0100', '\U000e01ef', '\u034f', '\u3164', '\u115f', '\u1160',
 		'\uffa0', '\u2800', '\ue000', '\u2028', '\u2029', '\U000e0002', '\u200b', '\u200c', '\u200d',
-		'\x1b', '\u00a0', '\u2003',
+		'\x1b', '\u00a0', '\u2003', '\U0001d159', '\U00016fe4',
 	} {
 		if got := scrubString(string(r)); !strings.HasPrefix(got, "<U+") {
 			t.Errorf("hidden rune %U remains as %q", r, got)
@@ -44,12 +44,18 @@ func TestScrubStringRoundTrip(t *testing.T) {
 	}
 	for _, s := range []string{
 		"\ufe00\ufe0f\U000e0100\U000e01ef\u034f\u3164\u115f\u1160\uffa0\u2800",
-		"\ue000\u2028\u2029\U000e0002\u200b\u200c\u200d\x1b",
+		"\ue000\u2028\u2029\U000e0002\u200b\u200c\u200d\x1b\U0001d159\U00016fe4",
 		"literal <U+200B>, < and \t\n café فارسی 👩💻",
 	} {
 		got := scrubString(s)
 		if restoreString(got) != s {
 			t.Errorf("round trip %q -> %q -> %q", s, got, restoreString(got))
+		}
+		if got := scrubString("versions >= 1.0, < 2.0"); got != "versions >= 1.0, < 2.0" {
+			t.Errorf("ordinary angle brackets changed: %q", got)
+		}
+		if got := scrubString("literal <U+0041> and <U+200B>"); got != "literal <U+0041> and <U+003C>U+200B>" {
+			t.Errorf("marker escaping = %q", got)
 		}
 		for _, r := range got {
 			if hiddenRune(r) {
@@ -127,7 +133,7 @@ func TestScrubKeysDoNotCollide(t *testing.T) {
 }
 
 func TestProjectAndFilterValuesRoundTrip(t *testing.T) {
-	names := []string{"payment", "pay\u200bment", "pay<U+200B>ment"}
+	names := []string{"payment", "pay\u200bment", "pay<U+200B>ment", "\u00a0payment", "payment\u00a0"}
 	var requested []string
 	cs := newSession(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/projects" {
@@ -164,7 +170,10 @@ func TestProjectAndFilterValuesRoundTrip(t *testing.T) {
 		var stats dashboardStatsOutput
 		decodeOutput(t, call(t, cs, "get_dashboard_stats", map[string]any{"project": project.ProjectName}), &stats)
 	}
-	want := []string{names[0], names[0], names[1], names[1], names[2], names[2]}
+	var want []string
+	for _, name := range names {
+		want = append(want, name, name)
+	}
 	if !reflect.DeepEqual(requested, want) {
 		t.Errorf("requests = %q, want %q", requested, want)
 	}

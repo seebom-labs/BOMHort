@@ -117,7 +117,7 @@ func toolListProjects(c *apiclient.Client) mcp.ToolHandlerFor[listProjectsInput,
 		if err != nil {
 			return nil, listProjectsOutput{}, err
 		}
-		resp, err := c.ListProjects(ctx, page, pageSize, strings.TrimSpace(restoreString(in.Search)), strings.TrimSpace(restoreString(in.Tag)))
+		resp, err := c.ListProjects(ctx, page, pageSize, restoreString(strings.TrimSpace(in.Search)), restoreString(strings.TrimSpace(in.Tag)))
 		if err != nil {
 			return nil, listProjectsOutput{}, toolError(err)
 		}
@@ -151,7 +151,7 @@ type getProjectOutput struct {
 
 func toolGetProject(c *apiclient.Client) mcp.ToolHandlerFor[getProjectInput, getProjectOutput] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in getProjectInput) (*mcp.CallToolResult, getProjectOutput, error) {
-		name := strings.TrimSpace(restoreString(in.Name))
+		name := restoreString(strings.TrimSpace(in.Name))
 		if name == "" {
 			return nil, getProjectOutput{}, errors.New("name is required")
 		}
@@ -200,7 +200,7 @@ type searchPackagesOutput struct {
 
 func toolSearchPackages(c *apiclient.Client) mcp.ToolHandlerFor[searchPackagesInput, searchPackagesOutput] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in searchPackagesInput) (*mcp.CallToolResult, searchPackagesOutput, error) {
-		q := strings.TrimSpace(restoreString(in.Query))
+		q := restoreString(strings.TrimSpace(in.Query))
 		if q == "" {
 			return nil, searchPackagesOutput{}, errors.New("query is required")
 		}
@@ -259,7 +259,7 @@ func toolListVulnerabilities(c *apiclient.Client) mcp.ToolHandlerFor[listVulnera
 			return nil, listVulnerabilitiesOutput{}, err
 		}
 
-		project := strings.TrimSpace(restoreString(in.Project))
+		project := restoreString(strings.TrimSpace(in.Project))
 		owner := map[string]string{"cluster": restoreString(in.Cluster), "namespace": restoreString(in.Namespace), "parent": restoreString(in.Parent), "tag": restoreString(in.Tag)}
 		if project != "" && in.Cluster+in.Namespace+in.Parent+in.Tag != "" {
 			return nil, listVulnerabilitiesOutput{}, errors.New("cluster, namespace, parent and tag filter the instance-wide listing; omit project to use them")
@@ -353,7 +353,7 @@ type affectedProjectsOutput struct {
 
 func toolAffectedProjects(c *apiclient.Client) mcp.ToolHandlerFor[affectedProjectsInput, affectedProjectsOutput] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in affectedProjectsInput) (*mcp.CallToolResult, affectedProjectsOutput, error) {
-		id := strings.TrimSpace(restoreString(in.VulnID))
+		id := restoreString(strings.TrimSpace(in.VulnID))
 		if id == "" {
 			return nil, affectedProjectsOutput{}, errors.New("vuln_id is required")
 		}
@@ -379,7 +379,7 @@ type getSBOMOutput struct {
 
 func toolGetSBOM(c *apiclient.Client) mcp.ToolHandlerFor[getSBOMInput, getSBOMOutput] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in getSBOMInput) (*mcp.CallToolResult, getSBOMOutput, error) {
-		id := strings.TrimSpace(restoreString(in.SBOMID))
+		id := restoreString(strings.TrimSpace(in.SBOMID))
 		if id == "" {
 			return nil, getSBOMOutput{}, errors.New("sbom_id is required")
 		}
