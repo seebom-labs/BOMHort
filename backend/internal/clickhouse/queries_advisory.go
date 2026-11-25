@@ -109,17 +109,23 @@ func advisoryComponents(raw string) []dto.AdvisoryComponent {
 }
 
 // StoredFindingRow is one SBOM's copy of a finding, as reconciliation needs
-// it: enough to close it, or to scope a VEX statement to that SBOM.
+// it: enough to close it, update changed private metadata, or scope a VEX statement.
 type StoredFindingRow struct {
-	SBOMID         uuid.UUID
-	PURL           string
-	VulnID         string
-	Aliases        []string
-	AdvisorySource string
-	AdvisoryStatus string
-	Cluster        string
-	Namespace      string
-	Project        string
+	SBOMID          uuid.UUID
+	PURL            string
+	VulnID          string
+	Aliases         []string
+	AdvisorySource  string
+	AdvisoryStatus  string
+	SourceFile      string
+	Severity        string
+	Summary         string
+	FixedVersion    string
+	DependencyDepth uint16
+	ImageDigest     string
+	Cluster         string
+	Namespace       string
+	Project         string
 }
 
 // QueryFindingsUnderPrefixes returns the stored findings whose PURL starts
@@ -159,6 +165,7 @@ func (c *Client) QueryFindingsUnderPrefixes(ctx context.Context, prefixes []stri
 func (c *Client) QueryFindingsByAdvisorySource(ctx context.Context, source string) ([]StoredFindingRow, error) {
 	rows, err := c.Conn.Query(ctx, `
 		SELECT sbom_id, purl, vuln_id, aliases, advisory_source, advisory_status,
+			source_file, severity, summary, fixed_version, dependency_depth, image_digest,
 			cluster, namespace, project
 		FROM vulnerabilities FINAL
 		WHERE advisory_source = ?
@@ -171,6 +178,7 @@ func (c *Client) QueryFindingsByAdvisorySource(ctx context.Context, source strin
 	for rows.Next() {
 		var r StoredFindingRow
 		if err := rows.Scan(&r.SBOMID, &r.PURL, &r.VulnID, &r.Aliases, &r.AdvisorySource, &r.AdvisoryStatus,
+			&r.SourceFile, &r.Severity, &r.Summary, &r.FixedVersion, &r.DependencyDepth, &r.ImageDigest,
 			&r.Cluster, &r.Namespace, &r.Project); err != nil {
 			return nil, fmt.Errorf("failed to scan stored finding: %w", err)
 		}

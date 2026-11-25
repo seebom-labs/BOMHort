@@ -49,6 +49,9 @@ func TestPrivateVulnerabilitiesHandler_Populated(t *testing.T) {
 			"id": "BOMHORT-2024-001",
 			"summary": "Internal security finding",
 			"details": "Details of private finding",
+			"references": [
+				{"type": "ADVISORY", "url": "https://security.example.com/BOMHORT-2024-001"}
+			],
 			"affected": [
 				{
 					"package": {
@@ -59,6 +62,12 @@ func TestPrivateVulnerabilitiesHandler_Populated(t *testing.T) {
 					"versions": ["1.0.0"]
 				}
 			]
+		},
+		{
+			"id": "BOMHORT-2024-WITHDRAWN",
+			"summary": "Withdrawn internal finding",
+			"withdrawn": "2026-01-01T00:00:00Z",
+			"affected": []
 		}
 	]`
 	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
@@ -89,6 +98,12 @@ func TestPrivateVulnerabilitiesHandler_Populated(t *testing.T) {
 	}
 	if len(entries) != 1 || entries[0].ID != "BOMHORT-2024-001" {
 		t.Fatalf("entries = %+v", entries)
+	}
+	if entries[0].Details != "Details of private finding" {
+		t.Errorf("details = %q", entries[0].Details)
+	}
+	if len(entries[0].References) != 1 || entries[0].References[0].URL != "https://security.example.com/BOMHORT-2024-001" {
+		t.Errorf("references = %+v", entries[0].References)
 	}
 }
 

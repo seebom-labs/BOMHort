@@ -36,11 +36,11 @@ func privateVulnerabilitiesHandler(watcher *privatevuln.Watcher) http.HandlerFun
 		if !ok {
 			return
 		}
-		if idx == nil || len(idx.Entries) == 0 {
+		if idx == nil || len(idx.ActiveEntries) == 0 {
 			writeJSON(w, http.StatusOK, []osv.VulnEntry{})
 			return
 		}
-		writeJSON(w, http.StatusOK, idx.Entries)
+		writeJSON(w, http.StatusOK, idx.ActiveEntries)
 	}
 }
 

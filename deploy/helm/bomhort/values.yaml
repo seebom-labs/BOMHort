@@ -352,8 +352,8 @@ privateVulnerabilities:
   enabled: true
   # File the pods read inside a directory of its own.
   mountPath: /data/config/private-vulnerabilities/private-vulnerabilities.json
-  # Array of OSV VulnEntry objects (YAML or JSON string). Empty array by default.
-  custom: []
+  # Array of OSV VulnEntry objects (YAML list or JSON string). Leave empty when using existingConfigMap or source.
+  custom: ""
   # Name of a ConfigMap managed outside the chart. Mutually exclusive with custom and source.
   existingConfigMap: ""
   existingConfigMapKey: private-vulnerabilities.json

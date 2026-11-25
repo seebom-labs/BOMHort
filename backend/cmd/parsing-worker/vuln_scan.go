@@ -6,6 +6,7 @@ import (
 
 	"github.com/seebom-labs/bomhort/backend/internal/advisory"
 	"github.com/seebom-labs/bomhort/backend/internal/osv"
+	"github.com/seebom-labs/bomhort/backend/internal/privatevuln"
 )
 
 // osvChunkSize is the most PURLs one /v1/querybatch request takes.
@@ -92,6 +93,23 @@ func scanVulnerabilities(ctx context.Context, src vulnSource, matcher *advisory.
 	}
 	if err := advisory.Enrich(ctx, findings, src.HydrateVulns); err != nil {
 		log.Printf("  WARNING: severity lookup for advisory-feed findings failed: %v", err)
+	}
+	return findings, nil
+}
+
+// collectVulnerabilityFindings gathers public OSV and advisory-feed findings
+// (unless skipOSV is set) and always merges active private vulnerability advisories.
+func collectVulnerabilityFindings(ctx context.Context, skipOSV bool, src vulnSource, matcher *advisory.Matcher, pvtIdx *privatevuln.Index, purls []string) ([]advisory.Finding, error) {
+	var findings []advisory.Finding
+	if !skipOSV {
+		var err error
+		findings, err = scanVulnerabilities(ctx, src, matcher, purls)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if pvtIdx != nil {
+		findings = append(findings, pvtIdx.Match(purls)...)
 	}
 	return findings, nil
 }

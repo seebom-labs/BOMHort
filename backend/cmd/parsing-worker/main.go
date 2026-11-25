@@ -557,50 +557,50 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 		return err
 	}
 
-	// 5. OSV batch query for vulnerabilities (skippable for fast ingestion).
-	if cfg.SkipOSV {
-		log.Printf("  SKIP_OSV=true, skipping vulnerability scan for %s (%d PURLs)", job.SourceFile, len(result.Packages.PackagePURLs))
-	} else {
-		// Filter out empty PURLs first.
-		var purls []string
-		for _, purl := range result.Packages.PackagePURLs {
-			if purl != "" {
-				purls = append(purls, purl)
-			}
+	// 5. Evaluate OSV (unless SKIP_OSV=true) and private vulnerability advisories.
+	var purls []string
+	for _, purl := range result.Packages.PackagePURLs {
+		if purl != "" {
+			purls = append(purls, purl)
 		}
+	}
 
-		findings, err := scanVulnerabilities(ctx, osvClient, advisory.NewMatcher(cfg.AdvisorySources, chClient), purls)
-		if err != nil {
+	var matcher *advisory.Matcher
+	if !cfg.SkipOSV {
+		matcher = advisory.NewMatcher(cfg.AdvisorySources, chClient)
+	} else {
+		log.Printf("  SKIP_OSV=true, skipping OSV scan for %s (%d PURLs)", job.SourceFile, len(result.Packages.PackagePURLs))
+	}
+	var pvtIdx *privatevuln.Index
+	if privateVulns != nil {
+		pvtIdx = privateVulns()
+	}
+	findings, err := collectVulnerabilityFindings(ctx, cfg.SkipOSV, osvClient, matcher, pvtIdx, purls)
+	if err != nil {
+		return err
+	}
+	var vulns []models.Vulnerability
+	var feedVEX []models.VEXStatement
+	for _, f := range findings {
+		v := f.Vulnerability(result.SBOM.SBOMID, job.SourceFile,
+			depgraph.MinDepthForPURL(result.Packages.PackagePURLs, result.Packages.PackageDepths, f.PURL))
+		own.applyVulnerability(&v)
+		v.ImageDigest = result.SBOM.ImageDigest
+		vulns = append(vulns, v)
+		if st, ok := f.NotAffectedStatement(v); ok {
+			feedVEX = append(feedVEX, st)
+		}
+	}
+	if len(vulns) > 0 {
+		log.Printf("  Found %d vulnerabilities in %s", len(vulns), job.SourceFile)
+		if err := chClient.InsertVulnerabilities(ctx, vulns); err != nil {
 			return err
 		}
-		if privateVulns != nil {
-			if pvtIdx := privateVulns(); pvtIdx != nil {
-				findings = append(findings, pvtIdx.Match(purls)...)
-			}
-		}
-		var vulns []models.Vulnerability
-		var feedVEX []models.VEXStatement
-		for _, f := range findings {
-			v := f.Vulnerability(result.SBOM.SBOMID, job.SourceFile,
-				depgraph.MinDepthForPURL(result.Packages.PackagePURLs, result.Packages.PackageDepths, f.PURL))
-			own.applyVulnerability(&v)
-			v.ImageDigest = result.SBOM.ImageDigest
-			vulns = append(vulns, v)
-			if st, ok := f.NotAffectedStatement(v); ok {
-				feedVEX = append(feedVEX, st)
-			}
-		}
-		if len(vulns) > 0 {
-			log.Printf("  Found %d vulnerabilities in %s", len(vulns), job.SourceFile)
-			if err := chClient.InsertVulnerabilities(ctx, vulns); err != nil {
-				return err
-			}
-		}
-		if len(feedVEX) > 0 {
-			log.Printf("  %d findings marked not_affected by an advisory feed", len(feedVEX))
-			if err := chClient.InsertVEXStatements(ctx, feedVEX); err != nil {
-				return err
-			}
+	}
+	if len(feedVEX) > 0 {
+		log.Printf("  %d findings marked not_affected by an advisory feed", len(feedVEX))
+		if err := chClient.InsertVEXStatements(ctx, feedVEX); err != nil {
+			return err
 		}
 	}
 

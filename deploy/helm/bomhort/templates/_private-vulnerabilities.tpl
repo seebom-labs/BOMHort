@@ -35,16 +35,36 @@ Three mutually exclusive sources:
 {{- if or (kindIs "invalid" $v) (and (kindIs "string" $v) (eq $v "")) }}60s{{ else }}{{ $v | toString }}{{ end -}}
 {{- end -}}
 
+{{- define "bomhort.privateVulnerabilities.customSet" -}}
+{{- $pv := .Values.privateVulnerabilities | default dict -}}
+{{- if not (or (kindIs "invalid" $pv.custom) (and (kindIs "string" $pv.custom) (eq ($pv.custom | trim) "")) (and (kindIs "slice" $pv.custom) (eq (len $pv.custom) 0))) }}true{{ end -}}
+{{- end -}}
+
 {{- define "bomhort.privateVulnerabilities.validate" -}}
 {{- $pv := .Values.privateVulnerabilities | default dict -}}
 {{- if $pv.enabled -}}
-{{- $customSet := not (or (kindIs "invalid" $pv.custom) (and (kindIs "string" $pv.custom) (eq $pv.custom ""))) -}}
+{{- $customSet := include "bomhort.privateVulnerabilities.customSet" . -}}
 {{- $source := include "bomhort.privateVulnerabilities.source" . -}}
 {{- if and $pv.existingConfigMap $customSet -}}
 {{- fail "privateVulnerabilities.existingConfigMap and privateVulnerabilities.custom are mutually exclusive: set one of them, not both" -}}
 {{- end -}}
 {{- if and $source (or $pv.existingConfigMap $customSet) -}}
 {{- fail "privateVulnerabilities.source is mutually exclusive with privateVulnerabilities.custom and privateVulnerabilities.existingConfigMap: set one of them" -}}
+{{- end -}}
+{{- if $customSet -}}
+{{- $decoded := $pv.custom -}}
+{{- if kindIs "string" $pv.custom -}}
+{{- $decoded = mustFromJson $pv.custom -}}
+{{- end -}}
+{{- $validShape := false -}}
+{{- if kindIs "slice" $decoded -}}
+{{- $validShape = true -}}
+{{- else if and (kindIs "map" $decoded) (hasKey $decoded "vulnerabilities") (kindIs "slice" $decoded.vulnerabilities) -}}
+{{- $validShape = true -}}
+{{- end -}}
+{{- if not $validShape -}}
+{{- fail "privateVulnerabilities.custom must be an array of OSV advisory objects (or JSON wrapper with vulnerabilities array)" -}}
+{{- end -}}
 {{- end -}}
 {{- if and $source (not (or (hasPrefix "https://" $source) (hasPrefix "s3://" $source))) -}}
 {{- fail (printf "privateVulnerabilities.source must be an https:// URL or s3://bucket/key (got %q)" $source) -}}
@@ -61,6 +81,17 @@ Three mutually exclusive sources:
 {{- $dir := dir (include "bomhort.privateVulnerabilities.file" .) -}}
 {{- if eq $dir "/" -}}
 {{- fail "privateVulnerabilities.mountPath must be a file inside a directory of its own, e.g. /data/config/private-vulnerabilities/private-vulnerabilities.json" -}}
+{{- end -}}
+{{- $taken := list -}}
+{{- if .Values.licensePolicy.enabled }}{{ $taken = append $taken (dir .Values.licensePolicy.mountPath) }}{{ end -}}
+{{- if include "bomhort.licenseExceptions.mounted" . }}{{ $taken = append $taken (dir (include "bomhort.licenseExceptions.file" .)) }}{{ end -}}
+{{- $pg := .Values.projectGroups | default dict -}}
+{{- if $pg.enabled }}{{ $taken = append $taken ($pg.mountDir | default "/data/config/project-groups" | trimSuffix "/") }}{{ end -}}
+{{- $taken = append $taken (.Values.sbomSource.mountPath | trimSuffix "/") -}}
+{{- range $taken -}}
+{{- if or (eq . $dir) (hasPrefix (printf "%s/" $dir) .) -}}
+{{- fail (printf "privateVulnerabilities.mountPath: its directory %s collides with the mount at %s; give private vulnerabilities a directory of its own, e.g. /data/config/private-vulnerabilities/private-vulnerabilities.json" $dir .) -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

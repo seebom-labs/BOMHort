@@ -3,7 +3,7 @@
 {{- if include "bomhort.privateVulnerabilities.mounted" . }}
 {{- if not $pv.existingConfigMap }}
 {{- $entries := list }}
-{{- if not (or (kindIs "invalid" $pv.custom) (and (kindIs "string" $pv.custom) (eq $pv.custom ""))) }}
+{{- if include "bomhort.privateVulnerabilities.customSet" . }}
 {{- if kindIs "string" $pv.custom }}
 {{- $entries = mustFromJson $pv.custom }}
 {{- else }}

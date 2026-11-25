@@ -164,6 +164,11 @@ type event struct {
 	version string
 }
 
+// EvalRange applies the events of one range to v using comparator cmp.
+func EvalRange(events []osv.Event, v string, cmp CompareFunc) (affected, ok bool) {
+	return evalRange(events, v, cmp)
+}
+
 // evalRange applies the events of one range to v.
 func evalRange(events []osv.Event, v string, cmp compareFunc) (affected, ok bool) {
 	var evs []event

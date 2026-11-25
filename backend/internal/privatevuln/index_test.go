@@ -15,17 +15,52 @@ func TestParse_RejectsPublicPrefixes(t *testing.T) {
 		{
 			name:    "CVE prefix rejected",
 			json:    `[{"id": "CVE-2024-1234", "summary": "test"}]`,
-			wantErr: `cannot use public CVE- or GHSA- prefix`,
+			wantErr: `cannot use public OSV prefix CVE-`,
 		},
 		{
 			name:    "Lowercase cve prefix rejected",
 			json:    `[{"id": "cve-2024-1234", "summary": "test"}]`,
-			wantErr: `cannot use public CVE- or GHSA- prefix`,
+			wantErr: `cannot use public OSV prefix CVE-`,
 		},
 		{
 			name:    "GHSA prefix rejected",
 			json:    `[{"id": "GHSA-xxxx-yyyy-zzzz", "summary": "test"}]`,
-			wantErr: `cannot use public CVE- or GHSA- prefix`,
+			wantErr: `cannot use public OSV prefix GHSA-`,
+		},
+		{
+			name:    "PYSEC prefix rejected",
+			json:    `[{"id": "PYSEC-2023-192", "summary": "test"}]`,
+			wantErr: `cannot use public OSV prefix PYSEC-`,
+		},
+		{
+			name:    "GO prefix rejected",
+			json:    `[{"id": "GO-2024-0001", "summary": "test"}]`,
+			wantErr: `cannot use public OSV prefix GO-`,
+		},
+		{
+			name:    "RUSTSEC prefix rejected",
+			json:    `[{"id": "RUSTSEC-2024-0001", "summary": "test"}]`,
+			wantErr: `cannot use public OSV prefix RUSTSEC-`,
+		},
+		{
+			name:    "MAL prefix rejected",
+			json:    `[{"id": "MAL-2024-0001", "summary": "test"}]`,
+			wantErr: `cannot use public OSV prefix MAL-`,
+		},
+		{
+			name:    "DSA prefix rejected",
+			json:    `[{"id": "DSA-5000-1", "summary": "test"}]`,
+			wantErr: `cannot use public OSV prefix DSA-`,
+		},
+		{
+			name:    "Spaces rejected",
+			json:    `[{"id": "Security Bulletin 12", "summary": "test"}]`,
+			wantErr: `invalid id`,
+		},
+		{
+			name:    "Too long id rejected",
+			json:    `[{"id": "` + strings.Repeat("A", 101) + `", "summary": "test"}]`,
+			wantErr: `invalid id`,
 		},
 		{
 			name:    "Empty id rejected",
@@ -215,5 +250,94 @@ func TestMatch_WithdrawnIgnored(t *testing.T) {
 	findings := idx.Match([]string{"pkg:npm/pkg-a@1.0.0"})
 	if len(findings) != 0 {
 		t.Errorf("expected 0 findings for withdrawn advisory, got %d", len(findings))
+	}
+	if len(idx.Entries) != 1 {
+		t.Errorf("Entries = %d, want 1", len(idx.Entries))
+	}
+	if len(idx.ActiveEntries) != 0 {
+		t.Errorf("ActiveEntries = %d, want 0 (withdrawn excluded)", len(idx.ActiveEntries))
+	}
+}
+
+func TestMatch_EcosystemAndLenientSemverAndVersionless(t *testing.T) {
+	doc := `[
+		{
+			"id": "ACME-2026-002",
+			"summary": "npm ecosystem range",
+			"affected": [{
+				"package": {"ecosystem": "npm", "name": "express"},
+				"ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "4.19.0"}]}]
+			}]
+		},
+		{
+			"id": "ACME-2026-003",
+			"summary": "PyPI ecosystem range",
+			"affected": [{
+				"package": {"ecosystem": "PyPI", "name": "urllib3"},
+				"ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "2.0.0"}, {"fixed": "2.32.0"}]}]
+			}]
+		},
+		{
+			"id": "ACME-2026-004",
+			"summary": "Maven Final qualifier",
+			"affected": [{
+				"package": {"purl": "pkg:maven/org.example/core"},
+				"ranges": [{"type": "SEMVER", "events": [{"introduced": "0"}, {"fixed": "1.5.1.Final"}]}]
+			}]
+		},
+		{
+			"id": "ACME-2026-005",
+			"summary": "Four-part version range",
+			"affected": [{
+				"package": {"purl": "pkg:nuget/Foo.Bar"},
+				"ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "1.5.0.0"}, {"fixed": "1.5.0.2"}]}]
+			}]
+		},
+		{
+			"id": "ACME-2026-006",
+			"summary": "All versions via introduced 0 matches versionless PURL",
+			"affected": [{
+				"package": {"purl": "pkg:golang/example.com/internal"},
+				"ranges": [{"type": "SEMVER", "events": [{"introduced": "0"}]}]
+			}]
+		}
+	]`
+
+	idx, err := Parse([]byte(doc), "test.json")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	purls := []string{
+		"pkg:npm/express@4.18.2",                 // matches ACME-2026-002
+		"pkg:npm/express@4.19.0",                 // fixed
+		"pkg:pypi/urllib3@2.32.0rc1",             // pre-release < 2.32.0 -> matches ACME-2026-003
+		"pkg:pypi/urllib3@2.32.0",                // fixed
+		"pkg:maven/org.example/core@1.5.0.Final", // < 1.5.1.Final -> matches ACME-2026-004
+		"pkg:nuget/Foo.Bar@1.5.0.1",              // between 1.5.0.0 and 1.5.0.2 -> matches ACME-2026-005
+		"pkg:golang/example.com/internal",        // versionless with introduced:0 -> matches ACME-2026-006
+		"pkg:npm/express",                        // versionless with bounded range -> must not match
+	}
+
+	findings := idx.Match(purls)
+	got := make(map[string]string, len(findings))
+	for _, f := range findings {
+		got[f.Entry.ID] = f.PURL
+	}
+
+	want := map[string]string{
+		"ACME-2026-002": "pkg:npm/express@4.18.2",
+		"ACME-2026-003": "pkg:pypi/urllib3@2.32.0rc1",
+		"ACME-2026-004": "pkg:maven/org.example/core@1.5.0.Final",
+		"ACME-2026-005": "pkg:nuget/Foo.Bar@1.5.0.1",
+		"ACME-2026-006": "pkg:golang/example.com/internal",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("matched %v, want %v", got, want)
+	}
+	for id, purl := range want {
+		if got[id] != purl {
+			t.Errorf("finding %s PURL = %q, want %q", id, got[id], purl)
+		}
 	}
 }

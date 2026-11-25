@@ -1472,12 +1472,17 @@ re-check them in the background ([Retroactive application](/docs/license-excepti
 
 ### `GET /api/v1/private-vulnerabilities`
 
-Configured private vulnerability advisories (read-only, loaded from the configured
+Configured active private vulnerability advisories (read-only, loaded from the configured
 `PRIVATE_VULNERABILITIES_FILE` or `PRIVATE_VULNERABILITIES_SOURCE` in OSV schema and
 reloaded every `PRIVATE_VULNERABILITIES_REFRESH_INTERVAL`).
 
-Advisory entries use the OSV format with org-prefixed IDs (e.g. `BOMHORT-2024-001`,
-`ORG-SEC-123`) and never public `CVE-` or `GHSA-` prefixes.
+Advisory entries use the OSV format with IDs matching `^[A-Za-z0-9._-]{1,100}$` (e.g.
+`BOMHORT-2024-001`, `ORG-SEC-123`) and never public OSV prefixes such as `CVE-`, `GHSA-`,
+`PYSEC-`, `GO-`, `RUSTSEC-`, `MAL-`, or `DSA-`. Entries with `withdrawn` set are excluded
+from active evaluation and from this endpoint. Both `parsing-worker` (even when `SKIP_OSV=true`)
+and `cve-refresher` evaluate private advisories; `cve-refresher` closes removed or withdrawn
+findings (including when the local file is removed) and propagates summary, severity, fixed
+version, and alias updates.
 
 **Response:** `200 OK`
 ```json
@@ -1486,6 +1491,12 @@ Advisory entries use the OSV format with org-prefixed IDs (e.g. `BOMHORT-2024-00
     "id": "BOMHORT-2024-001",
     "summary": "Internal flaw in custom authentication middleware",
     "details": "A timing vulnerability exists in internal token verification.",
+    "references": [
+      {
+        "type": "ADVISORY",
+        "url": "https://security.example.com/advisories/BOMHORT-2024-001"
+      }
+    ],
     "affected": [
       {
         "package": {
