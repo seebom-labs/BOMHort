@@ -4,68 +4,78 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"log"
+	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// scrubMiddleware strips hidden characters from every tool result before it
-// reaches the client (GHSA-c9hv-fhrv-j87v). Document names, suppliers,
-// package names and advisory summaries are written by whoever uploads an SBOM
-// or publishes an advisory; bidi overrides, zero-width characters and
-// terminal escapes let such text carry instructions a model sees and a human
-// reviewing the transcript does not. The strings stay uploader-controlled —
-// instructions tells the model so — but at least they are visibly so.
+// scrubMiddleware makes hidden characters in tool results visible.
 func scrubMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
 	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
 		res, err := next(ctx, method, req)
 		if r, ok := res.(*mcp.CallToolResult); ok && err == nil {
-			scrubResult(r)
+			if err := scrubResult(r); err != nil {
+				log.Printf("ERROR: cannot sanitize MCP tool result: %s", sanitizeHeader(err.Error()))
+				return &mcp.CallToolResult{
+					IsError: true,
+					Content: []mcp.Content{&mcp.TextContent{Text: "Unable to sanitize tool result."}},
+				}, nil
+			}
 		}
 		return res, err
 	}
 }
 
-func scrubResult(r *mcp.CallToolResult) {
+func scrubResult(r *mcp.CallToolResult) error {
+	var original, cleaned []byte
 	if r.StructuredContent != nil {
-		if raw, ok := scrubJSON(r.StructuredContent); ok {
-			r.StructuredContent = raw
-			// The SDK mirrors structured output into one TextContent for
-			// pre-structured-content clients; rebuild it from the scrubbed JSON.
-			if len(r.Content) == 1 {
-				if _, isText := r.Content[0].(*mcp.TextContent); isText {
-					r.Content[0] = &mcp.TextContent{Text: string(raw)}
-					return
-				}
-			}
+		var err error
+		original, err = json.Marshal(r.StructuredContent)
+		if err != nil {
+			return err
 		}
+		cleaned, err = scrubJSON(original)
+		if err != nil {
+			return err
+		}
+		r.StructuredContent = json.RawMessage(cleaned)
 	}
 	for _, c := range r.Content {
 		if tc, ok := c.(*mcp.TextContent); ok {
-			tc.Text = scrubString(tc.Text)
+			switch {
+			case original != nil && tc.Text == string(original):
+				tc.Text = string(cleaned)
+			case json.Valid([]byte(tc.Text)):
+				raw, err := scrubJSON([]byte(tc.Text))
+				if err != nil {
+					return err
+				}
+				tc.Text = string(raw)
+			default:
+				tc.Text = scrubString(tc.Text)
+			}
 		}
 	}
+	return nil
 }
 
-// scrubJSON walks an arbitrary JSON value and scrubs every string in it,
-// keys included. Numbers are kept verbatim via UseNumber.
-func scrubJSON(v any) (json.RawMessage, bool) {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return nil, false
+// scrubJSON preserves numbers and escapes keys as well as values.
+func scrubJSON(b []byte) (json.RawMessage, error) {
+	if bytes.IndexFunc(b, func(r rune) bool { return r >= 0x7f || r == '\\' || r == '<' }) < 0 {
+		return b, nil
 	}
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.UseNumber()
 	var tree any
 	if err := dec.Decode(&tree); err != nil {
-		return nil, false
+		return nil, err
 	}
-	out, err := json.Marshal(scrubTree(tree))
-	if err != nil {
-		return nil, false
-	}
-	return out, true
+	return json.Marshal(scrubTree(tree))
 }
 
 func scrubTree(v any) any {
@@ -88,17 +98,36 @@ func scrubTree(v any) any {
 	}
 }
 
-// scrubString drops Unicode format characters (category Cf: bidi overrides,
-// zero-width joiners and spaces, soft hyphens) and control characters other
-// than newline and tab.
+func hiddenRune(r rune) bool {
+	return r != '\n' && r != '\t' && (!unicode.IsGraphic(r) ||
+		unicode.Is(unicode.Co, r) || unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r) ||
+		(unicode.Is(unicode.Zs, r) && r != ' ') ||
+		unicode.Is(unicode.Variation_Selector, r) || unicode.Is(unicode.Other_Default_Ignorable_Code_Point, r) ||
+		r == '\u034f' || r == '\u2800')
+}
+
+// Escaping '<' makes the representation reversible and prevents key collisions.
 func scrubString(s string) string {
-	return strings.Map(func(r rune) rune {
-		if unicode.Is(unicode.Cf, r) {
-			return -1
+	var b strings.Builder
+	for _, r := range s {
+		if r == '<' || hiddenRune(r) {
+			fmt.Fprintf(&b, "<U+%04X>", r)
+		} else {
+			b.WriteRune(r)
 		}
-		if unicode.IsControl(r) && r != '\n' && r != '\t' {
-			return -1
+	}
+	return b.String()
+}
+
+var visibleRune = regexp.MustCompile(`<U\+[0-9A-F]{4,6}>`)
+
+func restoreString(s string) string {
+	return visibleRune.ReplaceAllStringFunc(s, func(marker string) string {
+		n, err := strconv.ParseUint(marker[3:len(marker)-1], 16, 32)
+		r := rune(n)
+		if err != nil || n > unicode.MaxRune || (r != '<' && !hiddenRune(r)) || fmt.Sprintf("<U+%04X>", r) != marker {
+			return marker
 		}
-		return r
-	}, s)
+		return string(r)
+	})
 }

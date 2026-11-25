@@ -64,18 +64,15 @@ func validBearer(r *http.Request, token string) bool {
 	return subtle.ConstantTimeCompare([]byte(presented), []byte(token)) == 1
 }
 
-// sanitizeHeader strips control characters and truncates, so a hostile Origin
-// cannot forge log lines. Mirrors sanitizeLogParam in the API gateway.
+// sanitizeHeader makes hidden characters visible and prevents forged log lines.
 func sanitizeHeader(v string) string {
 	var b strings.Builder
+	v = strings.NewReplacer("\n", "<U+000A>", "\t", "<U+0009>").Replace(scrubString(v))
 	for _, r := range v {
-		if r == '\n' || r == '\r' || r < 0x20 || r == 0x7f {
-			continue
-		}
-		b.WriteRune(r)
-		if b.Len() >= 200 {
+		if b.Len()+len(string(r)) > 200 {
 			break
 		}
+		b.WriteRune(r)
 	}
 	return b.String()
 }
