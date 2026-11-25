@@ -133,7 +133,7 @@ jobs:
       # (Optional) Generate your SBOM here with Syft / cdxgen / bom
 
       - name: Upload SBOM to BOMHort
-        uses: seebom-labs/BOMHort/.github/actions/upload-sbom@1b3e829fa97f21f2697bc6fc8d6dba8da77316af
+        uses: seebom-labs/BOMHort/.github/actions/upload-sbom@v1
         with:
           url: 'https://bomhort.example.com'
           token: ${{ secrets.BOMHORT_UPLOAD_TOKEN }}
@@ -152,7 +152,7 @@ To gate pull requests on vulnerability findings and upload a SARIF 2.1.0 report 
 ```yaml
       - name: Upload SBOM and gate on findings
         id: bomhort
-        uses: seebom-labs/BOMHort/.github/actions/upload-sbom@1b3e829fa97f21f2697bc6fc8d6dba8da77316af
+        uses: seebom-labs/BOMHort/.github/actions/upload-sbom@v1
         with:
           url: 'https://bomhort.example.com'
           token: ${{ secrets.BOMHORT_UPLOAD_TOKEN }}

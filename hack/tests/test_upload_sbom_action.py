@@ -21,6 +21,9 @@ class MockBOMHortHandler(http.server.BaseHTTPRequestHandler):
     return_duplicate = False
     return_newline_status = False
     return_workflow_command_error = False
+    mock_job_type = "sbom"
+    return_malformed_detail = False
+    return_malformed_sarif = False
 
     def log_message(self, format, *args):
         # Silence HTTP logs in test output
@@ -48,6 +51,9 @@ class MockBOMHortHandler(http.server.BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "application/sarif+json")
             self.end_headers()
+            if MockBOMHortHandler.return_malformed_sarif:
+                self.wfile.write(b"[]")
+                return
             sarif = {
                 "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/cos02/schemas/sarif-schema-2.1.0.json",
                 "version": "2.1.0",
@@ -73,6 +79,9 @@ class MockBOMHortHandler(http.server.BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
+            if MockBOMHortHandler.return_malformed_detail:
+                self.wfile.write(b'{"vuln_count": 5}')
+                return
             total_vulns = (
                 MockBOMHortHandler.mock_critical_vulns
                 + MockBOMHortHandler.mock_high_vulns
@@ -168,7 +177,7 @@ class MockBOMHortHandler(http.server.BaseHTTPRequestHandler):
                 "status": "pending",
                 "job_id": "test-job-uuid-1234",
                 "sha256_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-                "job_type": "sbom",
+                "job_type": MockBOMHortHandler.mock_job_type,
                 "cluster": "test-cluster",
                 "namespace": "test-ns",
                 "project": "test-proj",
@@ -202,6 +211,9 @@ class TestUploadSBOMAction(unittest.TestCase):
         MockBOMHortHandler.return_duplicate = False
         MockBOMHortHandler.return_newline_status = False
         MockBOMHortHandler.return_workflow_command_error = False
+        MockBOMHortHandler.mock_job_type = "sbom"
+        MockBOMHortHandler.return_malformed_detail = False
+        MockBOMHortHandler.return_malformed_sarif = False
 
     def run_script(self, env_vars):
         repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -598,6 +610,81 @@ class TestUploadSBOMAction(unittest.TestCase):
             self.assertIn("status=duplicate", out_content)
             self.assertIn("sbom-id=ee586207-a68c-505a-8dfb-1dc50feb38b8", out_content)
             self.assertIn('vulnerabilities={"critical":0,"high":0,"medium":0,"low":0}', out_content)
+
+    def test_missing_or_malformed_counts_fails_closed(self):
+        with tempfile.NamedTemporaryFile(suffix=".spdx.json", delete=False) as f:
+            f.write(b'{"spdxVersion": "SPDX-2.3"}')
+            temp_path = f.name
+        try:
+            MockBOMHortHandler.return_malformed_detail = True
+            res = self.run_script({
+                "INPUT_URL": f"http://127.0.0.1:{self.port}",
+                "INPUT_TOKEN": "secret-token",
+                "INPUT_SBOM": temp_path,
+                "INPUT_WAIT": "true",
+                "POLL_INTERVAL": "0.1",
+            })
+            self.assertNotEqual(res.returncode, 0)
+            self.assertIn("API response is missing required numeric vulnerability count fields", res.stderr)
+        finally:
+            os.remove(temp_path)
+
+    def test_vex_upload_with_wait_fails(self):
+        with tempfile.NamedTemporaryFile(suffix=".openvex.json", delete=False) as f:
+            f.write(b'{"@context": "https://openvex.dev/ns/v0.2.0"}')
+            temp_path = f.name
+        try:
+            MockBOMHortHandler.mock_job_type = "vex"
+            res = self.run_script({
+                "INPUT_URL": f"http://127.0.0.1:{self.port}",
+                "INPUT_TOKEN": "secret-token",
+                "INPUT_SBOM": temp_path,
+                "INPUT_WAIT": "true",
+                "POLL_INTERVAL": "0.1",
+            })
+            self.assertNotEqual(res.returncode, 0)
+            self.assertIn("only supported for SBOM uploads, not VEX documents", res.stderr)
+        finally:
+            os.remove(temp_path)
+
+    def test_vex_upload_without_wait_succeeds(self):
+        with tempfile.TemporaryDirectory(prefix="vex action ") as directory:
+            temp_path = os.path.join(directory, "advisory.openvex.json")
+            output_file = os.path.join(directory, "github_output.txt")
+            with open(temp_path, "wb") as f:
+                f.write(b'{"@context": "https://openvex.dev/ns/v0.2.0"}')
+
+            MockBOMHortHandler.mock_job_type = "vex"
+            res = self.run_script({
+                "INPUT_URL": f"http://127.0.0.1:{self.port}",
+                "INPUT_TOKEN": "secret-token",
+                "INPUT_SBOM": temp_path,
+                "GITHUB_OUTPUT": output_file,
+            })
+            self.assertEqual(res.returncode, 0, f"Script failed: {res.stderr}\n{res.stdout}")
+            with open(output_file, "r") as out_f:
+                out_content = out_f.read()
+            self.assertIn("status=pending", out_content)
+            self.assertNotIn("sbom-id=", out_content)
+            self.assertNotIn("url=", out_content)
+
+    def test_malformed_sarif_fails_closed(self):
+        with tempfile.TemporaryDirectory(prefix="sarif malformed ") as directory:
+            temp_path = os.path.join(directory, "app.spdx.json")
+            sarif_file = os.path.join(directory, "results.sarif")
+            with open(temp_path, "wb") as f:
+                f.write(b'{"spdxVersion": "SPDX-2.3"}')
+
+            MockBOMHortHandler.return_malformed_sarif = True
+            res = self.run_script({
+                "INPUT_URL": f"http://127.0.0.1:{self.port}",
+                "INPUT_TOKEN": "secret-token",
+                "INPUT_SBOM": temp_path,
+                "INPUT_SARIF": sarif_file,
+                "POLL_INTERVAL": "0.1",
+            })
+            self.assertNotEqual(res.returncode, 0)
+            self.assertIn("Downloaded report is not a valid SARIF 2.1.0 document", res.stderr)
 
 
 if __name__ == "__main__":

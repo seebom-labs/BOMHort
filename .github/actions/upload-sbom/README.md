@@ -11,7 +11,7 @@ steps:
   - uses: actions/checkout@v4
 
   - name: Upload SBOM to BOMHort
-    uses: seebom-labs/BOMHort/.github/actions/upload-sbom@1b3e829fa97f21f2697bc6fc8d6dba8da77316af
+    uses: seebom-labs/BOMHort/.github/actions/upload-sbom@v1
     with:
       url: 'https://bomhort.example.com'
       token: ${{ secrets.BOMHORT_UPLOAD_TOKEN }}
@@ -31,7 +31,7 @@ steps:
 
   - name: Upload and gate on vulnerabilities
     id: bomhort
-    uses: seebom-labs/BOMHort/.github/actions/upload-sbom@1b3e829fa97f21f2697bc6fc8d6dba8da77316af
+    uses: seebom-labs/BOMHort/.github/actions/upload-sbom@v1
     with:
       url: 'https://bomhort.example.com'
       token: ${{ secrets.BOMHORT_UPLOAD_TOKEN }}

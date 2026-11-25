@@ -233,7 +233,7 @@ extract_json_field() {
   elif command -v python3 >/dev/null 2>&1; then
     python3 -c "import json, sys; d = json.load(open(sys.argv[1])); v = d.get(sys.argv[2]); sys.stdout.write(str(v) if v is not None else '')" "${file}" "${field}" 2>/dev/null || true
   else
-    grep -o "\"${field}\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" "${file}" | head -n1 | sed -E "s/\"${field}\"[[:space:]]*:[[:space:]]*\"([^\"]*)\"/\1/" || true
+    grep -oE "\"${field}\"[[:space:]]*:[[:space:]]*(\"[^\"]*\"|[0-9]+)" "${file}" | head -n1 | sed -E "s/\"${field}\"[[:space:]]*:[[:space:]]*\"?([^\"[:space:]]+)\"?/\1/" || true
   fi
 }
 
@@ -251,16 +251,24 @@ compute_sbom_id() {
 
 STATUS=$(extract_json_field "status" "${RESPONSE_FILE}")
 JOB_ID=$(extract_json_field "job_id" "${RESPONSE_FILE}")
+JOB_TYPE=$(extract_json_field "job_type" "${RESPONSE_FILE}")
 SHA256_HASH=$(extract_json_field "sha256_hash" "${RESPONSE_FILE}")
 SBOM_ID=$(extract_json_field "sbom_id" "${RESPONSE_FILE}")
 
-if [ -z "${SBOM_ID}" ] && [ -n "${SHA256_HASH}" ]; then
-  SBOM_ID=$(compute_sbom_id "${SHA256_HASH}")
-fi
-
 SBOM_URL=""
-if [ -n "${SBOM_ID}" ]; then
-  SBOM_URL="${BASE_URL}/sboms/${SBOM_ID}"
+if [ "${JOB_TYPE}" = "vex" ]; then
+  if [ "${DO_WAIT}" = "true" ] || [ -n "${INPUT_SARIF:-}" ]; then
+    echo "::error::Waiting for completion, vulnerability thresholds (fail-on), and SARIF export are only supported for SBOM uploads, not VEX documents." >&2
+    exit 1
+  fi
+  SBOM_ID=""
+else
+  if [ -z "${SBOM_ID}" ] && [ -n "${SHA256_HASH}" ]; then
+    SBOM_ID=$(compute_sbom_id "${SHA256_HASH}")
+  fi
+  if [ -n "${SBOM_ID}" ]; then
+    SBOM_URL="${BASE_URL}/sboms/${SBOM_ID}"
+  fi
 fi
 
 VULNERABILITIES_JSON=""
@@ -323,10 +331,13 @@ if [ "${DO_WAIT}" = "true" ]; then
   MEDIUM_VULNS=$(extract_json_field "medium_vulns" "${DETAIL_RESPONSE}")
   LOW_VULNS=$(extract_json_field "low_vulns" "${DETAIL_RESPONSE}")
 
-  if ! [[ "${CRITICAL_VULNS}" =~ ^[0-9]+$ ]]; then CRITICAL_VULNS=0; fi
-  if ! [[ "${HIGH_VULNS}" =~ ^[0-9]+$ ]]; then HIGH_VULNS=0; fi
-  if ! [[ "${MEDIUM_VULNS}" =~ ^[0-9]+$ ]]; then MEDIUM_VULNS=0; fi
-  if ! [[ "${LOW_VULNS}" =~ ^[0-9]+$ ]]; then LOW_VULNS=0; fi
+  if ! [[ "${CRITICAL_VULNS}" =~ ^[0-9]+$ ]] || \
+     ! [[ "${HIGH_VULNS}" =~ ^[0-9]+$ ]] || \
+     ! [[ "${MEDIUM_VULNS}" =~ ^[0-9]+$ ]] || \
+     ! [[ "${LOW_VULNS}" =~ ^[0-9]+$ ]]; then
+    echo "::error::API response is missing required numeric vulnerability count fields (critical_vulns, high_vulns, medium_vulns, low_vulns)" >&2
+    exit 1
+  fi
 
   VULNERABILITIES_JSON="{\"critical\":${CRITICAL_VULNS},\"high\":${HIGH_VULNS},\"medium\":${MEDIUM_VULNS},\"low\":${LOW_VULNS}}"
 
@@ -356,6 +367,12 @@ if [ "${DO_WAIT}" = "true" ]; then
 
     if [ "${SARIF_CODE}" -ne 200 ]; then
       echo "::error::Failed to download SARIF report (HTTP ${SARIF_CODE})" >&2
+      exit 1
+    fi
+
+    SARIF_VERSION=$(extract_json_field "version" "${INPUT_SARIF}")
+    if [ "${SARIF_VERSION}" != "2.1.0" ]; then
+      echo "::error::Downloaded report is not a valid SARIF 2.1.0 document (expected version 2.1.0, got '${SARIF_VERSION}')" >&2
       exit 1
     fi
     echo "SARIF report saved to ${INPUT_SARIF}"
