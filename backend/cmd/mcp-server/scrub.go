@@ -103,14 +103,19 @@ func hiddenRune(r rune) bool {
 		unicode.Is(unicode.Co, r) || unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r) ||
 		(unicode.Is(unicode.Zs, r) && r != ' ') ||
 		unicode.Is(unicode.Variation_Selector, r) || unicode.Is(unicode.Other_Default_Ignorable_Code_Point, r) ||
-		r == '\u034f' || r == '\u2800')
+		r == '\u034f' || r == '\u2800' || r == '\U0001d159' || r == '\U00016fe4')
 }
 
-// Escaping '<' makes the representation reversible and prevents key collisions.
 func scrubString(s string) string {
+	s = visibleRune.ReplaceAllStringFunc(s, func(marker string) string {
+		if _, ok := visibleRuneValue(marker); ok {
+			return "<U+003C>" + marker[1:]
+		}
+		return marker
+	})
 	var b strings.Builder
 	for _, r := range s {
-		if r == '<' || hiddenRune(r) {
+		if hiddenRune(r) {
 			fmt.Fprintf(&b, "<U+%04X>", r)
 		} else {
 			b.WriteRune(r)
@@ -121,13 +126,20 @@ func scrubString(s string) string {
 
 var visibleRune = regexp.MustCompile(`<U\+[0-9A-F]{4,6}>`)
 
+func visibleRuneValue(marker string) (rune, bool) {
+	n, err := strconv.ParseUint(marker[3:len(marker)-1], 16, 32)
+	if err != nil || n > unicode.MaxRune || n >= 0xd800 && n <= 0xdfff {
+		return 0, false
+	}
+	r := rune(n)
+	return r, (r == '<' || hiddenRune(r)) && fmt.Sprintf("<U+%04X>", r) == marker
+}
+
 func restoreString(s string) string {
 	return visibleRune.ReplaceAllStringFunc(s, func(marker string) string {
-		n, err := strconv.ParseUint(marker[3:len(marker)-1], 16, 32)
-		r := rune(n)
-		if err != nil || n > unicode.MaxRune || (r != '<' && !hiddenRune(r)) || fmt.Sprintf("<U+%04X>", r) != marker {
-			return marker
+		if r, ok := visibleRuneValue(marker); ok {
+			return string(r)
 		}
-		return string(r)
+		return marker
 	})
 }
