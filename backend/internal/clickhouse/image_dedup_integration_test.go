@@ -18,7 +18,7 @@ func TestCloneImageSBOMCopiesRelatedRowsAndIsIdempotent(t *testing.T) {
 
 	sourceID := uuid.New()
 	digest := "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	identity, err := json.Marshal([]string{digest, "registry.example/target", "target-cluster", "team", "app", "ci"})
+	identity, err := json.Marshal([]string{digest, "registry.example/target", "target-cluster", "team", "app", "ci", "", "", ""})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestCloneImageSBOMCopiesRelatedRowsAndIsIdempotent(t *testing.T) {
 	}
 
 	ref := ImageSBOMRef{SBOMID: sourceID}
-	id, err := c.CloneImageSBOM(ctx, ref, digest, "registry.example/target", "", "", "target-cluster", "team", "app", "", "ci", []string{"fleet"})
+	id, err := c.CloneImageSBOM(ctx, ref, digest, "registry.example/target", "", "", "target-cluster", "team", "app", "", "ci", []string{"fleet"}, "", "", "")
 	if err != nil {
 		t.Fatalf("CloneImageSBOM: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestCloneImageSBOMCopiesRelatedRowsAndIsIdempotent(t *testing.T) {
 	if err := c.Conn.Exec(ctx, "ALTER TABLE sbom_packages DELETE WHERE sbom_id = ? SETTINGS mutations_sync = 1", targetID); err != nil {
 		t.Fatalf("remove cloned package row for retry check: %v", err)
 	}
-	retryID, err := c.CloneImageSBOM(ctx, ref, digest, "registry.example/target", "", "", "target-cluster", "team", "app", "", "ci", []string{"fleet"})
+	retryID, err := c.CloneImageSBOM(ctx, ref, digest, "registry.example/target", "", "", "target-cluster", "team", "app", "", "ci", []string{"fleet"}, "", "", "")
 	if err != nil {
 		t.Fatalf("CloneImageSBOM retry: %v", err)
 	}
@@ -137,5 +137,62 @@ func TestCloneImageSBOMCopiesRelatedRowsAndIsIdempotent(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("QueryImage omitted cloned SBOM %s", id)
+	}
+}
+
+func TestCloneImageSBOM_TwoWorkloadsSharingImage(t *testing.T) {
+	c := testClient(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	sourceID := uuid.New()
+	digest := "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	now := time.Now()
+	source := models.SBOM{
+		IngestedAt: now, SBOMID: sourceID, SourceFile: "test-source-workloads.json",
+		SPDXVersion: "SPDX-2.3", DocumentName: "workload-share-test", SHA256Hash: strings.Repeat("b", 64),
+		CreationDate: now, CreatorTools: []string{}, Tags: []string{}, QualityFlags: []string{},
+		Cluster: "k8s-prod", ImageRef: "registry.example/service:v1",
+		ImageDigest: digest,
+	}
+	if err := c.InsertSBOM(ctx, &source); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = c.Conn.Exec(context.Background(), "ALTER TABLE sboms DELETE WHERE image_digest = ? SETTINGS mutations_sync = 1", digest)
+	})
+
+	ref := ImageSBOMRef{SBOMID: sourceID}
+	// Workload 1: Deployment payment-worker
+	id1, err := c.CloneImageSBOM(ctx, ref, digest, "registry.example/service:v1", "", "", "k8s-prod", "payments", "payment-system", "", "cluster-scan", nil, "Deployment", "payment-worker", "uid-1111")
+	if err != nil {
+		t.Fatalf("CloneImageSBOM workload 1: %v", err)
+	}
+
+	// Workload 2: CronJob payment-sync (same image, cluster, namespace, project, origin)
+	id2, err := c.CloneImageSBOM(ctx, ref, digest, "registry.example/service:v1", "", "", "k8s-prod", "payments", "payment-system", "", "cluster-scan", nil, "CronJob", "payment-sync", "uid-2222")
+	if err != nil {
+		t.Fatalf("CloneImageSBOM workload 2: %v", err)
+	}
+
+	if id1 == id2 {
+		t.Fatalf("expected distinct clone IDs for different workloads sharing an image, got both %s", id1)
+	}
+
+	// Verify FindImageByDigestOwner distinguishes workloads
+	owner1, err := c.FindImageByDigestOwner(ctx, digest, "registry.example/service:v1", "k8s-prod", "payments", "payment-system", "cluster-scan", "Deployment", "payment-worker", "uid-1111")
+	if err != nil || owner1 == nil {
+		t.Fatalf("FindImageByDigestOwner workload 1: err=%v, owner=%v", err, owner1)
+	}
+	if owner1.WorkloadKind != "Deployment" || owner1.WorkloadName != "payment-worker" || owner1.WorkloadUID != "uid-1111" {
+		t.Errorf("workload 1 mismatch: %+v", owner1)
+	}
+
+	owner2, err := c.FindImageByDigestOwner(ctx, digest, "registry.example/service:v1", "k8s-prod", "payments", "payment-system", "cluster-scan", "CronJob", "payment-sync", "uid-2222")
+	if err != nil || owner2 == nil {
+		t.Fatalf("FindImageByDigestOwner workload 2: err=%v, owner=%v", err, owner2)
+	}
+	if owner2.WorkloadKind != "CronJob" || owner2.WorkloadName != "payment-sync" || owner2.WorkloadUID != "uid-2222" {
+		t.Errorf("workload 2 mismatch: %+v", owner2)
 	}
 }

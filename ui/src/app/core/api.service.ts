@@ -40,6 +40,8 @@ import {
   NamespaceStats,
   QualityStatsResponse,
   OriginItem,
+  SbomListOptions,
+  ClusterSbomOptions,
 } from './api.models';
 
 /** Base URL of the REST API; the app uses the nginx proxy at `/api/v1`, embedded elements point it elsewhere. */
@@ -79,21 +81,63 @@ export class ApiService {
    * SBOM list. `search` is a substring match on document name / source path;
    * `project` (#398) is the exact project identity and scopes the list to
    * one project's versions. They compose. `minQuality` filters by minimum quality score (#537).
+   * `workloadKind`, `workloadName`, `workloadUID` filter by runtime workload identity (#458).
    */
+  getSboms(options?: SbomListOptions): Observable<PaginatedResponse<SBOMListItem>>;
   getSboms(page?: number, pageSize?: number, search?: string, project?: string, minQuality?: number): Observable<PaginatedResponse<SBOMListItem>>;
   getSboms(page?: number, pageSize?: number, search?: string, project?: string, origin?: string, minQuality?: number): Observable<PaginatedResponse<SBOMListItem>>;
   getSboms(page?: number, pageSize?: number, search?: string, project?: string, origin?: string, minQuality?: number, digest?: string): Observable<PaginatedResponse<SBOMListItem>>;
+  getSboms(page?: number, pageSize?: number, search?: string, project?: string, workloadKind?: string, workloadName?: string, workloadUID?: string, minQuality?: number): Observable<PaginatedResponse<SBOMListItem>>;
   getSboms(
-    page = 1,
+    pageOrOptions: number | SbomListOptions = 1,
     pageSize = 50,
     search = '',
     project = '',
-    originOrMinQuality: string | number = '',
+    originOrWorkloadKindOrMinQuality: string | number = '',
+    maybeWorkloadNameOrMinQuality: string | number = '',
+    maybeWorkloadUIDOrDigest = '',
     maybeMinQuality = 0,
-    digest = '',
   ): Observable<PaginatedResponse<SBOMListItem>> {
-    const origin = typeof originOrMinQuality === 'string' ? originOrMinQuality : '';
-    const minQuality = typeof originOrMinQuality === 'number' ? originOrMinQuality : maybeMinQuality;
+    if (typeof pageOrOptions === 'object' && pageOrOptions !== null) {
+      const opts = pageOrOptions;
+      let params = new HttpParams()
+        .set('page', (opts.page ?? 1).toString())
+        .set('page_size', (opts.pageSize ?? 50).toString());
+      if (opts.search) params = params.set('search', opts.search);
+      if (opts.project) params = params.set('project', opts.project);
+      if (opts.cluster) params = params.set('cluster', opts.cluster);
+      if (opts.origin) params = params.set('origin', opts.origin);
+      if (opts.workloadKind) params = params.set('workload_kind', opts.workloadKind);
+      if (opts.workloadName) params = params.set('workload_name', opts.workloadName);
+      if (opts.workloadUID) params = params.set('workload_uid', opts.workloadUID);
+      if (opts.minQuality && opts.minQuality > 0) params = params.set('min_quality', opts.minQuality.toString());
+      if (opts.digest) params = params.set('digest', opts.digest);
+      return this.http.get<PaginatedResponse<SBOMListItem>>(`${this.baseUrl}/sboms`, { params });
+    }
+
+    const page = typeof pageOrOptions === 'number' ? pageOrOptions : 1;
+    let origin = '';
+    let workloadKind = '';
+    let workloadName = '';
+    let workloadUID = '';
+    let minQuality = 0;
+    let digest = '';
+
+    if (typeof originOrWorkloadKindOrMinQuality === 'number') {
+      minQuality = originOrWorkloadKindOrMinQuality;
+    } else if (typeof originOrWorkloadKindOrMinQuality === 'string' && originOrWorkloadKindOrMinQuality) {
+      if (typeof maybeWorkloadNameOrMinQuality === 'number') {
+        origin = originOrWorkloadKindOrMinQuality;
+        minQuality = maybeWorkloadNameOrMinQuality;
+        digest = maybeWorkloadUIDOrDigest;
+      } else {
+        workloadKind = originOrWorkloadKindOrMinQuality;
+        workloadName = typeof maybeWorkloadNameOrMinQuality === 'string' ? maybeWorkloadNameOrMinQuality : '';
+        workloadUID = maybeWorkloadUIDOrDigest;
+        minQuality = maybeMinQuality;
+      }
+    }
+
     let params = new HttpParams()
       .set('page', page.toString())
       .set('page_size', pageSize.toString());
@@ -105,6 +149,15 @@ export class ApiService {
     }
     if (origin) {
       params = params.set('origin', origin);
+    }
+    if (workloadKind) {
+      params = params.set('workload_kind', workloadKind);
+    }
+    if (workloadName) {
+      params = params.set('workload_name', workloadName);
+    }
+    if (workloadUID) {
+      params = params.set('workload_uid', workloadUID);
     }
     if (minQuality > 0) {
       params = params.set('min_quality', minQuality.toString());
@@ -422,7 +475,28 @@ export class ApiService {
     return this.http.get<ClusterStats>(`${this.baseUrl}/clusters/${encodeURIComponent(cluster)}/stats`);
   }
 
-  getClusterSboms(cluster: string, page = 1, pageSize = 50, origin = ''): Observable<PaginatedResponse<SBOMListItem>> {
+  getClusterSboms(cluster: string, options?: ClusterSbomOptions): Observable<PaginatedResponse<SBOMListItem>>;
+  getClusterSboms(cluster: string, page?: number, pageSize?: number, origin?: string): Observable<PaginatedResponse<SBOMListItem>>;
+  getClusterSboms(
+    cluster: string,
+    pageOrOptions: number | ClusterSbomOptions = 1,
+    pageSize = 50,
+    origin = '',
+  ): Observable<PaginatedResponse<SBOMListItem>> {
+    if (typeof pageOrOptions === 'object' && pageOrOptions !== null) {
+      const opts = pageOrOptions;
+      let params = new HttpParams()
+        .set('page', (opts.page ?? 1).toString())
+        .set('page_size', (opts.pageSize ?? 50).toString());
+      if (opts.origin) params = params.set('origin', opts.origin);
+      if (opts.workloadKind) params = params.set('workload_kind', opts.workloadKind);
+      if (opts.workloadName) params = params.set('workload_name', opts.workloadName);
+      if (opts.workloadUID) params = params.set('workload_uid', opts.workloadUID);
+      return this.http.get<PaginatedResponse<SBOMListItem>>(
+        `${this.baseUrl}/clusters/${encodeURIComponent(cluster)}/sboms`, { params });
+    }
+
+    const page = typeof pageOrOptions === 'number' ? pageOrOptions : 1;
     let params = new HttpParams()
       .set('page', page.toString())
       .set('page_size', pageSize.toString());

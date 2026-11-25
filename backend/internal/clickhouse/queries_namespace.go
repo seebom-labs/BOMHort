@@ -209,7 +209,10 @@ func (c *Client) QueryNamespaceSBOMs(ctx context.Context, namespace, clusterFilt
 			s.project,
 			s.origin,
 			s.image_ref,
-			s.image_digest
+			s.image_digest,
+			s.workload_kind,
+			s.workload_name,
+			s.workload_uid
 		FROM (SELECT * FROM sboms FINAL) AS s
 		LEFT JOIN (
 			SELECT sbom_id, sum(length(package_names)) AS pkg_count
@@ -244,7 +247,8 @@ func (c *Client) QueryNamespaceSBOMs(ctx context.Context, namespace, clusterFilt
 			&item.DocumentName, &item.PackageCount, &item.VulnCount, &ingestedAt,
 			&item.SourceRepo, &item.SourceRef,
 			&item.Cluster, &item.Namespace, &item.Project, &item.Origin,
-			&item.ImageRef, &item.ImageDigest); err != nil {
+			&item.ImageRef, &item.ImageDigest,
+			&item.WorkloadKind, &item.WorkloadName, &item.WorkloadUID); err != nil {
 			return nil, fmt.Errorf("failed to scan namespace sbom row: %w", err)
 		}
 		item.IngestedAt = ingestedAt.Format(time.RFC3339)

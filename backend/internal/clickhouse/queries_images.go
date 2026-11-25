@@ -20,6 +20,9 @@ type ImageSBOMRef struct {
 	Project            string
 	ImageRef           string
 	Origin             string
+	WorkloadKind       string
+	WorkloadName       string
+	WorkloadUID        string
 }
 
 func (c *Client) QueryImages(ctx context.Context, page, pageSize uint64) (*dto.PaginatedResponse[dto.ImageListItem], error) {
@@ -89,7 +92,8 @@ func (c *Client) QueryImage(ctx context.Context, digest string, page, pageSize u
 	}
 	rows, err := c.Conn.Query(ctx, `
 		SELECT sbom_id, source_file, document_name, document_version, image_ref, origin,
-		       cluster, namespace, project, ingested_at
+		       cluster, namespace, project, ingested_at,
+		       workload_kind, workload_name, workload_uid
 		FROM sboms FINAL
 		WHERE image_digest = ?
 		ORDER BY ingested_at DESC
@@ -104,7 +108,8 @@ func (c *Client) QueryImage(ctx context.Context, digest string, page, pageSize u
 		var id uuid.UUID
 		var ingestedAt time.Time
 		if err := rows.Scan(&id, &item.SourceFile, &item.DocumentName, &item.DocumentVersion, &item.ImageRef, &item.Origin,
-			&item.Cluster, &item.Namespace, &item.Project, &ingestedAt); err != nil {
+			&item.Cluster, &item.Namespace, &item.Project, &ingestedAt,
+			&item.WorkloadKind, &item.WorkloadName, &item.WorkloadUID); err != nil {
 			return nil, fmt.Errorf("failed to scan image SBOM: %w", err)
 		}
 		item.SBOMID = id.String()
@@ -170,10 +175,10 @@ func (c *Client) FindSBOMByHash(ctx context.Context, hash string) (*ImageSBOMRef
 	return &ref, nil
 }
 
-func (c *Client) FindPendingImageJob(ctx context.Context, digest, imageRef, cluster, namespace, project, origin string) (*models.IngestionJob, error) {
+func (c *Client) FindPendingImageJob(ctx context.Context, digest, imageRef, cluster, namespace, project, origin, workloadKind, workloadName, workloadUID string) (*models.IngestionJob, error) {
 	jobs, err := c.selectJobs(ctx,
-		"latest_status IN ('pending', 'processing') AND image_digest = ? AND image_ref = ? AND cluster = ? AND namespace = ? AND project = ? AND origin = ?",
-		1, digest, imageRef, cluster, namespace, project, origin)
+		"latest_status IN ('pending', 'processing') AND image_digest = ? AND image_ref = ? AND cluster = ? AND namespace = ? AND project = ? AND origin = ? AND workload_kind = ? AND workload_name = ? AND workload_uid = ?",
+		1, digest, imageRef, cluster, namespace, project, origin, workloadKind, workloadName, workloadUID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query pending image job: %w", err)
 	}
@@ -183,14 +188,14 @@ func (c *Client) FindPendingImageJob(ctx context.Context, digest, imageRef, clus
 	return &jobs[0], nil
 }
 
-func (c *Client) FindImageByDigestOwner(ctx context.Context, digest, imageRef, cluster, namespace, project, origin string) (*ImageSBOMRef, error) {
+func (c *Client) FindImageByDigestOwner(ctx context.Context, digest, imageRef, cluster, namespace, project, origin, workloadKind, workloadName, workloadUID string) (*ImageSBOMRef, error) {
 	var ref ImageSBOMRef
 	err := c.Conn.QueryRow(ctx, `
-		SELECT sbom_id, cluster, namespace, project, image_ref, origin
+		SELECT sbom_id, cluster, namespace, project, image_ref, origin, workload_kind, workload_name, workload_uid
 		FROM sboms FINAL
-		WHERE image_digest = ? AND image_ref = ? AND cluster = ? AND namespace = ? AND project = ? AND origin = ?
+		WHERE image_digest = ? AND image_ref = ? AND cluster = ? AND namespace = ? AND project = ? AND origin = ? AND workload_kind = ? AND workload_name = ? AND workload_uid = ?
 		ORDER BY ingested_at DESC
-		LIMIT 1`, digest, imageRef, cluster, namespace, project, origin).Scan(&ref.SBOMID, &ref.Cluster, &ref.Namespace, &ref.Project, &ref.ImageRef, &ref.Origin)
+		LIMIT 1`, digest, imageRef, cluster, namespace, project, origin, workloadKind, workloadName, workloadUID).Scan(&ref.SBOMID, &ref.Cluster, &ref.Namespace, &ref.Project, &ref.ImageRef, &ref.Origin, &ref.WorkloadKind, &ref.WorkloadName, &ref.WorkloadUID)
 	if err != nil {
 		if isNoRows(err) {
 			return nil, nil
@@ -202,8 +207,8 @@ func (c *Client) FindImageByDigestOwner(ctx context.Context, digest, imageRef, c
 
 // CloneImageSBOM reuses the already-parsed SBOM data for another ownership
 // tuple. The deterministic target id makes retries replace partial child rows.
-func (c *Client) CloneImageSBOM(ctx context.Context, source ImageSBOMRef, digest, imageRef, sourceRepo, sourceRef, cluster, namespace, project, parent, origin string, tags []string) (string, error) {
-	identity, err := json.Marshal([]string{digest, imageRef, cluster, namespace, project, origin})
+func (c *Client) CloneImageSBOM(ctx context.Context, source ImageSBOMRef, digest, imageRef, sourceRepo, sourceRef, cluster, namespace, project, parent, origin string, tags []string, workloadKind, workloadName, workloadUID string) (string, error) {
+	identity, err := json.Marshal([]string{digest, imageRef, cluster, namespace, project, origin, workloadKind, workloadName, workloadUID})
 	if err != nil {
 		return "", fmt.Errorf("failed to encode cloned image identity: %w", err)
 	}
@@ -286,18 +291,18 @@ func (c *Client) CloneImageSBOM(ctx context.Context, source ImageSBOMRef, digest
 			ingested_at, sbom_id, source_file, spdx_version, document_name, document_namespace,
 			sha256_hash, creation_date, creator_tools, cluster, namespace, project,
 			source_repo, source_ref, document_version, tags, parent, root_purl, supplier,
-			origin, image_ref, image_digest, quality_score, quality_flags
+			origin, image_ref, image_digest, workload_kind, workload_name, workload_uid, quality_score, quality_flags
 		)
 		SELECT now(), ?, source_file, spdx_version, document_name, document_namespace,
 		       sha256_hash, creation_date, creator_tools, ?, ?, ?,
 		       if(? != '', ?, source_repo), if(? != '', ?, source_ref),
 		       document_version, arraySort(arrayDistinct(arrayConcat(tags, ?))),
 		       if(? != '', ?, parent), root_purl, supplier, ?,
-		       ?, ?, quality_score, quality_flags
+		       ?, ?, ?, ?, ?, quality_score, quality_flags
 		FROM sboms FINAL WHERE sbom_id = ?`,
 		targetID, cluster, namespace, project,
 		sourceRepo, sourceRepo, sourceRef, sourceRef, tags, parent, parent,
-		origin, imageRef, digest, source.SBOMID); err != nil {
+		origin, imageRef, digest, workloadKind, workloadName, workloadUID, source.SBOMID); err != nil {
 		return "", fmt.Errorf("failed to commit cloned SBOM metadata: %w", err)
 	}
 	var targetExists uint64
