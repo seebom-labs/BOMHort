@@ -25,10 +25,11 @@ github:
 #   cluster   - where is it deployed?        e.g. prod-eu          (1-50)
 #   namespace - which tenant/team boundary?  e.g. payments         (10-500)
 #   project   - what is it / who owns it?    e.g. payment-service  (50-5000)
+#   origin    - how was it produced? (#455)  cluster-scan | ci | registry | vendor | manual
 #
 # Precedence, highest first:
-#   1. per-object: ?cluster=/?namespace=/?project= on POST /api/v1/sboms/upload
-#   2. per-bucket: "cluster"/"namespace"/"project" inside an s3.buckets entry
+#   1. per-object: ?cluster=/?namespace=/?project=/?origin= on POST /api/v1/sboms/upload
+#   2. per-bucket: "cluster"/"namespace"/"project"/"origin" inside an s3.buckets entry
 #   3. these instance-wide defaults
 #   4. pathLayout derivation (fills only what the above left empty)
 ownership:
@@ -97,7 +98,9 @@ ownership:
 
 # S3 bucket ingestion (default, recommended)
 # Ingest SBOMs directly from S3-compatible buckets (AWS S3, MinIO, GCS).
-# No PVC or git-sync required. Streams object listings with pagination.
+# No PVC or git-sync required: set gitSync.enabled=false and
+# sbomSource.enabled=false to run without the sbom-data volume.
+# Streams object listings with pagination.
 # The Parsing Workers fetch objects on-demand via s3:// URIs.
 # Set s3.buckets to a JSON array of bucket configs. Leave empty to use volume-based alternatives.
 s3:
@@ -181,6 +184,28 @@ clickhouse:
 # With gitSync.enabled=false the chart creates this PVC empty; filling it
 # (a CI job, kubectl cp, push uploads with sbomSource.writable) is up to you.
 sbomSource:
+  # Create the PVC and mount it into the ingestion watcher, the parsing
+  # workers and the API gateway. Ignored with gitSync.enabled=true, which
+  # mounts an emptyDir instead.
+  #
+  # Set to false for an S3-only deployment (#590): no PVC, no sbom-data mount,
+  # and no pod affinity. That affinity exists only because the PVC is
+  # ReadWriteOnce, and it pins every worker and gateway replica to one node;
+  # without it they schedule freely. It stays in place while
+  # originalStore.fs.enabled is true, because that PVC is shared the same way.
+  #
+  # Requires s3.buckets to hold at least one bucket; the render fails on an
+  # empty list ('[]' included) and on anything that is not a JSON array of
+  # bucket objects. Push uploads then need a "skipScan" bucket: the chart sets
+  # SBOM_DIR_DISABLED=true, which switches the SBOM_DIR/pushed/ fallback off
+  # in the API gateway. Without it the gateway would accept uploads into its
+  # own container filesystem whenever mountPath happens to be writable there
+  # (/tmp/sboms, say), where no parsing worker can read them.
+  #
+  # Turning this off on an existing release makes Helm delete the PVC. Check
+  # it holds nothing you ingest from (files copied in, or push uploads stored
+  # with sbomSource.writable) before you do.
+  enabled: true
   pvcName: bomhort-sbom-data
   mountPath: /data/sboms
   storageSize: 1Gi
@@ -405,6 +430,8 @@ parsingWorker:
   skipDepsDevResolve: false # Skip deps.dev license resolution for unknown package licenses
   skipPackagistResolve: false # Skip Packagist license resolution for unknown Composer licenses
   skipPyPIResolve: false    # Skip PyPI license resolution for unknown Python licenses
+  skipClearlyDefinedResolve: false # Skip ClearlyDefined license resolution and discrepancy check
+  privatePackagePrefixes: "" # Comma-separated private package PURL prefixes excluded from public resolvers
   resources:
     requests:
       cpu: 250m
@@ -424,6 +451,9 @@ apiGateway:
   # per-IP write budget. Lower it if the upload endpoint is exposed to
   # untrusted networks.
   maxUploadSizeMB: 50
+  # Transparency Exchange API (TEA Beta 2, #534).
+  # Advertised base URL in /.well-known/tea. Empty = auto-detected from request.
+  teaBaseUrl: ""
   # Reuse parsed SBOM data for repeated image digests (#457). Uploads must
   # provide ?image=<ref>@sha256:<digest>; disabled by default.
   dedupByImageDigest: false
@@ -526,10 +556,18 @@ ui:
     limits:
       cpu: 200m
       memory: 128Mi
-  # Custom CSS theme – mount a custom-theme.css to override colors.
-  # Edit the ConfigMap to rebrand the UI without rebuilding.
+  # Custom CSS theme – override the UI colors without rebuilding.
+  # The stylesheet comes from a ConfigMap you manage yourself in the release
+  # namespace; the chart renders none. For example:
+  #   kubectl create configmap bomhort-theme --from-file=custom-theme.css=./my-theme.css
+  # The file is mounted via subPath, so content changes need a restart of the
+  # UI Deployment. A missing ConfigMap or key keeps the UI pods from starting.
   customTheme:
     enabled: false
+    # Name of the ConfigMap holding the stylesheet. Required when enabled.
+    existingConfigMap: ""
+    # Key inside existingConfigMap that holds the CSS.
+    existingConfigMapKey: custom-theme.css
   # Site configuration – override brand name, dashboard texts, disclaimer etc.
   # All text fields support HTML. Edit via Helm values or kubectl edit configmap.
   siteConfig:
@@ -614,6 +652,20 @@ mcp:
 cveRefresher:
   enabled: true
   schedule: "0 2 * * *"    # Daily at 2 AM
+  # Public exploit-code index: which CVEs have a Nuclei template, a
+  # Metasploit module or an Exploit-DB entry. Three index files (~25 MB in
+  # all) are downloaded on every run; findings show the result next to the
+  # CVE and the listings accept ?exploit=available.
+  exploitRefs:
+    enabled: true
+    # Any subset of: nuclei, metasploit, exploitdb.
+    sources: [nuclei, metasploit, exploitdb]
+    # Override an index URL, e.g. an internal mirror or file:// on a mounted
+    # volume for air-gapped installs. Empty = the upstream file.
+    urls:
+      nuclei: ""
+      metasploit: ""
+      exploitdb: ""
   resources:
     requests:
       cpu: 100m

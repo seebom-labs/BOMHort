@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/csv"
 	"log"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
@@ -40,12 +41,17 @@ type vulnerabilityStreamFunc func(ctx context.Context, scope string, f clickhous
 var reportFormats = map[string]bool{"csv": true}
 
 // vulnerabilityCSVHeader: cve_id first — the id an auditor's questionnaire
-// asks for (#412) — then OSV's id and every other alias.
+// asks for (#412) — then OSV's id and every other alias. The remediation
+// record (#413) sits at the end: what is being done, decided when, by whom.
+// vex_status is renamed remediation_status, its register meaning; the column
+// position is unchanged.
 var vulnerabilityCSVHeader = []string{
 	"cve_id", "vuln_id", "aliases", "severity", "purl", "summary",
 	"fixed_version", "source_file", "discovered_at",
-	"dependency_scope", "dependency_depth", "vex_status",
+	"dependency_scope", "dependency_depth", "remediation_status",
 	"reachability", "evidence_source", "evidence_ref", "evidence_at",
+	"exploit_available", "exploit_sources",
+	"action_statement", "action_statement_timestamp", "vex_author",
 }
 
 func vulnerabilityCSVRecord(v dto.VulnerabilityListItem) []string {
@@ -58,6 +64,8 @@ func vulnerabilityCSVRecord(v dto.VulnerabilityListItem) []string {
 		v.FixedVersion, v.SourceFile, v.DiscoveredAt,
 		v.DependencyScope, depth, v.VEXStatus,
 		v.Reachability, v.EvidenceSource, v.EvidenceRef, v.EvidenceAt,
+		strconv.FormatBool(v.ExploitAvailable), strings.Join(v.ExploitSources, ";"),
+		v.VEXActionStatement, v.VEXActionStatementTimestamp, v.VEXAuthor,
 	}
 	for i := range rec {
 		rec[i] = csvSafe(rec[i])
@@ -98,12 +106,18 @@ func vulnerabilityReportHandler(filter vulnFilterFunc, stream vulnerabilityStrea
 			writeError(w, http.StatusBadRequest, "Invalid scope (expected direct, transitive, root or unknown)")
 			return
 		}
+		exploitOnly, ok := parseExploit(q.Get("exploit"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, invalidExploitMsg)
+			return
+		}
 
 		f, status, msg := filter(r)
 		if status != 0 {
 			writeError(w, status, msg)
 			return
 		}
+		f.ExploitAvailable = exploitOnly
 
 		rows, err := stream(r.Context(), scope, f)
 		if err != nil {
@@ -115,7 +129,7 @@ func vulnerabilityReportHandler(filter vulnFilterFunc, stream vulnerabilityStrea
 
 		filename := "bomhort-vulnerabilities-" + now().UTC().Format("2006-01-02") + ".csv"
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-		w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusOK)
 

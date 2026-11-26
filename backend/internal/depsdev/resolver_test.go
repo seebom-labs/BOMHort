@@ -33,6 +33,14 @@ func TestExtractPackageVersion(t *testing.T) {
 		{"pkg:cargo/foo@1.0,2.0", PackageVersion{}, false},
 		{"pkg:cargo/foo@1.0 2.0", PackageVersion{}, false},
 		{"pkg:npm/foo/bar@1.0.0", PackageVersion{}, false},
+		{"pkg:npm/lodash@..", PackageVersion{}, false},
+		{"pkg:npm/lodash@.", PackageVersion{}, false},
+		{"pkg:npm/lodash@../evil", PackageVersion{}, false},
+		{"pkg:pypi/requests@..", PackageVersion{}, false},
+		{"pkg:nuget/Moq@..", PackageVersion{}, false},
+		{"pkg:cargo/foo@..", PackageVersion{}, false},
+		{"pkg:golang/github.com/x/y@..", PackageVersion{}, false},
+		{"pkg:maven/a/b@..", PackageVersion{}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.purl, func(t *testing.T) {
@@ -53,6 +61,9 @@ func TestNormalizeLicenses(t *testing.T) {
 		{"single", []string{"Apache-2.0"}, "Apache-2.0"},
 		{"compound single", []string{"Unicode-DFS-2016 AND (Apache-2.0 OR MIT)"}, "Unicode-DFS-2016 AND (Apache-2.0 OR MIT)"},
 		{"multiple", []string{"MIT OR Apache-2.0", "BSD-3-Clause"}, "(MIT OR Apache-2.0) AND BSD-3-Clause"},
+		{"multiple compound with outer parens on parts", []string{"(MIT) OR (Apache-2.0)", "GPL-3.0-only"}, "((MIT) OR (Apache-2.0)) AND GPL-3.0-only"},
+		{"multiple compound with newlines", []string{"MIT\nOR\nApache-2.0", "GPL-3.0-only"}, "(MIT\nOR\nApache-2.0) AND GPL-3.0-only"},
+		{"multiple compound without spaces around parens", []string{"(MIT)OR(Apache-2.0)", "GPL-3.0-only"}, "((MIT)OR(Apache-2.0)) AND GPL-3.0-only"},
 		{"non-standard", []string{"non-standard"}, ""},
 		{"empty entries", []string{"", "  "}, ""},
 	}
@@ -235,6 +246,13 @@ func TestExtractPackage_Versionless(t *testing.T) {
 		// A placeholder in the coordinates is not a real package.
 		{"pkg:maven/${project.groupId}/svc@unknown", PackageVersion{}, false},
 		{"pkg:composer/vendor/name", PackageVersion{}, false},
+		// Versions unsafe for a URL path are rejected, not blanked to default version.
+		{"pkg:npm/left-pad@file:../left-pad", PackageVersion{}, false},
+		{"pkg:npm/lodash@..", PackageVersion{}, false},
+		{"pkg:npm/lodash@.", PackageVersion{}, false},
+		{"pkg:npm/lodash@../evil", PackageVersion{}, false},
+		{"pkg:npm/lodash@1.0/2", PackageVersion{}, false},
+		{"pkg:npm/lodash@1.0\\2", PackageVersion{}, false},
 	}
 	for _, c := range cases {
 		got, ok := extractPackage(c.purl)
@@ -397,5 +415,116 @@ func TestResolveBatch_PaginationIsBounded(t *testing.T) {
 				t.Error("a version the server never answered must not be cached")
 			}
 		})
+	}
+}
+
+func TestValidVersion(t *testing.T) {
+	tests := []struct {
+		version string
+		want    bool
+	}{
+		{"1.0.0", true},
+		{"v2.1.0", true},
+		{"", false},
+		{".", false},
+		{"..", false},
+		{"../evil", false},
+		{"1.0/2", false},
+		{"1.0\\2", false},
+		{"unknown", false},
+		{"UNKNOWN", false},
+		{"${version}", false},
+		{"1.0,2.0", false},
+		{"1.0 2.0", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.version, func(t *testing.T) {
+			if got := validVersion(tt.version); got != tt.want {
+				t.Errorf("validVersion(%q) = %v, want %v", tt.version, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolve_InvalidVersion_NoTraversal(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "..") || strings.HasSuffix(r.URL.Path, "/.") {
+			t.Errorf("unexpected request with path traversal: %s", r.URL.Path)
+			http.Error(w, "traversal detected", http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	r := NewResolverWithBaseURL(srv.URL)
+	ctx := context.Background()
+
+	invalidPURLs := []string{
+		"pkg:npm/lodash@..",
+		"pkg:npm/lodash@.",
+		"pkg:npm/lodash@../evil",
+		"pkg:pypi/requests@..",
+		"pkg:nuget/Moq@..",
+		"pkg:cargo/foo@..",
+		"pkg:golang/github.com/x/y@..",
+		"pkg:maven/a/b@..",
+	}
+
+	for _, purl := range invalidPURLs {
+		t.Run(purl, func(t *testing.T) {
+			_ = r.Resolve(ctx, purl)
+		})
+	}
+
+	// Directly testing fetchLicense with invalid versions
+	invalidVersions := []string{".", "..", "../evil", "evil/..", "1/2", "1\\2", ""}
+	for _, v := range invalidVersions {
+		pv := PackageVersion{System: "NPM", Name: "lodash", Version: v}
+		if got := r.fetchLicense(ctx, pv); got != "" {
+			t.Errorf("fetchLicense(%+v) = %q, want empty", pv, got)
+		}
+	}
+}
+
+func TestResolve_MalformedVersion_NoDefaultVersionRequest(t *testing.T) {
+	var requestedPaths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestedPaths = append(requestedPaths, r.Method+" "+r.URL.Path)
+		// If a default-version request were erroneously sent, answer with a dummy default version.
+		if strings.HasPrefix(r.URL.Path, "/v3/systems/npm/packages/") && !strings.Contains(r.URL.Path, "/versions/") {
+			_, _ = w.Write([]byte(`{"versions":[{"versionKey":{"system":"NPM","name":"lodash","version":"4.17.21"},"isDefault":true}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	r := NewResolverWithBaseURL(srv.URL)
+	ctx := context.Background()
+
+	purls := []string{
+		"pkg:npm/left-pad@file:../left-pad",
+		"pkg:npm/lodash@..",
+	}
+
+	for _, purl := range purls {
+		if got := r.Resolve(ctx, purl); got != "" {
+			t.Errorf("Resolve(%q) = %q, want empty (unresolved)", purl, got)
+		}
+		if handled, reason, latest := r.Explain(purl); handled {
+			t.Errorf("Explain(%q) handled = true (%q, latest=%v), want false", purl, reason, latest)
+		}
+	}
+
+	batchResult := r.ResolveBatch(ctx, purls)
+	for _, purl := range purls {
+		if got := batchResult[purl]; got != "" {
+			t.Errorf("ResolveBatch(%q) = %q, want empty (unresolved)", purl, got)
+		}
+	}
+
+	if len(requestedPaths) != 0 {
+		t.Errorf("expected no requests (especially no default-version request), but server received: %v", requestedPaths)
 	}
 }

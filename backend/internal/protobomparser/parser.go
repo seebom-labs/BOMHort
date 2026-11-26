@@ -18,6 +18,7 @@ import (
 	"github.com/protobom/protobom/pkg/sbom"
 
 	"github.com/seebom-labs/bomhort/backend/internal/imageid"
+	"github.com/seebom-labs/bomhort/backend/internal/license"
 	"github.com/seebom-labs/bomhort/backend/internal/sbomname"
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
@@ -318,7 +319,19 @@ func extractNodeLicense(node *sbom.Node) string {
 	// Protobom stores declared licenses in the Licenses field.
 	lics := node.GetLicenses()
 	if len(lics) > 0 {
-		return strings.Join(lics, " AND ")
+		if len(lics) == 1 {
+			return lics[0]
+		}
+		parts := make([]string, 0, len(lics))
+		for _, lic := range lics {
+			lic = strings.TrimSpace(lic)
+			if lic != "" {
+				parts = append(parts, license.ParenthesizeCompound(lic))
+			}
+		}
+		if len(parts) > 0 {
+			return strings.Join(parts, " AND ")
+		}
 	}
 
 	// Fall back to concluded license.

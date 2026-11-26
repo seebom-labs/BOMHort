@@ -43,6 +43,89 @@ func newFSStore(dir string) (*FSStore, error) {
 // Backend implements rawStore.
 func (f *FSStore) Backend() string { return BackendFS }
 
+func (f *FSStore) immutableRef(key string) (string, error) {
+	rel, err := f.safeRel(key)
+	if err != nil {
+		return "", err
+	}
+	return "fs://" + filepath.ToSlash(rel), nil
+}
+
+func (f *FSStore) putRawIfAbsent(ctx context.Context, ref string, data []byte) (bool, error) {
+	key, err := splitRef(ref, BackendFS)
+	if err != nil {
+		return false, err
+	}
+	rel, err := f.safeRel(key)
+	if err != nil {
+		return false, err
+	}
+	filename := filepath.Join(f.root, rel)
+	dir := filepath.Dir(filename)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return false, fmt.Errorf("docstore: create immutable directory: %w", err)
+	}
+	tmp, err := os.CreateTemp(dir, ".immutable-*")
+	if err != nil {
+		return false, fmt.Errorf("docstore: create immutable temporary file: %w", err)
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return false, fmt.Errorf("docstore: write immutable object: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return false, fmt.Errorf("docstore: sync immutable object: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return false, fmt.Errorf("docstore: close immutable object: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if err := os.Link(tmp.Name(), filename); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf("docstore: publish immutable object: %w", err)
+	}
+	if err := f.syncImmutable(ref); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (f *FSStore) syncImmutable(ref string) error {
+	key, err := splitRef(ref, BackendFS)
+	if err != nil {
+		return err
+	}
+	rel, err := f.safeRel(key)
+	if err != nil {
+		return err
+	}
+	dir := filepath.Dir(filepath.Join(f.root, rel))
+	for {
+		directory, err := os.Open(dir)
+		if err != nil {
+			return fmt.Errorf("docstore: open immutable directory: %w", err)
+		}
+		err = directory.Sync()
+		closeErr := directory.Close()
+		if err != nil {
+			return fmt.Errorf("docstore: sync immutable directory: %w", err)
+		}
+		if closeErr != nil {
+			return fmt.Errorf("docstore: close immutable directory: %w", closeErr)
+		}
+		if dir == f.root {
+			return nil
+		}
+		dir = filepath.Dir(dir)
+	}
+}
+
 // CheckWritable verifies that the process can create files below the root.
 // Writers (the parsing worker) call this at startup so a volume that is
 // mounted read-only or owned by another uid (typical for a fresh PVC or

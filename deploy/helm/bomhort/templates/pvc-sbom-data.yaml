@@ -1,4 +1,5 @@
-{{- if not .Values.gitSync.enabled }}
+{{- include "bomhort.sbomSource.validate" . }}
+{{- if include "bomhort.sbomSource.pvc" . }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

@@ -16,7 +16,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-	"unicode"
 
 	json "github.com/goccy/go-json"
 
@@ -365,6 +364,9 @@ func (v versionResponse) cacheValue() string {
 
 // fetchLicense looks up one version and returns its cache encoding.
 func (r *Resolver) fetchLicense(ctx context.Context, pv PackageVersion) string {
+	if !validVersion(pv.Version) {
+		return ""
+	}
 	u := fmt.Sprintf("%s/%s/systems/%s/packages/%s/versions/%s",
 		r.baseURL, getAPIVersion, strings.ToLower(pv.System), url.PathEscape(pv.Name), url.PathEscape(pv.Version))
 
@@ -483,7 +485,7 @@ func NormalizeLicenseDetails(details []licenseDetail) string {
 	}
 	if len(parts) > 1 {
 		for i, lic := range parts {
-			parts[i] = parenthesizeIfCompound(lic)
+			parts[i] = license.ParenthesizeCompound(lic)
 		}
 	}
 	return strings.Join(parts, " AND ")
@@ -507,7 +509,7 @@ func NormalizeLicenses(licenses []string) string {
 	}
 	if len(parts) > 1 {
 		for i, lic := range parts {
-			parts[i] = parenthesizeIfCompound(lic)
+			parts[i] = license.ParenthesizeCompound(lic)
 		}
 	}
 	return strings.Join(parts, " AND ")
@@ -523,25 +525,6 @@ func cleanLicense(lic string) string {
 		return ""
 	}
 	return lic
-}
-
-func parenthesizeIfCompound(lic string) string {
-	if !containsOperator(lic) || (strings.HasPrefix(lic, "(") && strings.HasSuffix(lic, ")")) {
-		return lic
-	}
-	return "(" + lic + ")"
-}
-
-func containsOperator(lic string) bool {
-	for _, field := range strings.FieldsFunc(lic, func(r rune) bool {
-		return unicode.IsSpace(r) || r == '(' || r == ')'
-	}) {
-		switch strings.ToUpper(field) {
-		case "AND", "OR", "WITH":
-			return true
-		}
-	}
-	return false
 }
 
 // ExtractPackageVersion maps supported package URLs to deps.dev version keys.
@@ -583,7 +566,10 @@ func extractPackage(purl string) (PackageVersion, bool) {
 	if !ok {
 		return PackageVersion{}, false
 	}
-	if !validVersion(version) {
+	if isUnsafeVersion(version) {
+		return PackageVersion{}, false
+	}
+	if isPlaceholderVersion(version) {
 		version = ""
 	}
 
@@ -640,12 +626,23 @@ func decodePath(s string) (string, bool) {
 	return strings.TrimSpace(decoded), true
 }
 
-func validVersion(version string) bool {
+func isUnsafeVersion(version string) bool {
+	return version == "." || strings.Contains(version, "..") || strings.ContainsAny(version, "/\\")
+}
+
+func isPlaceholderVersion(version string) bool {
 	version = strings.TrimSpace(version)
 	if version == "" || strings.EqualFold(version, "unknown") || strings.Contains(version, "${") {
+		return true
+	}
+	return strings.ContainsAny(version, " \t\r\n,")
+}
+
+func validVersion(version string) bool {
+	if !license.ValidVersion(version) || strings.EqualFold(version, "unknown") || strings.Contains(version, ",") {
 		return false
 	}
-	return !strings.ContainsAny(version, " \t\r\n,")
+	return true
 }
 
 func validNPMName(name string) bool {

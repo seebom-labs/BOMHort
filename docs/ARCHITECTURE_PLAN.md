@@ -8,6 +8,8 @@
 
 Kubernetes-native SBOM platform as a monorepo. Go backend with four binaries (CronJob Ingestion-Watcher, scalable Parsing-Workers, stateless API-Gateway, background CVE-Refresher). ClickHouse (supported floor: 24.8 LTS, pinned by digest in the chart; CI also tests 24.12, #392) as the analytical database with MergeTree tables and array-based dependency storage. Angular frontend with virtual scrolling, OnPush change detection, full-text search, dark-mode toggle, and custom CSS theming. The SPDX files already exist as 1000+ files in the repository — no external scanner needed. Job coordination via a ClickHouse queue table (no NATS/Redis). **VEX support (OpenVEX)** enables vendor-side vulnerability assessment. **Cross-project search** for CVE impact, license violations, and dependency statistics. **License policy + exceptions** fully externalized as config files (no rebuild needed). **CVE Refresher** incrementally checks all known PURLs against OSV for newly disclosed CVEs — without re-scanning all SBOMs.
 
+The API gateway also exposes the read-only Transparency Exchange API (TEA). It atomically publishes immutable collection and VEX snapshots to the shared original document store and indexes their versions and hashes in ClickHouse; see [TEA storage requirements](content/docs/tea/_index.md#versioning-and-storage).
+
 ---
 
 ## 1. Monorepo Directory Structure
@@ -15,6 +17,12 @@ Kubernetes-native SBOM platform as a monorepo. Go backend with four binaries (Cr
 ```
 bomhort/
 ├── AGENTS.md
+├── .ai/                        # Shared internal AI rules and review procedure
+├── CLAUDE.md                   # Claude adapter importing the small AGENTS.md
+├── .agents/skills/             # Tool-neutral/Codex review skill entry point
+├── .claude/skills/             # Claude review skill adapter
+├── .github/copilot-instructions.md # Copilot adapter to the shared root policy
+├── .github/instructions/       # Scoped Copilot adapters to shared rules
 ├── README.md
 ├── LICENSE
 ├── Makefile                    # dev, dev-reset, re-ingest, re-scan, ch-shell, etc.
@@ -51,6 +59,7 @@ bomhort/
 │   │   │   ├── queries_project_groups.go # Parent grouping: per-project signals, grouped listing
 │   │   │   ├── queries_search.go  # SBOM detail, CVE impact, license violations, dep stats
 │   │   │   ├── queries_refresh.go # CVE Refresh: PURL dedup, reverse-lookup, refresh log
+│   │   │   ├── queries_exploit.go # Public exploit code: snapshot write, per-finding lookup, ?exploit filter
 │   │   │   ├── queries_github_cache.go # GitHub license cache read/write
 │   │   │   └── queries_license_recheck.go # Stored compliance rows + latest recheck job
 │   │   ├── github/            # GitHub API client for license resolution (PURL→license)
@@ -58,6 +67,7 @@ bomhort/
 │   │   ├── osv/               # OSV API client (rate-limited, exponential backoff retry)
 │   │   ├── osvutil/           # Shared OSV helpers (severity, fixed version, affected versions)
 │   │   ├── advisory/          # OSV-format advisory feeds (ADVISORY_SOURCES): sync, apk/dpkg/rpm version order, feed-first matching
+│   │   ├── exploit/           # Public exploit-code indexes (Nuclei, Metasploit, Exploit-DB): fetch, parse, snapshot sync
 │   │   ├── s3/                # S3-compatible bucket client (AWS S3, MinIO, GCS)
 │   │   ├── license/           # License compliance + externalized policy + exceptions (+ Reevaluate)
 │   │   ├── rulesource/        # Rules documents from file / https / s3, polled with last-known-good
@@ -108,7 +118,6 @@ bomhort/
         ├── configmap.yaml
         ├── configmap-license-exceptions.yaml
         ├── configmap-license-policy.yaml
-        ├── configmap-custom-theme.yaml
         ├── configmap-migrations.yaml
         ├── configmap-nginx.yaml
         ├── configmap-ui-config.yaml
@@ -121,7 +130,8 @@ bomhort/
         ├── cronjob-cve-refresher.yaml      # Daily CVE refresh (configurable)
         ├── job-migrate.yaml                # DB migration job, named after a hash of its migrations (re-runs when they change)
         ├── validate-removed-values.yaml    # Fails the render on removed values (seedJob, #391)
-        ├── pvc-sbom-data.yaml              # PVC for SBOM storage
+        ├── _sbom-source.tpl                # sbom-data volume modes: git-sync emptyDir, PVC, or none (#590)
+        ├── pvc-sbom-data.yaml              # PVC for SBOM storage (not with git-sync or sbomSource.enabled=false)
         ├── service-api-gateway.yaml
         ├── service-mcp-server.yaml         # Only rendered for mcp.transport=http
         ├── service-ui.yaml
@@ -224,7 +234,7 @@ S3 project grouping continues to use the source path. See the
 | GET | `/healthz` | Health check |
 | GET | `/livez` | Liveness probe (always 200 if process alive) |
 | GET | `/readyz` | Readiness probe (checks ClickHouse connectivity) |
-| POST | `/api/v1/sboms/upload` | Push-model SBOM/VEX ingestion for CI/CD. Requires `AUTH_ENABLED=true` (self-enforced). Stages to a `skipScan` S3 bucket or `SBOM_DIR/pushed/`, then enqueues a normal ingestion job |
+| POST | `/api/v1/sboms/upload` | Push-model SBOM/VEX ingestion for CI/CD. Requires `AUTH_ENABLED=true` (self-enforced). Stages to a `skipScan` S3 bucket or `SBOM_DIR/pushed/` (the latter only when `SBOM_DIR` is shared with the workers, never with `SBOM_DIR_DISABLED=true`), then enqueues a normal ingestion job |
 | GET | `/api/v1/stats/dashboard` | Dashboard statistics (incl. VEX effective/suppressed, license breakdown) |
 | GET | `/api/v1/stats/dependencies?limit=N` | Top-N dependencies cross-project with vuln count |
 | GET | `/api/v1/stats/version-skew?page=&page_size=&search=` | Packages with inconsistent versions across projects (paginated, searchable) |
@@ -299,6 +309,17 @@ Resolution order, highest priority first:
    the levels above left empty: explicit configuration always wins, because
    silently overriding a named value from directory structure would be
    impossible to debug.
+
+**Cluster scanners.** BOMHort does not discover pod images itself; a scanner
+inside each cluster lists running pods, generates one SBOM per image digest
+with an existing generator (syft, trivy) and pushes it through level 1. A
+reference scanner is planned in the monorepo. Its contract is the conformance
+list on the *Scanning a Cluster* docs page
+(`docs/content/docs/scanning-a-cluster/_index.md`). That list is asserted
+against `uploadHandler` by `TestDocsScannerConformanceInSync`
+(`cmd/api-gateway/scanner_conformance_test.go`), so a parameter added to the
+upload without a conformance row, or a *planned* one that starts being read,
+fails `go test`.
 
 ### Dependency Depth (`internal/depgraph`, migration `025`)
 
@@ -454,6 +475,7 @@ one bucket is nested and another flat.
 | `dashboard_stats_mv` | SummingMergeTree (MV) | (stat_date) | Pre-aggregated daily stats |
 | `vex_statements` | ReplacingMergeTree | (vuln_id, product_purl, vex_id) | OpenVEX statements |
 | `cve_refresh_log` | MergeTree | (started_at, refresh_id) | CVE refresh run history (timestamp, results, status) |
+| `exploit_refs` | ReplacingMergeTree(last_seen) | (source, cve_id, ref) | Public exploit code per CVE (migration `033`): Nuclei templates, Metasploit modules, Exploit-DB entries. Reference data keyed by CVE, no ownership columns; each source is a snapshot (rows of its newest `last_seen` are current) |
 | `github_license_cache` | ReplacingMergeTree | (repo) | Cache for resolved GitHub licenses (avoids API redundancy) |
 | `github_repo_metadata` | ReplacingMergeTree | (repo) | GitHub repo metadata (archived, fork, stars, pushed_at) for dependency health |
 | `registry_license_cache` | ReplacingMergeTree | (registry, package) | Cache for npm/NuGet/deps.dev/Packagist/PyPI resolved licenses; negatives stored as `!<reason>` |
@@ -554,7 +576,7 @@ Moved to Section 10 for comprehensive coverage including exemptions and visual r
 - 60+ CSS custom properties in `styles.scss` (layout, brand, navbar, text, severity, status, license, charts)
 - **Dark Mode Toggle** in the navbar (top right), persisted to `localStorage`, respects `prefers-color-scheme`
 - **Custom Theme CSS:** External `custom-theme.css` mountable without Angular rebuild. Overrides any CSS variables.
-  - K8s: `bomhort-custom-theme` ConfigMap (`ui.customTheme.enabled: true`)
+  - K8s: a ConfigMap you manage yourself (`ui.customTheme.enabled: true`, `ui.customTheme.existingConfigMap` / `existingConfigMapKey`)
   - Local: `CUSTOM_THEME=./my-theme.css` in `.env`
 - **Site Configuration (ui-config.json):** All UI texts (brand name, page title, dashboard title/description/disclaimer, footer) configurable via external JSON file without Angular rebuild. Loaded via `APP_INITIALIZER` at app startup. Missing keys fall back to built-in defaults.
   - K8s: `bomhort-ui-config` ConfigMap (`ui.siteConfig.enabled: true`, content via `ui.siteConfig.content.*` in Helm values)
@@ -574,6 +596,10 @@ Moved to Section 10 for comprehensive coverage including exemptions and visual r
 4. Reverse-lookup: PURL → which SBOMs contain it? (`has(package_purls, ?)`)
 5. With feeds: run the matcher over all PURLs (new osv.dev hits plus feed-only flaws not yet stored under any of their ids), then `INSERT` new vulnerability records — and feed `not_affected` VEX statements — for all affected SBOMs
 6. Write refresh log to `cve_refresh_log`
+
+**Public exploit code.** Before the OSV pass, the refresher syncs `exploit_refs` from three index files — nuclei-templates `cves.json`, Metasploit `db/modules_metadata_base.json`, Exploit-DB `files_exploits.csv` (~25 MB together, a few seconds; downloads, not clones, so no `git` in the image and no GB-scale checkouts). Each source is written as one batch with a shared `last_seen`; readers keep only each source's newest snapshot, so an entry removed upstream disappears and a failed sync (download, parse, or an index that suddenly parses to nothing) leaves the previous snapshot in force. Links are built from fixed upstream prefixes plus a validated path, never taken from the document. Indexes are only read over `https://` (redirects to plain HTTP refused) or from `file://`. Metasploit's `auxiliary/scanner/` category is left out: those modules detect a flaw, they do not exploit it. `first_seen` is carried over on every re-insert.
+
+The signal is **not** copied onto `vulnerabilities`. Finding listings look it up at query time — one `cve_id IN (…)` lookup per page (per 500 rows for the CSV stream), matching `vuln_id` and every alias — and `?exploit=available` is a row-local predicate: each row's `vuln_id` and aliases are probed against the current exploit CVE set, built once per query, so a scoped listing reads only its own rows and the count query does not rescan `vulnerabilities`. A new template therefore shows on findings ingested long ago without rewriting them, and the remediation SLA policy can read the same table when it lands.
 
 **Shared Helpers:** `internal/osvutil` package (extracted from parsing-worker) for `ClassifySeverity`, `ExtractFixedVersion`, `ExtractAffectedVersions`.
 

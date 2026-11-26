@@ -65,6 +65,8 @@ s3:
 # ─── SBOM Source via PVC (alternative to S3) ─────────────────────────────────
 # Only needed if S3 is not available. For S3-based ingestion, set s3.buckets above.
 # The chart creates the PVC empty; populate it yourself (CI job, kubectl cp).
+# With S3 only, set sbomSource.enabled: false to drop the PVC and its pod
+# affinity.
 gitSync:
   enabled: false
 

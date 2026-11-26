@@ -1,0 +1,14 @@
+-- 036_add_vex_action_statement_timestamp.up.sql
+-- Surface the VEX action statement as the remediation record (#413).
+--
+-- OpenVEX carries action_statement_timestamp, "the timestamp when the action
+-- statement was issued", next to action_statement. BOMHort stores the action
+-- statement (007) but not its timestamp, so a register row can show what is
+-- being done but not when it was decided. Capturing it at ingest is
+-- forward-only-ish (automated producers won't re-send old documents), so the
+-- column lands before the v1.0 freeze.
+--
+-- Zero (toDateTime(0)) means "unknown": legacy rows ingested before this
+-- migration and statements whose producer omitted the field. Readers treat
+-- it like evidence_at — only a unix timestamp > 0 is surfaced.
+ALTER TABLE vex_statements ADD COLUMN IF NOT EXISTS action_statement_timestamp DateTime DEFAULT toDateTime(0);

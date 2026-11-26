@@ -71,6 +71,7 @@ func (c *Client) InsertSBOMPackages(ctx context.Context, pkg *models.SBOMPackage
 			package_purls, package_licenses, package_license_sources,
 			rel_source_indices, rel_target_indices, rel_types,
 			package_depths,
+			license_discrepancy,
 			cluster, namespace, project, image_digest
 		)`)
 	if err != nil {
@@ -91,6 +92,7 @@ func (c *Client) InsertSBOMPackages(ctx context.Context, pkg *models.SBOMPackage
 		pkg.RelTargetIndices,
 		pkg.RelTypes,
 		depthsFor(pkg),
+		licenseDiscrepanciesFor(pkg),
 		pkg.Cluster,
 		pkg.Namespace,
 		pkg.Project,
@@ -100,6 +102,14 @@ func (c *Client) InsertSBOMPackages(ctx context.Context, pkg *models.SBOMPackage
 	}
 
 	return batch.Send()
+}
+
+// licenseDiscrepanciesFor returns the license discrepancy expressions padded or
+// trimmed to one entry per package, so the parallel arrays never disagree in length.
+func licenseDiscrepanciesFor(pkg *models.SBOMPackages) []string {
+	out := make([]string, len(pkg.PackageNames))
+	copy(out, pkg.LicenseDiscrepancy)
+	return out
 }
 
 // licenseSourcesFor returns the license sources padded or trimmed to one entry
@@ -132,6 +142,7 @@ func (c *Client) InsertVulnerabilities(ctx context.Context, vulns []models.Vulne
 		`INSERT INTO vulnerabilities (
 			discovered_at, sbom_id, source_file, purl, vuln_id,
 			severity, summary, affected_versions, fixed_version, osv_json, aliases,
+			cwe_ids,
 			dependency_depth,
 			advisory_source, advisory_status, component_location,
 			cluster, namespace, project,
@@ -163,6 +174,7 @@ func (c *Client) InsertVulnerabilities(ctx context.Context, vulns []models.Vulne
 			v.FixedVersion,
 			v.OSVJSON,
 			v.Aliases,
+			v.CWEIDs,
 			v.DependencyDepth,
 			advisorySourceOrOSV(v.AdvisorySource),
 			v.AdvisoryStatus,
@@ -237,7 +249,7 @@ func (c *Client) InsertVEXStatements(ctx context.Context, stmts []models.VEXStat
 		`INSERT INTO vex_statements (
 			ingested_at, vex_id, document_id, source_file, sbom_id,
 			product_ref, product_purl, vuln_id, status, justification,
-			impact_statement, action_statement, vex_timestamp,
+			impact_statement, action_statement, action_statement_timestamp, vex_timestamp,
 			author, role, tooling, status_notes,
 			cluster, namespace, project
 		)`)
@@ -246,6 +258,10 @@ func (c *Client) InsertVEXStatements(ctx context.Context, stmts []models.VEXStat
 	}
 
 	for _, s := range stmts {
+		actionAt := s.ActionStatementTimestamp
+		if actionAt.IsZero() {
+			actionAt = time.Unix(0, 0)
+		}
 		if err := batch.Append(
 			s.IngestedAt,
 			s.VEXID,
@@ -259,6 +275,7 @@ func (c *Client) InsertVEXStatements(ctx context.Context, stmts []models.VEXStat
 			s.Justification,
 			s.ImpactStatement,
 			s.ActionStatement,
+			actionAt,
 			s.VEXTimestamp,
 			s.Author,
 			s.Role,

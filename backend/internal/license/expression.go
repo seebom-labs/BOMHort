@@ -124,6 +124,41 @@ func hasOperator(toks []token) bool {
 	return false
 }
 
+// ParenthesizeCompound wraps an SPDX expression in parentheses if it contains
+// operators and is not already fully enclosed in matching outer parentheses.
+// This preserves operator precedence when conjoining expressions with AND.
+func ParenthesizeCompound(expr string) string {
+	expr = strings.TrimSpace(expr)
+	if expr == "" {
+		return ""
+	}
+	if !hasOperator(tokenize(expr)) || isFullyEnclosed(expr) {
+		return expr
+	}
+	return "(" + expr + ")"
+}
+
+// isFullyEnclosed reports whether s is enclosed by a single matching pair of
+// outer parentheses spanning the entire string.
+func isFullyEnclosed(s string) bool {
+	if len(s) < 2 || !strings.HasPrefix(s, "(") || !strings.HasSuffix(s, ")") {
+		return false
+	}
+	depth := 0
+	for i := 0; i < len(s)-1; i++ {
+		switch s[i] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth <= 0 {
+				return false
+			}
+		}
+	}
+	return depth == 1 && s[len(s)-1] == ')'
+}
+
 // ── Parser ───────────────────────────────────────────────────────────────────
 //
 // Precedence follows the SPDX spec: WITH binds tighter than AND, which binds
@@ -167,6 +202,23 @@ func parseExpression(expr string) (*exprNode, error) {
 		return nil, fmt.Errorf("unexpected token at position %d", p.pos)
 	}
 	return n, nil
+}
+
+// ExpressionIDs returns the license and exception identifiers in a valid SPDX expression.
+func ExpressionIDs(expr string) []string {
+	root, err := parseExpression(expr)
+	if err != nil {
+		return nil
+	}
+	var ids []string
+	for _, leaf := range root.leafIDs() {
+		for _, id := range strings.Fields(leaf) {
+			if !strings.EqualFold(id, "WITH") {
+				ids = append(ids, id)
+			}
+		}
+	}
+	return ids
 }
 
 func (p *parser) peek() (token, bool) {

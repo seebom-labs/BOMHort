@@ -225,24 +225,26 @@ func (c *Client) CloneImageSBOM(ctx context.Context, source ImageSBOMRef, digest
 				ingested_at, sbom_id, source_file, package_spdx_ids, package_names,
 				package_versions, package_purls, package_licenses, package_license_sources,
 				rel_source_indices, rel_target_indices, rel_types, package_depths,
+				license_discrepancy,
 				cluster, namespace, project, image_digest
 			)
 			SELECT now(), ?, source_file, package_spdx_ids, package_names,
 			       package_versions, package_purls, package_licenses, package_license_sources,
 			       rel_source_indices, rel_target_indices, rel_types, package_depths,
+			       if(length(license_discrepancy) = length(package_names), license_discrepancy, arrayResize(CAST([], 'Array(String)'), length(package_names), '')),
 			       ?, ?, ?, ?
 			FROM sbom_packages FINAL WHERE sbom_id = ?`,
 			[]any{targetID, cluster, namespace, project, digest, source.SBOMID}},
 		{"vulnerabilities", `
 			INSERT INTO vulnerabilities (
 				discovered_at, sbom_id, source_file, purl, vuln_id, severity, summary,
-				affected_versions, fixed_version, osv_json, aliases, dependency_depth,
+				affected_versions, fixed_version, osv_json, aliases, cwe_ids, dependency_depth,
 				advisory_source, advisory_status, component_location,
 				cluster, namespace, project, image_digest,
 				reachability, evidence_source, evidence_ref, evidence_at
 			)
 			SELECT now(), ?, source_file, purl, vuln_id, severity, summary,
-			       affected_versions, fixed_version, osv_json, aliases, dependency_depth,
+			       affected_versions, fixed_version, osv_json, aliases, cwe_ids, dependency_depth,
 			       advisory_source, advisory_status, component_location,
 			       ?, ?, ?, ?, reachability, evidence_source, evidence_ref, evidence_at
 			FROM vulnerabilities FINAL WHERE sbom_id = ?`,
@@ -335,12 +337,14 @@ func (c *Client) cloneScopedVEX(ctx context.Context, sourceID, targetID uuid.UUI
 			INSERT INTO vex_statements (
 				ingested_at, vex_id, document_id, source_file, sbom_id, product_ref,
 				product_purl, vuln_id, status, justification, impact_statement,
-				action_statement, vex_timestamp, author, role, tooling, status_notes,
+				action_statement, action_statement_timestamp, vex_timestamp,
+				author, role, tooling, status_notes,
 				cluster, namespace, project
 			)
 			SELECT now(), ?, document_id, source_file, ?, product_ref, product_purl,
 			       vuln_id, status, justification, impact_statement, action_statement,
-			       vex_timestamp, author, role, tooling, status_notes, ?, ?, ?
+			       action_statement_timestamp, vex_timestamp,
+			       author, role, tooling, status_notes, ?, ?, ?
 			FROM vex_statements FINAL WHERE vex_id = ? AND sbom_id = ?`,
 			newID, targetID.String(), cluster, namespace, project, oldID, sourceID.String()); err != nil {
 			return fmt.Errorf("failed to clone scoped VEX statement: %w", err)

@@ -28,8 +28,8 @@ func TestQueryNamespaceMethodsExist(t *testing.T) {
 	var c *Client
 	var _ func(context.Context, string) ([]dto.NamespaceListItem, error) = c.QueryNamespaces
 	var _ func(context.Context, string, string) (*dto.NamespaceStats, error) = c.QueryNamespaceStats
-	var _ func(context.Context, string, string, uint64, uint64) (*dto.PaginatedResponse[dto.SBOMListItem], error) = c.QueryNamespaceSBOMs
-	var _ func(context.Context) ([]dto.FleetCluster, error) = c.QueryFleetTree
+	var _ func(context.Context, string, string, string, uint64, uint64) (*dto.PaginatedResponse[dto.SBOMListItem], error) = c.QueryNamespaceSBOMs
+	var _ func(context.Context, string) ([]dto.FleetCluster, error) = c.QueryFleetTree
 }
 
 // TestNamespaceStatsDTO mirrors TestClusterStatsDTO: both drill-downs must

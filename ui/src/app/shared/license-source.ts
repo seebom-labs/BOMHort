@@ -13,12 +13,14 @@ const ORIGIN_LABELS: Record<string, string> = {
   depsdev: 'deps.dev',
   packagist: 'Packagist',
   pypi: 'PyPI',
+  clearlydefined: 'ClearlyDefined',
 };
 
 const REASON_LABELS: Record<string, string> = {
   'first-party': 'First-party component (the project itself or one of its own modules)',
   'not-published': 'Not published on a public registry (private or internal package)',
   'no-license-upstream': 'The registry has the package, but no license is declared upstream',
+  'not-harvested': 'ClearlyDefined has not harvested or scanned this package definition yet',
   'no-purl': 'No package URL, so there is nothing to look up',
   'unsupported-ecosystem': 'No license resolver exists for this ecosystem',
   unresolved: 'All lookups failed or returned no result',
@@ -32,6 +34,8 @@ const REASON_HINTS: Record<string, string> = {
     'Internal packages are not on any public registry. Declare the license in the SBOM generator, or add a license exception.',
   'no-license-upstream':
     'Ask the upstream project to declare a license (Maven artifacts often inherit it from a parent POM), or add an exception after review.',
+  'not-harvested':
+    'ClearlyDefined has not harvested definitions for this package version. You can queue a harvest on clearlydefined.io or declare the license upstream.',
   'no-purl': 'Configure the SBOM generator to emit package URLs.',
   'unsupported-ecosystem':
     'Usually pkg:generic files or system libraries. Scan the image with a tool that reads OS package metadata, or add an exception.',

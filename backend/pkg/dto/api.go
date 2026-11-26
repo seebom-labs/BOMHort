@@ -50,6 +50,8 @@ type DashboardStats struct {
 	LowQualitySBOMs uint64 `json:"low_quality_sboms"`
 	// AverageQualityScore is the average quality score across all SBOMs (#537).
 	AverageQualityScore float64 `json:"average_quality_score"`
+	// OriginBreakdown splits the estate's SBOMs by how they were produced (#455).
+	OriginBreakdown map[string]uint64 `json:"origin_breakdown,omitempty"`
 }
 
 // SBOMListItem is the response DTO for listing SBOMs.
@@ -67,14 +69,15 @@ type SBOMListItem struct {
 	SourceRef       string `json:"source_ref,omitempty"`
 	ImageRef        string `json:"image_ref,omitempty"`
 	ImageDigest     string `json:"image_digest,omitempty"`
-	// Ownership dimensions (#177). Completes the list contract before the
+	// Ownership dimensions (#177, #455). Completes the list contract before the
 	// v1.0 freeze: the detail view and the cluster endpoints already expose
 	// these, so a client could not tell which cluster/namespace/project a
-	// listed SBOM belongs to without a second request per row. All three
+	// listed SBOM belongs to without a second request per row. All four
 	// default to '' and are omitted when unset (single-instance deployments).
 	Cluster   string `json:"cluster,omitempty"`
 	Namespace string `json:"namespace,omitempty"`
 	Project   string `json:"project,omitempty"`
+	Origin    string `json:"origin,omitempty"`
 	// QualityScore (0-100) measures document completeness (#537).
 	QualityScore uint8 `json:"quality_score"`
 	// QualityFlags lists reasons for quality deductions (#537).
@@ -136,7 +139,11 @@ type VulnerabilityListItem struct {
 	CVEID string `json:"cve_id,omitempty"`
 	// Aliases are the OSV alias ids of VulnID (GHSA <-> CVE <-> GO-…),
 	// sorted. Omitted when OSV lists none.
-	Aliases      []string `json:"aliases,omitempty"`
+	Aliases []string `json:"aliases,omitempty"`
+	// CWEIDs are the weakness classes of the flaw (#409), from OSV
+	// database_specific.cwe_ids, sorted. Omitted for findings without CWEs
+	// (e.g. NVD-sourced entries that list none).
+	CWEIDs       []string `json:"cwe_ids,omitempty"`
 	Severity     string   `json:"severity"`
 	PURL         string   `json:"purl"`
 	Summary      string   `json:"summary"`
@@ -165,6 +172,15 @@ type VulnerabilityListItem struct {
 	VEXStatementID   string `json:"vex_statement_id,omitempty"`
 	VEXAuthor        string `json:"vex_author,omitempty"`
 	VEXTooling       string `json:"vex_tooling,omitempty"`
+	// Remediation record (#413): the winning statement's action statement —
+	// "we know, here is what we do about it" — and its impact note. Omitted
+	// when the statement carries none.
+	VEXActionStatement string `json:"vex_action_statement,omitempty"`
+	VEXImpactStatement string `json:"vex_impact_statement,omitempty"`
+	// VEXActionStatementTimestamp (#413) is when the action statement was
+	// issued (OpenVEX action_statement_timestamp). Omitted for statements
+	// ingested before migration 033, which store the zero time.
+	VEXActionStatementTimestamp string `json:"vex_action_statement_timestamp,omitempty"`
 	// VEXScope (#350): "sbom" when the winning statement is scoped to this
 	// SBOM, "global" for unscoped legacy statements. Omitted without VEX.
 	VEXScope string `json:"vex_scope,omitempty"`
@@ -188,6 +204,15 @@ type VulnerabilityListItem struct {
 	EvidenceSource string `json:"evidence_source,omitempty"`
 	EvidenceRef    string `json:"evidence_ref,omitempty"`
 	EvidenceAt     string `json:"evidence_at,omitempty"`
+
+	// ExploitAvailable says whether public exploit code exists for the
+	// finding's CVE (matched by vuln_id or any alias): a Nuclei template, a
+	// Metasploit module or an Exploit-DB entry. ExploitSources names the
+	// sources in that order, Exploits links each one; both are omitted when
+	// none is known.
+	ExploitAvailable bool         `json:"exploit_available"`
+	ExploitSources   []string     `json:"exploit_sources,omitempty"`
+	Exploits         []ExploitRef `json:"exploits,omitempty"`
 }
 
 // ReachabilitySummary is the response returned when uploading reachability evidence (#535).
@@ -199,6 +224,18 @@ type ReachabilitySummary struct {
 	Reachable     int    `json:"reachable"`
 	NotReachable  int    `json:"not_reachable"`
 	Timestamp     string `json:"timestamp"`
+}
+
+// ExploitRef is one piece of public exploit code for a finding's CVE.
+type ExploitRef struct {
+	// Source is "nuclei", "metasploit" or "exploitdb".
+	Source string `json:"source"`
+	// Ref identifies the exploit within its source: the template path, the
+	// module name or the EDB-ID.
+	Ref string `json:"ref"`
+	// URL is the public page of the exploit.
+	URL   string `json:"url"`
+	Title string `json:"title,omitempty"`
 }
 
 // DependencyNode represents a single node in the dependency tree for the UI.
@@ -258,6 +295,24 @@ type LicenseAffectedSBOM struct {
 	DocumentName string `json:"document_name"`
 }
 
+// LicenseDiscrepancyItem is one item in GET /api/v1/licenses/discrepancies.
+// It reports a package where the discovered license (e.g. from ClearlyDefined
+// scan results) differs from the declared license. Declared license remains
+// authoritative for compliance (#530).
+type LicenseDiscrepancyItem struct {
+	SBOMID            string `json:"sbom_id"`
+	DocumentName      string `json:"document_name,omitempty"`
+	Project           string `json:"project,omitempty"`
+	Cluster           string `json:"cluster,omitempty"`
+	Namespace         string `json:"namespace,omitempty"`
+	PackageName       string `json:"package_name"`
+	PackageVersion    string `json:"package_version"`
+	PURL              string `json:"purl,omitempty"`
+	DeclaredLicense   string `json:"declared_license"`
+	DiscoveredLicense string `json:"discovered_license"`
+	Source            string `json:"source,omitempty"`
+}
+
 // VEXStatementItem is the response DTO for listing VEX statements.
 type VEXStatementItem struct {
 	VEXID      string `json:"vex_id"`
@@ -307,6 +362,10 @@ type SBOMDetail struct {
 	SourceRef       string `json:"source_ref,omitempty"`
 	ImageRef        string `json:"image_ref,omitempty"`
 	ImageDigest     string `json:"image_digest,omitempty"`
+	Cluster         string `json:"cluster,omitempty"`
+	Namespace       string `json:"namespace,omitempty"`
+	Project         string `json:"project,omitempty"`
+	Origin          string `json:"origin,omitempty"`
 	CriticalVulns   uint64 `json:"critical_vulns"`
 	HighVulns       uint64 `json:"high_vulns"`
 	MediumVulns     uint64 `json:"medium_vulns"`
@@ -509,6 +568,7 @@ type GlobalSearchVulnerability struct {
 	// matches on any alias.
 	CVEID         string   `json:"cve_id,omitempty"`
 	Aliases       []string `json:"aliases,omitempty"`
+	CWEIDs        []string `json:"cwe_ids,omitempty"`
 	Severity      string   `json:"severity"`
 	Summary       string   `json:"summary"`
 	AffectedSBOMs uint64   `json:"affected_sboms"`
@@ -758,4 +818,11 @@ type TagListItem struct {
 	// its sub-projects. The UI renders such tags as a link to the parent's
 	// page rather than as a plain filter chip.
 	IsProject bool `json:"is_project"`
+}
+
+// OriginItem represents a distinct origin and how many SBOMs were produced
+// under it (#455).
+type OriginItem struct {
+	Origin    string `json:"origin"`
+	SBOMCount uint64 `json:"sbom_count"`
 }

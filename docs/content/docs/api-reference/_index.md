@@ -56,6 +56,7 @@ Even when authentication is enabled, the following endpoints bypass auth so Kube
 | `/healthz` | K8s health check (legacy, always 200) |
 | `/livez` | Liveness probe (always 200 if process alive) |
 | `/readyz` | Readiness probe (pings ClickHouse, 503 if unavailable) |
+| `/.well-known/tea` | TEA automated service discovery ([RFC 8615](/docs/tea/)) |
 | `OPTIONS *` | CORS preflight |
 
 ### Responses
@@ -140,6 +141,31 @@ Findings carry where they came from. With no [advisory feeds](../advisory-feeds/
 | `advisory_components` | Where in the image the feed locates the vulnerable file: `[{"purl", "location", "architecture"}]`. Omitted when the feed does not say. |
 
 A `not_affected` finding is also recorded as a VEX statement authored by the feed (`vex_author` = the feed name), so `vex_status` reads `not_affected` and the effective counts exclude it like any OpenVEX suppression. The fields appear on `/api/v1/vulnerabilities`, `/api/v1/sboms/{id}/vulnerabilities` and `/api/v1/projects/{name}/vulnerabilities`; clients that ignore them are unaffected.
+
+### Public exploit code {#exploit-code}
+
+Every finding says whether public exploit code exists for its CVE — the signal between "theoretically exploitable" and "exploited in the wild": a [Nuclei](https://github.com/projectdiscovery/nuclei-templates) template, a [Metasploit](https://github.com/rapid7/metasploit-framework) module or an [Exploit-DB](https://www.exploit-db.com) entry. The `cve-refresher` refreshes the three indexes daily (see [Deployment](/docs/deployment/#public-exploit-code)); a finding is matched by its `vuln_id` **or** any alias, so a finding stored as `GHSA-…` picks up exploits filed under its CVE.
+
+| Field | Description |
+|-------|-------------|
+| `exploit_available` | `true` when at least one exploit is known. Always present. |
+| `exploit_sources` | The sources that have one, in the order `nuclei`, `metasploit`, `exploitdb`. Omitted when none. |
+| `exploits` | One entry per exploit: `source`, `ref` (template path, module name or EDB-ID), `url` (its public page) and `title`. Metasploit `exploit/` modules come before `auxiliary/` ones; detection-only modules (`auxiliary/scanner/`) are not counted. Omitted when none. |
+
+```json
+"exploit_available": true,
+"exploit_sources": ["nuclei", "metasploit"],
+"exploits": [
+  {"source": "nuclei", "ref": "http/cves/2021/CVE-2021-44228.yaml",
+   "url": "https://github.com/projectdiscovery/nuclei-templates/blob/main/http/cves/2021/CVE-2021-44228.yaml",
+   "title": "Apache Log4j2 Remote Code Injection"},
+  {"source": "metasploit", "ref": "exploit/multi/http/log4shell_header_injection",
+   "url": "https://github.com/rapid7/metasploit-framework/blob/master/modules/exploits/multi/http/log4shell_header_injection.rb",
+   "title": "Log4Shell HTTP Header Injection"}
+]
+```
+
+The fields appear on `/api/v1/vulnerabilities` (and its cluster/namespace variants), `/api/v1/sboms/{id}/vulnerabilities`, `/api/v1/projects/{name}/vulnerabilities` and the CSV report. Each of these accepts `?exploit=available` to keep only findings with public exploit code; any other value is a `400`. The signal is looked up at query time, so a template published today shows on findings ingested months ago without a re-scan, and an entry removed upstream disappears with the next refresh.
 
 ### Error Responses
 
@@ -321,7 +347,7 @@ Push an SBOM or VEX document directly instead of relying on a filesystem/S3 scan
 
 **Storage backend:** the upload is routed to whichever push-storage backend is configured, resolved once at API Gateway startup:
 - If one of the configured `S3_BUCKETS` entries has `"skipScan": true`, the upload is written there (`s3://<bucket>/<prefix>/pushed/<uuid>-<filename>`). That bucket is excluded from the ingestion watcher's periodic scan so the same object is never rediscovered and re-enqueued under a different dedup hash.
-- Otherwise, it falls back to the local filesystem under `SBOM_DIR/pushed/` — this requires the API Gateway's `SBOM_DIR` mount to be writable (see the [Deployment Guide](/docs/deployment/) for the Helm `sbomSource.writable` flag).
+- Otherwise, it falls back to the local filesystem under `SBOM_DIR/pushed/` — this requires the API Gateway's `SBOM_DIR` mount to be writable (see the [Deployment Guide](/docs/deployment/) for the Helm `sbomSource.writable` flag). The fallback is off when `SBOM_DIR_DISABLED=true`, which the Helm chart sets for deployments without the `sbom-data` volume (`sbomSource.enabled: false`): `SBOM_DIR` is then not shared with the parsing workers, so a file stored there could never be ingested.
 - If neither is available, every request gets `503 Service Unavailable` rather than a confusing storage error.
 
 {{% alert title="Requires authentication" color="warning" %}}
@@ -357,6 +383,8 @@ The ownership parameters are optional and independent. A parameter that is absen
 `tags` is the one exception to that override model: because groupings are many-to-many, upload tags are added to the configured ones instead of replacing them. `project` and `tags` also answer different questions — `project` names *what the artifact is*, `tags` say *what kind of thing it is* — so tagging an upload never collapses it into the tag. See [Fleet Views]({{< relref "/docs/ownership" >}}).
 
 
+A cluster scanner pushing one SBOM per running image should follow the conformance list in [Scanning a Cluster]({{< relref "/docs/scanning-a-cluster#conformance-list" >}}), which says which of these parameters a scanner must send.
+
 Unlike the bucket/directory ingestion path, the server cannot infer these from an uploaded body, so a pushing CI job states them explicitly. They are stamped onto the ingestion job and copied onto every row the parsing worker writes (`sboms`, `sbom_packages`, `vulnerabilities`, `license_compliance`, `vex_statements`, `document_store`).
 
 **Response (accepted):** `202 Accepted`
@@ -389,7 +417,7 @@ With `DEDUP_BY_IMAGE_DIGEST=true` (Helm: `apiGateway.dedupByImageDigest`, defaul
 - `413` — Body exceeds `MAX_UPLOAD_SIZE_MB`
 - `409` — Image digest reuse is enabled but identical content is still queued and has not been ingested yet
 - `500` — Storage (S3 or local) or ingestion-queue failure
-- `503` — No push-storage backend is configured (no `skipScan` S3 bucket, and `SBOM_DIR` isn't writable)
+- `503` — No push-storage backend is configured (no `skipScan` S3 bucket, and `SBOM_DIR` isn't writable or is disabled with `SBOM_DIR_DISABLED=true`)
 
 {{% alert title="Content validation" color="info" %}}
 VEX uploads are validated with the same OpenVEX parser the worker uses (a `@context` or at least one `statements` entry must be present) before anything is written to disk or enqueued. SBOM uploads must be a **single, well-formed JSON object** — bare scalars, `null`, top-level arrays, concatenated documents, and trailing data after the document are all rejected with `400`. Beyond that the shape is not constrained: format detection (`bomFormat`/`spdxVersion`/in-toto `predicateType`) and full parsing (package/component extraction) still happen in the parsing worker, so an unrecognized-but-well-formed object is accepted here and resolved downstream.
@@ -601,7 +629,7 @@ Download the original SBOM JSON file. Streams the file from S3 or local filesyst
 | Header | Value |
 |--------|-------|
 | `Content-Type` | `application/json` |
-| `Content-Disposition` | `attachment; filename="<original-filename>"` |
+| `Content-Disposition` | `attachment; filename=<original-filename>` |
 
 **Errors:**
 - `400` — Invalid UUID format
@@ -632,6 +660,8 @@ All vulnerabilities found in a specific SBOM, including the effective VEX statem
 |-----------|------|---------|-------------|
 | `scope` | string | all | Only `root`, `direct`, `transitive` or `unknown` findings (see [Dependency scope](#dependency-scope)) |
 | `reachability` | string | all | Filter by reachability evidence: `reachable`, `not_reachable`, or `unknown` (#535) |
+| `exploit` | string | all | `available`: only findings with [public exploit code](#exploit-code) |
+| `cwe` | string | all | Only findings of this weakness class, e.g. `CWE-79` (#409). Case-insensitive; normalised to `CWE-<number>`. |
 
 **Response:** `200 OK`
 ```json
@@ -640,6 +670,7 @@ All vulnerabilities found in a specific SBOM, including the effective VEX statem
     "vuln_id": "GHSA-xyz-abc-123",
     "cve_id": "CVE-2023-44487",
     "aliases": ["CVE-2023-44487", "GO-2023-2102"],
+    "cwe_ids": ["CWE-755"],
     "severity": "HIGH",
     "purl": "pkg:golang/golang.org/x/net@v0.17.0",
     "summary": "HTTP/2 rapid reset vulnerability",
@@ -651,6 +682,9 @@ All vulnerabilities found in a specific SBOM, including the effective VEX statem
     "dependency_depth": 3,
     "vex_status": "not_affected",
     "vex_justification": "vulnerable_code_not_present",
+    "vex_action_statement": "Upgrade to v0.33.0",
+    "vex_impact_statement": "The vulnerable function is not called in our usage.",
+    "vex_action_statement_timestamp": "2026-05-15T02:00:00Z",
     "vex_timestamp": "2026-09-01T12:00:00Z",
     "vex_statement_id": "b3f1c2d4-5678-90ab-cdef-1234567890ab",
     "vex_author": "Example Org Security Team",
@@ -658,12 +692,13 @@ All vulnerabilities found in a specific SBOM, including the effective VEX statem
     "reachability": "not_reachable",
     "evidence_source": "govulncheck v1.1.3",
     "evidence_ref": "build-482",
-    "evidence_at": "2026-09-01T12:05:00Z"
+    "evidence_at": "2026-09-01T12:05:00Z",
+    "exploit_available": false
   }
 ]
 ```
 
-`vex_justification`, `vex_timestamp`, `vex_statement_id`, `vex_author` and `vex_tooling` describe the **winning** statement and are omitted (like `vex_status`) when no VEX statement covers the pair. `vex_author`/`vex_tooling` carry the provenance captured by migration `017` (#334) and are empty for statements ingested before it. `vex_timestamp` enables re-triage policies such as "re-open `under_investigation` older than 30 days" without paging through `/api/v1/vex/statements`. `reachability` (`reachable`, `not_reachable`, or `unknown`), `evidence_source`, `evidence_ref`, and `evidence_at` carry the reachability evidence (#535).
+`vex_justification`, `vex_timestamp`, `vex_statement_id`, `vex_author` and `vex_tooling` describe the **winning** statement and are omitted (like `vex_status`) when no VEX statement covers the pair. `vex_author`/`vex_tooling` carry the provenance captured by migration `017` (#334) and are empty for statements ingested before it. `vex_action_statement` and `vex_impact_statement` are the winning statement's remediation record (#413) — "we know, here is what we do about it" — and `vex_action_statement_timestamp` is the OpenVEX `action_statement_timestamp`, the time that statement was issued; both remediation fields and the timestamp are omitted for statements without them and for rows ingested before migration `036`. `vex_timestamp` enables re-triage policies such as "re-open `under_investigation` older than 30 days" without paging through `/api/v1/vex/statements`. `cwe_ids` are the weakness classes of the flaw (#409), read from OSV `database_specific.cwe_ids` (migration `035` backfilled existing rows from the stored OSV documents) and omitted for findings without CWEs. `reachability` (`reachable`, `not_reachable`, or `unknown`), `evidence_source`, `evidence_ref`, and `evidence_at` carry the reachability evidence (#535).
 
 
 ### `POST /api/v1/sboms/{id}/evidence`
@@ -758,6 +793,18 @@ License breakdown for a specific SBOM, grouped by license ID with package lists.
 
 `package_scopes` maps each listed package (from `packages` and `exempted_packages`) to its [dependency scope](#dependency-scope). Packages whose scope is `unknown` are left out of the map, and the map itself is omitted when no package has a recorded depth — a client reads a missing key as `unknown`.
 
+### `GET /api/v1/sboms/{id}/notices`
+
+Generates an attribution and copyright NOTICE text document for an SBOM (#530). Aggregates package licenses, discovered copyright attributions from ClearlyDefined, and canonical full SPDX license texts. All packages in the SBOM are retained in the document; packages without upstream copyright statements are explicitly noted for manual review.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `id` | UUID | SBOM identifier |
+
+**Response:** `200 OK` with `Content-Type: text/plain; charset=utf-8` and `Content-Disposition: attachment; filename="<document_name>-NOTICE.txt"`
+
 ### `GET /api/v1/sboms/{id}/dependencies`
 
 Dependency tree reconstructed as a flat array with parent→child index references.
@@ -829,6 +876,8 @@ Paginated list of all discovered vulnerabilities across all SBOMs. Each item car
 | `parent` | string | — | Only findings of the projects grouped under these parents (`GET /api/v1/projects?group_by=parent`), the parent itself included |
 | `tag` | string | — | Only findings of SBOMs carrying any of these tags |
 | `reachability` | string | all | Filter by reachability evidence: `reachable`, `not_reachable`, or `unknown` (#535) |
+| `exploit` | string | — | `available`: only findings with [public exploit code](#exploit-code) |
+| `cwe` | string | all | Only findings of this weakness class, e.g. `CWE-79` (#409). Case-insensitive; normalised to `CWE-<number>`. |
 
 The ownership filters (#459) take comma-separated values: values within one parameter are ORed, parameters are ANDed (`?cluster=prod-eu,prod-us&tag=sandbox` = SBOMs in either cluster that carry `sandbox`). Ownership is read from the SBOM, so it matches the project and fleet views. A value longer than 200 characters is a `400`.
 
@@ -838,10 +887,11 @@ The ownership filters (#459) take comma-separated values: values within one para
 {
   "data": [
     {
-      "vuln_id": "GO-2024-3333",
-      "cve_id": "CVE-2024-45338",
-      "aliases": ["CVE-2024-45338", "GHSA-w32m-9786-jp63"],
-      "severity": "CRITICAL",
+    "vuln_id": "GO-2024-3333",
+    "cve_id": "CVE-2024-45338",
+    "aliases": ["CVE-2024-45338", "GHSA-w32m-9786-jp63"],
+    "cwe_ids": ["CWE-776"],
+    "severity": "CRITICAL",
       "purl": "pkg:golang/golang.org/x/net@v0.21.0",
       "summary": "Denial of service in net/http",
       "fixed_version": "v0.23.0",
@@ -850,7 +900,8 @@ The ownership filters (#459) take comma-separated values: values within one para
       "advisory_source": "osv",
       "dependency_scope": "direct",
       "dependency_depth": 1,
-      "vex_status": ""
+      "vex_status": "",
+      "exploit_available": false
     },
     {
       "vuln_id": "GHSA-abcd-1234-wxyz",
@@ -869,7 +920,8 @@ The ownership filters (#459) take comma-separated values: values within one para
       ],
       "dependency_scope": "transitive",
       "dependency_depth": 2,
-      "vex_status": ""
+      "vex_status": "",
+      "exploit_available": false
     }
   ],
   "total": 892,
@@ -936,25 +988,29 @@ Every finding of [`GET /api/v1/vulnerabilities`](#get-apiv1vulnerabilities) as a
 | `parent` | string | — | Only findings of the projects grouped under these parents (`GET /api/v1/projects?group_by=parent`), the parent itself included |
 | `tag` | string | — | Only findings of SBOMs carrying any of these tags |
 | `reachability` | string | all | Filter by reachability evidence: `reachable`, `not_reachable`, or `unknown` (#535) |
+| `exploit` | string | — | `available`: only findings with [public exploit code](#exploit-code) |
+| `cwe` | string | all | Only findings of this weakness class, e.g. `CWE-79` (#409). Case-insensitive; normalised to `CWE-<number>`. |
 
 The ownership filters work as on the JSON listing.
 
 A legacy `vex_filter` parameter is ignored, as on the JSON listing.
 
-**Response:** `200 OK`, `Content-Type: text/csv; charset=utf-8`, `Content-Disposition: attachment; filename="bomhort-vulnerabilities-<YYYY-MM-DD>.csv"` (UTC date).
+**Response:** `200 OK`, `Content-Type: text/csv; charset=utf-8`, `Content-Disposition: attachment; filename=bomhort-vulnerabilities-<YYYY-MM-DD>.csv` (UTC date).
 
 ```csv
-cve_id,vuln_id,aliases,severity,purl,summary,fixed_version,source_file,discovered_at,dependency_scope,dependency_depth,vex_status
-CVE-2024-45338,GO-2024-3333,CVE-2024-45338;GHSA-w32m-9786-jp63,HIGH,pkg:golang/golang.org/x/net@v0.21.0,Non-linear parsing of case-insensitive content,v0.33.0,etcd-v3.5.12.spdx.json,2026-05-15T00:00:00Z,transitive,3,not_affected
+cve_id,vuln_id,aliases,severity,purl,summary,fixed_version,source_file,discovered_at,dependency_scope,dependency_depth,remediation_status,reachability,evidence_source,evidence_ref,evidence_at,exploit_available,exploit_sources,action_statement,action_statement_timestamp,vex_author
+CVE-2024-45338,GO-2024-3333,CVE-2024-45338;GHSA-w32m-9786-jp63,HIGH,pkg:golang/golang.org/x/net@v0.21.0,Non-linear parsing of case-insensitive content,v0.33.0,etcd-v3.5.12.spdx.json,2026-05-15T00:00:00Z,transitive,3,not_affected,,,,,false,,Upgrade to v0.33.0,2026-05-15T02:00:00Z,Example Org Security Team
 ```
 
 - `cve_id` comes first because that is the id audit questionnaires ask for. It is empty when the flaw has no CVE (see [Vulnerability ids and aliases](#vulnerability-ids)). `aliases` are `;`-joined.
 - `dependency_depth` is empty when unknown.
+- `exploit_available` is `true` or `false`; `exploit_sources` is `;`-joined and empty when no [public exploit code](#exploit-code) is known.
+- `remediation_status`, `action_statement`, `action_statement_timestamp` and `vex_author` carry the winning VEX statement's remediation record (#413) — what is being done, decided when, by whom. `action_statement_timestamp` is empty for statements ingested before migration `036` or produced without the OpenVEX timestamp.
 - Cells starting with `=`, `+`, `-`, `@`, tab or carriage return get a leading `'`, so a spreadsheet shows them as text instead of running them as formulas (CSV injection). Summaries come from OSV, and PURLs and file names come from uploaded SBOMs, so the export cannot trust them.
 - The status line goes out before the first row. If the database fails mid-export, the file is cut short and the gateway logs `vulnerability report truncated`. A query that fails up front returns `500` with a JSON error and no file.
 
 **Errors:**
-- `400` — Missing or unsupported `format`, or invalid `scope`
+- `400` — Missing or unsupported `format`, invalid `scope` or invalid `exploit`
 - `500` — The query failed before any row was sent
 
 ---
@@ -1030,6 +1086,40 @@ How every package across all SBOMs got its license — or why it has none. One r
 ]
 ```
 
+### `GET /api/v1/licenses/discrepancies`
+
+List components where automated license scans (such as ClearlyDefined) discovered licenses differing from the component's declared license (#530). Declared licenses remain authoritative for compliance evaluation.
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `sbom_id` | UUID | - | Filter discrepancies to a specific SBOM |
+| `project` | string | - | Filter discrepancies by project name |
+| `cluster` | string | - | Filter discrepancies by cluster |
+| `namespace` | string | - | Filter discrepancies by namespace |
+| `page` | uint64 | 1 | Page number (1-based) |
+| `page_size` | uint64 | 100 | Items per page (max 500) |
+
+**Response:** `200 OK`
+```json
+[
+  {
+    "sbom_id": "a1b2c3d4-0000-0000-0000-000000000001",
+    "document_name": "payment-service",
+    "project": "payment-service",
+    "cluster": "prod-eu",
+    "namespace": "payments",
+    "package_name": "example-lib",
+    "package_version": "1.0.0",
+    "purl": "pkg:npm/example-lib@1.0.0",
+    "declared_license": "MIT",
+    "discovered_license": "GPL-2.0-only",
+    "source": "clearlydefined"
+  }
+]
+```
+
 ### `GET /api/v1/projects`
 
 Paginated list of projects. A project is its configured `project` label when set, otherwise derived from the source path or document name. Each project aggregates its SBOMs (versions), total packages, and vulnerability counts.
@@ -1040,7 +1130,7 @@ Paginated list of projects. A project is its configured `project` label when set
 |-----------|------|---------|-------------|
 | `page` | integer | 1 | Page number |
 | `page_size` | integer | 50 | Items per page (max 500) |
-| `search` | string | — | Filter projects by name (ILIKE) |
+| `search` | string | — | Filter projects by name (case-insensitive substring; wildcards `%` and `_` are matched literally) |
 | `tag` | string | — | Only projects carrying this grouping label |
 | `group_by` | string | — | `parent`: list parents with their member projects instead (see below) |
 
@@ -1216,7 +1306,7 @@ One row per distinct `(vuln_id, purl)` across every SBOM of the project, with
 among all statements scoped to any of the project's SBOMs that cover the pair,
 the newest wins. Same row shape as `GET /api/v1/vulnerabilities`; not paginated.
 `dependency_scope` is the shallowest depth the package has in any of the
-project's SBOMs. Accepts `?scope=` like `GET /api/v1/vulnerabilities`.
+project's SBOMs. Accepts `?scope=` and `?exploit=available` like `GET /api/v1/vulnerabilities`.
 
 ### `GET /api/v1/projects/{name}/packages`
 
@@ -1235,6 +1325,24 @@ or PURL.
   "total": 12, "page": 1, "page_size": 50
 }
 ```
+
+### `GET /api/v1/projects/{name}/notices`
+
+Generates an attribution and copyright NOTICE text document across the latest version of a project (or a specific version requested via `?version=`) (#530).
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | Project name |
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `version` | string | latest | Project version (release / document version) |
+
+**Response:** `200 OK` with `Content-Type: text/plain; charset=utf-8` and `Content-Disposition: attachment; filename="<project>-<version>-NOTICE.txt"`
 
 ---
 
@@ -1912,6 +2020,12 @@ returned rather than hidden, because a large unassigned bucket is the clearest
 signal that ingestion labelling is not configured.
 
 ---
+
+## Transparency Exchange API
+
+The [TEA endpoints](/docs/tea/) expose immutable numbered collection and VEX
+artifact revisions. Collection and VEX publication returns `503` when the
+configured snapshot store is disabled or unavailable.
 
 ## Security Headers
 
