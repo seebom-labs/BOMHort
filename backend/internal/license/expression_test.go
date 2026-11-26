@@ -48,6 +48,22 @@ func TestParseExpressionMode(t *testing.T) {
 	}
 }
 
+func TestExpressionIDs(t *testing.T) {
+	got := ExpressionIDs("MIT OR (Apache-2.0 AND GPL-3.0-only WITH Classpath-exception-2.0)")
+	want := []string{"MIT", "Apache-2.0", "GPL-3.0-only", "Classpath-exception-2.0"}
+	if len(got) != len(want) {
+		t.Fatalf("ExpressionIDs() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("ExpressionIDs()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+	if got := ExpressionIDs("MIT AND"); got != nil {
+		t.Errorf("ExpressionIDs() for malformed expression = %v, want nil", got)
+	}
+}
+
 type exprCase struct {
 	expr                            string
 	strict, permissiveWins, offMode Category

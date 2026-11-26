@@ -430,6 +430,8 @@ parsingWorker:
   skipDepsDevResolve: false # Skip deps.dev license resolution for unknown package licenses
   skipPackagistResolve: false # Skip Packagist license resolution for unknown Composer licenses
   skipPyPIResolve: false    # Skip PyPI license resolution for unknown Python licenses
+  skipClearlyDefinedResolve: false # Skip ClearlyDefined license resolution and discrepancy check
+  privatePackagePrefixes: "" # Comma-separated private package PURL prefixes excluded from public resolvers
   resources:
     requests:
       cpu: 250m
@@ -546,10 +548,18 @@ ui:
     limits:
       cpu: 200m
       memory: 128Mi
-  # Custom CSS theme – mount a custom-theme.css to override colors.
-  # Edit the ConfigMap to rebrand the UI without rebuilding.
+  # Custom CSS theme – override the UI colors without rebuilding.
+  # The stylesheet comes from a ConfigMap you manage yourself in the release
+  # namespace; the chart renders none. For example:
+  #   kubectl create configmap bomhort-theme --from-file=custom-theme.css=./my-theme.css
+  # The file is mounted via subPath, so content changes need a restart of the
+  # UI Deployment. A missing ConfigMap or key keeps the UI pods from starting.
   customTheme:
     enabled: false
+    # Name of the ConfigMap holding the stylesheet. Required when enabled.
+    existingConfigMap: ""
+    # Key inside existingConfigMap that holds the CSS.
+    existingConfigMapKey: custom-theme.css
   # Site configuration – override brand name, dashboard texts, disclaimer etc.
   # All text fields support HTML. Edit via Helm values or kubectl edit configmap.
   siteConfig:

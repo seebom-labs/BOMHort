@@ -25,6 +25,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/seebom-labs/bomhort/backend/internal/claimlock"
+	"github.com/seebom-labs/bomhort/backend/internal/clearlydefined"
 	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
 	"github.com/seebom-labs/bomhort/backend/internal/config"
 	"github.com/seebom-labs/bomhort/backend/internal/depgraph"
@@ -36,6 +37,7 @@ import (
 	"github.com/seebom-labs/bomhort/backend/internal/repo"
 	"github.com/seebom-labs/bomhort/backend/internal/rulesource"
 	s3client "github.com/seebom-labs/bomhort/backend/internal/s3"
+	"github.com/seebom-labs/bomhort/backend/internal/sanitize"
 	"github.com/seebom-labs/bomhort/backend/internal/sourcerepo"
 	tagpkg "github.com/seebom-labs/bomhort/backend/internal/tags"
 	"github.com/seebom-labs/bomhort/backend/internal/tea"
@@ -156,6 +158,12 @@ func main() {
 		log.Printf("Using default license policy: %v", err)
 	}
 	applyLicenseExpressionMode(cfg.LicenseExpressionMode)
+
+	var cdResolver *clearlydefined.Resolver
+	if !cfg.SkipClearlyDefinedResolve {
+		cdResolver = clearlydefined.NewResolver()
+		cdResolver.SetPrivatePrefixes(cfg.PrivatePackagePrefixes)
+	}
 
 	mux := http.NewServeMux()
 
@@ -327,6 +335,29 @@ func main() {
 		writeJSON(w, http.StatusOK, items)
 	})
 
+	// License discrepancies where discovered license disagrees with declared (#530).
+	mux.HandleFunc("GET /api/v1/licenses/discrepancies", func(w http.ResponseWriter, r *http.Request) {
+		sbomID := r.URL.Query().Get("sbom_id")
+		if sbomID != "" && !isValidUUID(sbomID) {
+			writeError(w, http.StatusBadRequest, "Invalid SBOM ID")
+			return
+		}
+		project := r.URL.Query().Get("project")
+		cluster := r.URL.Query().Get("cluster")
+		namespace := r.URL.Query().Get("namespace")
+		search := sanitizeSearchTerm(r.URL.Query().Get("search"))
+		page := parseUint64(r.URL.Query().Get("page"), 1)
+		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
+
+		resp, err := chClient.QueryLicenseDiscrepancies(r.Context(), sbomID, project, cluster, namespace, search, page, pageSize)
+		if err != nil {
+			log.Printf("ERROR: license discrepancies: %v", err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch license discrepancies")
+			return
+		}
+		writeJSON(w, http.StatusOK, resp)
+	})
+
 	// SBOM dependency tree.
 	mux.HandleFunc("GET /api/v1/sboms/{id}/dependencies", func(w http.ResponseWriter, r *http.Request) {
 		sbomID := r.PathValue("id")
@@ -474,6 +505,31 @@ func main() {
 			return
 		}
 		writeJSON(w, http.StatusOK, licenses)
+	})
+
+	// Attribution NOTICE export for an SBOM (#530).
+	mux.HandleFunc("GET /api/v1/sboms/{id}/notices", func(w http.ResponseWriter, r *http.Request) {
+		sbomID := r.PathValue("id")
+		if !isValidUUID(sbomID) {
+			writeError(w, http.StatusBadRequest, "Invalid SBOM ID")
+			return
+		}
+		targetName, pkgs, err := chClient.QuerySBOMPackagesForNotice(r.Context(), sbomID)
+		if errors.Is(err, clickhouse.ErrSBOMNotFound) {
+			writeError(w, http.StatusNotFound, "SBOM not found")
+			return
+		}
+		if err != nil {
+			log.Printf("ERROR: sbom packages for notice %s: %v", sanitizeLogParam(sbomID), err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch packages for notice")
+			return
+		}
+
+		content := cdResolver.GenerateNoticeWithFallback(r.Context(), targetName, pkgs)
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, noticeFilename(targetName)))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(content))
 	})
 
 	// Projects with non-compliant licenses (filtered by exceptions).
@@ -684,6 +740,33 @@ func main() {
 			return
 		}
 		writeJSON(w, http.StatusOK, resp)
+	})
+
+	// Attribution NOTICE export for a project (#530).
+	mux.HandleFunc("GET /api/v1/projects/{name}/notices", func(w http.ResponseWriter, r *http.Request) {
+		name := sanitizeProjectName(r.PathValue("name"))
+		if name == "" {
+			writeError(w, http.StatusBadRequest, "Invalid project name")
+			return
+		}
+		version := r.URL.Query().Get("version")
+
+		targetName, pkgs, err := chClient.QueryProjectPackagesForNotice(r.Context(), name, version)
+		if errors.Is(err, clickhouse.ErrSBOMNotFound) {
+			writeError(w, http.StatusNotFound, "Project or version not found")
+			return
+		}
+		if err != nil {
+			log.Printf("ERROR: project packages for notice %s: %v", sanitizeLogParam(name), err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch packages for notice")
+			return
+		}
+
+		content := cdResolver.GenerateNoticeWithFallback(r.Context(), targetName, pkgs)
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, noticeFilename(targetName)))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(content))
 	})
 
 	// Project README status badges.
@@ -1062,7 +1145,12 @@ func main() {
 			}
 		} else {
 			// Local filesystem.
-			absPath := filepath.Join(cfg.SBOMDir, sourceFile)
+			absPath, pathErr := cfg.LocalSBOMPath(sourceFile)
+			if pathErr != nil {
+				log.Printf("ERROR: sbom download invalid local path %s: %v", sanitizeLogParam(sourceFile), pathErr)
+				writeError(w, http.StatusNotFound, "SBOM file not found in storage")
+				return
+			}
 			f, openErr := os.Open(absPath)
 			if openErr != nil {
 				log.Printf("ERROR: sbom download local open %s: %v", sanitizeLogParam(absPath), openErr)
@@ -1356,13 +1444,10 @@ func isValidVulnID(s string) bool {
 }
 
 // sanitizeLogParam strips newlines and control characters to prevent log injection.
+// It removes all Unicode control characters (C0, C1, DEL) such as CRLF and ANSI escapes,
+// and truncates strings exceeding 200 runes to prevent log flooding.
 func sanitizeLogParam(s string) string {
-	s = strings.ReplaceAll(s, "\n", "")
-	s = strings.ReplaceAll(s, "\r", "")
-	if len(s) > 200 {
-		s = s[:200] + "..."
-	}
-	return s
+	return sanitize.LogParam(s)
 }
 
 // securityHeadersMiddleware adds standard security headers to every response.
@@ -2311,4 +2396,23 @@ func firstTag(tags []string) string {
 		return ""
 	}
 	return tags[0]
+}
+
+// noticeFilename formats a safe filename for an attribution NOTICE download (#530).
+func noticeFilename(target string) string {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return "NOTICE.txt"
+	}
+	clean := strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
+			return r
+		}
+		return '-'
+	}, target)
+	clean = strings.Trim(clean, "-.")
+	if clean == "" {
+		return "NOTICE.txt"
+	}
+	return "NOTICE-" + clean + ".txt"
 }

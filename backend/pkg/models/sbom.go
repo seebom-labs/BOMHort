@@ -88,10 +88,14 @@ type SBOMPackages struct {
 	// parse time by internal/sbom; the UI and the findings tables read it to
 	// tell direct from transitive dependencies.
 	PackageDepths []uint16 `json:"package_depths"`
-	Cluster       string   `json:"cluster,omitempty"`
-	Namespace     string   `json:"namespace,omitempty"`
-	Project       string   `json:"project,omitempty"`
-	ImageDigest   string   `json:"image_digest,omitempty"`
+	// LicenseDiscrepancy is parallel to PackageNames: scan-derived discovered license
+	// expressions from ClearlyDefined that disagree with the declared license.
+	// Empty string when there is no discrepancy (#530).
+	LicenseDiscrepancy []string `json:"license_discrepancy,omitempty"`
+	Cluster            string   `json:"cluster,omitempty"`
+	Namespace          string   `json:"namespace,omitempty"`
+	Project            string   `json:"project,omitempty"`
+	ImageDigest        string   `json:"image_digest,omitempty"`
 	// RootIndices marks the package(s) the SBOM DESCRIBES – the product itself,
 	// not a dependency. Kept in the arrays (index 0 is the dependency-tree root)
 	// but excluded from license compliance. Not persisted to ClickHouse.
@@ -288,14 +292,18 @@ type VEXStatement struct {
 	// Not persisted: once ProductRef resolves to an SBOM the parsing worker
 	// rewrites ProductPURL to VEXProductWide, which is what the suppression
 	// joins read.
-	ProductWide     bool      `json:"-"`
-	ProductPURL     string    `json:"product_purl"`
-	VulnID          string    `json:"vuln_id"`
-	Status          string    `json:"status"`        // not_affected, affected, fixed, under_investigation
-	Justification   string    `json:"justification"` // component_not_present, vulnerable_code_not_present, etc.
-	ImpactStatement string    `json:"impact_statement"`
-	ActionStatement string    `json:"action_statement"`
-	VEXTimestamp    time.Time `json:"vex_timestamp"`
+	ProductWide     bool   `json:"-"`
+	ProductPURL     string `json:"product_purl"`
+	VulnID          string `json:"vuln_id"`
+	Status          string `json:"status"`        // not_affected, affected, fixed, under_investigation
+	Justification   string `json:"justification"` // component_not_present, vulnerable_code_not_present, etc.
+	ImpactStatement string `json:"impact_statement"`
+	ActionStatement string `json:"action_statement"`
+	// ActionStatementTimestamp (#413, migration 033) is when the action
+	// statement was issued (OpenVEX action_statement_timestamp). Zero for
+	// rows ingested before the migration and for producers that omit it.
+	ActionStatementTimestamp time.Time `json:"action_statement_timestamp,omitempty"`
+	VEXTimestamp             time.Time `json:"vex_timestamp"`
 	// Provenance (#334): who (or what) issued the statement. Author, Role
 	// and Tooling come from the OpenVEX document; StatusNotes from the
 	// statement (automated producers write confidence + reasoning there).

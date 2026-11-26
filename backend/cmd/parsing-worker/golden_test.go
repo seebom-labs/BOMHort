@@ -105,10 +105,13 @@ func TestLicensePipelineGolden(t *testing.T) {
 			"pkg:pypi/typing-extensions@4.0.0": {license: "PSF-2.0"},
 			"pkg:pypi/legacy-tool@0.1":         {reason: license.ReasonNoLicenseUpstream},
 		}}},
+		{"clearlydefined", &fakeRegistry{prefixes: []string{"pkg:npm/clearlydefined-pkg"}, known: map[string]outcome{
+			"pkg:npm/clearlydefined-pkg@1.0.0": {license: "MIT"},
+		}}},
 	}
 
 	sources, _, err := resolvePackageLicenses(context.Background(), github, resolvers,
-		pkgs.PackagePURLs, pkgs.PackageLicenses, pkgs.RootIndices)
+		pkgs.PackagePURLs, pkgs.PackageLicenses, pkgs.RootIndices, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,6 +180,7 @@ var licenseGolden = map[string]goldenWant{
 	"jakarta.xml.bind-api": {"BSD-3-Clause", "depsdev+normalized", license.CategoryPermissive, false},
 	"monolog/monolog":      {"MIT", "packagist+latest", license.CategoryPermissive, false},
 	"typing-extensions":    {"PSF-2.0", "pypi", license.CategoryPermissive, false}, // deps.dev had nothing, PyPI did
+	"clearlydefined-pkg":   {"MIT", "clearlydefined", license.CategoryPermissive, false},
 	// Unresolved, with the reason.
 	"internal-ui":   {"NOASSERTION", license.ReasonNotPublished, license.CategoryUnknown, false},
 	"@golden/web":   {"NOASSERTION", license.ReasonFirstParty, license.CategoryUnknown, true},

@@ -169,6 +169,23 @@ func parseExpression(expr string) (*exprNode, error) {
 	return n, nil
 }
 
+// ExpressionIDs returns the license and exception identifiers in a valid SPDX expression.
+func ExpressionIDs(expr string) []string {
+	root, err := parseExpression(expr)
+	if err != nil {
+		return nil
+	}
+	var ids []string
+	for _, leaf := range root.leafIDs() {
+		for _, id := range strings.Fields(leaf) {
+			if !strings.EqualFold(id, "WITH") {
+				ids = append(ids, id)
+			}
+		}
+	}
+	return ids
+}
+
 func (p *parser) peek() (token, bool) {
 	if p.pos >= len(p.toks) {
 		return token{}, false

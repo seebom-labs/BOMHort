@@ -121,17 +121,19 @@ type Config struct {
 	ExploitFeeds    []exploit.Feed
 
 	// Feature flags
-	SkipOSV              bool   // Skip OSV vulnerability lookups (fast ingestion, licenses only)
-	DedupByImageDigest   bool   // Reuse existing image SBOMs when ?image= is supplied
-	SkipGitHubResolve    bool   // Skip GitHub license resolution for unknown licenses
-	SkipNPMResolve       bool   // Skip npm registry license resolution for unknown licenses
-	SkipNuGetResolve     bool   // Skip NuGet license resolution for unknown licenses
-	SkipDepsDevResolve   bool   // Skip deps.dev license resolution for unknown licenses
-	SkipPackagistResolve bool   // Skip Packagist (Composer) license resolution for unknown licenses
-	SkipPyPIResolve      bool   // Skip PyPI license resolution for unknown licenses
-	SBOMLimit            int    // Max number of SBOMs to enqueue (0 = unlimited)
-	IgnorePrefix         string // Files with this prefix are skipped during local scan (default "_")
-	ExceptionsFile       string // Path to license-exceptions.json
+	SkipOSV                   bool     // Skip OSV vulnerability lookups (fast ingestion, licenses only)
+	DedupByImageDigest        bool     // Reuse existing image SBOMs when ?image= is supplied
+	SkipGitHubResolve         bool     // Skip GitHub license resolution for unknown licenses
+	SkipNPMResolve            bool     // Skip npm registry license resolution for unknown licenses
+	SkipNuGetResolve          bool     // Skip NuGet license resolution for unknown licenses
+	SkipDepsDevResolve        bool     // Skip deps.dev license resolution for unknown licenses
+	SkipPackagistResolve      bool     // Skip Packagist (Composer) license resolution for unknown licenses
+	SkipPyPIResolve           bool     // Skip PyPI license resolution for unknown licenses
+	SkipClearlyDefinedResolve bool     // Skip ClearlyDefined license resolution and discrepancy check
+	PrivatePackagePrefixes    []string // PURL or scope prefixes for internal/private packages (never queried externally)
+	SBOMLimit                 int      // Max number of SBOMs to enqueue (0 = unlimited)
+	IgnorePrefix              string   // Files with this prefix are skipped during local scan (default "_")
+	ExceptionsFile            string   // Path to license-exceptions.json
 	// ExceptionsSource replaces ExceptionsFile with a remote document: an
 	// https:// URL or an s3://bucket/key URI (the bucket must be in
 	// S3_BUCKETS). Empty means ExceptionsFile. ExceptionsSourceToken is sent
@@ -263,47 +265,49 @@ const (
 // Load reads configuration from environment variables with sensible defaults.
 func Load() (*Config, error) {
 	cfg := &Config{
-		ClickHouseHost:        getEnv("CLICKHOUSE_HOST", "localhost"),
-		ClickHousePort:        getEnvInt("CLICKHOUSE_PORT", 9000),
-		ClickHouseDatabase:    getEnv("CLICKHOUSE_DATABASE", "bomhort"),
-		ClickHouseUser:        getEnv("CLICKHOUSE_USER", "default"),
-		ClickHousePassword:    getEnv("CLICKHOUSE_PASSWORD", ""),
-		SBOMDir:               getEnv("SBOM_DIR", "./sboms"),
-		SBOMDirDisabled:       getEnvBool("SBOM_DIR_DISABLED", false),
-		APIPort:               getEnvInt("API_PORT", 8080),
-		CORSAllowedOrigins:    getEnv("CORS_ALLOWED_ORIGINS", "*"),
-		RateLimitMax:          getEnvInt("RATE_LIMIT_MAX", 100),
-		WorkerID:              getEnv("WORKER_ID", ""),
-		WorkerBatchSize:       getEnvInt("WORKER_BATCH_SIZE", 10),
-		SkipOSV:               getEnvBool("SKIP_OSV", false),
-		DedupByImageDigest:    getEnvBool("DEDUP_BY_IMAGE_DIGEST", false),
-		SkipGitHubResolve:     getEnvBool("SKIP_GITHUB_RESOLVE", false),
-		SkipNPMResolve:        getEnvBool("SKIP_NPM_RESOLVE", false),
-		SkipNuGetResolve:      getEnvBool("SKIP_NUGET_RESOLVE", false),
-		SkipDepsDevResolve:    getEnvBool("SKIP_DEPSDEV_RESOLVE", false),
-		SkipPackagistResolve:  getEnvBool("SKIP_PACKAGIST_RESOLVE", false),
-		SkipPyPIResolve:       getEnvBool("SKIP_PYPI_RESOLVE", false),
-		SBOMLimit:             getEnvInt("SBOM_LIMIT", 0),
-		IgnorePrefix:          getEnv("SBOM_IGNORE_PREFIX", "_"),
-		ExceptionsFile:        getEnv("EXCEPTIONS_FILE", "/data/config/license-exceptions.json"),
-		ProjectGroupsFile:     getEnv("PROJECT_GROUPS_FILE", "/data/config/project-groups.json"),
-		LicensePolicyFile:     getEnv("LICENSE_POLICY_FILE", "/data/config/license-policy.json"),
-		LicenseExpressionMode: strings.ToLower(strings.TrimSpace(getEnv("LICENSE_EXPRESSION_MODE", ""))),
-		GitHubToken:           getEnv("GITHUB_TOKEN", ""),
-		ClusterName:           getEnv("CLUSTER_NAME", ""),
-		Namespace:             getEnv("NAMESPACE", ""),
-		Project:               getEnv("PROJECT", ""),
-		Origin:                origin.Normalize(getEnv("ORIGIN", "")),
-		Parent:                strings.TrimSpace(getEnv("PARENT", "")),
-		Tags:                  tags.Parse(getEnv("TAGS", "")),
-		IngestPathLayout:      getEnv("INGEST_PATH_LAYOUT", ""),
-		AuthEnabled:           getEnvBool("AUTH_ENABLED", false),
-		ServiceToken:          getEnv("SERVICE_TOKEN", ""),
-		APIKeys:               parseAPIKeys(getEnv("API_KEYS", "")),
-		BadgesPublic:          getEnvBool("BADGES_PUBLIC", false),
-		BrandName:             getEnv("BRAND_NAME", "BOMHort"),
-		MaxUploadSizeMB:       getEnvInt("MAX_UPLOAD_SIZE_MB", 50),
-		TEABaseURL:            strings.TrimRight(getEnv("TEA_BASE_URL", ""), "/"),
+		ClickHouseHost:            getEnv("CLICKHOUSE_HOST", "localhost"),
+		ClickHousePort:            getEnvInt("CLICKHOUSE_PORT", 9000),
+		ClickHouseDatabase:        getEnv("CLICKHOUSE_DATABASE", "bomhort"),
+		ClickHouseUser:            getEnv("CLICKHOUSE_USER", "default"),
+		ClickHousePassword:        getEnv("CLICKHOUSE_PASSWORD", ""),
+		SBOMDir:                   getEnv("SBOM_DIR", "./sboms"),
+		SBOMDirDisabled:           getEnvBool("SBOM_DIR_DISABLED", false),
+		APIPort:                   getEnvInt("API_PORT", 8080),
+		CORSAllowedOrigins:        getEnv("CORS_ALLOWED_ORIGINS", "*"),
+		RateLimitMax:              getEnvInt("RATE_LIMIT_MAX", 100),
+		WorkerID:                  getEnv("WORKER_ID", ""),
+		WorkerBatchSize:           getEnvInt("WORKER_BATCH_SIZE", 10),
+		SkipOSV:                   getEnvBool("SKIP_OSV", false),
+		DedupByImageDigest:        getEnvBool("DEDUP_BY_IMAGE_DIGEST", false),
+		SkipGitHubResolve:         getEnvBool("SKIP_GITHUB_RESOLVE", false),
+		SkipNPMResolve:            getEnvBool("SKIP_NPM_RESOLVE", false),
+		SkipNuGetResolve:          getEnvBool("SKIP_NUGET_RESOLVE", false),
+		SkipDepsDevResolve:        getEnvBool("SKIP_DEPSDEV_RESOLVE", false),
+		SkipPackagistResolve:      getEnvBool("SKIP_PACKAGIST_RESOLVE", false),
+		SkipPyPIResolve:           getEnvBool("SKIP_PYPI_RESOLVE", false),
+		SkipClearlyDefinedResolve: getEnvBool("SKIP_CLEARLYDEFINED_RESOLVE", false),
+		PrivatePackagePrefixes:    parseCSV(getEnv("PRIVATE_PACKAGE_PREFIXES", "")),
+		SBOMLimit:                 getEnvInt("SBOM_LIMIT", 0),
+		IgnorePrefix:              getEnv("SBOM_IGNORE_PREFIX", "_"),
+		ExceptionsFile:            getEnv("EXCEPTIONS_FILE", "/data/config/license-exceptions.json"),
+		ProjectGroupsFile:         getEnv("PROJECT_GROUPS_FILE", "/data/config/project-groups.json"),
+		LicensePolicyFile:         getEnv("LICENSE_POLICY_FILE", "/data/config/license-policy.json"),
+		LicenseExpressionMode:     strings.ToLower(strings.TrimSpace(getEnv("LICENSE_EXPRESSION_MODE", ""))),
+		GitHubToken:               getEnv("GITHUB_TOKEN", ""),
+		ClusterName:               getEnv("CLUSTER_NAME", ""),
+		Namespace:                 getEnv("NAMESPACE", ""),
+		Project:                   getEnv("PROJECT", ""),
+		Origin:                    origin.Normalize(getEnv("ORIGIN", "")),
+		Parent:                    strings.TrimSpace(getEnv("PARENT", "")),
+		Tags:                      tags.Parse(getEnv("TAGS", "")),
+		IngestPathLayout:          getEnv("INGEST_PATH_LAYOUT", ""),
+		AuthEnabled:               getEnvBool("AUTH_ENABLED", false),
+		ServiceToken:              getEnv("SERVICE_TOKEN", ""),
+		APIKeys:                   parseAPIKeys(getEnv("API_KEYS", "")),
+		BadgesPublic:              getEnvBool("BADGES_PUBLIC", false),
+		BrandName:                 getEnv("BRAND_NAME", "BOMHort"),
+		MaxUploadSizeMB:           getEnvInt("MAX_UPLOAD_SIZE_MB", 50),
+		TEABaseURL:                strings.TrimRight(getEnv("TEA_BASE_URL", ""), "/"),
 
 		OriginalStoreBackend:  strings.ToLower(getEnv("ORIGINAL_STORE_BACKEND", OriginalStoreAuto)),
 		OriginalStoreS3Bucket: getEnv("ORIGINAL_STORE_S3_BUCKET", ""),
@@ -520,10 +524,14 @@ func (c *Config) HasLocalSBOMDir() bool {
 
 // LocalSBOMPath resolves a job's relative source file to its path under
 // SBOMDir. Without a shared directory it fails instead of pointing into the
-// pod's own filesystem.
+// pod's own filesystem. It enforces directory containment so a source file
+// cannot escape SBOMDir via path traversal ("..") or absolute paths.
 func (c *Config) LocalSBOMPath(sourceFile string) (string, error) {
 	if !c.HasLocalSBOMDir() {
 		return "", fmt.Errorf("%s is a local file, but this instance has no shared SBOM directory (SBOM_DIR_DISABLED)", sourceFile)
+	}
+	if !filepath.IsLocal(sourceFile) {
+		return "", fmt.Errorf("invalid source file path: %q", sourceFile)
 	}
 	return filepath.Join(c.SBOMDir, sourceFile), nil
 }

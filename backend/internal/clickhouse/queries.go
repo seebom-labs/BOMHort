@@ -227,7 +227,7 @@ func (c *Client) querySBOMs(ctx context.Context, page, pageSize uint64, search, 
 	}
 	if search != "" {
 		conds = append(conds, "(s.document_name ILIKE ? OR s.source_file ILIKE ?)")
-		pattern := "%" + search + "%"
+		pattern := "%" + escapeLikePattern(search) + "%"
 		whereArgs = append(whereArgs, pattern, pattern)
 	}
 	if minQuality > 0 {
@@ -484,6 +484,14 @@ func vulnerabilityListSQL(scopeWhere string) string {
 			v.dependency_depth, v.aliases, v.cwe_ids,
 			v.advisory_source, v.advisory_status, v.component_location,
 			ifNull(vx.vex_status, '') AS vex_status,
+			ifNull(vx.vex_justification, '') AS vex_justification,
+			ifNull(vx.vex_action_statement, '') AS vex_action_statement,
+			ifNull(vx.vex_impact_statement, '') AS vex_impact_statement,
+			ifNull(vx.vex_action_statement_timestamp, toDateTime(0)) AS vex_action_statement_timestamp,
+			ifNull(vx.winning_timestamp, toDateTime(0)) AS vex_timestamp,
+			ifNull(vx.vex_statement_id, '') AS vex_statement_id,
+			ifNull(vx.vex_author, '') AS vex_author,
+			ifNull(vx.vex_tooling, '') AS vex_tooling,
 			ifNull(q.has_no_dep_graph, 0) AS has_no_dep_graph,
 			v.reachability, v.evidence_source, v.evidence_ref, v.evidence_at
 		FROM (SELECT * FROM vulnerabilities FINAL` + scopeWhere + `) AS v
@@ -494,14 +502,24 @@ func vulnerabilityListSQL(scopeWhere string) string {
 		LEFT JOIN (
 			SELECT
 				toString(f.sbom_id) AS sbom_id, f.vuln_id AS vuln_id, f.purl AS purl,
-				argMax(s.status, s.vex_timestamp) AS vex_status
+				argMax(s.status, s.vex_timestamp) AS vex_status,
+				argMax(s.justification, s.vex_timestamp) AS vex_justification,
+				argMax(s.action_statement, s.vex_timestamp) AS vex_action_statement,
+				argMax(s.impact_statement, s.vex_timestamp) AS vex_impact_statement,
+				argMax(s.action_statement_timestamp, s.vex_timestamp) AS vex_action_statement_timestamp,
+				argMax(toString(s.vex_id), s.vex_timestamp) AS vex_statement_id,
+				argMax(s.author, s.vex_timestamp) AS vex_author,
+				argMax(s.tooling, s.vex_timestamp) AS vex_tooling,
+				max(s.vex_timestamp) AS winning_timestamp
 			FROM (
 				SELECT DISTINCT sbom_id, vuln_id, purl,
 					arrayJoin(arrayConcat([vuln_id], aliases)) AS match_id
 				FROM vulnerabilities FINAL
 			) AS f
 			INNER JOIN (
-				SELECT sbom_id, vuln_id, product_purl, status, vex_timestamp
+				SELECT sbom_id, vuln_id, product_purl, status, action_statement,
+					action_statement_timestamp, impact_statement, justification,
+					author, tooling, vex_id, vex_timestamp
 				FROM vex_statements FINAL
 				WHERE sbom_id != ''
 			) AS s ON s.vuln_id = f.match_id AND s.sbom_id = toString(f.sbom_id)
@@ -517,7 +535,7 @@ func vulnerabilityListSQL(scopeWhere string) string {
 // scanVulnerabilityListRow scans one row of vulnerabilityListSQL.
 func scanVulnerabilityListRow(rows driver.Rows) (dto.VulnerabilityListItem, error) {
 	var item dto.VulnerabilityListItem
-	var discoveredAt, evidenceAt time.Time
+	var discoveredAt, actionAt, vexTimestamp, evidenceAt time.Time
 	var depth uint16
 	var aliases []string
 	var components string
@@ -528,6 +546,14 @@ func scanVulnerabilityListRow(rows driver.Rows) (dto.VulnerabilityListItem, erro
 		&discoveredAt, &depth, &aliases, &item.CWEIDs,
 		&item.AdvisorySource, &item.AdvisoryStatus, &components,
 		&item.VEXStatus,
+		&item.VEXJustification,
+		&item.VEXActionStatement,
+		&item.VEXImpactStatement,
+		&actionAt,
+		&vexTimestamp,
+		&item.VEXStatementID,
+		&item.VEXAuthor,
+		&item.VEXTooling,
 		&hasNoDepGraph,
 		&item.Reachability, &item.EvidenceSource, &item.EvidenceRef, &evidenceAt,
 	); err != nil {
@@ -539,6 +565,15 @@ func scanVulnerabilityListRow(rows driver.Rows) (dto.VulnerabilityListItem, erro
 	item.DependencyScope, item.DependencyDepth = scopeFields(depth)
 	if item.DependencyScope == "unknown" && hasNoDepGraph == 1 {
 		item.ScopeReason = "no-dependency-graph"
+	}
+	if item.VEXStatus != "" {
+		item.VEXScope = "sbom"
+	}
+	if actionAt.Unix() > 0 {
+		item.VEXActionStatementTimestamp = actionAt.Format(time.RFC3339)
+	}
+	if !vexTimestamp.IsZero() && vexTimestamp.Unix() > 0 {
+		item.VEXTimestamp = vexTimestamp.Format(time.RFC3339)
 	}
 	if !evidenceAt.IsZero() && evidenceAt.Unix() > 0 {
 		item.EvidenceAt = evidenceAt.Format(time.RFC3339)

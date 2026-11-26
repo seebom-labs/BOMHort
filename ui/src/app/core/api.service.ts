@@ -13,6 +13,7 @@ import {
   ReachabilitySummary,
   DependencyNode,
   LicenseComplianceItem,
+  LicenseDiscrepancyItem,
   LicenseSourceItem,
   VEXStatementItem,
   ProjectLicenseViolation,
@@ -201,6 +202,32 @@ export class ApiService {
 
   getLicenseSources(): Observable<LicenseSourceItem[]> {
     return this.http.get<LicenseSourceItem[]>(`${this.baseUrl}/licenses/sources`);
+  }
+
+  getLicenseDiscrepancies(filter?: { sbom_id?: string; project?: string; cluster?: string; namespace?: string; search?: string; page?: number; page_size?: number }): Observable<PaginatedResponse<LicenseDiscrepancyItem>> {
+    let params = new HttpParams();
+    if (filter) {
+      if (filter.sbom_id) params = params.set('sbom_id', filter.sbom_id);
+      if (filter.project) params = params.set('project', filter.project);
+      if (filter.cluster) params = params.set('cluster', filter.cluster);
+      if (filter.namespace) params = params.set('namespace', filter.namespace);
+      if (filter.search) params = params.set('search', filter.search);
+      if (filter.page != null) params = params.set('page', filter.page.toString());
+      if (filter.page_size != null) params = params.set('page_size', filter.page_size.toString());
+    }
+    return this.http.get<PaginatedResponse<LicenseDiscrepancyItem>>(`${this.baseUrl}/licenses/discrepancies`, { params });
+  }
+
+  getSbomNoticesUrl(id: string): string {
+    return `${this.baseUrl}/sboms/${encodeURIComponent(id)}/notices`;
+  }
+
+  getProjectNoticesUrl(name: string, version?: string): string {
+    let url = `${this.baseUrl}/projects/${encodeURIComponent(name)}/notices`;
+    if (version) {
+      url += `?version=${encodeURIComponent(version)}`;
+    }
+    return url;
   }
 
   getProjectsWithLicenseViolations(): Observable<ProjectLicenseViolation[]> {

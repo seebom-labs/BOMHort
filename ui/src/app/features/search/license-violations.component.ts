@@ -1,12 +1,15 @@
-import { Component, OnInit, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, ChangeDetectionStrategy, ChangeDetectorRef, DestroyRef } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { ScrollingModule } from '@angular/cdk/scrolling';
 import { ApiService } from '../../core/api.service';
-import { ProjectLicenseViolationSummary, LicenseExceptionsFile } from '../../core/api.models';
-import { distinctUntilChanged, map, switchMap } from 'rxjs';
+import { ProjectLicenseViolationSummary, LicenseExceptionsFile, LicenseDiscrepancyItem } from '../../core/api.models';
+import { EMPTY, Subject, distinctUntilChanged, map, switchMap, timer } from 'rxjs';
+import { catchError } from 'rxjs/operators';
 
-type Tab = 'non-compliant' | 'exceptions';
+type Tab = 'non-compliant' | 'exceptions' | 'discrepancies';
+type DiscrepancyQuery = { page: number; search: string; debounce: boolean };
 
 @Component({
   selector: 'app-license-violations',
@@ -25,6 +28,9 @@ type Tab = 'non-compliant' | 'exceptions';
         </button>
         <button [class.active]="activeTab === 'exceptions'" (click)="activeTab = 'exceptions'">
           Configured Exceptions ({{ totalExceptions | number }})
+        </button>
+        <button [class.active]="activeTab === 'discrepancies'" (click)="activeTab = 'discrepancies'">
+          Discrepancies ({{ totalDiscrepancies | number }})
         </button>
       </div>
 
@@ -99,6 +105,60 @@ type Tab = 'non-compliant' | 'exceptions';
           No exceptions configured. Add entries to <code>license-exceptions.json</code> to suppress known non-compliant licenses.
         </p>
       </div>
+
+      <!-- Discrepancies Tab -->
+      <div *ngIf="activeTab === 'discrepancies'" class="tab-content">
+        <div class="config-hint">
+          <span class="hint-icon">ℹ</span>
+          Discrepancies highlight packages where external scan results (such as ClearlyDefined)
+          discovered licenses differing from the declared license. By policy, the declared license
+          is never overridden and continues to govern compliance.
+        </div>
+
+        <input type="search" class="search-box" placeholder="Filter discrepancies by package or license…"
+               aria-label="Filter discrepancies by package or license"
+               [value]="discrepancySearch" (input)="onDiscrepancySearch($any($event.target).value)">
+
+        <p *ngIf="discrepanciesError" role="alert" class="load-error">{{ discrepanciesError }}</p>
+        <p *ngIf="discrepanciesLoading" class="loading-hint">Loading license discrepancies…</p>
+
+        <ng-container *ngIf="!discrepanciesLoading && !discrepanciesError">
+          <cdk-virtual-scroll-viewport *ngIf="discrepancies.length > 0" itemSize="80" class="viewport">
+            <div *cdkVirtualFor="let d of discrepancies; trackBy: trackByDiscrepancy" class="discrepancy-card">
+              <div class="disc-header">
+                <span class="pkg-name">{{ d.package_name }}</span>
+                <span class="pkg-ver" *ngIf="d.package_version">{{ d.package_version }}</span>
+                <a *ngIf="d.sbom_id" [routerLink]="['/sboms', d.sbom_id]" class="disc-sbom" [title]="d.document_name">
+                  {{ d.document_name || d.sbom_id }}
+                </a>
+                <span class="disc-source" *ngIf="d.source">{{ d.source }}</span>
+              </div>
+              <div class="disc-licenses">
+                <span class="disc-tag declared" title="Declared license (authoritative for compliance)">
+                  Declared: <strong>{{ d.declared_license }}</strong>
+                </span>
+                <span class="disc-arrow">≠</span>
+                <span class="disc-tag discovered" title="Discovered by automated scan">
+                  Discovered: <strong>{{ d.discovered_license }}</strong>
+                </span>
+              </div>
+              <div class="disc-purl" *ngIf="d.purl">
+                <code>{{ d.purl }}</code>
+              </div>
+            </div>
+          </cdk-virtual-scroll-viewport>
+
+          <div class="pagination" *ngIf="totalDiscrepancies > discrepancyPageSize">
+            <button [disabled]="discrepancyPage <= 1" (click)="setDiscrepancyPage(discrepancyPage - 1)">Previous</button>
+            <span>Page {{ discrepancyPage }} of {{ totalDiscrepancyPages }} ({{ totalDiscrepancies | number }} findings)</span>
+            <button [disabled]="discrepancyPage >= totalDiscrepancyPages" (click)="setDiscrepancyPage(discrepancyPage + 1)">Next</button>
+          </div>
+
+          <p *ngIf="discrepancies.length === 0" class="empty">
+            {{ discrepancySearch ? 'No discrepancy matches "' + discrepancySearch + '".' : 'No license discrepancies found in stored results.' }}
+          </p>
+        </ng-container>
+      </div>
     </div>
   `,
   styles: [`
@@ -160,6 +220,33 @@ type Tab = 'non-compliant' | 'exceptions';
     .exc-date { font-size: 0.7rem; color: var(--text-muted); }
     .exc-detail { font-size: 0.72rem; color: var(--text-secondary); margin-top: 3px; }
     .exc-comment { font-size: 0.75rem; color: var(--text-secondary); margin-top: 2px; font-style: italic; }
+
+    .loading-hint { font-size: 0.85rem; color: var(--text-secondary); margin: 12px 0; }
+    .discrepancy-card {
+      height: 80px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center;
+      padding: 0 14px; border-bottom: 1px solid var(--border);
+    }
+    .disc-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+    .disc-header .pkg-name { font-weight: 600; font-size: 0.9rem; color: var(--text); }
+    .disc-header .pkg-ver { font-size: 0.8rem; color: var(--text-secondary); }
+    .disc-sbom { font-size: 0.75rem; color: var(--accent); text-decoration: none; margin-left: auto; }
+    .disc-source { font-size: 0.65rem; background: var(--bg); padding: 1px 6px; border-radius: 2px; color: var(--text-muted); }
+    .disc-licenses { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; margin-bottom: 3px; }
+    .disc-arrow { color: var(--severity-high); font-weight: bold; }
+    .disc-tag { padding: 2px 8px; border-radius: 3px; }
+    .disc-tag.declared { background: var(--status-success-bg); color: var(--status-success); }
+    .disc-tag.discovered { background: var(--severity-high-bg); color: var(--severity-high); }
+    .disc-purl { font-size: 0.72rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pagination {
+      display: flex; align-items: center; justify-content: center; gap: 1rem;
+      margin-top: 1rem; margin-bottom: 1rem; font-size: 0.85rem; color: var(--text-secondary);
+    }
+    .pagination button {
+      padding: 0.35rem 0.75rem; border: 1px solid var(--border); border-radius: 4px;
+      background: var(--surface); color: var(--text); cursor: pointer;
+    }
+    .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .pagination button:not(:disabled):hover { border-color: var(--accent); }
   `],
 })
 export class LicenseViolationsComponent implements OnInit {
@@ -172,7 +259,15 @@ export class LicenseViolationsComponent implements OnInit {
   }
 
   violations: ProjectLicenseViolationSummary[] = [];
+  discrepancies: LicenseDiscrepancyItem[] = [];
+  totalDiscrepancies = 0;
+  discrepancyPage = 1;
+  discrepancyPageSize = 50;
+  discrepanciesLoading = false;
+  discrepanciesError = '';
+  private readonly discrepancyQueries = new Subject<DiscrepancyQuery>();
   search = '';
+  discrepancySearch = '';
   exceptionsFile: LicenseExceptionsFile = {
     version: '1.0.0', lastUpdated: '', blanketExceptions: [], exceptions: [],
   };
@@ -183,15 +278,69 @@ export class LicenseViolationsComponent implements OnInit {
   constructor(
     private readonly api: ApiService,
     private readonly cdr: ChangeDetectorRef,
+    private readonly destroyRef: DestroyRef,
     private readonly route: ActivatedRoute,
     private readonly router: Router,
   ) {}
 
+  get totalDiscrepancyPages(): number {
+    return Math.max(1, Math.ceil(this.totalDiscrepancies / this.discrepancyPageSize));
+  }
+
+  setDiscrepancyPage(page: number): void {
+    if (page < 1 || page > this.totalDiscrepancyPages || page === this.discrepancyPage) {
+      return;
+    }
+    this.discrepancyPage = page;
+    this.loadDiscrepancies();
+  }
+
+  onDiscrepancySearch(term: string): void {
+    this.discrepancySearch = term;
+    this.discrepancyPage = 1;
+    this.loadDiscrepancies(true);
+  }
+
+  loadDiscrepancies(debounce = false): void {
+    this.discrepanciesLoading = true;
+    this.discrepanciesError = '';
+    this.cdr.markForCheck();
+    this.discrepancyQueries.next({
+      page: this.discrepancyPage,
+      search: this.discrepancySearch.trim(),
+      debounce,
+    });
+  }
+
   ngOnInit(): void {
+    this.discrepancyQueries.pipe(
+      switchMap((query) => {
+        const request = () => this.api.getLicenseDiscrepancies({
+          page: query.page,
+          page_size: this.discrepancyPageSize,
+          search: query.search,
+        });
+        return (query.debounce ? timer(250).pipe(switchMap(request)) : request()).pipe(
+          catchError(() => {
+            this.discrepanciesLoading = false;
+            this.discrepanciesError = 'Could not load license discrepancies. Check API availability.';
+            this.cdr.markForCheck();
+            return EMPTY;
+          }),
+        );
+      }),
+      takeUntilDestroyed(this.destroyRef),
+    ).subscribe((resp) => {
+      this.discrepancies = resp.data || [];
+      this.totalDiscrepancies = resp.total || 0;
+      this.discrepanciesLoading = false;
+      this.cdr.markForCheck();
+    });
     this.api.getLicenseExceptions().subscribe({
       next: (exceptions) => { this.exceptionsFile = exceptions; this.cdr.markForCheck(); },
       error: () => this.fail(),
     });
+    this.loadDiscrepancies();
     // The search term is filtered server-side (#492): the unfiltered summary
     // is ~8 MB on a large instance, too much to pull and filter in the browser.
     this.route.queryParamMap.pipe(
@@ -228,5 +377,5 @@ export class LicenseViolationsComponent implements OnInit {
   }
 
   trackByViolation(_i: number, v: ProjectLicenseViolationSummary): string { return v.sbom_id; }
+  trackByDiscrepancy(_i: number, d: LicenseDiscrepancyItem): string { return `${d.sbom_id}:${d.package_name}:${d.package_version}`; }
 }
-

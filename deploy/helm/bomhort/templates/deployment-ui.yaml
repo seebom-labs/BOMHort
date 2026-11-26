@@ -1,4 +1,7 @@
 {{- if .Values.ui.enabled }}
+{{- if and .Values.ui.customTheme.enabled (not .Values.ui.customTheme.existingConfigMap) }}
+{{- fail "ui.customTheme.enabled requires ui.customTheme.existingConfigMap: the chart no longer renders a theme ConfigMap. Create one holding your CSS (kubectl create configmap <name> --from-file=custom-theme.css=./my-theme.css) and set its name." }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -86,7 +89,10 @@ spec:
         {{- if .Values.ui.customTheme.enabled }}
         - name: custom-theme
           configMap:
-            name: {{ .Release.Name }}-custom-theme
+            name: {{ .Values.ui.customTheme.existingConfigMap }}
+            items:
+              - key: {{ .Values.ui.customTheme.existingConfigMapKey | default "custom-theme.css" }}
+                path: custom-theme.css
         {{- end }}
         {{- if .Values.ui.siteConfig.enabled }}
         - name: ui-config

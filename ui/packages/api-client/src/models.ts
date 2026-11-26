@@ -140,6 +140,14 @@ export interface VulnerabilityListItem {
   /** Weakness classes of the flaw (#409), from OSV database_specific.cwe_ids,
    *  sorted; absent for findings without CWEs. */
   cwe_ids?: string[];
+  /** The winning statement's remediation plan (#413); omitted when the
+   *  statement carries none. */
+  vex_action_statement?: string;
+  /** The winning statement's impact note (#413); omitted when absent. */
+  vex_impact_statement?: string;
+  /** RFC 3339 time the action statement was issued (#413); omitted for
+   *  statements ingested before migration 036. */
+  vex_action_statement_timestamp?: string;
   /** "sbom": the winning statement is scoped to this SBOM; unscoped
    *  statements never apply, so this is the only value (#350). */
   vex_scope?: 'sbom';
@@ -273,6 +281,20 @@ export interface LicenseComplianceItem {
 export interface LicenseAffectedSBOM {
   sbom_id: string;
   document_name: string;
+}
+
+export interface LicenseDiscrepancyItem {
+  sbom_id: string;
+  document_name?: string;
+  project?: string;
+  cluster?: string;
+  namespace?: string;
+  package_name: string;
+  package_version: string;
+  purl?: string;
+  declared_license: string;
+  discovered_license: string;
+  source?: string;
 }
 
 export interface VEXStatementItem {

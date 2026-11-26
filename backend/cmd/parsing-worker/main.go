@@ -482,7 +482,7 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 		}
 	}
 	sources, resolvedBy, err := resolvePackageLicenses(ctx, ghLookup, registryResolvers,
-		result.Packages.PackagePURLs, result.Packages.PackageLicenses, result.Packages.RootIndices)
+		result.Packages.PackagePURLs, result.Packages.PackageLicenses, result.Packages.RootIndices, cfg.PrivatePackagePrefixes)
 	if err != nil {
 		if errors.Is(err, gh.ErrRateLimited) {
 			// Not a failure of this SBOM: GitHub will answer later. Put the
@@ -493,6 +493,8 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 		return err
 	}
 	result.Packages.PackageLicenseSources = sources
+	result.Packages.LicenseDiscrepancy = detectLicenseDiscrepancies(ctx, registryResolvers,
+		result.Packages.PackagePURLs, result.Packages.PackageLicenses)
 	for name, n := range resolvedBy {
 		if n > 0 {
 			log.Printf("  Resolved %d unknown licenses via %s", n, name)

@@ -24,6 +24,7 @@ import { ExploitBadgeComponent } from '../../shared/exploit-badge/exploit-badge.
 import { CweChipsComponent } from '../../shared/cwe-chips/cwe-chips.component';
 import { topCwes } from '../../shared/cwe-ids';
 import { primaryVulnId } from '../../shared/vuln-identity';
+import { decidedAgo, firstActionStatementLine, vexDecidedAt, vexDecidedBy } from '../../shared/vex-remediation';
 
 type Tab = 'overview' | 'versions' | 'vulns' | 'packages' | 'subprojects';
 
@@ -78,6 +79,7 @@ export function splitPurl(purl: string): { pkg_name: string; pkg_version: string
         <h1>{{ detail.project_name }}</h1>
         <span class="product-version" *ngIf="detail.latest_version" [title]="'Latest version: ' + detail.latest_version">{{ detail.latest_version }}</span>
         <span class="badge">{{ detail.sbom_count }} {{ detail.sbom_count === 1 ? 'version' : 'versions' }}</span>
+        <a class="download-btn" title="Download project attribution NOTICE file" [href]="getProjectNoticeUrl()" download>📄 NOTICE</a>
       </div>
 
       <!--
@@ -322,7 +324,13 @@ export function splitPurl(purl: string): { pkg_name: string; pkg_version: string
               </span>
               <span class="summary">{{ vuln.summary }}</span>
             </div>
-            <span class="vex-badge" *ngIf="vuln.vex_status" [class]="'vex-' + vuln.vex_status">{{ vuln.vex_status | titlecase }}</span>
+            <span class="remediation" *ngIf="vuln.vex_status" [title]="remediationTitle(vuln)">
+              <span class="vex-badge" [class]="'vex-' + vuln.vex_status">{{ vuln.vex_status | titlecase }}</span>
+              <ng-container *ngIf="vuln.vex_action_statement">
+                <span class="action-statement">{{ firstActionStatementLine(vuln.vex_action_statement) }}</span>
+                <span class="decided">decided {{ decidedAgo(vexDecidedAt(vuln)) }} {{ vexDecidedBy(vuln.vex_author, vuln.vex_tooling) }}</span>
+              </ng-container>
+            </span>
             <app-scope-badge [scope]="vuln.dependency_scope" [depth]="vuln.dependency_depth"></app-scope-badge>
             <span class="reach" *ngIf="vuln.affected_sboms"
                   [class.all]="vuln.affected_sboms === detail.sbom_count"
@@ -516,6 +524,12 @@ export function splitPurl(purl: string): { pkg_name: string; pkg_version: string
     .vuln-id { font-weight: 600; font-size: 0.8rem; color: var(--accent); text-decoration: none; }
     .summary { color: var(--text-secondary); font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .vex-badge { padding: 2px 6px; border-radius: 2px; font-size: 0.6rem; font-weight: 600; }
+    .remediation { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; max-width: 240px; }
+    .action-statement {
+      font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap; max-width: 240px;
+    }
+    .decided { color: var(--text-secondary); font-size: 0.65rem; }
     .vex-not_affected { background: var(--status-success-bg); color: var(--status-success); }
     .vex-fixed { background: var(--status-info-bg); color: var(--accent-hover); }
     .vex-affected { background: var(--severity-critical-bg); color: var(--severity-critical); }
@@ -576,6 +590,11 @@ export function splitPurl(purl: string): { pkg_name: string; pkg_version: string
       font-family: inherit; transition: all 0.15s;
     }
     .btn-copy-badges:hover { border-color: var(--accent); color: var(--accent); }
+    .download-btn {
+      margin-left: auto; padding: 4px 10px; border: 1px solid var(--border); border-radius: 4px;
+      background: var(--surface); color: var(--text); font-size: 0.75rem; text-decoration: none; cursor: pointer;
+    }
+    .download-btn:hover { border-color: var(--accent); color: var(--accent); }
     .badges-code {
       margin: 0; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border);
       border-radius: 4px; font-size: 0.72rem; font-family: monospace; color: var(--text-secondary);
@@ -605,6 +624,11 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
   get licenseBadgeUrl(): string {
     if (!this.detail) return '';
     return `/api/v1/badges/projects/${encodeURIComponent(this.detail.project_name)}/licenses.svg`;
+  }
+
+  getProjectNoticeUrl(): string {
+    if (!this.detail) return '';
+    return this.api.getProjectNoticesUrl(this.detail.project_name);
   }
 
   get badgesMarkdown(): string {
@@ -897,6 +921,20 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
 
   trackBySbom(_i: number, s: SBOMListItem): string { return s.sbom_id; }
   trackByVuln(_i: number, v: VulnerabilityListItem): string { return v.vuln_id + '|' + v.purl; }
+
+  // Remediation cell helpers (#413). The title carries the full action
+  // statement — the row only has room for the first line.
+  readonly firstActionStatementLine = firstActionStatementLine;
+  readonly decidedAgo = decidedAgo;
+  readonly vexDecidedAt = vexDecidedAt;
+  readonly vexDecidedBy = vexDecidedBy;
+
+  remediationTitle(v: VulnerabilityListItem): string {
+    if (!v.vex_action_statement) return '';
+    const decided = `decided ${decidedAgo(vexDecidedAt(v))} ${vexDecidedBy(v.vex_author, v.vex_tooling)}`.trim();
+    const impact = v.vex_impact_statement ? `\nImpact: ${v.vex_impact_statement}` : '';
+    return `${v.vex_action_statement}\n${decided}${impact}`;
+  }
   trackByPackage(_i: number, p: ProjectPackageItem): string { return p.purl || p.name + '@' + p.version; }
   trackByProject(_i: number, p: ProjectListItem): string { return p.project_name; }
 }

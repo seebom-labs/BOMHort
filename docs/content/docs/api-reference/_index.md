@@ -682,6 +682,9 @@ All vulnerabilities found in a specific SBOM, including the effective VEX statem
     "dependency_depth": 3,
     "vex_status": "not_affected",
     "vex_justification": "vulnerable_code_not_present",
+    "vex_action_statement": "Upgrade to v0.33.0",
+    "vex_impact_statement": "The vulnerable function is not called in our usage.",
+    "vex_action_statement_timestamp": "2026-05-15T02:00:00Z",
     "vex_timestamp": "2026-09-01T12:00:00Z",
     "vex_statement_id": "b3f1c2d4-5678-90ab-cdef-1234567890ab",
     "vex_author": "Example Org Security Team",
@@ -695,7 +698,7 @@ All vulnerabilities found in a specific SBOM, including the effective VEX statem
 ]
 ```
 
-`vex_justification`, `vex_timestamp`, `vex_statement_id`, `vex_author` and `vex_tooling` describe the **winning** statement and are omitted (like `vex_status`) when no VEX statement covers the pair. `vex_author`/`vex_tooling` carry the provenance captured by migration `017` (#334) and are empty for statements ingested before it. `vex_timestamp` enables re-triage policies such as "re-open `under_investigation` older than 30 days" without paging through `/api/v1/vex/statements`. `cwe_ids` are the weakness classes of the flaw (#409), read from OSV `database_specific.cwe_ids` (migration `034` backfilled existing rows from the stored OSV documents) and omitted for findings without CWEs. `reachability` (`reachable`, `not_reachable`, or `unknown`), `evidence_source`, `evidence_ref`, and `evidence_at` carry the reachability evidence (#535).
+`vex_justification`, `vex_timestamp`, `vex_statement_id`, `vex_author` and `vex_tooling` describe the **winning** statement and are omitted (like `vex_status`) when no VEX statement covers the pair. `vex_author`/`vex_tooling` carry the provenance captured by migration `017` (#334) and are empty for statements ingested before it. `vex_action_statement` and `vex_impact_statement` are the winning statement's remediation record (#413) — "we know, here is what we do about it" — and `vex_action_statement_timestamp` is the OpenVEX `action_statement_timestamp`, the time that statement was issued; both remediation fields and the timestamp are omitted for statements without them and for rows ingested before migration `036`. `vex_timestamp` enables re-triage policies such as "re-open `under_investigation` older than 30 days" without paging through `/api/v1/vex/statements`. `cwe_ids` are the weakness classes of the flaw (#409), read from OSV `database_specific.cwe_ids` (migration `035` backfilled existing rows from the stored OSV documents) and omitted for findings without CWEs. `reachability` (`reachable`, `not_reachable`, or `unknown`), `evidence_source`, `evidence_ref`, and `evidence_at` carry the reachability evidence (#535).
 
 
 ### `POST /api/v1/sboms/{id}/evidence`
@@ -789,6 +792,18 @@ License breakdown for a specific SBOM, grouped by license ID with package lists.
 ```
 
 `package_scopes` maps each listed package (from `packages` and `exempted_packages`) to its [dependency scope](#dependency-scope). Packages whose scope is `unknown` are left out of the map, and the map itself is omitted when no package has a recorded depth — a client reads a missing key as `unknown`.
+
+### `GET /api/v1/sboms/{id}/notices`
+
+Generates an attribution and copyright NOTICE text document for an SBOM (#530). Aggregates package licenses, discovered copyright attributions from ClearlyDefined, and canonical full SPDX license texts. All packages in the SBOM are retained in the document; packages without upstream copyright statements are explicitly noted for manual review.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `id` | UUID | SBOM identifier |
+
+**Response:** `200 OK` with `Content-Type: text/plain; charset=utf-8` and `Content-Disposition: attachment; filename="<document_name>-NOTICE.txt"`
 
 ### `GET /api/v1/sboms/{id}/dependencies`
 
@@ -983,13 +998,14 @@ A legacy `vex_filter` parameter is ignored, as on the JSON listing.
 **Response:** `200 OK`, `Content-Type: text/csv; charset=utf-8`, `Content-Disposition: attachment; filename="bomhort-vulnerabilities-<YYYY-MM-DD>.csv"` (UTC date).
 
 ```csv
-cve_id,vuln_id,aliases,severity,purl,summary,fixed_version,source_file,discovered_at,dependency_scope,dependency_depth,vex_status,exploit_available,exploit_sources
-CVE-2024-45338,GO-2024-3333,CVE-2024-45338;GHSA-w32m-9786-jp63,HIGH,pkg:golang/golang.org/x/net@v0.21.0,Non-linear parsing of case-insensitive content,v0.33.0,etcd-v3.5.12.spdx.json,2026-05-15T00:00:00Z,transitive,3,not_affected,false,
+cve_id,vuln_id,aliases,severity,purl,summary,fixed_version,source_file,discovered_at,dependency_scope,dependency_depth,remediation_status,reachability,evidence_source,evidence_ref,evidence_at,exploit_available,exploit_sources,action_statement,action_statement_timestamp,vex_author
+CVE-2024-45338,GO-2024-3333,CVE-2024-45338;GHSA-w32m-9786-jp63,HIGH,pkg:golang/golang.org/x/net@v0.21.0,Non-linear parsing of case-insensitive content,v0.33.0,etcd-v3.5.12.spdx.json,2026-05-15T00:00:00Z,transitive,3,not_affected,,,,,false,,Upgrade to v0.33.0,2026-05-15T02:00:00Z,Example Org Security Team
 ```
 
 - `cve_id` comes first because that is the id audit questionnaires ask for. It is empty when the flaw has no CVE (see [Vulnerability ids and aliases](#vulnerability-ids)). `aliases` are `;`-joined.
 - `dependency_depth` is empty when unknown.
 - `exploit_available` is `true` or `false`; `exploit_sources` is `;`-joined and empty when no [public exploit code](#exploit-code) is known.
+- `remediation_status`, `action_statement`, `action_statement_timestamp` and `vex_author` carry the winning VEX statement's remediation record (#413) — what is being done, decided when, by whom. `action_statement_timestamp` is empty for statements ingested before migration `036` or produced without the OpenVEX timestamp.
 - Cells starting with `=`, `+`, `-`, `@`, tab or carriage return get a leading `'`, so a spreadsheet shows them as text instead of running them as formulas (CSV injection). Summaries come from OSV, and PURLs and file names come from uploaded SBOMs, so the export cannot trust them.
 - The status line goes out before the first row. If the database fails mid-export, the file is cut short and the gateway logs `vulnerability report truncated`. A query that fails up front returns `500` with a JSON error and no file.
 
@@ -1070,6 +1086,40 @@ How every package across all SBOMs got its license — or why it has none. One r
 ]
 ```
 
+### `GET /api/v1/licenses/discrepancies`
+
+List components where automated license scans (such as ClearlyDefined) discovered licenses differing from the component's declared license (#530). Declared licenses remain authoritative for compliance evaluation.
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `sbom_id` | UUID | - | Filter discrepancies to a specific SBOM |
+| `project` | string | - | Filter discrepancies by project name |
+| `cluster` | string | - | Filter discrepancies by cluster |
+| `namespace` | string | - | Filter discrepancies by namespace |
+| `page` | uint64 | 1 | Page number (1-based) |
+| `page_size` | uint64 | 100 | Items per page (max 500) |
+
+**Response:** `200 OK`
+```json
+[
+  {
+    "sbom_id": "a1b2c3d4-0000-0000-0000-000000000001",
+    "document_name": "payment-service",
+    "project": "payment-service",
+    "cluster": "prod-eu",
+    "namespace": "payments",
+    "package_name": "example-lib",
+    "package_version": "1.0.0",
+    "purl": "pkg:npm/example-lib@1.0.0",
+    "declared_license": "MIT",
+    "discovered_license": "GPL-2.0-only",
+    "source": "clearlydefined"
+  }
+]
+```
+
 ### `GET /api/v1/projects`
 
 Paginated list of projects. A project is its configured `project` label when set, otherwise derived from the source path or document name. Each project aggregates its SBOMs (versions), total packages, and vulnerability counts.
@@ -1080,7 +1130,7 @@ Paginated list of projects. A project is its configured `project` label when set
 |-----------|------|---------|-------------|
 | `page` | integer | 1 | Page number |
 | `page_size` | integer | 50 | Items per page (max 500) |
-| `search` | string | — | Filter projects by name (ILIKE) |
+| `search` | string | — | Filter projects by name (case-insensitive substring; wildcards `%` and `_` are matched literally) |
 | `tag` | string | — | Only projects carrying this grouping label |
 | `group_by` | string | — | `parent`: list parents with their member projects instead (see below) |
 
@@ -1275,6 +1325,24 @@ or PURL.
   "total": 12, "page": 1, "page_size": 50
 }
 ```
+
+### `GET /api/v1/projects/{name}/notices`
+
+Generates an attribution and copyright NOTICE text document across the latest version of a project (or a specific version requested via `?version=`) (#530).
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | Project name |
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `version` | string | latest | Project version (release / document version) |
+
+**Response:** `200 OK` with `Content-Type: text/plain; charset=utf-8` and `Content-Disposition: attachment; filename="<project>-<version>-NOTICE.txt"`
 
 ---
 

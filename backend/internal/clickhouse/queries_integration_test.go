@@ -241,6 +241,10 @@ func TestQueriesExecute(t *testing.T) {
 			_, err := c.ResolveSBOMByProductRef(ctx, "https://github.com/example-org/example-app")
 			return err
 		}},
+		// License discrepancies and attribution notices (#530).
+		{"QueryLicenseDiscrepancies", func() error { _, err := c.QueryLicenseDiscrepancies(ctx, "", "", "", "", "", 1, 10); return err }},
+		{"QuerySBOMPackagesForNotice", func() error { _, _, err := c.QuerySBOMPackagesForNotice(ctx, someID); return err }},
+		{"QueryProjectPackagesForNotice", func() error { _, _, err := c.QueryProjectPackagesForNotice(ctx, "no-such-project", ""); return err }},
 	}
 
 	for _, tc := range cases {
