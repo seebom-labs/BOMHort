@@ -2,6 +2,8 @@ package protobomparser
 
 import (
 	"testing"
+
+	"github.com/protobom/protobom/pkg/sbom"
 )
 
 func TestParse_CycloneDX(t *testing.T) {
@@ -108,5 +110,53 @@ func TestParse_SPDX(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected to find 'foo' in packages, got: %v", result.Packages.PackageNames)
+	}
+}
+
+func TestExtractNodeLicense_CompoundParenthesized(t *testing.T) {
+	tests := []struct {
+		name string
+		node *sbom.Node
+		want string
+	}{
+		{
+			name: "single license unchanged",
+			node: &sbom.Node{Licenses: []string{"MIT"}},
+			want: "MIT",
+		},
+		{
+			name: "single compound expression unchanged",
+			node: &sbom.Node{Licenses: []string{"MIT OR Apache-2.0"}},
+			want: "MIT OR Apache-2.0",
+		},
+		{
+			name: "multiple licenses with compound expression",
+			node: &sbom.Node{Licenses: []string{"MIT OR Apache-2.0", "GPL-3.0-only"}},
+			want: "(MIT OR Apache-2.0) AND GPL-3.0-only",
+		},
+		{
+			name: "multiple licenses with nested parens compound",
+			node: &sbom.Node{Licenses: []string{"(MIT) OR (Apache-2.0)", "GPL-3.0-only"}},
+			want: "((MIT) OR (Apache-2.0)) AND GPL-3.0-only",
+		},
+		{
+			name: "fall back to concluded license",
+			node: &sbom.Node{LicenseConcluded: "Apache-2.0"},
+			want: "Apache-2.0",
+		},
+		{
+			name: "noassertion on empty",
+			node: &sbom.Node{},
+			want: "NOASSERTION",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractNodeLicense(tt.node)
+			if got != tt.want {
+				t.Errorf("extractNodeLicense() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

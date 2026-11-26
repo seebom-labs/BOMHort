@@ -285,3 +285,78 @@ func TestSplitLicenses_Nested(t *testing.T) {
 		}
 	}
 }
+
+func TestParenthesizeCompound(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "standard compound", in: "MIT OR Apache-2.0", want: "(MIT OR Apache-2.0)"},
+		{name: "nested parens inside compound", in: "(MIT) OR (Apache-2.0)", want: "((MIT) OR (Apache-2.0))"},
+		{name: "newline separated compound", in: "MIT\nOR\nApache-2.0", want: "(MIT\nOR\nApache-2.0)"},
+		{name: "parentheses without spaces", in: "(MIT)OR(Apache-2.0)", want: "((MIT)OR(Apache-2.0))"},
+		{name: "already fully enclosed", in: "(MIT OR Apache-2.0)", want: "(MIT OR Apache-2.0)"},
+		{name: "already fully enclosed with nested parens", in: "((MIT) OR (Apache-2.0))", want: "((MIT) OR (Apache-2.0))"},
+		{name: "padded compound", in: "  MIT OR Apache-2.0  ", want: "(MIT OR Apache-2.0)"},
+		{name: "padded fully enclosed", in: "  (MIT OR Apache-2.0)  ", want: "(MIT OR Apache-2.0)"},
+		{name: "empty string", in: "", want: ""},
+		{name: "whitespace only", in: "   \t\n  ", want: ""},
+		{name: "simple bare license", in: "MIT", want: "MIT"},
+		{name: "bare license with plus", in: "GPL-2.0+", want: "GPL-2.0+"},
+		{name: "with exception", in: "GPL-2.0-only WITH Classpath-exception-2.0", want: "(GPL-2.0-only WITH Classpath-exception-2.0)"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ParenthesizeCompound(tt.in); got != tt.want {
+				t.Errorf("ParenthesizeCompound(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsFullyEnclosed(t *testing.T) {
+	tests := []struct {
+		in   string
+		want bool
+	}{
+		{"(MIT OR Apache-2.0)", true},
+		{"((MIT) OR (Apache-2.0))", true},
+		{"(MIT)", true},
+		{"()", true},
+		{"(MIT) OR (Apache-2.0)", false}, // starts with ( and ends with ), but not fully enclosed
+		{"(MIT)OR(Apache-2.0)", false},
+		{"(A) AND (B)", false},
+		{"MIT OR Apache-2.0", false},
+		{"((MIT)", false},
+		{"(MIT))", false},
+		{")(", false},
+		{"", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			if got := isFullyEnclosed(tt.in); got != tt.want {
+				t.Errorf("isFullyEnclosed(%q) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParenthesizeCompound_PrecedencePreservation(t *testing.T) {
+	// Unparenthesized: "MIT OR (Apache-2.0 AND GPL-3.0-only)" -> Permissive wins
+	unparenthesized := "(MIT) OR (Apache-2.0) AND GPL-3.0-only"
+	if cat := Categorize(unparenthesized); cat != CategoryPermissive {
+		t.Fatalf("Categorize(%q) = %v, want Permissive", unparenthesized, cat)
+	}
+
+	// Correctly parenthesized: "((MIT) OR (Apache-2.0)) AND GPL-3.0-only" -> Copyleft required
+	parenthesized := ParenthesizeCompound("(MIT) OR (Apache-2.0)") + " AND GPL-3.0-only"
+	if parenthesized != "((MIT) OR (Apache-2.0)) AND GPL-3.0-only" {
+		t.Fatalf("parenthesized = %q, want '((MIT) OR (Apache-2.0)) AND GPL-3.0-only'", parenthesized)
+	}
+	if cat := Categorize(parenthesized); cat != CategoryCopyleft {
+		t.Errorf("Categorize(%q) = %v, want Copyleft", parenthesized, cat)
+	}
+}

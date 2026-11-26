@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/seebom-labs/bomhort/backend/internal/imageid"
+	"github.com/seebom-labs/bomhort/backend/internal/license"
 	"github.com/seebom-labs/bomhort/backend/internal/sbomname"
 	"github.com/seebom-labs/bomhort/backend/internal/sourcerepo"
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
@@ -286,6 +287,9 @@ func Parse(data []byte, sourceFile, sha256Hash string) (*ParseResult, error) {
 }
 
 // extractLicense extracts the best license string from CycloneDX license entries.
+// When multiple license entries are present, compound expressions (such as "A OR B")
+// are parenthesized to preserve operator precedence in SPDX expressions, where AND
+// binds tighter than OR.
 func extractLicense(lics []CDXLicense) string {
 	if len(lics) == 0 {
 		return "NOASSERTION"
@@ -293,19 +297,30 @@ func extractLicense(lics []CDXLicense) string {
 
 	var parts []string
 	for _, l := range lics {
+		var lic string
 		if l.Expression != "" {
-			parts = append(parts, l.Expression)
+			lic = strings.TrimSpace(l.Expression)
 		} else if l.License != nil {
 			if l.License.ID != "" {
-				parts = append(parts, l.License.ID)
+				lic = strings.TrimSpace(l.License.ID)
 			} else if l.License.Name != "" {
-				parts = append(parts, l.License.Name)
+				lic = strings.TrimSpace(l.License.Name)
 			}
+		}
+		if lic != "" {
+			parts = append(parts, lic)
 		}
 	}
 
 	if len(parts) == 0 {
 		return "NOASSERTION"
+	}
+	if len(parts) == 1 {
+		return parts[0]
+	}
+
+	for i, p := range parts {
+		parts[i] = license.ParenthesizeCompound(p)
 	}
 	return strings.Join(parts, " AND ")
 }
