@@ -225,7 +225,27 @@ func TestNoticeQueryMappingToNoticeFallback(t *testing.T) {
 		pkgs[i] = p
 	}
 
-	cdResolver := clearlydefined.NewResolver()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/definitions" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"npm/npmjs/-/left-pad/1.3.0": {
+				"licensed": {
+					"facets": {
+						"core": {
+							"attribution": {"parties": ["Copyright 2011 left-pad authors"]}
+						}
+					}
+				}
+			}
+		}`))
+	}))
+	defer srv.Close()
+
+	cdResolver := clearlydefined.NewResolverWithRegistry(srv.URL)
 	notice := cdResolver.GenerateNoticeWithFallback(context.Background(), "test-app (v1.0.0)", pkgs)
 
 	// Verify all components exist in the notice
