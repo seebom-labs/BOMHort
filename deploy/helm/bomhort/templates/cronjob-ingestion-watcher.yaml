@@ -7,9 +7,15 @@ metadata:
     app.kubernetes.io/component: ingestion-watcher
     app.kubernetes.io/instance: {{ .Release.Name }}
 spec:
+  suspend: {{ .Values.maintenance.writersSuspended }}
   schedule: {{ .Values.ingestionWatcher.schedule | quote }}
   concurrencyPolicy: Forbid
   jobTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: bomhort
+        app.kubernetes.io/component: ingestion-watcher
+        app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
       template:
         metadata:
