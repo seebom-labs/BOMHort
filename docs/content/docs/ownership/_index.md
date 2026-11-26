@@ -87,6 +87,16 @@ curl -X POST "https://bomhort.example.com/api/v1/sboms/upload?project=k2s&tags=s
   -H "X-API-Key: $BOMHORT_API_KEY" --data-binary @sbom.spdx.json
 ```
 
+```bash
+# Update tags on an existing SBOM via PATCH (#636; requires AUTH_ENABLED=true)
+curl -X PATCH "https://bomhort.example.com/api/v1/sboms/550e8400-e29b-41d4-a716-446655440000" \
+  -H "X-API-Key: $BOMHORT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"tags": ["production", "team-payments"]}'
+```
+
+Passing `{"tags": []}` clears an SBOM's custom tags while preserving instance-wide tags. Tags cannot contain commas, as commas delimit filter values.
+
 Note how `pathLayout` and `tags` do different jobs in the bucket example:
 `pathLayout` picks the **real project** out of the key, `tags` says **what kind
 of project** it is.

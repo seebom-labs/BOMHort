@@ -152,6 +152,13 @@ func TestQueriesExecute(t *testing.T) {
 			return err
 		}},
 		{"QuerySBOMDetail", func() error { _, err := c.QuerySBOMDetail(ctx, someID); return err }},
+		{"QuerySBOMSource", func() error {
+			_, _, _, err := c.QuerySBOMSource(ctx, someID)
+			if errors.Is(err, ErrSBOMNotFound) {
+				return nil
+			}
+			return err
+		}},
 		{"QuerySBOMVulnerabilities", func() error { _, err := c.QuerySBOMVulnerabilities(ctx, someID, "", "", ""); return err }},
 		{"QuerySBOMLicenses", func() error { _, err := c.QuerySBOMLicenses(ctx, someID); return err }},
 		{"QuerySBOMVEXStatements", func() error { _, err := c.QuerySBOMVEXStatements(ctx, someID); return err }},
