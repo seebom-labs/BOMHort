@@ -284,9 +284,9 @@ func (a *teaStoreAdapter) readSourceBytes(ctx context.Context, sourceFile string
 		return io.ReadAll(rc)
 	}
 
-	if a.sbomDir == "" {
-		return nil, fmt.Errorf("sbom directory not configured")
+	absPath, pathErr := safeLocalSBOMPath(a.sbomDir, sourceFile)
+	if pathErr != nil {
+		return nil, fmt.Errorf("invalid local source file path: %w", pathErr)
 	}
-	absPath := filepath.Join(a.sbomDir, sourceFile)
 	return os.ReadFile(absPath)
 }

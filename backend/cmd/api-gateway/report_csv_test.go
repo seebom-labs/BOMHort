@@ -80,7 +80,7 @@ func TestVulnerabilityReportCSV(t *testing.T) {
 		t.Errorf("Content-Type = %q", ct)
 	}
 	// The date is the UTC date, not the server's local one.
-	if cd := rec.Header().Get("Content-Disposition"); cd != `attachment; filename="bomhort-vulnerabilities-2026-10-14.csv"` {
+	if cd := rec.Header().Get("Content-Disposition"); cd != "attachment; filename=bomhort-vulnerabilities-2026-10-14.csv" {
 		t.Errorf("Content-Disposition = %q", cd)
 	}
 	if !rows.closed {

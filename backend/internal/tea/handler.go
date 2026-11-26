@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
@@ -482,7 +483,7 @@ func (h *Handler) downloadArtifact(w http.ResponseWriter, r *http.Request, artif
 
 	// Headers required by TEA spec
 	w.Header().Set("Content-Type", data.ContentType)
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, data.Filename))
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": data.Filename}))
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Vary", "Accept, Accept-Encoding")
 
