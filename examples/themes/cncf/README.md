@@ -21,8 +21,12 @@ make dev
 ```
 
 ```bash
-# Kubernetes – mount via ConfigMap (see Helm values ui.customTheme / ui.siteConfig)
+# Kubernetes – create the theme ConfigMap and reference it in the Helm values
+# (ui.siteConfig.content carries the ui-config.json keys)
 kubectl create configmap bomhort-theme --from-file=custom-theme.css=examples/themes/cncf/custom-theme.css
+helm upgrade bomhort deploy/helm/bomhort --reuse-values \
+  --set ui.customTheme.enabled=true \
+  --set ui.customTheme.existingConfigMap=bomhort-theme
 ```
 
 **Trademark note.** The [brand guidelines](https://www.cncf.io/brand-guidelines/)

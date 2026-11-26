@@ -35,8 +35,9 @@ import (
 //
 // scope ("" or a depgraph scope label) keeps only findings whose package is
 // pulled in that way. reachability ("" or "reachable", "not_reachable", "unknown")
-// filters by reachability evidence (#535).
-func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, scope string, reachability string) ([]dto.VulnerabilityListItem, error) {
+// filters by reachability evidence (#535). cwe ("", or "CWE-79", case-normalised
+// by the handler) keeps only findings of that weakness class (#409).
+func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, scope string, reachability string, cwe string) ([]dto.VulnerabilityListItem, error) {
 	scopeAnd := ""
 	if pred := depthPredicate(scope, "v.dependency_depth"); pred != "" {
 		scopeAnd = " AND " + pred
@@ -46,14 +47,21 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 		scopeAnd += " AND v.reachability = ?"
 		args = append(args, reachability)
 	}
+	if cwe != "" {
+		scopeAnd += " AND has(v.cwe_ids, ?)"
+		args = append(args, cwe)
+	}
 	rows, err := c.Conn.Query(ctx, `
 		SELECT
 			v.vuln_id, v.severity, v.purl, v.summary,
 			v.fixed_version, v.source_file, v.discovered_at,
-			v.dependency_depth, v.aliases,
+			v.dependency_depth, v.aliases, v.cwe_ids,
 			v.advisory_source, v.advisory_status, v.component_location,
 			ifNull(vx.vex_status, '') AS vex_status,
 			ifNull(vx.vex_justification, '') AS vex_justification,
+			ifNull(vx.vex_action_statement, '') AS vex_action_statement,
+			ifNull(vx.vex_impact_statement, '') AS vex_impact_statement,
+			ifNull(vx.vex_action_statement_timestamp, toDateTime(0)) AS vex_action_statement_timestamp,
 			ifNull(vx.winning_timestamp, toDateTime(0)) AS vex_timestamp,
 			ifNull(vx.vex_statement_id, '') AS vex_statement_id,
 			ifNull(vx.vex_author, '') AS vex_author,
@@ -70,6 +78,9 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 				f.vuln_id AS vuln_id, f.purl AS purl,
 				argMax(s.status, s.vex_timestamp) AS vex_status,
 				argMax(s.justification, s.vex_timestamp) AS vex_justification,
+				argMax(s.action_statement, s.vex_timestamp) AS vex_action_statement,
+				argMax(s.impact_statement, s.vex_timestamp) AS vex_impact_statement,
+				argMax(s.action_statement_timestamp, s.vex_timestamp) AS vex_action_statement_timestamp,
 				argMax(toString(s.vex_id), s.vex_timestamp) AS vex_statement_id,
 				argMax(s.author, s.vex_timestamp) AS vex_author,
 				argMax(s.tooling, s.vex_timestamp) AS vex_tooling,
@@ -96,7 +107,7 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 	var items []dto.VulnerabilityListItem
 	for rows.Next() {
 		var item dto.VulnerabilityListItem
-		var discoveredAt, vexTimestamp, evidenceAt time.Time
+		var discoveredAt, vexTimestamp, actionAt, evidenceAt time.Time
 		var depth uint16
 		var aliases []string
 		var components string
@@ -104,10 +115,13 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 		if err := rows.Scan(
 			&item.VulnID, &item.Severity, &item.PURL,
 			&item.Summary, &item.FixedVersion, &item.SourceFile,
-			&discoveredAt, &depth, &aliases,
+			&discoveredAt, &depth, &aliases, &item.CWEIDs,
 			&item.AdvisorySource, &item.AdvisoryStatus, &components,
 			&item.VEXStatus,
-			&item.VEXJustification, &vexTimestamp, &item.VEXStatementID,
+			&item.VEXJustification,
+			&item.VEXActionStatement, &item.VEXImpactStatement,
+			&actionAt,
+			&vexTimestamp, &item.VEXStatementID,
 			&item.VEXAuthor, &item.VEXTooling, &hasNoDepGraph,
 			&item.Reachability, &item.EvidenceSource, &item.EvidenceRef, &evidenceAt,
 		); err != nil {
@@ -137,10 +151,18 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 		if !vexTimestamp.IsZero() && vexTimestamp.Unix() != 0 {
 			item.VEXTimestamp = vexTimestamp.Format(time.RFC3339)
 		}
+		// Same for the action statement timestamp (#413): legacy statements
+		// and LEFT JOIN misses store the epoch default, which omitempty drops.
+		if actionAt.Unix() > 0 {
+			item.VEXActionStatementTimestamp = actionAt.Format(time.RFC3339)
+		}
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows error: %w", err)
+	}
+	if err := c.enrichExploits(ctx, items); err != nil {
+		return nil, err
 	}
 	if items == nil {
 		items = []dto.VulnerabilityListItem{}
@@ -291,6 +313,7 @@ func (c *Client) QuerySBOMDetail(ctx context.Context, sbomID string) (*dto.SBOMD
 		SELECT
 			s.sbom_id, s.source_file, s.spdx_version, s.document_name, s.document_version, s.ingested_at,
 			s.source_repo, s.source_ref, s.image_ref, s.image_digest,
+			s.cluster, s.namespace, s.project, s.origin,
 			ifNull(p.pkg_count, 0) AS package_count,
 			s.quality_score, s.quality_flags
 		FROM (SELECT * FROM sboms FINAL) AS s
@@ -303,7 +326,9 @@ func (c *Client) QuerySBOMDetail(ctx context.Context, sbomID string) (*dto.SBOMD
 	`, sbomID).Scan(
 		&detail.SBOMID, &detail.SourceFile, &detail.SPDXVersion,
 		&detail.DocumentName, &detail.DocumentVersion, &ingestedAt,
-		&detail.SourceRepo, &detail.SourceRef, &detail.ImageRef, &detail.ImageDigest, &detail.PackageCount,
+		&detail.SourceRepo, &detail.SourceRef, &detail.ImageRef, &detail.ImageDigest,
+		&detail.Cluster, &detail.Namespace, &detail.Project, &detail.Origin,
+		&detail.PackageCount,
 		&detail.QualityScore, &detail.QualityFlags,
 	)
 	if err != nil {
@@ -616,7 +641,7 @@ func (c *Client) QueryVersionSkew(ctx context.Context, page, pageSize uint64, se
 	args := []interface{}{}
 	if search != "" {
 		searchFilter = "AND dep_name ILIKE ?"
-		args = append(args, "%"+search+"%")
+		args = append(args, "%"+escapeLikePattern(search)+"%")
 	}
 
 	// Count total skewed packages (packages with >1 version across projects).
@@ -746,7 +771,7 @@ func (c *Client) QueryDependencySearch(ctx context.Context, query string, page, 
 		page = 1
 	}
 	offset := (page - 1) * pageSize
-	searchPattern := "%" + query + "%"
+	searchPattern := "%" + escapeLikePattern(query) + "%"
 
 	var totalResults uint64
 	if err := c.Conn.QueryRow(ctx, `

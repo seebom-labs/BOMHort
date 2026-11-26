@@ -27,6 +27,7 @@ import (
 
 	json "github.com/goccy/go-json"
 
+	"github.com/seebom-labs/bomhort/backend/internal/github"
 	"github.com/seebom-labs/bomhort/backend/internal/license"
 	"github.com/seebom-labs/bomhort/backend/internal/ratelimit"
 )
@@ -274,7 +275,7 @@ func GitHubRepoFromURL(raw string) (owner, repo string, ok bool) {
 		return "", "", false
 	}
 	owner, repo = m[1], strings.TrimSuffix(m[2], ".git")
-	if owner == "" || repo == "" {
+	if !github.ValidOwner(owner) || !github.ValidRepo(repo) {
 		return "", "", false
 	}
 	return owner, repo, true
@@ -308,5 +309,9 @@ func ExtractNuGetPackage(purl string) (id, version string, ok bool) {
 	if id == "" || strings.ContainsAny(id, "/\\ ") || strings.Contains(id, "..") {
 		return "", "", false
 	}
-	return id, strings.TrimSpace(version), true
+	version = strings.TrimSpace(version)
+	if version != "" && !license.ValidVersion(version) {
+		return "", "", false
+	}
+	return id, version, true
 }

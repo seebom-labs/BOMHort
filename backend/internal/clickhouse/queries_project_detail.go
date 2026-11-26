@@ -153,7 +153,7 @@ func (c *Client) QueryProjectDetail(ctx context.Context, name string) (*dto.Proj
 // first. Same row shape as every other SBOM listing so the UI reuses the
 // component.
 func (c *Client) QueryProjectSBOMs(ctx context.Context, name string, page, pageSize uint64) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
-	return c.QuerySBOMs(ctx, page, pageSize, "", name, 0)
+	return c.QuerySBOMs(ctx, page, pageSize, "", name, "", 0)
 }
 
 // QueryProjectSBOMIDByVersion returns the most recently ingested SBOM ID for a specific
@@ -205,7 +205,7 @@ func (c *Client) QueryProjectBadgeStats(ctx context.Context, name, version strin
 	}
 
 	// Count unsuppressed vulnerabilities using the scope-aware VEX join.
-	vulns, err := c.QuerySBOMVulnerabilities(ctx, targetSBOMID, "", "")
+	vulns, err := c.QuerySBOMVulnerabilities(ctx, targetSBOMID, "", "", "")
 	if err != nil {
 		return nil, err
 	}
@@ -278,9 +278,13 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 		SELECT
 			f.vuln_id, f.severity, f.purl, f.summary, f.fixed_version,
 			f.source_file, f.discovered_at, f.affected_sboms, f.dependency_depth, f.aliases,
+			f.cwe_ids,
 			f.advisory_source, f.advisory_status, f.component_location,
 			ifNull(vx.vex_status, '')            AS vex_status,
 			ifNull(vx.vex_justification, '')     AS vex_justification,
+			ifNull(vx.vex_action_statement, '')  AS vex_action_statement,
+			ifNull(vx.vex_impact_statement, '')  AS vex_impact_statement,
+			ifNull(vx.vex_action_statement_timestamp, toDateTime(0)) AS vex_action_statement_timestamp,
 			ifNull(vx.winning_timestamp, toDateTime(0)) AS vex_timestamp,
 			ifNull(vx.vex_statement_id, '')      AS vex_statement_id,
 			ifNull(vx.vex_author, '')            AS vex_author,
@@ -298,6 +302,7 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 				uniqExact(v.sbom_id)                     AS affected_sboms,
 				min(v.dependency_depth)                  AS dependency_depth,
 				groupUniqArrayArray(v.aliases)           AS aliases,
+				groupUniqArrayArray(v.cwe_ids)           AS cwe_ids,
 				argMax(v.advisory_source, v.discovered_at)    AS advisory_source,
 				argMax(v.advisory_status, v.discovered_at)    AS advisory_status,
 				argMax(v.component_location, v.discovered_at) AS component_location,
@@ -316,6 +321,9 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 				m.vuln_id AS vuln_id, m.purl AS purl,
 				argMax(st.status, st.vex_timestamp)          AS vex_status,
 				argMax(st.justification, st.vex_timestamp)   AS vex_justification,
+				argMax(st.action_statement, st.vex_timestamp)     AS vex_action_statement,
+				argMax(st.impact_statement, st.vex_timestamp)     AS vex_impact_statement,
+				argMax(st.action_statement_timestamp, st.vex_timestamp) AS vex_action_statement_timestamp,
 				argMax(toString(st.vex_id), st.vex_timestamp) AS vex_statement_id,
 				argMax(st.author, st.vex_timestamp)          AS vex_author,
 				argMax(st.tooling, st.vex_timestamp)         AS vex_tooling,
@@ -342,7 +350,7 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 	var items []dto.VulnerabilityListItem
 	for rows.Next() {
 		var item dto.VulnerabilityListItem
-		var discoveredAt, vexTimestamp, evidenceAt time.Time
+		var discoveredAt, vexTimestamp, actionAt, evidenceAt time.Time
 		var depth uint16
 		var aliases []string
 		var components string
@@ -350,8 +358,11 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 		if err := rows.Scan(
 			&item.VulnID, &item.Severity, &item.PURL, &item.Summary, &item.FixedVersion,
 			&item.SourceFile, &discoveredAt, &item.AffectedSBOMs, &depth, &aliases,
+			&item.CWEIDs,
 			&item.AdvisorySource, &item.AdvisoryStatus, &components,
-			&item.VEXStatus, &item.VEXJustification, &vexTimestamp,
+			&item.VEXStatus, &item.VEXJustification,
+			&item.VEXActionStatement, &item.VEXImpactStatement,
+			&actionAt, &vexTimestamp,
 			&item.VEXStatementID, &item.VEXAuthor, &item.VEXTooling,
 			&hasNoDepGraph,
 			&item.Reachability, &item.EvidenceSource, &item.EvidenceRef, &evidenceAt,
@@ -371,6 +382,11 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 		if !vexTimestamp.IsZero() && vexTimestamp.Unix() != 0 {
 			item.VEXTimestamp = vexTimestamp.Format(time.RFC3339)
 		}
+		// Legacy statements and LEFT JOIN misses store the epoch default
+		// (#413), which omitempty drops from the JSON.
+		if actionAt.Unix() > 0 {
+			item.VEXActionStatementTimestamp = actionAt.Format(time.RFC3339)
+		}
 		if !evidenceAt.IsZero() && evidenceAt.Unix() > 0 {
 			item.EvidenceAt = evidenceAt.Format(time.RFC3339)
 		}
@@ -379,10 +395,13 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows error: %w", err)
 	}
+	if err := c.enrichExploits(ctx, items); err != nil {
+		return nil, err
+	}
 	if items == nil {
 		items = []dto.VulnerabilityListItem{}
 	}
-	return items, rows.Err()
+	return items, nil
 }
 
 // QueryProjectPackages lists the distinct components across a project's
@@ -400,7 +419,7 @@ func (c *Client) QueryProjectPackages(ctx context.Context, name string, page, pa
 	args := []interface{}{name}
 	if search != "" {
 		searchWhere = "WHERE pkg_name ILIKE ? OR purl ILIKE ?"
-		pattern := "%" + search + "%"
+		pattern := "%" + escapeLikePattern(search) + "%"
 		args = append(args, pattern, pattern)
 	}
 

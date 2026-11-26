@@ -28,14 +28,15 @@ type OpenVEXDocument struct {
 
 // VEXStatement represents a single VEX statement in an OpenVEX document.
 type VEXStatement struct {
-	Vulnerability   VEXVulnerability `json:"vulnerability"`
-	Products        []VEXProduct     `json:"products"`
-	Status          string           `json:"status"`
-	StatusNotes     string           `json:"status_notes,omitempty"`
-	Justification   string           `json:"justification,omitempty"`
-	ImpactStatement string           `json:"impact_statement,omitempty"`
-	ActionStatement string           `json:"action_statement,omitempty"`
-	Timestamp       string           `json:"timestamp,omitempty"`
+	Vulnerability            VEXVulnerability `json:"vulnerability"`
+	Products                 []VEXProduct     `json:"products"`
+	Status                   string           `json:"status"`
+	StatusNotes              string           `json:"status_notes,omitempty"`
+	Justification            string           `json:"justification,omitempty"`
+	ImpactStatement          string           `json:"impact_statement,omitempty"`
+	ActionStatement          string           `json:"action_statement,omitempty"`
+	ActionStatementTimestamp string           `json:"action_statement_timestamp,omitempty"`
+	Timestamp                string           `json:"timestamp,omitempty"`
 }
 
 // VEXVulnerability references a vulnerability by ID.
@@ -137,6 +138,16 @@ func Parse(r io.Reader, sourceFile string) (out *ParseResult, err error) {
 			}
 		}
 
+		// Parse action statement timestamp (#413): when the action statement
+		// was issued. Optional per the OpenVEX spec; a value that is not RFC
+		// 3339 is ignored the same way an invalid statement timestamp is.
+		var actionAt time.Time
+		if stmt.ActionStatementTimestamp != "" {
+			if t, err := time.Parse(time.RFC3339, stmt.ActionStatementTimestamp); err == nil {
+				actionAt = t
+			}
+		}
+
 		// Create VEX statements per product. Three shapes exist in the wild
 		// (#350):
 		//
@@ -179,19 +190,20 @@ func Parse(r io.Reader, sourceFile string) (out *ParseResult, err error) {
 				vexID := uuid.NewSHA1(uuid.NameSpaceDNS, []byte(doc.ID+"|"+vulnID+"|"+purl))
 
 				result = append(result, models.VEXStatement{
-					IngestedAt:      now,
-					VEXID:           vexID,
-					DocumentID:      doc.ID,
-					SourceFile:      sourceFile,
-					ProductRef:      productRef,
-					ProductWide:     productWide,
-					ProductPURL:     purl,
-					VulnID:          vulnID,
-					Status:          stmt.Status,
-					Justification:   stmt.Justification,
-					ImpactStatement: stmt.ImpactStatement,
-					ActionStatement: stmt.ActionStatement,
-					VEXTimestamp:    stmtTime,
+					IngestedAt:               now,
+					VEXID:                    vexID,
+					DocumentID:               doc.ID,
+					SourceFile:               sourceFile,
+					ProductRef:               productRef,
+					ProductWide:              productWide,
+					ProductPURL:              purl,
+					VulnID:                   vulnID,
+					Status:                   stmt.Status,
+					Justification:            stmt.Justification,
+					ImpactStatement:          stmt.ImpactStatement,
+					ActionStatement:          stmt.ActionStatement,
+					ActionStatementTimestamp: actionAt,
+					VEXTimestamp:             stmtTime,
 					// Provenance (#334): author/role/tooling live on the
 					// document in OpenVEX; status_notes on the statement.
 					Author:      doc.Author,

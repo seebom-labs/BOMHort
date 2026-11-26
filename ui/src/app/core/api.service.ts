@@ -3,6 +3,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
   OwnerFilter,
+  VulnListFilter,
   DashboardStats,
   PaginatedResponse,
   SBOMListItem,
@@ -12,6 +13,7 @@ import {
   ReachabilitySummary,
   DependencyNode,
   LicenseComplianceItem,
+  LicenseDiscrepancyItem,
   LicenseSourceItem,
   VEXStatementItem,
   ProjectLicenseViolation,
@@ -30,12 +32,14 @@ import {
   ProjectPackageItem,
   TagListItem,
   GlobalSearchResponse,
+  ImageDetail,
   FleetCluster,
   ClusterListItem,
   ClusterStats,
   NamespaceListItem,
   NamespaceStats,
   QualityStatsResponse,
+  OriginItem,
 } from './api.models';
 
 /** Base URL of the REST API; the app uses the nginx proxy at `/api/v1`, embedded elements point it elsewhere. */
@@ -76,7 +80,20 @@ export class ApiService {
    * `project` (#398) is the exact project identity and scopes the list to
    * one project's versions. They compose. `minQuality` filters by minimum quality score (#537).
    */
-  getSboms(page = 1, pageSize = 50, search = '', project = '', minQuality = 0): Observable<PaginatedResponse<SBOMListItem>> {
+  getSboms(page?: number, pageSize?: number, search?: string, project?: string, minQuality?: number): Observable<PaginatedResponse<SBOMListItem>>;
+  getSboms(page?: number, pageSize?: number, search?: string, project?: string, origin?: string, minQuality?: number): Observable<PaginatedResponse<SBOMListItem>>;
+  getSboms(page?: number, pageSize?: number, search?: string, project?: string, origin?: string, minQuality?: number, digest?: string): Observable<PaginatedResponse<SBOMListItem>>;
+  getSboms(
+    page = 1,
+    pageSize = 50,
+    search = '',
+    project = '',
+    originOrMinQuality: string | number = '',
+    maybeMinQuality = 0,
+    digest = '',
+  ): Observable<PaginatedResponse<SBOMListItem>> {
+    const origin = typeof originOrMinQuality === 'string' ? originOrMinQuality : '';
+    const minQuality = typeof originOrMinQuality === 'number' ? originOrMinQuality : maybeMinQuality;
     let params = new HttpParams()
       .set('page', page.toString())
       .set('page_size', pageSize.toString());
@@ -86,10 +103,23 @@ export class ApiService {
     if (project) {
       params = params.set('project', project);
     }
+    if (origin) {
+      params = params.set('origin', origin);
+    }
     if (minQuality > 0) {
       params = params.set('min_quality', minQuality.toString());
     }
+    if (digest) {
+      params = params.set('digest', digest);
+    }
     return this.http.get<PaginatedResponse<SBOMListItem>>(`${this.baseUrl}/sboms`, { params });
+  }
+
+  getImage(digest: string, page = 1, pageSize = 50): Observable<ImageDetail> {
+    let params = new HttpParams()
+      .set('page', page.toString())
+      .set('page_size', pageSize.toString());
+    return this.http.get<ImageDetail>(`${this.baseUrl}/images/${encodeURIComponent(digest)}`, { params });
   }
 
   getSbomDetail(sbomId: string): Observable<SBOMDetail> {
@@ -127,7 +157,7 @@ export class ApiService {
    * URL of the CSV export of the vulnerability listing (#266): the same rows
    * as getVulnerabilities, streamed by the gateway as a file download.
    */
-  vulnerabilityReportUrl(scope = '', owner: OwnerFilter = {}, reachability = ''): string {
+  vulnerabilityReportUrl(scope = '', owner: VulnListFilter = {}, reachability = ''): string {
     let params = ownerParams(owner).set('format', 'csv');
     if (scope) {
       params = params.set('scope', scope);
@@ -138,7 +168,7 @@ export class ApiService {
     return `${this.baseUrl}/reports/vulnerabilities?${params.toString()}`;
   }
 
-  getVulnerabilities(page = 1, pageSize = 50, scope = '', owner: OwnerFilter = {}, reachability = ''): Observable<PaginatedResponse<VulnerabilityListItem>> {
+  getVulnerabilities(page = 1, pageSize = 50, scope = '', owner: VulnListFilter = {}, reachability = ''): Observable<PaginatedResponse<VulnerabilityListItem>> {
     let params = ownerParams(owner)
       .set('page', page.toString())
       .set('page_size', pageSize.toString());
@@ -148,12 +178,8 @@ export class ApiService {
     if (reachability) {
       params = params.set('reachability', reachability);
     }
-    return this.http.get<PaginatedResponse<VulnerabilityListItem>>(
-      `${this.baseUrl}/vulnerabilities`,
-      { params }
-    );
+    return this.http.get<PaginatedResponse<VulnerabilityListItem>>(`${this.baseUrl}/vulnerabilities`, { params });
   }
-
   uploadEvidence(sbomId: string, evidenceJson: string | object, ref = ''): Observable<ReachabilitySummary> {
     const body = typeof evidenceJson === 'string' ? evidenceJson : JSON.stringify(evidenceJson);
     let params = new HttpParams();
@@ -176,6 +202,32 @@ export class ApiService {
 
   getLicenseSources(): Observable<LicenseSourceItem[]> {
     return this.http.get<LicenseSourceItem[]>(`${this.baseUrl}/licenses/sources`);
+  }
+
+  getLicenseDiscrepancies(filter?: { sbom_id?: string; project?: string; cluster?: string; namespace?: string; search?: string; page?: number; page_size?: number }): Observable<PaginatedResponse<LicenseDiscrepancyItem>> {
+    let params = new HttpParams();
+    if (filter) {
+      if (filter.sbom_id) params = params.set('sbom_id', filter.sbom_id);
+      if (filter.project) params = params.set('project', filter.project);
+      if (filter.cluster) params = params.set('cluster', filter.cluster);
+      if (filter.namespace) params = params.set('namespace', filter.namespace);
+      if (filter.search) params = params.set('search', filter.search);
+      if (filter.page != null) params = params.set('page', filter.page.toString());
+      if (filter.page_size != null) params = params.set('page_size', filter.page_size.toString());
+    }
+    return this.http.get<PaginatedResponse<LicenseDiscrepancyItem>>(`${this.baseUrl}/licenses/discrepancies`, { params });
+  }
+
+  getSbomNoticesUrl(id: string): string {
+    return `${this.baseUrl}/sboms/${encodeURIComponent(id)}/notices`;
+  }
+
+  getProjectNoticesUrl(name: string, version?: string): string {
+    let url = `${this.baseUrl}/projects/${encodeURIComponent(name)}/notices`;
+    if (version) {
+      url += `?version=${encodeURIComponent(version)}`;
+    }
+    return url;
   }
 
   getProjectsWithLicenseViolations(): Observable<ProjectLicenseViolation[]> {
@@ -249,7 +301,7 @@ export class ApiService {
     return `${this.baseUrl}/sboms/${sbomId}/download`;
   }
 
-  getProjects(page = 1, pageSize = 50, search = '', tag = ''): Observable<PaginatedResponse<ProjectListItem>> {
+  getProjects(page = 1, pageSize = 50, search = '', tag = '', origin = ''): Observable<PaginatedResponse<ProjectListItem>> {
     let params = new HttpParams()
       .set('page', page.toString())
       .set('page_size', pageSize.toString());
@@ -261,6 +313,9 @@ export class ApiService {
     if (tag) {
       params = params.set('tag', tag);
     }
+    if (origin) {
+      params = params.set('origin', origin);
+    }
     return this.http.get<PaginatedResponse<ProjectListItem>>(`${this.baseUrl}/projects`, { params });
   }
 
@@ -268,7 +323,7 @@ export class ApiService {
    * Projects grouped by their resolved parent (product), paged by group.
    * search matches the group or any member; tag restricts the members.
    */
-  getProjectGroups(page = 1, pageSize = 50, search = '', tag = ''): Observable<PaginatedResponse<ProjectGroupItem>> {
+  getProjectGroups(page = 1, pageSize = 50, search = '', tag = '', origin = ''): Observable<PaginatedResponse<ProjectGroupItem>> {
     let params = new HttpParams()
       .set('group_by', 'parent')
       .set('page', page.toString())
@@ -278,6 +333,9 @@ export class ApiService {
     }
     if (tag) {
       params = params.set('tag', tag);
+    }
+    if (origin) {
+      params = params.set('origin', origin);
     }
     return this.http.get<PaginatedResponse<ProjectGroupItem>>(`${this.baseUrl}/projects`, { params });
   }
@@ -290,6 +348,13 @@ export class ApiService {
    */
   getTags(): Observable<TagListItem[]> {
     return this.http.get<TagListItem[]>(`${this.baseUrl}/tags`);
+  }
+
+  /**
+   * Origin values in use on this instance (#455).
+   */
+  getOrigins(): Observable<OriginItem[]> {
+    return this.http.get<OriginItem[]>(`${this.baseUrl}/origins`);
   }
 
   // ── Project read model (#398) ──
@@ -341,8 +406,12 @@ export class ApiService {
   // ── Ownership dimensions (#131 cluster, #138 namespace, #57 project) ──
 
   /** Full cluster → namespace → project tree in one request. */
-  getFleet(): Observable<FleetCluster[]> {
-    return this.http.get<FleetCluster[]>(`${this.baseUrl}/fleet`);
+  getFleet(origin = ''): Observable<FleetCluster[]> {
+    let params = new HttpParams();
+    if (origin) {
+      params = params.set('origin', origin);
+    }
+    return this.http.get<FleetCluster[]>(`${this.baseUrl}/fleet`, { params });
   }
 
   getClusters(): Observable<ClusterListItem[]> {
@@ -353,10 +422,13 @@ export class ApiService {
     return this.http.get<ClusterStats>(`${this.baseUrl}/clusters/${encodeURIComponent(cluster)}/stats`);
   }
 
-  getClusterSboms(cluster: string, page = 1, pageSize = 50): Observable<PaginatedResponse<SBOMListItem>> {
-    const params = new HttpParams()
+  getClusterSboms(cluster: string, page = 1, pageSize = 50, origin = ''): Observable<PaginatedResponse<SBOMListItem>> {
+    let params = new HttpParams()
       .set('page', page.toString())
       .set('page_size', pageSize.toString());
+    if (origin) {
+      params = params.set('origin', origin);
+    }
     return this.http.get<PaginatedResponse<SBOMListItem>>(
       `${this.baseUrl}/clusters/${encodeURIComponent(cluster)}/sboms`, { params });
   }
@@ -384,13 +456,16 @@ export class ApiService {
   }
 
   getNamespaceSboms(
-    namespace: string, cluster = '', page = 1, pageSize = 50,
+    namespace: string, cluster = '', page = 1, pageSize = 50, origin = '',
   ): Observable<PaginatedResponse<SBOMListItem>> {
     let params = new HttpParams()
       .set('page', page.toString())
       .set('page_size', pageSize.toString());
     if (cluster) {
       params = params.set('cluster', cluster);
+    }
+    if (origin) {
+      params = params.set('origin', origin);
     }
     return this.http.get<PaginatedResponse<SBOMListItem>>(
       `${this.baseUrl}/namespaces/${encodeURIComponent(namespace)}/sboms`, { params });

@@ -24,7 +24,9 @@ type SBOM struct {
 	// DocumentNamespace above, which is the SPDX document's URI identifier.
 	Namespace string `json:"namespace,omitempty"`
 	Project   string `json:"project,omitempty"`
-	Origin    string `json:"origin,omitempty"`
+	// Origin (#455) records how the SBOM was produced: cluster-scan, ci,
+	// registry, vendor, manual. '' = unassigned/legacy.
+	Origin string `json:"origin,omitempty"`
 	// SourceRepo/SourceRef (#332) name where the product's source lives:
 	// a normalised https repository URL and the commit/tag/branch the SBOM
 	// was generated from. Extracted from the document at parse time
@@ -86,10 +88,14 @@ type SBOMPackages struct {
 	// parse time by internal/sbom; the UI and the findings tables read it to
 	// tell direct from transitive dependencies.
 	PackageDepths []uint16 `json:"package_depths"`
-	Cluster       string   `json:"cluster,omitempty"`
-	Namespace     string   `json:"namespace,omitempty"`
-	Project       string   `json:"project,omitempty"`
-	ImageDigest   string   `json:"image_digest,omitempty"`
+	// LicenseDiscrepancy is parallel to PackageNames: scan-derived discovered license
+	// expressions from ClearlyDefined that disagree with the declared license.
+	// Empty string when there is no discrepancy (#530).
+	LicenseDiscrepancy []string `json:"license_discrepancy,omitempty"`
+	Cluster            string   `json:"cluster,omitempty"`
+	Namespace          string   `json:"namespace,omitempty"`
+	Project            string   `json:"project,omitempty"`
+	ImageDigest        string   `json:"image_digest,omitempty"`
 	// RootIndices marks the package(s) the SBOM DESCRIBES – the product itself,
 	// not a dependency. Kept in the arrays (index 0 is the dependency-tree root)
 	// but excluded from license compliance. Not persisted to ClickHouse.
@@ -115,13 +121,16 @@ type Vulnerability struct {
 	// (GHSA-… ↔ CVE-… ↔ GO-…). VEX matching accepts any of them: a
 	// statement written about the CVE must hit the finding stored under
 	// its GHSA id.
-	Aliases      []string `json:"aliases,omitempty"`
+	Aliases []string `json:"aliases,omitempty"`
+	// CWEIDs are the weakness classes of the flaw (#409), extracted from
+	// OSV database_specific.cwe_ids. Empty for NVD-sourced entries that
+	// carry none; backfilled from osv_json (migration 034).
+	CWEIDs       []string `json:"cwe_ids,omitempty"`
 	FixedVersion string   `json:"fixed_version"`
 	OSVJSON      string   `json:"osv_json"`
 	// DependencyDepth is the smallest depth of the affected PURL in the SBOM
 	// (see SBOMPackages.PackageDepths); depgraph.Unknown when not derivable.
 	DependencyDepth uint16 `json:"dependency_depth"`
-
 	// AdvisorySource is "osv" for a finding osv.dev reported, else the name
 	// of the ADVISORY_SOURCES feed that decided it.
 	AdvisorySource string `json:"advisory_source,omitempty"`
@@ -166,6 +175,7 @@ type LicenseCompliance struct {
 	Cluster              string    `json:"cluster,omitempty"`
 	Namespace            string    `json:"namespace,omitempty"`
 	Project              string    `json:"project,omitempty"`
+	Origin               string    `json:"origin,omitempty"`
 }
 
 // IngestionJob represents a job in the ClickHouse-based queue.
@@ -220,6 +230,7 @@ type StoredDocument struct {
 	Cluster         string    `json:"cluster,omitempty"`
 	Namespace       string    `json:"namespace,omitempty"`
 	Project         string    `json:"project,omitempty"`
+	Origin          string    `json:"origin,omitempty"`
 	SourceFile      string    `json:"source_file"`
 	StorageBackend  string    `json:"storage_backend"` // s3 | fs
 	StorageRef      string    `json:"storage_ref"`     // s3://bucket/key or fs://relative/path
@@ -281,14 +292,18 @@ type VEXStatement struct {
 	// Not persisted: once ProductRef resolves to an SBOM the parsing worker
 	// rewrites ProductPURL to VEXProductWide, which is what the suppression
 	// joins read.
-	ProductWide     bool      `json:"-"`
-	ProductPURL     string    `json:"product_purl"`
-	VulnID          string    `json:"vuln_id"`
-	Status          string    `json:"status"`        // not_affected, affected, fixed, under_investigation
-	Justification   string    `json:"justification"` // component_not_present, vulnerable_code_not_present, etc.
-	ImpactStatement string    `json:"impact_statement"`
-	ActionStatement string    `json:"action_statement"`
-	VEXTimestamp    time.Time `json:"vex_timestamp"`
+	ProductWide     bool   `json:"-"`
+	ProductPURL     string `json:"product_purl"`
+	VulnID          string `json:"vuln_id"`
+	Status          string `json:"status"`        // not_affected, affected, fixed, under_investigation
+	Justification   string `json:"justification"` // component_not_present, vulnerable_code_not_present, etc.
+	ImpactStatement string `json:"impact_statement"`
+	ActionStatement string `json:"action_statement"`
+	// ActionStatementTimestamp (#413, migration 033) is when the action
+	// statement was issued (OpenVEX action_statement_timestamp). Zero for
+	// rows ingested before the migration and for producers that omit it.
+	ActionStatementTimestamp time.Time `json:"action_statement_timestamp,omitempty"`
+	VEXTimestamp             time.Time `json:"vex_timestamp"`
 	// Provenance (#334): who (or what) issued the statement. Author, Role
 	// and Tooling come from the OpenVEX document; StatusNotes from the
 	// statement (automated producers write confidence + reasoning there).
@@ -299,6 +314,7 @@ type VEXStatement struct {
 	Cluster     string `json:"cluster,omitempty"`
 	Namespace   string `json:"namespace,omitempty"`
 	Project     string `json:"project,omitempty"`
+	Origin      string `json:"origin,omitempty"`
 }
 
 // VEX status constants (OpenVEX spec).

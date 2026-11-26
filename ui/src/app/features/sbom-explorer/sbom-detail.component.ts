@@ -20,6 +20,7 @@ import { ScopeBadgeComponent } from '../../shared/scope-badge/scope-badge.compon
 import { ScopeMatrixComponent } from '../../shared/scope-matrix/scope-matrix.component';
 import { VulnAliasesComponent } from '../../shared/vuln-aliases/vuln-aliases.component';
 import { AdvisoryBadgeComponent } from '../../shared/advisory-badge/advisory-badge.component';
+import { ExploitBadgeComponent } from '../../shared/exploit-badge/exploit-badge.component';
 import { primaryVulnId } from '../../shared/vuln-identity';
 
 type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
@@ -27,7 +28,7 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
 @Component({
   selector: 'app-sbom-detail',
   standalone: true,
-  imports: [CommonModule, ScrollingModule, RouterModule, ScopeBadgeComponent, VulnAliasesComponent, ScopeMatrixComponent, AdvisoryBadgeComponent],
+  imports: [CommonModule, ScrollingModule, RouterModule, ScopeBadgeComponent, VulnAliasesComponent, ExploitBadgeComponent, ScopeMatrixComponent, AdvisoryBadgeComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="sbom-detail" *ngIf="detail">
@@ -36,7 +37,9 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
         <h1>{{ detail.document_name || detail.source_file }}</h1>
         <span class="product-version" *ngIf="detail.document_version" [title]="'Product version: ' + detail.document_version">{{ detail.document_version }}</span>
         <span class="badge">{{ detail.spdx_version }}</span>
+        <span class="badge origin-badge" *ngIf="detail.origin" [title]="'Origin: ' + detail.origin">{{ detail.origin }}</span>
         <button class="download-btn" title="Download original SBOM" (click)="downloadSbom()">⬇ Download</button>
+        <a class="download-btn" title="Download attribution NOTICE file" [href]="getNoticeUrl()" download>📄 NOTICE</a>
       </div>
 
       <div class="source-row" *ngIf="detail.source_repo || detail.source_ref">
@@ -47,6 +50,12 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
         </a>
         <span *ngIf="detail.source_repo && !isUrl(detail.source_repo)" class="source-value">{{ detail.source_repo }}</span>
         <span *ngIf="detail.source_ref" class="source-ref" title="Source ref (branch, tag or commit)">@ {{ detail.source_ref }}</span>
+      </div>
+
+      <div class="image-row" *ngIf="detail.image_ref || detail.image_digest">
+        <span class="image-label">Image:</span>
+        <span *ngIf="detail.image_ref" class="image-ref">{{ detail.image_ref }}</span>
+        <code *ngIf="detail.image_digest" class="image-digest" [title]="detail.image_digest">{{ detail.image_digest }}</code>
       </div>
 
       <div class="stats-row">
@@ -98,6 +107,7 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
                 </a>
                 <app-vuln-aliases [vuln]="vuln"></app-vuln-aliases>
               <app-advisory-badge [vuln]="vuln"></app-advisory-badge>
+              <app-exploit-badge [vuln]="vuln"></app-exploit-badge>
               </span>
               <span class="summary">{{ vuln.summary }}</span>
             </div>
@@ -278,6 +288,7 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
     .back { color: var(--accent); text-decoration: none; font-size: 0.8rem; font-weight: 500; }
     h1 { margin: 0; flex: 1; font-size: 1.1rem; font-weight: 700; letter-spacing: -0.02em; }
     .badge { background: var(--bg); color: var(--text-secondary); padding: 3px 8px; border-radius: 2px; font-size: 0.7rem; font-weight: 500; }
+    .origin-badge { background: rgba(147, 51, 234, 0.12); color: #a855f7; }
     .product-version { color: var(--text-secondary); font-size: 0.95rem; font-weight: 600; }
     .download-btn {
       background: none; border: 1px solid var(--border); border-radius: 4px;
@@ -301,6 +312,17 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
       font-family: monospace; font-size: 0.7rem; color: var(--text-secondary);
       background: var(--bg); border: 1px solid var(--border); border-radius: 2px;
       padding: 1px 6px; flex-shrink: 0; cursor: help;
+    }
+    .image-row {
+      display: flex; align-items: center; gap: 8px; margin: -6px 0 12px;
+      font-size: 0.75rem; overflow: hidden;
+    }
+    .image-label { color: var(--text-secondary); font-weight: 500; flex-shrink: 0; }
+    .image-ref { font-family: monospace; font-size: 0.72rem; color: var(--text); }
+    .image-digest {
+      font-family: monospace; font-size: 0.68rem; color: var(--text-secondary);
+      background: var(--bg); border: 1px solid var(--border); border-radius: 2px;
+      padding: 1px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     .stats-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
     .stat { background: var(--surface-alt); padding: 6px 14px; border-radius: 2px; font-size: 0.8rem; border: 1px solid var(--border); }
@@ -583,6 +605,11 @@ export class SbomDetailComponent implements OnInit {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+  }
+
+  getNoticeUrl(): string {
+    if (!this.detail) return '';
+    return this.api.getSbomNoticesUrl(this.detail.sbom_id);
   }
 
   toggleLicense(licenseId: string): void {

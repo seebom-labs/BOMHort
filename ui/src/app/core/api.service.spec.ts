@@ -15,6 +15,7 @@ import {
   DependencyStatsResponse,
   VEXStatementItem,
   LicenseExceptionsFile,
+  LicenseDiscrepancyItem,
 } from './api.models';
 
 describe('ApiService', () => {
@@ -259,6 +260,27 @@ describe('ApiService', () => {
     const req = httpMock.expectOne((r) => r.url === '/api/v1/vex/statements');
     expect(req.request.method).toBe('GET');
     expect(req.request.params.get('page')).toBe('1');
+    req.flush(mockResp);
+  });
+
+  it('should fetch license discrepancies with search and pagination', () => {
+    const mockResp: PaginatedResponse<LicenseDiscrepancyItem> = {
+      data: [],
+      total: 501,
+      page: 2,
+      page_size: 50,
+    };
+
+    service.getLicenseDiscrepancies({ page: 2, page_size: 50, search: 'lib-501' }).subscribe((resp) => {
+      expect(resp.total).toBe(501);
+      expect(resp.page).toBe(2);
+    });
+
+    const req = httpMock.expectOne((r) => r.url === '/api/v1/licenses/discrepancies');
+    expect(req.request.method).toBe('GET');
+    expect(req.request.params.get('page')).toBe('2');
+    expect(req.request.params.get('page_size')).toBe('50');
+    expect(req.request.params.get('search')).toBe('lib-501');
     req.flush(mockResp);
   });
 

@@ -143,6 +143,69 @@ func TestExtractGitHubRepo(t *testing.T) {
 			wantRepo:  "",
 			wantOK:    false,
 		},
+		{
+			name:      "path traversal in owner and repo",
+			purl:      "pkg:golang/github.com/../../admin@v1.0.0",
+			wantOwner: "",
+			wantRepo:  "",
+			wantOK:    false,
+		},
+		{
+			name:      "path traversal in repo",
+			purl:      "pkg:golang/github.com/kubernetes/..@v1.0.0",
+			wantOwner: "",
+			wantRepo:  "",
+			wantOK:    false,
+		},
+		{
+			name:      "path traversal in owner",
+			purl:      "pkg:golang/github.com/../client-go@v1.0.0",
+			wantOwner: "",
+			wantRepo:  "",
+			wantOK:    false,
+		},
+		{
+			name:      "path traversal in pkg:github scheme",
+			purl:      "pkg:github/../..",
+			wantOwner: "",
+			wantRepo:  "",
+			wantOK:    false,
+		},
+		{
+			name:      "invalid owner leading hyphen",
+			purl:      "pkg:golang/github.com/-kubernetes/client-go@v1.0.0",
+			wantOwner: "",
+			wantRepo:  "",
+			wantOK:    false,
+		},
+		{
+			name:      "invalid owner trailing hyphen",
+			purl:      "pkg:golang/github.com/kubernetes-/client-go@v1.0.0",
+			wantOwner: "",
+			wantRepo:  "",
+			wantOK:    false,
+		},
+		{
+			name:      "invalid owner leading dot",
+			purl:      "pkg:golang/github.com/.kubernetes/client-go@v1.0.0",
+			wantOwner: "",
+			wantRepo:  "",
+			wantOK:    false,
+		},
+		{
+			name:      "invalid gopkg.in 1-part format (path traversal in package)",
+			purl:      "pkg:golang/gopkg.in/..v1@v1.0.0",
+			wantOwner: "",
+			wantRepo:  "",
+			wantOK:    false,
+		},
+		{
+			name:      "invalid gopkg.in 2-part format (path traversal in user)",
+			purl:      "pkg:golang/gopkg.in/../pkg.v1@v1.0.0",
+			wantOwner: "",
+			wantRepo:  "",
+			wantOK:    false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -196,11 +259,74 @@ func TestExtractGitHubRepo_GopkgInRedirectRule(t *testing.T) {
 		{"pkg:golang/gopkg.in/yaml.v3@v3.0.1", "go-yaml", "yaml", true},
 		{"pkg:golang/gopkg.in/noversion@v1.0.0", "", "", false},
 		{"pkg:golang/gopkg.in/user/pkg.vx@v1.0.0", "", "", false},
+		{"pkg:golang/gopkg.in/..v1@v1.0.0", "", "", false},
+		{"pkg:golang/gopkg.in/../pkg.v1@v1.0.0", "", "", false},
 	}
 	for _, tc := range tests {
 		owner, repo, ok := ExtractGitHubRepo(tc.purl)
 		if owner != tc.owner || repo != tc.repo || ok != tc.ok {
 			t.Errorf("ExtractGitHubRepo(%q) = (%q, %q, %v), want (%q, %q, %v)", tc.purl, owner, repo, ok, tc.owner, tc.repo, tc.ok)
 		}
+	}
+}
+
+func TestValidOwner(t *testing.T) {
+	tests := []struct {
+		owner string
+		want  bool
+	}{
+		{"kubernetes", true},
+		{"uber-go", true},
+		{"Azure", true},
+		{"go_lang", true},
+		{"a", true},
+		{"", false},
+		{".", false},
+		{"..", false},
+		{"-bad", false},
+		{"bad-", false},
+		{".bad", false},
+		{"bad.", false},
+		{"has space", false},
+		{"has/slash", false},
+		{"has\\backslash", false},
+		{"foo..bar", false},
+		{"toolongusernameexceedingthemaximumlimitof39chars", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.owner, func(t *testing.T) {
+			if got := ValidOwner(tt.owner); got != tt.want {
+				t.Errorf("ValidOwner(%q) = %v, want %v", tt.owner, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidRepo(t *testing.T) {
+	tests := []struct {
+		repo string
+		want bool
+	}{
+		{"client-go", true},
+		{"k8s_dns_chaos", true},
+		{"yaml.v3", true},
+		{"lib.git", true},
+		{".github", true},
+		{"", false},
+		{".", false},
+		{"..", false},
+		{".git", false},
+		{"foo/bar", false},
+		{"foo\\bar", false},
+		{"has space", false},
+		{"foo..bar", false},
+		{"toolongreponameexceedingthemaximumlimitofonehundredcharactersshouldberejectedbyvalidationlogicinvalids101", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.repo, func(t *testing.T) {
+			if got := ValidRepo(tt.repo); got != tt.want {
+				t.Errorf("ValidRepo(%q) = %v, want %v", tt.repo, got, tt.want)
+			}
+		})
 	}
 }

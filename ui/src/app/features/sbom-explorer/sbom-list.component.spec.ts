@@ -53,9 +53,9 @@ describe('SbomListComponent', () => {
         sbom_id: 'a', source_file: 'a.spdx.json', spdx_version: 'SPDX-2.3',
         document_name: 'payment-service', package_count: 10, vuln_count: 0,
         ingested_at: '2026-09-01T12:00:00Z',
-        cluster: 'prod-eu', namespace: 'payments', project: 'payment-service',
+        cluster: 'prod-eu', namespace: 'payments', project: 'payment-service', origin: 'ci',
       },
-      // Single-instance deployment: all three default to '' and are omitted
+      // Single-instance deployment: all four default to '' and are omitted
       // by the API, so the row must render without badges.
       {
         sbom_id: 'b', source_file: 'b.spdx.json', spdx_version: 'SPDX-2.3',
@@ -75,9 +75,11 @@ describe('SbomListComponent', () => {
     expect(component.sboms[0].cluster).toBe('prod-eu');
     expect(component.sboms[0].namespace).toBe('payments');
     expect(component.sboms[0].project).toBe('payment-service');
+    expect(component.sboms[0].origin).toBe('ci');
     expect(component.sboms[1].cluster).toBeUndefined();
     expect(component.sboms[1].namespace).toBeUndefined();
     expect(component.sboms[1].project).toBeUndefined();
+    expect(component.sboms[1].origin).toBeUndefined();
   });
 
   // ── View mode (#58) ──────────────────────────────────────────────────────

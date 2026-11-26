@@ -97,7 +97,7 @@ func TestResolvePackageLicenses(t *testing.T) {
 		"pkg:npm/from-npm@1.0.0": {license: "ISC", latest: true},
 	}}}
 
-	sources, counts, err := resolvePackageLicenses(context.Background(), github, []registryResolver{npm}, purls, licenses, nil)
+	sources, counts, err := resolvePackageLicenses(context.Background(), github, []registryResolver{npm}, purls, licenses, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,12 +120,35 @@ func TestResolvePackageLicenses(t *testing.T) {
 func TestResolvePackageLicensesWithoutGitHub(t *testing.T) {
 	licenses := []string{"NOASSERTION", "GPL-2.0+"}
 	sources, counts, _ := resolvePackageLicenses(context.Background(), nil, nil,
-		[]string{"pkg:cargo/c@1", "pkg:cargo/d@1"}, licenses, []uint32{})
+		[]string{"pkg:cargo/c@1", "pkg:cargo/d@1"}, licenses, []uint32{}, nil)
 	if sources[0] != license.ReasonUnresolved || sources[1] != "declared+normalized" || licenses[1] != "GPL-2.0-or-later" {
 		t.Errorf("got licenses %v sources %v", licenses, sources)
 	}
 	if len(counts) != 0 {
 		t.Errorf("counts = %v, want none", counts)
+	}
+}
+
+func TestResolvePackageLicenses_SkipsPrivatePrefixesBeforeExternalResolvers(t *testing.T) {
+	purl := "pkg:npm/%40acme-private/billing@1.0.0"
+	githubCalls := 0
+	github := func(context.Context, string) (string, error) {
+		githubCalls++
+		return "MIT", nil
+	}
+	npm := &fakeResolver{prefix: "pkg:npm/", known: map[string]string{purl: "ISC"}}
+	licenses := []string{"NOASSERTION"}
+
+	_, _, err := resolvePackageLicenses(context.Background(), github, []registryResolver{{"npm", npm}},
+		[]string{purl}, licenses, nil, []string{"pkg:npm/%40acme-private/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if githubCalls != 0 || npm.calls != 0 {
+		t.Fatalf("private package reached external resolvers: GitHub calls=%d, npm calls=%d", githubCalls, npm.calls)
+	}
+	if licenses[0] != "NOASSERTION" {
+		t.Errorf("private package license = %q, want unchanged NOASSERTION", licenses[0])
 	}
 }
 
@@ -148,7 +171,7 @@ func TestResolvePackageLicenses_GitHubRateLimitAborts(t *testing.T) {
 		"pkg:npm/from-npm@1.0.0": {license: "ISC"},
 	}, onLookup: func() { registryCalls++ }}}
 
-	sources, counts, err := resolvePackageLicenses(context.Background(), github, []registryResolver{npm}, purls, licenses, nil)
+	sources, counts, err := resolvePackageLicenses(context.Background(), github, []registryResolver{npm}, purls, licenses, nil, nil)
 	if !errors.Is(err, gh.ErrRateLimited) {
 		t.Fatalf("err = %v, want ErrRateLimited", err)
 	}

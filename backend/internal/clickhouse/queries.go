@@ -161,9 +161,26 @@ func (c *Client) QueryDashboardStats(ctx context.Context, f VulnFilter) (*dto.Da
 		stats.ArchivedReposCount = archived
 	}
 
-	// Low quality SBOMs and average score (#537).
-	if err := c.Conn.QueryRow(ctx, "SELECT countIf(quality_score < 60), round(ifNull(avg(quality_score), 0), 1) FROM sboms FINAL"+w, args...).Scan(&stats.LowQualitySBOMs, &stats.AverageQualityScore); err != nil {
+	// Low quality SBOMs and average score (#537). avgOrNull, not avg: avg over
+	// no rows (an empty instance, a filter matching no SBOM) is NaN rather than
+	// NULL, so ifNull never applied, and encoding/json cannot encode NaN.
+	if err := c.Conn.QueryRow(ctx, "SELECT countIf(quality_score < 60), round(ifNull(avgOrNull(quality_score), 0), 1) FROM sboms FINAL"+w, args...).Scan(&stats.LowQualitySBOMs, &stats.AverageQualityScore); err != nil {
 		return nil, fmt.Errorf("failed to query quality stats: %w", err)
+	}
+
+	// Origin breakdown (#455): how many SBOMs were produced under each provenance class.
+	stats.OriginBreakdown = make(map[string]uint64)
+	originRows, err := c.Conn.Query(ctx,
+		"SELECT origin, count() AS cnt FROM sboms FINAL WHERE origin != '' GROUP BY origin")
+	if err == nil {
+		defer originRows.Close()
+		for originRows.Next() {
+			var o string
+			var cnt uint64
+			if err := originRows.Scan(&o, &cnt); err == nil {
+				stats.OriginBreakdown[o] = cnt
+			}
+		}
 	}
 
 	return stats, nil
@@ -176,19 +193,20 @@ func (c *Client) QueryDashboardStats(ctx context.Context, f VulnFilter) (*dto.Da
 // the SBOMs that resolve to that project through projectKeyExpr — the same
 // rule the project listing and project page use, so "the SBOMs of
 // kubernetes" is eleven documents and not every path containing the word.
+// origin (#455), when non-empty, restricts to SBOMs produced with that origin class.
 // minQuality (#537), when > 0, restricts the list to SBOMs with quality_score >= minQuality.
 // The filters compose.
-func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, project string, minQuality uint8) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
-	return c.querySBOMs(ctx, page, pageSize, search, project, minQuality, "", "")
+func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, project, origin string, minQuality uint8) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
+	return c.querySBOMs(ctx, page, pageSize, search, project, origin, minQuality, "", "")
 }
 
 // QuerySBOMsByImage adds digest and image-reference prefix filters to the
 // regular SBOM listing filters.
-func (c *Client) QuerySBOMsByImage(ctx context.Context, page, pageSize uint64, search, project string, minQuality uint8, digest, imagePrefix string) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
-	return c.querySBOMs(ctx, page, pageSize, search, project, minQuality, digest, imagePrefix)
+func (c *Client) QuerySBOMsByImage(ctx context.Context, page, pageSize uint64, search, project, origin string, minQuality uint8, digest, imagePrefix string) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
+	return c.querySBOMs(ctx, page, pageSize, search, project, origin, minQuality, digest, imagePrefix)
 }
 
-func (c *Client) querySBOMs(ctx context.Context, page, pageSize uint64, search, project string, minQuality uint8, digest, imagePrefix string) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
+func (c *Client) querySBOMs(ctx context.Context, page, pageSize uint64, search, project, origin string, minQuality uint8, digest, imagePrefix string) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
 	if page == 0 {
 		page = 1
 	}
@@ -203,9 +221,13 @@ func (c *Client) querySBOMs(ctx context.Context, page, pageSize uint64, search, 
 		conds = append(conds, "("+projectKeyExpr+") = ?")
 		whereArgs = append(whereArgs, project)
 	}
+	if origin != "" {
+		conds = append(conds, "s.origin = ?")
+		whereArgs = append(whereArgs, origin)
+	}
 	if search != "" {
 		conds = append(conds, "(s.document_name ILIKE ? OR s.source_file ILIKE ?)")
-		pattern := "%" + search + "%"
+		pattern := "%" + escapeLikePattern(search) + "%"
 		whereArgs = append(whereArgs, pattern, pattern)
 	}
 	if minQuality > 0 {
@@ -247,6 +269,7 @@ func (c *Client) querySBOMs(ctx context.Context, page, pageSize uint64, search, 
 			s.cluster,
 			s.namespace,
 			s.project,
+			s.origin,
 			ifNull(p.pkg_count, 0) AS package_count,
 			ifNull(v.vuln_count, 0) AS vuln_count,
 			s.quality_score,
@@ -282,7 +305,7 @@ func (c *Client) querySBOMs(ctx context.Context, page, pageSize uint64, search, 
 			&item.DocumentName, &item.DocumentVersion, &ingestedAt,
 			&item.SourceRepo, &item.SourceRef,
 			&item.ImageRef, &item.ImageDigest,
-			&item.Cluster, &item.Namespace, &item.Project,
+			&item.Cluster, &item.Namespace, &item.Project, &item.Origin,
 			&item.PackageCount, &item.VulnCount,
 			&item.QualityScore, &item.QualityFlags,
 		); err != nil {
@@ -315,7 +338,7 @@ func (c *Client) QueryQualityStats(ctx context.Context) (*dto.QualityStatsRespon
 
 	err := c.Conn.QueryRow(ctx, `
 		SELECT
-			round(ifNull(avg(quality_score), 0), 1),
+			round(ifNull(avgOrNull(quality_score), 0), 1), -- avg is NaN over no rows
 			count(),
 			countIf(quality_score < 60)
 		FROM sboms FINAL
@@ -368,6 +391,15 @@ type VulnFilter struct {
 	ParentMembers []string
 	// Reachability filters findings by evidence ("reachable", "not_reachable", "unknown").
 	Reachability string
+	// ExploitAvailable (?exploit=available) keeps only findings with public
+	// exploit code. Honoured by the finding listings (vulnWhere), not by the
+	// dashboard counts.
+	ExploitAvailable bool
+	// Origin (#455) restricts to findings from SBOMs produced under that origin.
+	Origin string
+	// CWE filters findings by weakness class (#409): ?cwe=CWE-79. Exact
+	// match against the stored cwe_ids.
+	CWE string
 }
 
 // ownerPredicate restricts sbom_id to the SBOMs matching f, or returns ""
@@ -390,6 +422,10 @@ func ownerPredicate(f VulnFilter, asString bool) (string, []any) {
 			owner = append(owner, c.pred)
 			args = append(args, c.vals)
 		}
+	}
+	if f.Origin != "" {
+		owner = append(owner, "s.origin = ?")
+		args = append(args, f.Origin)
 	}
 	if len(owner) == 0 {
 		return "", nil
@@ -422,10 +458,17 @@ func vulnWhere(scope string, f VulnFilter) (string, []any) {
 		preds = append(preds, "reachability = ?")
 		args = append(args, f.Reachability)
 	}
+	if f.CWE != "" {
+		preds = append(preds, "has(cwe_ids, ?)")
+		args = append(args, f.CWE)
+	}
 	owner, ownerArgs := ownerPredicate(f, false)
 	if owner != "" {
 		preds = append(preds, owner)
 		args = append(args, ownerArgs...)
+	}
+	if f.ExploitAvailable {
+		preds = append(preds, exploitPredicate)
 	}
 	if len(preds) == 0 {
 		return "", nil
@@ -438,9 +481,17 @@ func vulnerabilityListSQL(scopeWhere string) string {
 		SELECT
 			v.vuln_id, v.severity, v.purl, v.summary,
 			v.fixed_version, v.source_file, v.discovered_at,
-			v.dependency_depth, v.aliases,
+			v.dependency_depth, v.aliases, v.cwe_ids,
 			v.advisory_source, v.advisory_status, v.component_location,
 			ifNull(vx.vex_status, '') AS vex_status,
+			ifNull(vx.vex_justification, '') AS vex_justification,
+			ifNull(vx.vex_action_statement, '') AS vex_action_statement,
+			ifNull(vx.vex_impact_statement, '') AS vex_impact_statement,
+			ifNull(vx.vex_action_statement_timestamp, toDateTime(0)) AS vex_action_statement_timestamp,
+			ifNull(vx.winning_timestamp, toDateTime(0)) AS vex_timestamp,
+			ifNull(vx.vex_statement_id, '') AS vex_statement_id,
+			ifNull(vx.vex_author, '') AS vex_author,
+			ifNull(vx.vex_tooling, '') AS vex_tooling,
 			ifNull(q.has_no_dep_graph, 0) AS has_no_dep_graph,
 			v.reachability, v.evidence_source, v.evidence_ref, v.evidence_at
 		FROM (SELECT * FROM vulnerabilities FINAL` + scopeWhere + `) AS v
@@ -451,14 +502,24 @@ func vulnerabilityListSQL(scopeWhere string) string {
 		LEFT JOIN (
 			SELECT
 				toString(f.sbom_id) AS sbom_id, f.vuln_id AS vuln_id, f.purl AS purl,
-				argMax(s.status, s.vex_timestamp) AS vex_status
+				argMax(s.status, s.vex_timestamp) AS vex_status,
+				argMax(s.justification, s.vex_timestamp) AS vex_justification,
+				argMax(s.action_statement, s.vex_timestamp) AS vex_action_statement,
+				argMax(s.impact_statement, s.vex_timestamp) AS vex_impact_statement,
+				argMax(s.action_statement_timestamp, s.vex_timestamp) AS vex_action_statement_timestamp,
+				argMax(toString(s.vex_id), s.vex_timestamp) AS vex_statement_id,
+				argMax(s.author, s.vex_timestamp) AS vex_author,
+				argMax(s.tooling, s.vex_timestamp) AS vex_tooling,
+				max(s.vex_timestamp) AS winning_timestamp
 			FROM (
 				SELECT DISTINCT sbom_id, vuln_id, purl,
 					arrayJoin(arrayConcat([vuln_id], aliases)) AS match_id
 				FROM vulnerabilities FINAL
 			) AS f
 			INNER JOIN (
-				SELECT sbom_id, vuln_id, product_purl, status, vex_timestamp
+				SELECT sbom_id, vuln_id, product_purl, status, action_statement,
+					action_statement_timestamp, impact_statement, justification,
+					author, tooling, vex_id, vex_timestamp
 				FROM vex_statements FINAL
 				WHERE sbom_id != ''
 			) AS s ON s.vuln_id = f.match_id AND s.sbom_id = toString(f.sbom_id)
@@ -474,7 +535,7 @@ func vulnerabilityListSQL(scopeWhere string) string {
 // scanVulnerabilityListRow scans one row of vulnerabilityListSQL.
 func scanVulnerabilityListRow(rows driver.Rows) (dto.VulnerabilityListItem, error) {
 	var item dto.VulnerabilityListItem
-	var discoveredAt, evidenceAt time.Time
+	var discoveredAt, actionAt, vexTimestamp, evidenceAt time.Time
 	var depth uint16
 	var aliases []string
 	var components string
@@ -482,9 +543,17 @@ func scanVulnerabilityListRow(rows driver.Rows) (dto.VulnerabilityListItem, erro
 	if err := rows.Scan(
 		&item.VulnID, &item.Severity, &item.PURL,
 		&item.Summary, &item.FixedVersion, &item.SourceFile,
-		&discoveredAt, &depth, &aliases,
+		&discoveredAt, &depth, &aliases, &item.CWEIDs,
 		&item.AdvisorySource, &item.AdvisoryStatus, &components,
 		&item.VEXStatus,
+		&item.VEXJustification,
+		&item.VEXActionStatement,
+		&item.VEXImpactStatement,
+		&actionAt,
+		&vexTimestamp,
+		&item.VEXStatementID,
+		&item.VEXAuthor,
+		&item.VEXTooling,
 		&hasNoDepGraph,
 		&item.Reachability, &item.EvidenceSource, &item.EvidenceRef, &evidenceAt,
 	); err != nil {
@@ -497,6 +566,15 @@ func scanVulnerabilityListRow(rows driver.Rows) (dto.VulnerabilityListItem, erro
 	if item.DependencyScope == "unknown" && hasNoDepGraph == 1 {
 		item.ScopeReason = "no-dependency-graph"
 	}
+	if item.VEXStatus != "" {
+		item.VEXScope = "sbom"
+	}
+	if actionAt.Unix() > 0 {
+		item.VEXActionStatementTimestamp = actionAt.Format(time.RFC3339)
+	}
+	if !vexTimestamp.IsZero() && vexTimestamp.Unix() > 0 {
+		item.VEXTimestamp = vexTimestamp.Format(time.RFC3339)
+	}
 	if !evidenceAt.IsZero() && evidenceAt.Unix() > 0 {
 		item.EvidenceAt = evidenceAt.Format(time.RFC3339)
 	}
@@ -505,11 +583,21 @@ func scanVulnerabilityListRow(rows driver.Rows) (dto.VulnerabilityListItem, erro
 
 // VulnerabilityCursor streams the rows of the instance-wide finding listing
 // one at a time (#266). Close it when done.
+//
+// Rows are read ahead in batches of streamBatch so exploit references can be
+// looked up once per batch instead of once per row; memory stays bounded by
+// the batch, not by the export.
 type VulnerabilityCursor struct {
+	c    *Client
+	ctx  context.Context
 	rows driver.Rows
+	buf  []dto.VulnerabilityListItem
+	pos  int
 	item dto.VulnerabilityListItem
 	err  error
 }
+
+const streamBatch = 500
 
 // StreamVulnerabilities runs the same query as QueryVulnerabilities without
 // pagination and returns a cursor over it. The query is sent before this
@@ -521,17 +609,44 @@ func (c *Client) StreamVulnerabilities(ctx context.Context, scope string, f Vuln
 	if err != nil {
 		return nil, fmt.Errorf("failed to query vulnerabilities: %w", err)
 	}
-	return &VulnerabilityCursor{rows: rows}, nil
+	return &VulnerabilityCursor{c: c, ctx: ctx, rows: rows}, nil
 }
 
 // Next advances to the next finding. It returns false at the end or on an
 // error; check Err afterwards.
 func (cur *VulnerabilityCursor) Next() bool {
-	if cur.err != nil || !cur.rows.Next() {
+	if cur.err != nil {
 		return false
 	}
-	cur.item, cur.err = scanVulnerabilityListRow(cur.rows)
-	return cur.err == nil
+	if cur.pos >= len(cur.buf) && !cur.fill() {
+		return false
+	}
+	cur.item = cur.buf[cur.pos]
+	cur.pos++
+	return true
+}
+
+// fill reads the next batch and attaches its exploit references.
+func (cur *VulnerabilityCursor) fill() bool {
+	cur.buf, cur.pos = cur.buf[:0], 0
+	for len(cur.buf) < streamBatch && cur.rows.Next() {
+		item, err := scanVulnerabilityListRow(cur.rows)
+		if err != nil {
+			cur.err = err
+			return false
+		}
+		cur.buf = append(cur.buf, item)
+	}
+	if len(cur.buf) == 0 {
+		return false
+	}
+	if cur.c != nil {
+		if err := cur.c.enrichExploits(cur.ctx, cur.buf); err != nil {
+			cur.err = err
+			return false
+		}
+	}
+	return true
 }
 
 // Item returns the current finding.
@@ -562,7 +677,7 @@ func (cur *VulnerabilityCursor) Close() error { return cur.rows.Close() }
 //
 // scope ("" or a depgraph scope label) restricts the listing to findings
 // whose package is pulled in that way (direct, transitive, …); f restricts
-// it to an ownership slice (#459).
+// it to an ownership/origin slice (#459, #455).
 func (c *Client) QueryVulnerabilities(ctx context.Context, page, pageSize uint64, scope string, f VulnFilter) (*dto.PaginatedResponse[dto.VulnerabilityListItem], error) {
 	if page == 0 {
 		page = 1
@@ -597,6 +712,9 @@ func (c *Client) QueryVulnerabilities(ctx context.Context, page, pageSize uint64
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to read vulnerability rows: %w", err)
 	}
+	if err := c.enrichExploits(ctx, items); err != nil {
+		return nil, err
+	}
 
 	if items == nil {
 		items = []dto.VulnerabilityListItem{}
@@ -608,6 +726,37 @@ func (c *Client) QueryVulnerabilities(ctx context.Context, page, pageSize uint64
 		Page:     page,
 		PageSize: pageSize,
 	}, nil
+}
+
+// QueryOrigins returns all distinct non-empty origins with their SBOM counts (#455).
+func (c *Client) QueryOrigins(ctx context.Context) ([]dto.OriginItem, error) {
+	rows, err := c.Conn.Query(ctx, `
+		SELECT origin, count() AS sbom_count
+		FROM sboms FINAL
+		WHERE origin != ''
+		GROUP BY origin
+		ORDER BY sbom_count DESC, origin ASC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query origins: %w", err)
+	}
+	defer rows.Close()
+
+	var items []dto.OriginItem
+	for rows.Next() {
+		var item dto.OriginItem
+		if err := rows.Scan(&item.Origin, &item.SBOMCount); err != nil {
+			return nil, fmt.Errorf("failed to scan origin item: %w", err)
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
+	if items == nil {
+		items = []dto.OriginItem{}
+	}
+	return items, nil
 }
 
 // QueryLicenseCompliance fetches license compliance records aggregated by

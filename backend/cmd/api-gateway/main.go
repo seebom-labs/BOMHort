@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -25,6 +26,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/seebom-labs/bomhort/backend/internal/claimlock"
+	"github.com/seebom-labs/bomhort/backend/internal/clearlydefined"
 	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
 	"github.com/seebom-labs/bomhort/backend/internal/config"
 	"github.com/seebom-labs/bomhort/backend/internal/depgraph"
@@ -36,8 +38,10 @@ import (
 	"github.com/seebom-labs/bomhort/backend/internal/repo"
 	"github.com/seebom-labs/bomhort/backend/internal/rulesource"
 	s3client "github.com/seebom-labs/bomhort/backend/internal/s3"
+	"github.com/seebom-labs/bomhort/backend/internal/sanitize"
 	"github.com/seebom-labs/bomhort/backend/internal/sourcerepo"
 	tagpkg "github.com/seebom-labs/bomhort/backend/internal/tags"
+	"github.com/seebom-labs/bomhort/backend/internal/tea"
 	"github.com/seebom-labs/bomhort/backend/internal/vex"
 	"github.com/seebom-labs/bomhort/backend/pkg/dto"
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
@@ -118,20 +122,20 @@ func main() {
 	// Push-model upload storage (#135): either a dedicated skipScan S3 bucket,
 	// or a writable local SBOM_DIR as a fallback. Resolved once at startup —
 	// uploadHandler uses this instead of re-probing on every request.
-	pushBucket, hasPushBucket := findS3PushBucket(cfg.S3Buckets)
+	pushBucket, hasPushBucket, localUploadWritable := resolveUploadStorage(cfg, s3c != nil)
 	var uploadS3Store uploadObjectStore
-	if hasPushBucket && s3c != nil {
+	if hasPushBucket {
 		uploadS3Store = s3c
-	} else {
-		hasPushBucket = false // S3 client failed to initialize — fall back to local only
 	}
-	localUploadWritable := isDirWritable(filepath.Join(cfg.SBOMDir, "pushed"))
-	if !hasPushBucket && !localUploadWritable {
-		log.Printf("WARNING: no upload storage available — POST %s will return 503 until either S3_BUCKETS has a skipScan bucket or SBOM_DIR (%s) is writable", uploadPath, cfg.SBOMDir)
-	} else if hasPushBucket {
+	switch {
+	case hasPushBucket:
 		log.Printf("Push-model upload storage: S3 bucket %q (skipScan)", pushBucket.Name)
-	} else {
+	case localUploadWritable:
 		log.Printf("Push-model upload storage: local filesystem (%s/pushed)", cfg.SBOMDir)
+	case !cfg.HasLocalSBOMDir():
+		log.Printf("WARNING: no upload storage available — POST %s will return 503 until S3_BUCKETS has a skipScan bucket (SBOM_DIR_DISABLED: there is no shared SBOM directory to fall back to)", uploadPath)
+	default:
+		log.Printf("WARNING: no upload storage available — POST %s will return 503 until either S3_BUCKETS has a skipScan bucket or SBOM_DIR (%s) is writable", uploadPath, cfg.SBOMDir)
 	}
 
 	var exceptionsS3 rulesource.ObjectGetter
@@ -155,6 +159,12 @@ func main() {
 		log.Printf("Using default license policy: %v", err)
 	}
 	applyLicenseExpressionMode(cfg.LicenseExpressionMode)
+
+	var cdResolver *clearlydefined.Resolver
+	if !cfg.SkipClearlyDefinedResolve {
+		cdResolver = clearlydefined.NewResolver()
+		cdResolver.SetPrivatePrefixes(cfg.PrivatePackagePrefixes)
+	}
 
 	mux := http.NewServeMux()
 
@@ -200,6 +210,11 @@ func main() {
 		search := sanitizeSearchTerm(r.URL.Query().Get("search"))
 		project := sanitizeProjectName(r.URL.Query().Get("project"))
 		minQuality := parseUint8(r.URL.Query().Get("min_quality"), 0)
+		originVal, ok := parseOrigin(r.URL.Query().Get("origin"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Invalid origin (expected cluster-scan, ci, registry, vendor, manual)")
+			return
+		}
 		digest := strings.TrimSpace(r.URL.Query().Get("digest"))
 		imagePrefix := strings.TrimSpace(r.URL.Query().Get("image"))
 		if digest != "" && !imageid.ValidDigest(digest) {
@@ -211,7 +226,7 @@ func main() {
 			return
 		}
 
-		resp, err := chClient.QuerySBOMsByImage(r.Context(), page, pageSize, search, project, minQuality, digest, imagePrefix)
+		resp, err := chClient.QuerySBOMsByImage(r.Context(), page, pageSize, search, project, originVal, minQuality, digest, imagePrefix)
 		if err != nil {
 			log.Printf("ERROR: list sboms: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch SBOMs")
@@ -280,8 +295,8 @@ func main() {
 	// ?scope=direct|transitive|root|unknown keeps only findings whose package
 	// is pulled in that way (migration 025).
 	//
-	// ?cluster=, ?namespace=, ?project=, ?parent= and ?tag= narrow it to an
-	// ownership slice (#459), see vuln_filter.go.
+	// ?cluster=, ?namespace=, ?project=, ?parent=, ?tag= and ?origin= narrow it to an
+	// ownership/origin slice (#459, #455), see vuln_filter.go.
 	mux.HandleFunc("GET /api/v1/vulnerabilities", vulnListHandler(chClient, vulnFilter, nil))
 
 	// CSV export of the same listing (#266); streamed, see report_csv.go.
@@ -293,7 +308,9 @@ func main() {
 				return nil, err
 			}
 			return cur, nil
-		}, time.Now))
+		},
+		time.Now,
+	))
 
 	// License compliance overview.
 	// ?license=<id> returns that one license with its affected_sboms; the
@@ -317,6 +334,29 @@ func main() {
 			return
 		}
 		writeJSON(w, http.StatusOK, items)
+	})
+
+	// License discrepancies where discovered license disagrees with declared (#530).
+	mux.HandleFunc("GET /api/v1/licenses/discrepancies", func(w http.ResponseWriter, r *http.Request) {
+		sbomID := r.URL.Query().Get("sbom_id")
+		if sbomID != "" && !isValidUUID(sbomID) {
+			writeError(w, http.StatusBadRequest, "Invalid SBOM ID")
+			return
+		}
+		project := r.URL.Query().Get("project")
+		cluster := r.URL.Query().Get("cluster")
+		namespace := r.URL.Query().Get("namespace")
+		search := sanitizeSearchTerm(r.URL.Query().Get("search"))
+		page := parseUint64(r.URL.Query().Get("page"), 1)
+		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
+
+		resp, err := chClient.QueryLicenseDiscrepancies(r.Context(), sbomID, project, cluster, namespace, search, page, pageSize)
+		if err != nil {
+			log.Printf("ERROR: license discrepancies: %v", err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch license discrepancies")
+			return
+		}
+		writeJSON(w, http.StatusOK, resp)
 	})
 
 	// SBOM dependency tree.
@@ -380,11 +420,24 @@ func main() {
 			writeError(w, http.StatusBadRequest, "Invalid reachability (expected reachable, not_reachable, or unknown)")
 			return
 		}
-		vulns, err := chClient.QuerySBOMVulnerabilities(r.Context(), sbomID, scope, reachability)
+		exploitOnly, ok := parseExploit(r.URL.Query().Get("exploit"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, invalidExploitMsg)
+			return
+		}
+		cwe, ok := parseCWE(r.URL.Query().Get("cwe"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Invalid cwe (expected CWE-<number>)")
+			return
+		}
+		vulns, err := chClient.QuerySBOMVulnerabilities(r.Context(), sbomID, scope, reachability, cwe)
 		if err != nil {
 			log.Printf("ERROR: sbom vulns for %s: %v", sanitizeLogParam(sbomID), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch SBOM vulnerabilities")
 			return
+		}
+		if exploitOnly {
+			vulns = onlyExploitable(vulns)
 		}
 		writeJSON(w, http.StatusOK, vulns)
 	})
@@ -455,6 +508,31 @@ func main() {
 		writeJSON(w, http.StatusOK, licenses)
 	})
 
+	// Attribution NOTICE export for an SBOM (#530).
+	mux.HandleFunc("GET /api/v1/sboms/{id}/notices", func(w http.ResponseWriter, r *http.Request) {
+		sbomID := r.PathValue("id")
+		if !isValidUUID(sbomID) {
+			writeError(w, http.StatusBadRequest, "Invalid SBOM ID")
+			return
+		}
+		targetName, pkgs, err := chClient.QuerySBOMPackagesForNotice(r.Context(), sbomID)
+		if errors.Is(err, clickhouse.ErrSBOMNotFound) {
+			writeError(w, http.StatusNotFound, "SBOM not found")
+			return
+		}
+		if err != nil {
+			log.Printf("ERROR: sbom packages for notice %s: %v", sanitizeLogParam(sbomID), err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch packages for notice")
+			return
+		}
+
+		content := cdResolver.GenerateNoticeWithFallback(r.Context(), targetName, pkgs)
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, noticeFilename(targetName)))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(content))
+	})
+
 	// Projects with non-compliant licenses (filtered by exceptions).
 	// ?summary=true replaces the package lists with counts: the full listing
 	// carries every non-compliant package name and grows with the instance.
@@ -512,8 +590,14 @@ func main() {
 			}
 		}
 
+		originVal, ok := parseOrigin(r.URL.Query().Get("origin"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Invalid origin (expected cluster-scan, ci, registry, vendor, manual)")
+			return
+		}
+
 		if groupBy == "parent" {
-			resp, err := chClient.QueryProjectGroups(r.Context(), assignments, page, pageSize, search, tag)
+			resp, err := chClient.QueryProjectGroups(r.Context(), assignments, page, pageSize, search, tag, originVal)
 			if err != nil {
 				log.Printf("ERROR: list project groups: %v", err)
 				writeError(w, http.StatusInternalServerError, "Failed to fetch project groups")
@@ -523,7 +607,7 @@ func main() {
 			return
 		}
 
-		resp, err := chClient.QueryProjects(r.Context(), page, pageSize, search, tag)
+		resp, err := chClient.QueryProjects(r.Context(), page, pageSize, search, tag, originVal)
 		if err != nil {
 			log.Printf("ERROR: list projects: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch projects")
@@ -540,6 +624,18 @@ func main() {
 		if err != nil {
 			log.Printf("ERROR: list tags: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch tags")
+			return
+		}
+		writeJSON(w, http.StatusOK, items)
+	})
+
+	// Origin values in use, with their reach (#455). Lets the UI render the
+	// origin filters and chips data-driven.
+	mux.HandleFunc("GET /api/v1/origins", func(w http.ResponseWriter, r *http.Request) {
+		items, err := chClient.QueryOrigins(r.Context())
+		if err != nil {
+			log.Printf("ERROR: list origins: %v", err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch origins")
 			return
 		}
 		writeJSON(w, http.StatusOK, items)
@@ -612,11 +708,19 @@ func main() {
 			writeError(w, http.StatusBadRequest, "Invalid scope (expected direct, transitive, root or unknown)")
 			return
 		}
+		exploitOnly, ok := parseExploit(r.URL.Query().Get("exploit"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, invalidExploitMsg)
+			return
+		}
 		items, err := chClient.QueryProjectVulnerabilities(r.Context(), name, scope)
 		if err != nil {
 			log.Printf("ERROR: project vulnerabilities for %s: %v", sanitizeLogParam(name), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch project vulnerabilities")
 			return
+		}
+		if exploitOnly {
+			items = onlyExploitable(items)
 		}
 		writeJSON(w, http.StatusOK, items)
 	})
@@ -637,6 +741,33 @@ func main() {
 			return
 		}
 		writeJSON(w, http.StatusOK, resp)
+	})
+
+	// Attribution NOTICE export for a project (#530).
+	mux.HandleFunc("GET /api/v1/projects/{name}/notices", func(w http.ResponseWriter, r *http.Request) {
+		name := sanitizeProjectName(r.PathValue("name"))
+		if name == "" {
+			writeError(w, http.StatusBadRequest, "Invalid project name")
+			return
+		}
+		version := r.URL.Query().Get("version")
+
+		targetName, pkgs, err := chClient.QueryProjectPackagesForNotice(r.Context(), name, version)
+		if errors.Is(err, clickhouse.ErrSBOMNotFound) {
+			writeError(w, http.StatusNotFound, "Project or version not found")
+			return
+		}
+		if err != nil {
+			log.Printf("ERROR: project packages for notice %s: %v", sanitizeLogParam(name), err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch packages for notice")
+			return
+		}
+
+		content := cdResolver.GenerateNoticeWithFallback(r.Context(), targetName, pkgs)
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, noticeFilename(targetName)))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(content))
 	})
 
 	// Project README status badges.
@@ -858,9 +989,14 @@ func main() {
 			writeError(w, http.StatusBadRequest, "Invalid cluster name")
 			return
 		}
+		originVal, ok := parseOrigin(r.URL.Query().Get("origin"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Invalid origin (expected cluster-scan, ci, registry, vendor, manual)")
+			return
+		}
 		page := parseUint64(r.URL.Query().Get("page"), 1)
 		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
-		resp, err := chClient.QueryClusterSBOMs(r.Context(), name, page, pageSize)
+		resp, err := chClient.QueryClusterSBOMs(r.Context(), name, page, pageSize, originVal)
 		if err != nil {
 			log.Printf("ERROR: cluster sboms for %s: %v", sanitizeLogParam(name), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch cluster SBOMs")
@@ -924,9 +1060,14 @@ func main() {
 			writeError(w, http.StatusBadRequest, "Invalid namespace name")
 			return
 		}
+		originVal, ok := parseOrigin(r.URL.Query().Get("origin"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Invalid origin (expected cluster-scan, ci, registry, vendor, manual)")
+			return
+		}
 		page := parseUint64(r.URL.Query().Get("page"), 1)
 		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
-		resp, err := chClient.QueryNamespaceSBOMs(r.Context(), name, cluster, page, pageSize)
+		resp, err := chClient.QueryNamespaceSBOMs(r.Context(), name, cluster, originVal, page, pageSize)
 		if err != nil {
 			log.Printf("ERROR: namespace sboms for %s: %v", sanitizeLogParam(name), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch namespace SBOMs")
@@ -939,7 +1080,12 @@ func main() {
 	// The whole cluster → namespace → project hierarchy in one response, so
 	// the UI can render the ownership tree without an N+1 of per-cluster calls.
 	mux.HandleFunc("GET /api/v1/fleet", func(w http.ResponseWriter, r *http.Request) {
-		tree, err := chClient.QueryFleetTree(r.Context())
+		originVal, ok := parseOrigin(r.URL.Query().Get("origin"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Invalid origin (expected cluster-scan, ci, registry, vendor, manual)")
+			return
+		}
+		tree, err := chClient.QueryFleetTree(r.Context(), originVal)
 		if err != nil {
 			log.Printf("ERROR: fleet tree: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch fleet tree")
@@ -980,7 +1126,6 @@ func main() {
 		}
 
 		// Open the file from S3 or local filesystem.
-		var rc io.ReadCloser
 		if strings.HasPrefix(sourceFile, "s3://") {
 			if s3c == nil {
 				writeError(w, http.StatusServiceUnavailable, "S3 not configured for downloads")
@@ -992,30 +1137,27 @@ func main() {
 				writeError(w, http.StatusInternalServerError, "Invalid source file path")
 				return
 			}
-			rc, err = s3c.GetObject(r.Context(), bucket, key)
+			rc, err := s3c.GetObject(r.Context(), bucket, key)
 			if err != nil {
 				log.Printf("ERROR: sbom download S3 get %s: %v", sanitizeLogParam(sourceFile), err)
 				writeError(w, http.StatusNotFound, "SBOM file not found in storage")
 				return
 			}
-		} else {
-			// Local filesystem.
-			absPath := filepath.Join(cfg.SBOMDir, sourceFile)
-			f, openErr := os.Open(absPath)
-			if openErr != nil {
-				log.Printf("ERROR: sbom download local open %s: %v", sanitizeLogParam(absPath), openErr)
-				writeError(w, http.StatusNotFound, "SBOM file not found in storage")
-				return
-			}
-			rc = f
-		}
-		defer rc.Close()
+			defer rc.Close()
 
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
-		w.WriteHeader(http.StatusOK)
-		if _, err := io.Copy(w, rc); err != nil {
-			log.Printf("ERROR: sbom download stream for %s: %v", sanitizeLogParam(sbomID), err)
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
+			w.WriteHeader(http.StatusOK)
+			if _, err := io.Copy(w, rc); err != nil {
+				log.Printf("ERROR: sbom download stream for %s: %v", sanitizeLogParam(sbomID), err)
+			}
+			return
+		}
+
+		// Local filesystem.
+		if !serveLocalDownload(w, cfg, sbomID, sourceFile) {
+			writeError(w, http.StatusNotFound, "SBOM file not found in storage")
+			return
 		}
 	})
 
@@ -1038,6 +1180,25 @@ func main() {
 	// Manual source attribution override (#332): the escape hatch for SBOMs
 	// whose extraction yielded nothing (Syft dir: scans, pkg:generic roots).
 	mux.HandleFunc("PATCH /api/v1/sboms/{id}", patchSBOMSourceHandler(cfg, chClient, chClient))
+
+	// ── Transparency Exchange API (TEA Beta 2) (#534) ─────────────────
+	teaSourceDir := ""
+	if cfg.HasLocalSBOMDir() {
+		teaSourceDir = cfg.SBOMDir
+	}
+	teaStore := newTEAStore(chClient, originals, s3c, teaSourceDir)
+	teaSvc := tea.NewService(teaStore, cfg.TEABaseURL)
+	teaHandler := tea.NewHandler(teaSvc, cfg.TEABaseURL)
+	mux.Handle("GET /.well-known/tea", teaHandler)
+	mux.Handle("HEAD /.well-known/tea", teaHandler)
+	mux.Handle("GET /api/v1/tea/", teaHandler)
+	mux.Handle("HEAD /api/v1/tea/", teaHandler)
+	mux.Handle("GET /api/v1/tea", teaHandler)
+	mux.Handle("HEAD /api/v1/tea", teaHandler)
+	mux.Handle("GET /tea/", teaHandler)
+	mux.Handle("HEAD /tea/", teaHandler)
+	mux.Handle("GET /tea", teaHandler)
+	mux.Handle("HEAD /tea", teaHandler)
 
 	// CORS + security middleware for Angular dev server.
 	// Order (outermost first): security headers → rate limit → CORS → auth → mux.
@@ -1102,12 +1263,40 @@ func archivedPackagesHandler(query func(context.Context, string) ([]clickhouse.A
 	}
 }
 
+// writeJSON encodes v as the response with the given status. The status is
+// only sent with the first byte of the body: json.Encoder writes nothing when
+// v cannot be encoded (a NaN, for instance), so that case can still become a
+// 500 instead of the given status with an empty body. The encoder writes the
+// document in one call from its pooled buffer, so there is no extra copy of
+// the response. A failed write is logged; the status is out by then.
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
+	dw := &deferredStatusWriter{w: w, status: status}
+	err := json.NewEncoder(dw).Encode(v)
+	switch {
+	case err == nil:
+	case !dw.started:
 		log.Printf("ERROR: Failed to encode JSON response: %v", err)
+		writeError(w, http.StatusInternalServerError, "Failed to encode response")
+	default:
+		log.Printf("ERROR: Failed to write JSON response: %v", err)
 	}
+}
+
+// deferredStatusWriter sends the JSON content type and the status on the
+// first Write.
+type deferredStatusWriter struct {
+	w       http.ResponseWriter
+	status  int
+	started bool
+}
+
+func (d *deferredStatusWriter) Write(p []byte) (int, error) {
+	if !d.started {
+		d.started = true
+		d.w.Header().Set("Content-Type", "application/json")
+		d.w.WriteHeader(d.status)
+	}
+	return d.w.Write(p)
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {
@@ -1146,6 +1335,19 @@ func parseScope(raw string) (string, bool) {
 		return "", true
 	}
 	if !depgraph.IsValidScope(raw) {
+		return "", false
+	}
+	return raw, true
+}
+
+// parseOrigin validates the optional ?origin= filter (#455). "" means no
+// filter; anything outside the origin vocabulary is rejected.
+func parseOrigin(raw string) (string, bool) {
+	raw = originpkg.Normalize(raw)
+	if raw == "" {
+		return "", true
+	}
+	if !originpkg.IsValid(raw) {
 		return "", false
 	}
 	return raw, true
@@ -1234,13 +1436,10 @@ func isValidVulnID(s string) bool {
 }
 
 // sanitizeLogParam strips newlines and control characters to prevent log injection.
+// It removes all Unicode control characters (C0, C1, DEL) such as CRLF and ANSI escapes,
+// and truncates strings exceeding 200 runes to prevent log flooding.
 func sanitizeLogParam(s string) string {
-	s = strings.ReplaceAll(s, "\n", "")
-	s = strings.ReplaceAll(s, "\r", "")
-	if len(s) > 200 {
-		s = s[:200] + "..."
-	}
-	return s
+	return sanitize.LogParam(s)
 }
 
 // securityHeadersMiddleware adds standard security headers to every response.
@@ -1349,10 +1548,12 @@ func rateLimitMiddleware(maxRequests int, next http.Handler) http.Handler {
 
 // authPublicPaths lists request paths that bypass authentication even when
 // AUTH_ENABLED=true. K8s probes and CORS preflight must always succeed.
+// /.well-known/tea is public per the TEA discovery specification (#534).
 var authPublicPaths = map[string]struct{}{
-	"/healthz": {},
-	"/livez":   {},
-	"/readyz":  {},
+	"/healthz":         {},
+	"/livez":           {},
+	"/readyz":          {},
+	"/.well-known/tea": {},
 }
 
 // isBadgePath checks if a request path strictly matches the public badge endpoints:
@@ -1582,9 +1783,27 @@ func isDirWritable(dir string) bool {
 	return true
 }
 
+// resolveUploadStorage decides where push uploads (#135) are stored: the
+// skipScan S3 bucket when there is one and the S3 client is usable, else
+// SBOM_DIR/pushed/ when that is writable.
+//
+// The local fallback is only offered when SBOM_DIR is a directory the parsing
+// workers share (cfg.HasLocalSBOMDir). Writability alone does not show that:
+// with no volume mounted the gateway can still create SBOM_DIR in its own
+// container filesystem, would answer 202 and would queue a file no worker can
+// ever open (#590).
+func resolveUploadStorage(cfg *config.Config, s3Available bool) (pushBucket config.S3BucketConfig, useS3Push, localWritable bool) {
+	pushBucket, useS3Push = findS3PushBucket(cfg.S3Buckets)
+	if !s3Available {
+		useS3Push = false // S3 client failed to initialize — fall back to local only
+	}
+	localWritable = cfg.HasLocalSBOMDir() && isDirWritable(filepath.Join(cfg.SBOMDir, "pushed"))
+	return pushBucket, useS3Push, localWritable
+}
+
 // uploadDeps bundles uploadHandler's runtime dependencies and the storage-
-// routing decision resolved once at startup (see findS3PushBucket and
-// isDirWritable in main()), instead of six positional constructor
+// routing decision resolved once at startup (see resolveUploadStorage),
+// instead of six positional constructor
 // parameters — two of them bools, which read ambiguously and are easy to
 // transpose by accident at the call site.
 type uploadDeps struct {
@@ -1600,8 +1819,9 @@ type uploadDeps struct {
 	// useS3Push is true when pushBucket is a valid push target and s3Store
 	// is usable — uploads route to S3 instead of the local fallback.
 	useS3Push bool
-	// localWritable is true when cfg.SBOMDir/pushed is writable — the
-	// local-filesystem fallback used when useS3Push is false.
+	// localWritable is true when cfg.SBOMDir/pushed is a shared directory
+	// (see resolveUploadStorage) and writable — the local-filesystem
+	// fallback used when useS3Push is false.
 	localWritable bool
 }
 
@@ -1633,7 +1853,11 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 		}
 
 		if !useS3Push && !localWritable {
-			writeError(w, http.StatusServiceUnavailable, "No upload storage configured — set S3_BUCKETS with a skipScan bucket, or ensure SBOM_DIR is writable")
+			msg := "No upload storage configured — set S3_BUCKETS with a skipScan bucket, or ensure SBOM_DIR is writable"
+			if !cfg.HasLocalSBOMDir() {
+				msg = "No upload storage configured — set S3_BUCKETS with a skipScan bucket (this instance has no shared SBOM_DIR to fall back to)"
+			}
+			writeError(w, http.StatusServiceUnavailable, msg)
 			return
 		}
 
@@ -2059,13 +2283,48 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 	}
 }
 
+// serveLocalDownload streams a local SBOM file and sets Content-Type and
+// Content-Disposition. Returns true if the file was found and served, or false
+// on path containment or open errors.
+func serveLocalDownload(w http.ResponseWriter, cfg *config.Config, sbomID, sourceFile string) bool {
+	absPath, pathErr := cfg.LocalSBOMPath(sourceFile)
+	if pathErr != nil {
+		log.Printf("ERROR: sbom download invalid local path %s: %v", sanitizeLogParam(sourceFile), pathErr)
+		return false
+	}
+	f, openErr := os.Open(absPath)
+	if openErr != nil {
+		log.Printf("ERROR: sbom download local open %s: %v", sanitizeLogParam(absPath), openErr)
+		return false
+	}
+	defer f.Close()
+
+	filename := filepath.Base(sourceFile)
+	if filename == "." || filename == "/" || filename == "" {
+		filename = sbomID + ".json"
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
+	w.WriteHeader(http.StatusOK)
+	if _, err := io.Copy(w, f); err != nil {
+		log.Printf("ERROR: sbom download stream for %s: %v", sanitizeLogParam(sbomID), err)
+	}
+	return true
+}
+
+// storedDocumentQuerier abstracts stored document lookups for testing.
+type storedDocumentQuerier interface {
+	QueryStoredDocument(ctx context.Context, sbomID string) (*models.StoredDocument, error)
+}
+
 // serveStoredOriginal streams the captured original for sbomID if one exists
 // and is readable. It returns true when a response has been written (success
 // or a hard error such as a client disconnect mid-stream); false means the
 // caller should fall back to the source file. Lookup and open errors are
 // logged but never surfaced, so the fallback keeps working when the blob
 // store is degraded.
-func serveStoredOriginal(w http.ResponseWriter, r *http.Request, chClient *clickhouse.Client, store docstore.Store, sbomID, sourceFile string) bool {
+func serveStoredOriginal(w http.ResponseWriter, r *http.Request, chClient storedDocumentQuerier, store docstore.Store, sbomID, sourceFile string) bool {
 	doc, err := chClient.QueryStoredDocument(r.Context(), sbomID)
 	if err != nil {
 		if !errors.Is(err, clickhouse.ErrDocumentNotStored) {
@@ -2112,7 +2371,7 @@ func serveStoredOriginal(w http.ResponseWriter, r *http.Request, chClient *click
 	}
 
 	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
 	if passthrough {
 		w.Header().Set("Content-Encoding", "gzip")
 		w.Header().Add("Vary", "Accept-Encoding")
@@ -2164,4 +2423,23 @@ func firstTag(tags []string) string {
 		return ""
 	}
 	return tags[0]
+}
+
+// noticeFilename formats a safe filename for an attribution NOTICE download (#530).
+func noticeFilename(target string) string {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return "NOTICE.txt"
+	}
+	clean := strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
+			return r
+		}
+		return '-'
+	}, target)
+	clean = strings.Trim(clean, "-.")
+	if clean == "" {
+		return "NOTICE.txt"
+	}
+	return "NOTICE-" + clean + ".txt"
 }

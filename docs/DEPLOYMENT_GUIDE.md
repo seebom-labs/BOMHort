@@ -84,8 +84,20 @@ s3:
   secretKey: "minioadmin"
 ```
 
+**S3 only: run without the `sbom-data` volume.** With `gitSync.enabled: false` the chart still creates the `sbomSource` PVC, mounts it into the ingestion watcher, the parsing workers and the API gateway, and co-schedules them on one node for it (see the note under Option B). If every SBOM comes from S3, switch the volume off:
+
+```yaml
+gitSync:
+  enabled: false
+
+sbomSource:
+  enabled: false   # no PVC, no sbom-data mount, no pod affinity
+```
+
+This requires `s3.buckets` to hold at least one bucket (an empty list, `'[]'` included, or malformed JSON fails the render), and push uploads then need a `"skipScan"` bucket; the render fails on `sbomSource.writable: true`. The chart sets `SBOM_DIR_DISABLED=true` for the pods, so the API gateway never falls back to `SBOM_DIR/pushed/` — not even when `sbomSource.mountPath` is writable inside its own container, where no parsing worker could read the upload — and the ingestion watcher skips its local scan. The pod affinity stays while `originalStore.fs.enabled` is `true`. A `SBOM_DIR/license-exceptions.json` fallback file is no longer read. On an existing release Helm deletes the PVC when you switch this off, so check first that it holds nothing you ingest from.
+
 **Advantages:**
-- No PVC, no volume scheduling, no pod affinity constraints
+- No PVC, no volume scheduling, no pod affinity constraints (with `sbomSource.enabled: false`, see above)
 - Streams object listings — handles 100k+ SBOMs without memory issues
 - Jobs are enqueued in batches of 500 for efficient ClickHouse inserts
 - SHA256 deduplication via streaming hash (object is never fully loaded into memory)
@@ -467,23 +479,40 @@ kubectl rollout restart deployment bomhort-api-gateway bomhort-parsing-worker
 
 The entire UI color scheme is defined via 60+ CSS Custom Properties and can be overridden **without rebuilding Angular**.
 
-### Enable the theme ConfigMap
+The chart renders no theme ConfigMap: the stylesheet comes from one you manage
+yourself in the release namespace.
+
+### Create the theme ConfigMap
+
+```bash
+kubectl create configmap bomhort-theme \
+  --from-file=custom-theme.css=./my-theme.css \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+### Reference it in the values
 
 ```yaml
 # values-production.yaml
 ui:
   customTheme:
     enabled: true
+    existingConfigMap: bomhort-theme
+    existingConfigMapKey: custom-theme.css   # default; the key holding the CSS
 ```
 
-### Apply a custom theme
+`enabled: true` without `existingConfigMap` fails `helm template`; a missing
+ConfigMap or key keeps the UI pods from starting. The file is mounted via
+`subPath`, so restart the UI after changing the CSS:
 
 ```bash
-kubectl create configmap bomhort-custom-theme \
-  --from-file=custom-theme.css=./my-theme.css \
-  --dry-run=client -o yaml | kubectl apply -f -
 kubectl rollout restart deployment bomhort-ui
 ```
+
+> **Upgrading:** earlier chart versions rendered `<release>-custom-theme`
+> themselves. Helm deletes that ConfigMap on upgrade, along with any CSS applied
+> to it. Copy the CSS into a ConfigMap with a different name first and point
+> `existingConfigMap` at it.
 
 ### Example theme file
 
@@ -584,7 +613,8 @@ helm install bomhort ./deploy/helm/bomhort \
   --set s3.accessKey="AKIA..." \
   --set s3.secretKey="..." \
   --set parsingWorker.replicas=10 \
-  --set ui.customTheme.enabled=true
+  --set ui.customTheme.enabled=true \
+  --set ui.customTheme.existingConfigMap=bomhort-theme
 
 # 2. Override license exceptions from a local file
 kubectl create configmap bomhort-license-exceptions \
@@ -596,8 +626,8 @@ kubectl create configmap bomhort-license-policy \
   --from-file=license-policy.json=./my-policy.json \
   --dry-run=client -o yaml | kubectl apply -f -
 
-# 4. Apply a custom theme
-kubectl create configmap bomhort-custom-theme \
+# 4. Create the custom theme ConfigMap (the UI pods wait for it)
+kubectl create configmap bomhort-theme \
   --from-file=custom-theme.css=./my-theme.css \
   --dry-run=client -o yaml | kubectl apply -f -
 
@@ -636,6 +666,33 @@ apiGateway:
 Only the gateway is limited. The parsing workers, the CVE refresher and the migration job read the same ClickHouse but get none of these variables: their long inserts and full-table refreshes are the job, not an accident, and a limit sized for interactive pages would make them fail on large instances. If legitimate pages start hitting the limit, scale ClickHouse and raise the limit rather than removing it — and `apiGateway.replicas` adds request capacity, not per-query headroom.
 
 Outside Helm, set `CLICKHOUSE_MAX_EXECUTION_TIME`, `CLICKHOUSE_MAX_MEMORY_USAGE` and `CLICKHOUSE_MAX_THREADS` on the gateway only. An invalid or negative value stops the gateway at startup.
+
+### Public exploit code
+
+`cve-refresher` also refreshes, on every run, an index of which CVEs have public exploit code: Nuclei templates, Metasploit modules and Exploit-DB entries. Findings show it next to the CVE, link each exploit, and the listings and the CSV report take `?exploit=available` ([API reference](content/docs/api-reference/_index.md#exploit-code)).
+
+| Source | Index file | License | Size |
+|--------|------------|---------|------|
+| `nuclei` | `projectdiscovery/nuclei-templates` `cves.json` | MIT | ~2 MB |
+| `metasploit` | `rapid7/metasploit-framework` `db/modules_metadata_base.json` (`exploit/` modules and `auxiliary/` modules outside `auxiliary/scanner/`, which only detect a flaw) | BSD-3-Clause | ~12 MB |
+| `exploitdb` | `exploit-database/exploitdb` `files_exploits.csv` | GPL-2.0 (index read as data; no exploit code is fetched or linked into BOMHort) | ~10 MB |
+
+The refresher downloads the three index files, not the repositories: about 25 MB per run, a few seconds of work, and no `git` in the image. Each source is independent. A source that fails to download or parse, or parses to nothing (a format change upstream), keeps its previous snapshot and is logged as a `WARNING`; it never empties the signal. The CVE refresh runs either way.
+
+```yaml
+cveRefresher:
+  exploitRefs:
+    enabled: true                               # false: skip the sync
+    sources: [nuclei, metasploit, exploitdb]    # any subset
+    urls:                                       # empty = upstream file
+      nuclei: ""
+      metasploit: ""
+      exploitdb: ""
+```
+
+For air-gapped installs, mirror the three files and point `urls` at an internal `https://` location, or at `file:///path` on a volume you mount into the CronJob. Outside Helm the variables are `SKIP_EXPLOIT_REFS`, `EXPLOIT_SOURCES` (comma-separated) and `EXPLOIT_NUCLEI_URL` / `EXPLOIT_METASPLOIT_URL` / `EXPLOIT_EXPLOITDB_URL`. An unknown source name or URL scheme stops the refresher at startup. Plain `http://` is refused — in the URL and as a redirect target — because an index rewritten in transit would plant false exploit matches; use `https://` or `file://`.
+
+The data lives in `exploit_refs` (migration `033`). Findings are matched against it at query time, by `vuln_id` or any alias, so nothing has to be re-scanned when a new exploit appears.
 
 ## 8. Verifying the Deployment
 
@@ -823,7 +880,7 @@ ingress:
 | **VEX files** | Same S3 bucket or directory as SBOMs | Place `*.openvex.json` or `*.vex.json` alongside SBOMs |
 | **License Exceptions** | `bomhort-license-exceptions` ConfigMap, your own via `licenseExceptions.existingConfigMap`, or a URL / S3 object via `licenseExceptions.source` | Update the rules → pods reload within `refreshInterval` → stored results re-checked automatically |
 | **License Policy** | `bomhort-license-policy` ConfigMap, or your own via `licensePolicy.existingConfigMap` | `kubectl edit configmap` → restart API + Workers |
-| **Custom Theme** | `bomhort-custom-theme` ConfigMap | `kubectl create configmap` → restart UI |
+| **Custom Theme** | Your own ConfigMap via `ui.customTheme.existingConfigMap` | Update the ConfigMap → restart UI |
 | **Site Config** | `bomhort-ui-config` ConfigMap | Helm values `ui.siteConfig.content.*` → restart UI |
 | **Dark Mode** | Built-in toggle (navbar) | User preference, stored in browser localStorage |
 | **ClickHouse password** | `bomhort-secret` Secret | `kubectl edit secret` |

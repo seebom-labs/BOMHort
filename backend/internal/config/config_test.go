@@ -492,3 +492,71 @@ func TestLoad_S3SharedSettingsInheritance(t *testing.T) {
 		t.Error("bucket-b.UseSSL should be false (own setting)")
 	}
 }
+
+func TestLoad_TEABaseURL(t *testing.T) {
+	t.Setenv("TEA_BASE_URL", "https://transparency.example.com/api/v1/tea/")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.TEABaseURL != "https://transparency.example.com/api/v1/tea" {
+		t.Errorf("TEABaseURL = %q, want 'https://transparency.example.com/api/v1/tea'", cfg.TEABaseURL)
+	}
+}
+
+// SBOM_DIR_DISABLED is how the Helm chart says no volume backs SBOM_DIR
+// (#590). The path stays configured, but nothing may resolve a file under it.
+func TestLoad_SBOMDirDisabled(t *testing.T) {
+	t.Setenv("SBOM_DIR", "/tmp/sboms")
+	t.Setenv("SBOM_DIR_DISABLED", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	// Valid files, including names starting with dots or containing whitespace.
+	for _, good := range []struct {
+		rel  string
+		want string
+	}{
+		{"pushed/a.spdx.json", "/tmp/sboms/pushed/a.spdx.json"},
+		{"direct.spdx.json", "/tmp/sboms/direct.spdx.json"},
+		{"..dots.spdx.json", "/tmp/sboms/..dots.spdx.json"},
+		{"...json", "/tmp/sboms/...json"},
+		{"..data/file.spdx.json", "/tmp/sboms/..data/file.spdx.json"},
+		{" lead.spdx.json", "/tmp/sboms/ lead.spdx.json"},
+		{"trail.spdx.json ", "/tmp/sboms/trail.spdx.json "},
+	} {
+		if got, err := cfg.LocalSBOMPath(good.rel); err != nil || got != good.want {
+			t.Errorf("LocalSBOMPath(%q) = %q, %v; want %q", good.rel, got, err, good.want)
+		}
+	}
+
+	// Traversal and invalid paths must be rejected.
+	for _, bad := range []string{
+		"../../etc/passwd",
+		"pushed/../../etc/passwd",
+		"..",
+		"",
+		"/etc/passwd",
+		"/tmp/sboms/pushed/a.spdx.json",
+	} {
+		if got, err := cfg.LocalSBOMPath(bad); err == nil {
+			t.Errorf("LocalSBOMPath(%q) = %q, want error for invalid/traversal path", bad, got)
+		}
+	}
+
+	t.Setenv("SBOM_DIR_DISABLED", "true")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.SBOMDir != "/tmp/sboms" {
+		t.Errorf("SBOMDir = %q, want it left as configured", cfg.SBOMDir)
+	}
+	if cfg.HasLocalSBOMDir() {
+		t.Error("HasLocalSBOMDir() = true with SBOM_DIR_DISABLED=true")
+	}
+	if got, err := cfg.LocalSBOMPath("pushed/a.spdx.json"); err == nil {
+		t.Errorf("LocalSBOMPath = %q, want an error without a shared directory", got)
+	}
+}

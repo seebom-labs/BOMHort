@@ -12,6 +12,7 @@ import (
 
 	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
 	"github.com/seebom-labs/bomhort/backend/internal/projectgroup"
+	"github.com/seebom-labs/bomhort/backend/pkg/dto"
 )
 
 var noParents = newVulnFilter(func(context.Context) (map[string]projectgroup.Assignment, error) {
@@ -68,6 +69,8 @@ func TestVulnListHandlerRejects(t *testing.T) {
 		{"GET /x", "/x?cluster=" + strings.Repeat("c", maxOwnerNameLen+1)},
 		{"GET /c/{name}", "/c/" + strings.Repeat("c", maxOwnerNameLen+1)},
 		{"GET /c/{name}", "/c/a?cluster=b"},
+		{"GET /x", "/x?exploit=true"},
+		{"GET /x", "/x?exploit=Available"},
 	} {
 		mux := http.NewServeMux()
 		// nil client: a request that reaches the query would panic.
@@ -78,5 +81,53 @@ func TestVulnListHandlerRejects(t *testing.T) {
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("%s: status = %d, want 400", tc.url, rec.Code)
 		}
+	}
+}
+
+func TestParseExploit(t *testing.T) {
+	for raw, want := range map[string][2]bool{
+		"":          {false, true},
+		"available": {true, true},
+		"none":      {false, false},
+		"1":         {false, false},
+	} {
+		on, ok := parseExploit(raw)
+		if on != want[0] || ok != want[1] {
+			t.Errorf("parseExploit(%q) = %v, %v; want %v, %v", raw, on, ok, want[0], want[1])
+		}
+	}
+}
+
+func TestParseCWE(t *testing.T) {
+	for raw, want := range map[string]struct {
+		value string
+		ok    bool
+	}{
+		"":          {value: "", ok: true},
+		"79":        {value: "CWE-79", ok: true},
+		" cWe-79 ":  {value: "CWE-79", ok: true},
+		"CWE-":      {ok: false},
+		"CWE-x":     {ok: false},
+		"CWE-79,80": {ok: false},
+	} {
+		got, ok := parseCWE(raw)
+		if ok != want.ok || got != want.value {
+			t.Errorf("parseCWE(%q) = %q, %v; want %q, %v", raw, got, ok, want.value, want.ok)
+		}
+	}
+}
+
+func TestOnlyExploitable(t *testing.T) {
+	items := []dto.VulnerabilityListItem{
+		{VulnID: "CVE-1", ExploitAvailable: true},
+		{VulnID: "CVE-2"},
+		{VulnID: "CVE-3", ExploitAvailable: true},
+	}
+	got := onlyExploitable(items)
+	if len(got) != 2 || got[0].VulnID != "CVE-1" || got[1].VulnID != "CVE-3" {
+		t.Fatalf("got %+v", got)
+	}
+	if empty := onlyExploitable(nil); empty == nil || len(empty) != 0 {
+		t.Errorf("no findings must encode as [], got %#v", empty)
 	}
 }

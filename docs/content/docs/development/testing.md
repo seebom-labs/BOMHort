@@ -251,6 +251,14 @@ npx ng test --watch=false
 
 ## UI end-to-end tests (Playwright)
 
+**AI-assisted review requirement:** follow the
+[shared review procedure](https://github.com/seebom-labs/BOMHort/blob/main/.ai/review.md).
+Use a confirmed disposable project: the `demo-fleet` command below truncates data.
+Executable changes need a local-stack run and assertions for the actual changed
+flow, not just a passing baseline suite. UI changes also need visual/accessibility,
+console/network and representative large-list performance analysis. Missing
+execution capability or skipped tests means BLOCKED / incomplete.
+
 The unit specs mock HTTP; the e2e suite in `ui/e2e/` drives the **built UI through nginx against a live stack**, so the `/api` proxy, security headers, `ui-config.json`, `custom-theme.css` and the real API contract are all under test. It is the parity gate for any frontend refactor: the suite must stay green and unchanged.
 
 ```bash
@@ -282,4 +290,3 @@ CI runs both in the `frontend-e2e` job (`.github/workflows/ci.yml`), uploading t
 - **Model tests** — Verify TypeScript interfaces match API shapes (no HTTP mocking needed)
 - **Component tests** — Use `TestBed` with `provideHttpClientTesting()` for HTTP mocking
 - **OnPush strategy** — Tests call `fixture.detectChanges()` and verify DOM output
-

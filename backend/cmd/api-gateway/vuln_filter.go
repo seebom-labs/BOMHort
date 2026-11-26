@@ -10,6 +10,7 @@ import (
 	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
 	"github.com/seebom-labs/bomhort/backend/internal/projectgroup"
 	tagpkg "github.com/seebom-labs/bomhort/backend/internal/tags"
+	"github.com/seebom-labs/bomhort/backend/pkg/dto"
 )
 
 // vulnFilterFunc reads the ownership filters (#459) of a vulnerability
@@ -76,6 +77,16 @@ func newVulnFilter(assignments func(context.Context) (map[string]projectgroup.As
 			*p.dst = vals
 		}
 		f.Tags = tagpkg.Parse(q.Get("tag"))
+		originVal, ok := parseOrigin(q.Get("origin"))
+		if !ok {
+			return f, http.StatusBadRequest, "Invalid origin (expected cluster-scan, ci, registry, vendor, manual)"
+		}
+		f.Origin = originVal
+		cwe, cweOK := parseCWE(q.Get("cwe"))
+		if !cweOK {
+			return f, http.StatusBadRequest, "Invalid cwe (expected CWE-<number>)"
+		}
+		f.CWE = cwe
 		if len(parents) > 0 {
 			a, err := assignments(r.Context())
 			if err != nil {
@@ -104,8 +115,14 @@ func vulnListHandler(chClient *clickhouse.Client, filter vulnFilterFunc, preset 
 			writeError(w, http.StatusBadRequest, "Invalid reachability (expected reachable, not_reachable, or unknown)")
 			return
 		}
+		exploitOnly, ok := parseExploit(r.URL.Query().Get("exploit"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, invalidExploitMsg)
+			return
+		}
 		f, status, msg := filter(r)
 		f.Reachability = reachability
+		f.ExploitAvailable = exploitOnly
 		if status == 0 && preset != nil {
 			if msg = preset(r, &f); msg != "" {
 				status = http.StatusBadRequest
@@ -155,4 +172,55 @@ func parseReachability(raw string) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+// invalidExploitMsg answers an ?exploit= value outside parseExploit's vocabulary.
+const invalidExploitMsg = "Invalid exploit (expected available)"
+
+// parseExploit validates the optional ?exploit= filter: "available" keeps
+// only findings with public exploit code, "" filters nothing.
+func parseExploit(raw string) (bool, bool) {
+	switch raw {
+	case "":
+		return false, true
+	case "available":
+		return true, true
+	}
+	return false, false
+}
+
+// onlyExploitable keeps the findings with public exploit code, for the
+// listings that are assembled in full before they are returned.
+func onlyExploitable(items []dto.VulnerabilityListItem) []dto.VulnerabilityListItem {
+	out := make([]dto.VulnerabilityListItem, 0, len(items))
+	for _, it := range items {
+		if it.ExploitAvailable {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
+// parseCWE validates and normalises the ?cwe= parameter (#409): one weakness
+// class, case-insensitive, stored as CWE-<number> — the form ExtractCWEs
+// writes and the SQL backfill kept from the OSV records.
+func parseCWE(raw string) (string, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", true
+	}
+	upper := strings.ToUpper(raw)
+	if !strings.HasPrefix(upper, "CWE-") {
+		upper = "CWE-" + upper
+	}
+	number := strings.TrimPrefix(upper, "CWE-")
+	if number == "" {
+		return "", false
+	}
+	for _, r := range number {
+		if r < '0' || r > '9' {
+			return "", false
+		}
+	}
+	return upper, true
 }

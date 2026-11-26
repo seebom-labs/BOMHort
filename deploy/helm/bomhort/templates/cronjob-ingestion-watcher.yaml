@@ -16,21 +16,10 @@ spec:
           labels:
             app.kubernetes.io/name: bomhort
             app.kubernetes.io/component: ingestion-watcher
-            {{- if not .Values.gitSync.enabled }}
-            bomhort.io/sbom-volume: "true"
-            {{- end }}
+            {{- with include "bomhort.sbomSource.podLabel" (dict "root" . "originals" false) | trim }}{{ . | nindent 12 }}{{ end }}
         spec:
           restartPolicy: OnFailure
-          {{- if not .Values.gitSync.enabled }}
-          affinity:
-            podAffinity:
-              requiredDuringSchedulingIgnoredDuringExecution:
-                - labelSelector:
-                    matchExpressions:
-                      - key: bomhort.io/sbom-volume
-                        operator: Exists
-                  topologyKey: kubernetes.io/hostname
-          {{- end }}
+          {{- with include "bomhort.sbomSource.affinity" (dict "root" . "originals" false) | trim }}{{ . | nindent 10 }}{{ end }}
           {{- if .Values.gitSync.enabled }}
           initContainers:
             - name: git-sync
@@ -77,16 +66,14 @@ spec:
               {{- end }}
               resources:
                 {{- toYaml .Values.ingestionWatcher.resources | nindent 16 }}
+              {{- if include "bomhort.sbomSource.mounted" . }}
               volumeMounts:
                 - name: sbom-data
                   mountPath: {{ .Values.sbomSource.mountPath }}
                   readOnly: true
-          volumes:
-            - name: sbom-data
-              {{- if .Values.gitSync.enabled }}
-              emptyDir: {}
-              {{- else }}
-              persistentVolumeClaim:
-                claimName: {{ .Values.sbomSource.pvcName }}
               {{- end }}
+          {{- if include "bomhort.sbomSource.mounted" . }}
+          volumes:
+            {{- with include "bomhort.sbomSource.volume" . | trim }}{{ . | nindent 12 }}{{ end }}
+          {{- end }}
 
