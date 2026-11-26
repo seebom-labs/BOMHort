@@ -573,7 +573,7 @@ Detailed SBOM information including vulnerability severity breakdown.
 
 ### `PATCH /api/v1/sboms/{id}`
 
-Sets or clears `source_repo` / `source_ref` on an existing SBOM (#332) — the manual escape hatch for documents whose automatic extraction yielded nothing (Syft `dir:` scans, `pkg:generic` roots, monorepos). Requires `AUTH_ENABLED=true`, like the upload endpoint: an unauthenticated PATCH would let anyone redirect triage tooling to arbitrary repositories.
+Sets or clears `source_repo` / `source_ref` and `tags` on an existing SBOM (#332, #636) — the manual escape hatch for documents whose automatic extraction yielded nothing (Syft `dir:` scans, `pkg:generic` roots, monorepos) or whose metadata (owning team, environment, support tier) changes after ingestion. Requires `AUTH_ENABLED=true`, like the upload endpoint: an unauthenticated PATCH would let anyone redirect triage tooling to arbitrary repositories or alter project groupings.
 
 **Path Parameters:**
 
@@ -581,28 +581,33 @@ Sets or clears `source_repo` / `source_ref` on an existing SBOM (#332) — the m
 |-----------|------|-------------|
 | `id` | UUID | SBOM identifier |
 
-**Body:** JSON with one or both fields. This is a true PATCH — an **absent** field keeps its current value, an explicit `""` clears it:
+**Body:** JSON with one, two, or all three fields. This is a true PATCH — an **absent** field keeps its current value, an explicit `""` clears `source_repo`/`source_ref`, and an explicit `[]` clears the SBOM's custom tags:
 
 ```json
 {
   "source_repo": "https://github.com/example-org/example-app",
-  "source_ref": "v1.2.3"
+  "source_ref": "v1.2.3",
+  "tags": ["owner-b", "production"]
 }
 ```
 
-`source_repo` must be a plain `http(s)` URL without credentials; `source_ref` a git ref without whitespace (max 256 chars). Values are normalised before storage exactly like extracted ones (`.git` suffix stripped, inline `@ref` split off), so the stored form is identical regardless of how it arrived.
+`source_repo` must be a plain `http(s)` URL without credentials; `source_ref` a git ref without whitespace (max 256 chars); `tags` an array of grouping labels without commas (each max 64 chars, max 32 tags). Values are normalised before storage exactly like extracted ones (`.git` suffix stripped, inline `@ref` split off, tags trimmed, lowercased, and deduplicated), so the stored form is identical regardless of how it arrived. Custom tags merge with any instance-wide `TAGS` configuration.
 
 **Response:** `200 OK` with the resulting attribution:
 ```json
 {
   "sbom_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "source_repo": "https://github.com/example-org/example-app",
-  "source_ref": "v1.2.3"
+  "source_ref": "v1.2.3",
+  "tags": [
+    "owner-b",
+    "production"
+  ]
 }
 ```
 
 **Errors:**
-- `400` — Invalid UUID, invalid JSON, empty body object, or a value that fails validation
+- `400` — Invalid UUID, invalid JSON, empty body object, tag containing commas, or a value that fails validation
 - `403` — `AUTH_ENABLED` is not `true` on this instance
 - `404` — No SBOM with this ID
 
