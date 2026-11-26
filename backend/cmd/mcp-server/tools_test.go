@@ -129,6 +129,9 @@ func TestToolSurfaceIsReadOnlyAndComplete(t *testing.T) {
 		if tool.Description == "" {
 			t.Errorf("tool %q has no description", tool.Name)
 		}
+		if !strings.Contains(tool.Description, "untrusted data") || !strings.Contains(tool.Description, "<U+...>") {
+			t.Errorf("tool %q does not explain untrusted text and visible markers", tool.Name)
+		}
 		if tool.InputSchema == nil {
 			t.Errorf("tool %q has no input schema", tool.Name)
 		}

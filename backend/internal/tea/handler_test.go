@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,13 +21,14 @@ import (
 )
 
 type mockStore struct {
-	products    []ProductSummary
-	releases    []models.SBOM
-	vexCount    int
-	vexStmts    []models.VEXStatement
-	rawArtifact map[string][]byte
-	mu          sync.Mutex
-	snapshots   map[string][]Snapshot
+	products         []ProductSummary
+	releases         []models.SBOM
+	vexCount         int
+	vexStmts         []models.VEXStatement
+	rawArtifact      map[string][]byte
+	artifactFilename map[string]string
+	mu               sync.Mutex
+	snapshots        map[string][]Snapshot
 }
 
 func (m *mockStore) LatestSnapshot(_ context.Context, sbom *models.SBOM) (*Snapshot, error) {
@@ -190,8 +192,12 @@ func (m *mockStore) GetArtifactData(_ context.Context, sbomID string) (*Artifact
 	}
 	h := sha256.Sum256(raw)
 	shaHex := hex.EncodeToString(h[:])
+	filename := sbomID + ".spdx.json"
+	if name, ok := m.artifactFilename[sbomID]; ok {
+		filename = name
+	}
 	return &ArtifactData{
-		Filename:    sbomID + ".spdx.json",
+		Filename:    filename,
 		ContentType: MediaTypeSPDXJSON,
 		SHA256Hash:  shaHex,
 		SizeBytes:   uint64(len(raw)),
@@ -464,5 +470,44 @@ func TestSignatureDownloadReturns404(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("expected 404 for signature download, got %d", rec.Code)
+	}
+}
+
+func TestDownloadArtifact_ContentDispositionFormatted(t *testing.T) {
+	for _, filename := range []string{
+		`x"; filename="evil.exe.spdx.json`,
+		"über-service.spdx.json",
+		"foo\r\nHeader: injected.json",
+		"foo\x1b[31mbar.json",
+	} {
+		t.Run(filename, func(t *testing.T) {
+			handler, store, testSBOMID, _ := setupTestHandler()
+			store.artifactFilename = map[string]string{
+				testSBOMID.String(): filename,
+			}
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/tea/artifact/"+testSBOMID.String()+"/latest/download", nil)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+			}
+
+			cd := rec.Header().Get("Content-Disposition")
+			if strings.ContainsAny(cd, "\r\n\x1b") {
+				t.Fatalf("Content-Disposition contains raw control character: %q", cd)
+			}
+			mediaType, params, err := mime.ParseMediaType(cd)
+			if err != nil {
+				t.Fatalf("mime.ParseMediaType(%q) failed: %v", cd, err)
+			}
+			if mediaType != "attachment" {
+				t.Errorf("media type = %q, want attachment", mediaType)
+			}
+			if params["filename"] != filename {
+				t.Errorf("parsed filename = %q, want %q (raw header: %q)", params["filename"], filename, cd)
+			}
+		})
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -1125,7 +1126,6 @@ func main() {
 		}
 
 		// Open the file from S3 or local filesystem.
-		var rc io.ReadCloser
 		if strings.HasPrefix(sourceFile, "s3://") {
 			if s3c == nil {
 				writeError(w, http.StatusServiceUnavailable, "S3 not configured for downloads")
@@ -1137,30 +1137,27 @@ func main() {
 				writeError(w, http.StatusInternalServerError, "Invalid source file path")
 				return
 			}
-			rc, err = s3c.GetObject(r.Context(), bucket, key)
+			rc, err := s3c.GetObject(r.Context(), bucket, key)
 			if err != nil {
 				log.Printf("ERROR: sbom download S3 get %s: %v", sanitizeLogParam(sourceFile), err)
 				writeError(w, http.StatusNotFound, "SBOM file not found in storage")
 				return
 			}
-		} else {
-			// Local filesystem.
-			absPath := filepath.Join(cfg.SBOMDir, sourceFile)
-			f, openErr := os.Open(absPath)
-			if openErr != nil {
-				log.Printf("ERROR: sbom download local open %s: %v", sanitizeLogParam(absPath), openErr)
-				writeError(w, http.StatusNotFound, "SBOM file not found in storage")
-				return
-			}
-			rc = f
-		}
-		defer rc.Close()
+			defer rc.Close()
 
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
-		w.WriteHeader(http.StatusOK)
-		if _, err := io.Copy(w, rc); err != nil {
-			log.Printf("ERROR: sbom download stream for %s: %v", sanitizeLogParam(sbomID), err)
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
+			w.WriteHeader(http.StatusOK)
+			if _, err := io.Copy(w, rc); err != nil {
+				log.Printf("ERROR: sbom download stream for %s: %v", sanitizeLogParam(sbomID), err)
+			}
+			return
+		}
+
+		// Local filesystem.
+		if !serveLocalDownload(w, cfg, sbomID, sourceFile) {
+			writeError(w, http.StatusNotFound, "SBOM file not found in storage")
+			return
 		}
 	})
 
@@ -1266,12 +1263,40 @@ func archivedPackagesHandler(query func(context.Context, string) ([]clickhouse.A
 	}
 }
 
+// writeJSON encodes v as the response with the given status. The status is
+// only sent with the first byte of the body: json.Encoder writes nothing when
+// v cannot be encoded (a NaN, for instance), so that case can still become a
+// 500 instead of the given status with an empty body. The encoder writes the
+// document in one call from its pooled buffer, so there is no extra copy of
+// the response. A failed write is logged; the status is out by then.
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
+	dw := &deferredStatusWriter{w: w, status: status}
+	err := json.NewEncoder(dw).Encode(v)
+	switch {
+	case err == nil:
+	case !dw.started:
 		log.Printf("ERROR: Failed to encode JSON response: %v", err)
+		writeError(w, http.StatusInternalServerError, "Failed to encode response")
+	default:
+		log.Printf("ERROR: Failed to write JSON response: %v", err)
 	}
+}
+
+// deferredStatusWriter sends the JSON content type and the status on the
+// first Write.
+type deferredStatusWriter struct {
+	w       http.ResponseWriter
+	status  int
+	started bool
+}
+
+func (d *deferredStatusWriter) Write(p []byte) (int, error) {
+	if !d.started {
+		d.started = true
+		d.w.Header().Set("Content-Type", "application/json")
+		d.w.WriteHeader(d.status)
+	}
+	return d.w.Write(p)
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {
@@ -2258,13 +2283,48 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 	}
 }
 
+// serveLocalDownload streams a local SBOM file and sets Content-Type and
+// Content-Disposition. Returns true if the file was found and served, or false
+// on path containment or open errors.
+func serveLocalDownload(w http.ResponseWriter, cfg *config.Config, sbomID, sourceFile string) bool {
+	absPath, pathErr := cfg.LocalSBOMPath(sourceFile)
+	if pathErr != nil {
+		log.Printf("ERROR: sbom download invalid local path %s: %v", sanitizeLogParam(sourceFile), pathErr)
+		return false
+	}
+	f, openErr := os.Open(absPath)
+	if openErr != nil {
+		log.Printf("ERROR: sbom download local open %s: %v", sanitizeLogParam(absPath), openErr)
+		return false
+	}
+	defer f.Close()
+
+	filename := filepath.Base(sourceFile)
+	if filename == "." || filename == "/" || filename == "" {
+		filename = sbomID + ".json"
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
+	w.WriteHeader(http.StatusOK)
+	if _, err := io.Copy(w, f); err != nil {
+		log.Printf("ERROR: sbom download stream for %s: %v", sanitizeLogParam(sbomID), err)
+	}
+	return true
+}
+
+// storedDocumentQuerier abstracts stored document lookups for testing.
+type storedDocumentQuerier interface {
+	QueryStoredDocument(ctx context.Context, sbomID string) (*models.StoredDocument, error)
+}
+
 // serveStoredOriginal streams the captured original for sbomID if one exists
 // and is readable. It returns true when a response has been written (success
 // or a hard error such as a client disconnect mid-stream); false means the
 // caller should fall back to the source file. Lookup and open errors are
 // logged but never surfaced, so the fallback keeps working when the blob
 // store is degraded.
-func serveStoredOriginal(w http.ResponseWriter, r *http.Request, chClient *clickhouse.Client, store docstore.Store, sbomID, sourceFile string) bool {
+func serveStoredOriginal(w http.ResponseWriter, r *http.Request, chClient storedDocumentQuerier, store docstore.Store, sbomID, sourceFile string) bool {
 	doc, err := chClient.QueryStoredDocument(r.Context(), sbomID)
 	if err != nil {
 		if !errors.Is(err, clickhouse.ErrDocumentNotStored) {
@@ -2311,7 +2371,7 @@ func serveStoredOriginal(w http.ResponseWriter, r *http.Request, chClient *click
 	}
 
 	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
 	if passthrough {
 		w.Header().Set("Content-Encoding", "gzip")
 		w.Header().Add("Vary", "Accept-Encoding")

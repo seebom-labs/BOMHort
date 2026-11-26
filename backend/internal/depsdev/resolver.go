@@ -365,6 +365,9 @@ func (v versionResponse) cacheValue() string {
 
 // fetchLicense looks up one version and returns its cache encoding.
 func (r *Resolver) fetchLicense(ctx context.Context, pv PackageVersion) string {
+	if !validVersion(pv.Version) {
+		return ""
+	}
 	u := fmt.Sprintf("%s/%s/systems/%s/packages/%s/versions/%s",
 		r.baseURL, getAPIVersion, strings.ToLower(pv.System), url.PathEscape(pv.Name), url.PathEscape(pv.Version))
 
@@ -583,7 +586,10 @@ func extractPackage(purl string) (PackageVersion, bool) {
 	if !ok {
 		return PackageVersion{}, false
 	}
-	if !validVersion(version) {
+	if isUnsafeVersion(version) {
+		return PackageVersion{}, false
+	}
+	if isPlaceholderVersion(version) {
 		version = ""
 	}
 
@@ -640,12 +646,23 @@ func decodePath(s string) (string, bool) {
 	return strings.TrimSpace(decoded), true
 }
 
-func validVersion(version string) bool {
+func isUnsafeVersion(version string) bool {
+	return version == "." || strings.Contains(version, "..") || strings.ContainsAny(version, "/\\")
+}
+
+func isPlaceholderVersion(version string) bool {
 	version = strings.TrimSpace(version)
 	if version == "" || strings.EqualFold(version, "unknown") || strings.Contains(version, "${") {
+		return true
+	}
+	return strings.ContainsAny(version, " \t\r\n,")
+}
+
+func validVersion(version string) bool {
+	if !license.ValidVersion(version) || strings.EqualFold(version, "unknown") || strings.Contains(version, ",") {
 		return false
 	}
-	return !strings.ContainsAny(version, " \t\r\n,")
+	return true
 }
 
 func validNPMName(name string) bool {

@@ -52,6 +52,24 @@ func (c Coordinate) String() string {
 	return fmt.Sprintf("%s/%s/%s/%s/%s", c.Type, c.Provider, ns, c.Name, c.Revision)
 }
 
+// Valid reports whether the coordinate has non-empty required fields and is
+// safe for URL path construction (no dot segments, traversals, or invalid characters).
+func (c Coordinate) Valid() bool {
+	if c.Type == "" || c.Provider == "" || c.Name == "" || c.Revision == "" {
+		return false
+	}
+	if !license.ValidVersion(c.Revision) || strings.ContainsAny(c.Revision, " \t\r\n") {
+		return false
+	}
+	if c.Namespace == "." || c.Namespace == ".." || strings.Contains(c.Namespace, "..") || strings.ContainsAny(c.Namespace, "/\\ \t\r\n") {
+		return false
+	}
+	if c.Name == "." || c.Name == ".." || strings.Contains(c.Name, "..") || strings.ContainsAny(c.Name, "/\\ \t\r\n") {
+		return false
+	}
+	return true
+}
+
 // Path returns the URL path segment for querying the definition endpoint.
 func (c Coordinate) Path() string {
 	ns := c.Namespace
@@ -103,34 +121,42 @@ func CoordinateFromPURL(purl string) (Coordinate, bool) {
 		if strings.HasPrefix(namePart, "@") {
 			scope, name, ok := strings.Cut(namePart, "/")
 			if ok && scope != "" && name != "" {
-				return Coordinate{Type: "npm", Provider: "npmjs", Namespace: scope, Name: name, Revision: version}, true
+				coord := Coordinate{Type: "npm", Provider: "npmjs", Namespace: scope, Name: name, Revision: version}
+				return coord, coord.Valid()
 			}
 		}
-		return Coordinate{Type: "npm", Provider: "npmjs", Namespace: "-", Name: namePart, Revision: version}, true
+		coord := Coordinate{Type: "npm", Provider: "npmjs", Namespace: "-", Name: namePart, Revision: version}
+		return coord, coord.Valid()
 
 	case "pypi":
-		return Coordinate{Type: "pypi", Provider: "pypi", Namespace: "-", Name: namePart, Revision: version}, true
+		coord := Coordinate{Type: "pypi", Provider: "pypi", Namespace: "-", Name: namePart, Revision: version}
+		return coord, coord.Valid()
 
 	case "maven":
 		group, artifact, ok := strings.Cut(namePart, "/")
 		if ok && group != "" && artifact != "" {
-			return Coordinate{Type: "maven", Provider: "mavencentral", Namespace: group, Name: artifact, Revision: version}, true
+			coord := Coordinate{Type: "maven", Provider: "mavencentral", Namespace: group, Name: artifact, Revision: version}
+			return coord, coord.Valid()
 		}
 		return Coordinate{}, false
 
 	case "nuget":
-		return Coordinate{Type: "nuget", Provider: "nuget", Namespace: "-", Name: namePart, Revision: version}, true
+		coord := Coordinate{Type: "nuget", Provider: "nuget", Namespace: "-", Name: namePart, Revision: version}
+		return coord, coord.Valid()
 
 	case "cargo", "crate", "cratesio":
-		return Coordinate{Type: "crate", Provider: "cratesio", Namespace: "-", Name: namePart, Revision: version}, true
+		coord := Coordinate{Type: "crate", Provider: "cratesio", Namespace: "-", Name: namePart, Revision: version}
+		return coord, coord.Valid()
 
 	case "gem", "rubygems":
-		return Coordinate{Type: "gem", Provider: "rubygems", Namespace: "-", Name: namePart, Revision: version}, true
+		coord := Coordinate{Type: "gem", Provider: "rubygems", Namespace: "-", Name: namePart, Revision: version}
+		return coord, coord.Valid()
 
 	case "composer":
 		vendor, pkg, ok := strings.Cut(namePart, "/")
 		if ok && vendor != "" && pkg != "" {
-			return Coordinate{Type: "composer", Provider: "packagist", Namespace: vendor, Name: pkg, Revision: version}, true
+			coord := Coordinate{Type: "composer", Provider: "packagist", Namespace: vendor, Name: pkg, Revision: version}
+			return coord, coord.Valid()
 		}
 		return Coordinate{}, false
 
@@ -139,7 +165,8 @@ func CoordinateFromPURL(purl string) (Coordinate, bool) {
 		if strings.HasPrefix(namePart, "github.com/") {
 			parts := strings.Split(strings.TrimPrefix(namePart, "github.com/"), "/")
 			if len(parts) >= 2 && parts[0] != "" && parts[1] != "" {
-				return Coordinate{Type: "git", Provider: "github", Namespace: parts[0], Name: parts[1], Revision: version}, true
+				coord := Coordinate{Type: "git", Provider: "github", Namespace: parts[0], Name: parts[1], Revision: version}
+				return coord, coord.Valid()
 			}
 		}
 		return Coordinate{}, false
@@ -147,7 +174,8 @@ func CoordinateFromPURL(purl string) (Coordinate, bool) {
 	case "github":
 		owner, repo, ok := strings.Cut(namePart, "/")
 		if ok && owner != "" && repo != "" {
-			return Coordinate{Type: "git", Provider: "github", Namespace: owner, Name: repo, Revision: version}, true
+			coord := Coordinate{Type: "git", Provider: "github", Namespace: owner, Name: repo, Revision: version}
+			return coord, coord.Valid()
 		}
 		return Coordinate{}, false
 
@@ -761,6 +789,7 @@ func (r *Resolver) fetchDefinitionsChunk(ctx context.Context, chunk []Coordinate
 	if len(chunk) == 0 {
 		return nil
 	}
+
 	if err := r.limiter.Wait(ctx); err != nil {
 		return err
 	}
