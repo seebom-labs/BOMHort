@@ -13,6 +13,8 @@ func TestLoad_Defaults(t *testing.T) {
 		"S3_BUCKETS", "S3_BUCKET",
 		"DEDUP_BY_IMAGE_DIGEST",
 		"ORIGIN",
+		"CORS_ALLOWED_ORIGINS", "CORS_ALLOWED_METHODS", "CORS_ALLOWED_HEADERS",
+		"CORS_ALLOW_CREDENTIALS", "CORS_MAX_AGE",
 	} {
 		os.Unsetenv(key)
 	}
@@ -36,6 +38,21 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if cfg.APIPort != 8080 {
 		t.Errorf("expected default API port 8080, got %d", cfg.APIPort)
+	}
+	if cfg.CORSAllowedOrigins != "*" {
+		t.Errorf("expected default CORSAllowedOrigins '*', got %q", cfg.CORSAllowedOrigins)
+	}
+	if cfg.CORSAllowedMethods != "" {
+		t.Errorf("expected default CORSAllowedMethods empty, got %q", cfg.CORSAllowedMethods)
+	}
+	if cfg.CORSAllowedHeaders != "" {
+		t.Errorf("expected default CORSAllowedHeaders empty, got %q", cfg.CORSAllowedHeaders)
+	}
+	if cfg.CORSAllowCredentials {
+		t.Error("expected default CORSAllowCredentials false")
+	}
+	if cfg.CORSMaxAge != 86400 {
+		t.Errorf("expected default CORSMaxAge 86400, got %d", cfg.CORSMaxAge)
 	}
 	if cfg.SkipOSV != false {
 		t.Error("expected default SkipOSV=false")
@@ -558,5 +575,34 @@ func TestLoad_SBOMDirDisabled(t *testing.T) {
 	}
 	if got, err := cfg.LocalSBOMPath("pushed/a.spdx.json"); err == nil {
 		t.Errorf("LocalSBOMPath = %q, want an error without a shared directory", got)
+	}
+}
+
+func TestLoad_CORS(t *testing.T) {
+	t.Setenv("CORS_ALLOWED_ORIGINS", "https://dashboard.example.com,https://admin.internal")
+	t.Setenv("CORS_ALLOWED_METHODS", "GET,POST,PATCH,OPTIONS")
+	t.Setenv("CORS_ALLOWED_HEADERS", "Authorization,Content-Type,X-API-Key")
+	t.Setenv("CORS_ALLOW_CREDENTIALS", "true")
+	t.Setenv("CORS_MAX_AGE", "3600")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if cfg.CORSAllowedOrigins != "https://dashboard.example.com,https://admin.internal" {
+		t.Errorf("CORSAllowedOrigins = %q", cfg.CORSAllowedOrigins)
+	}
+	if cfg.CORSAllowedMethods != "GET,POST,PATCH,OPTIONS" {
+		t.Errorf("CORSAllowedMethods = %q", cfg.CORSAllowedMethods)
+	}
+	if cfg.CORSAllowedHeaders != "Authorization,Content-Type,X-API-Key" {
+		t.Errorf("CORSAllowedHeaders = %q", cfg.CORSAllowedHeaders)
+	}
+	if !cfg.CORSAllowCredentials {
+		t.Error("expected CORSAllowCredentials=true")
+	}
+	if cfg.CORSMaxAge != 3600 {
+		t.Errorf("CORSMaxAge = %d, want 3600", cfg.CORSMaxAge)
 	}
 }

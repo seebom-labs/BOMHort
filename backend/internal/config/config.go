@@ -99,9 +99,13 @@ type Config struct {
 	S3Buckets []S3BucketConfig
 
 	// API Gateway
-	APIPort            int
-	CORSAllowedOrigins string // Comma-separated allowed origins (default "*" for dev)
-	RateLimitMax       int    // Requests per IP per 10s window; 0 disables the limiter
+	APIPort               int
+	CORSAllowedOrigins    string // Comma-separated allowed origins (default "*" for dev)
+	CORSAllowedMethods    string // Comma-separated allowed HTTP methods (default: empty -> route-specific defaults) (#136)
+	CORSAllowedHeaders    string // Comma-separated allowed request headers (default: empty -> standard defaults) (#136)
+	CORSAllowCredentials  bool   // Whether to set Access-Control-Allow-Credentials: true (not with wildcard "*") (#136)
+	CORSMaxAge            int    // Preflight cache duration in seconds (default: 86400) (#136)
+	RateLimitMax          int    // Requests per IP per 10s window; 0 disables the limiter
 
 	// Worker
 	WorkerID        string
@@ -274,6 +278,10 @@ func Load() (*Config, error) {
 		SBOMDirDisabled:           getEnvBool("SBOM_DIR_DISABLED", false),
 		APIPort:                   getEnvInt("API_PORT", 8080),
 		CORSAllowedOrigins:        getEnv("CORS_ALLOWED_ORIGINS", "*"),
+		CORSAllowedMethods:        getEnv("CORS_ALLOWED_METHODS", ""),
+		CORSAllowedHeaders:        getEnv("CORS_ALLOWED_HEADERS", ""),
+		CORSAllowCredentials:      getEnvBool("CORS_ALLOW_CREDENTIALS", false),
+		CORSMaxAge:                 getEnvInt("CORS_MAX_AGE", 86400),
 		RateLimitMax:              getEnvInt("RATE_LIMIT_MAX", 100),
 		WorkerID:                  getEnv("WORKER_ID", ""),
 		WorkerBatchSize:           getEnvInt("WORKER_BATCH_SIZE", 10),

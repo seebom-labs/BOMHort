@@ -2046,12 +2046,15 @@ All responses include:
 
 ## CORS
 
-Configured via `CORS_ALLOWED_ORIGINS` environment variable.
+Configured via environment variables for cross-origin web clients and dashboards (#136):
 
-- Default: `*` (development)
-- Production: Set to your frontend domain(s)
-- Allowed methods: `GET`, `OPTIONS` on every endpoint; `POST` is additionally advertised only on [`/api/v1/sboms/upload`](#post-apiv1sbomsupload)
-- Allowed headers: `Content-Type`, `Authorization`, `X-Service-Token`, `X-API-Key`, `X-Filename`
+| Environment Variable | Default | Description |
+|---|---|---|
+| `CORS_ALLOWED_ORIGINS` | `*` | Comma-separated list of allowed origins (e.g. `https://dashboard.example.com`). Set to specific origins in production. |
+| `CORS_ALLOWED_METHODS` | _(route defaults)_ | Comma-separated allowed HTTP methods (e.g. `GET,POST,PATCH,OPTIONS`). When unset, defaults to `GET, HEAD, OPTIONS`, with `POST` on upload/evidence endpoints and `PATCH` on `/api/v1/sboms/{id}`. |
+| `CORS_ALLOWED_HEADERS` | `Content-Type, Authorization, X-Service-Token, X-API-Key, X-Filename, X-Evidence-Ref` | Comma-separated list of allowed request headers. |
+| `CORS_ALLOW_CREDENTIALS` | `false` | When `true`, emits `Access-Control-Allow-Credentials: true` for matched origins. Per W3C CORS specifications, credentials are never sent with wildcard `*` origins. |
+| `CORS_MAX_AGE` | `86400` | Preflight cache duration in seconds (`Access-Control-Max-Age`). |
 
 ---
 

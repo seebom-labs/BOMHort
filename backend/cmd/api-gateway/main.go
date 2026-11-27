@@ -1205,7 +1205,7 @@ func main() {
 	// Auth sits closest to the mux so 401s still get CORS + security headers.
 	handler := securityHeadersMiddleware(
 		rateLimitMiddleware(cfg.RateLimitMax,
-			corsMiddleware(cfg.CORSAllowedOrigins,
+			corsMiddleware(cfg,
 				authMiddleware(cfg.AuthEnabled, cfg.BadgesPublic, cfg.ServiceToken, cfg.APIKeys, mux),
 			),
 		),
@@ -1455,10 +1455,40 @@ func securityHeadersMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// corsMiddleware handles CORS with configurable allowed origins.
-func corsMiddleware(allowedOrigins string, next http.Handler) http.Handler {
+// isSBOMPatchPath reports whether the request path matches /api/v1/sboms/{id}.
+func isSBOMPatchPath(p string) bool {
+	parts := strings.Split(strings.Trim(p, "/"), "/")
+	if len(parts) == 4 && parts[0] == "api" && parts[1] == "v1" && parts[2] == "sboms" {
+		_, err := uuid.Parse(parts[3])
+		return err == nil
+	}
+	return false
+}
+
+// corsMiddleware handles CORS with configurable allowed origins, methods, headers,
+// credentials, and preflight max-age (#136).
+func corsMiddleware(cfg *config.Config, next http.Handler) http.Handler {
+	allowedOrigins := "*"
+	maxAge := 86400
+	allowedMethodsCfg := ""
+	allowedHeadersCfg := ""
+	allowCredentials := false
+
+	if cfg != nil {
+		if cfg.CORSAllowedOrigins != "" {
+			allowedOrigins = cfg.CORSAllowedOrigins
+		}
+		if cfg.CORSMaxAge > 0 {
+			maxAge = cfg.CORSMaxAge
+		}
+		allowedMethodsCfg = cfg.CORSAllowedMethods
+		allowedHeadersCfg = cfg.CORSAllowedHeaders
+		allowCredentials = cfg.CORSAllowCredentials
+	}
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
+		matchedSpecificOrigin := false
 
 		if allowedOrigins == "*" {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -1467,19 +1497,37 @@ func corsMiddleware(allowedOrigins string, next http.Handler) http.Handler {
 				if strings.TrimSpace(allowed) == origin {
 					w.Header().Set("Access-Control-Allow-Origin", origin)
 					w.Header().Set("Vary", "Origin")
+					matchedSpecificOrigin = true
 					break
 				}
 			}
 		}
 
-		// POST is valid on the upload route and evidence routes.
-		allowedMethods := "GET, HEAD, OPTIONS"
-		if r.URL.Path == uploadPath || (strings.HasPrefix(r.URL.Path, "/api/v1/sboms/") && strings.HasSuffix(r.URL.Path, "/evidence")) {
-			allowedMethods = "GET, POST, OPTIONS"
+		// Access-Control-Allow-Credentials: only valid with explicit origins,
+		// never with wildcard "*" (W3C CORS specification).
+		if allowCredentials && matchedSpecificOrigin {
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+		}
+
+		// Allowed methods: use configured methods if provided, otherwise route-specific defaults.
+		allowedMethods := allowedMethodsCfg
+		if allowedMethods == "" {
+			allowedMethods = "GET, HEAD, OPTIONS"
+			if r.URL.Path == uploadPath || (strings.HasPrefix(r.URL.Path, "/api/v1/sboms/") && strings.HasSuffix(r.URL.Path, "/evidence")) {
+				allowedMethods = "GET, POST, OPTIONS"
+			} else if isSBOMPatchPath(r.URL.Path) {
+				allowedMethods = "GET, HEAD, PATCH, OPTIONS"
+			}
 		}
 		w.Header().Set("Access-Control-Allow-Methods", allowedMethods)
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Service-Token, X-API-Key, X-Filename, X-Evidence-Ref")
-		w.Header().Set("Access-Control-Max-Age", "86400")
+
+		// Allowed headers: use configured headers if provided, otherwise default set.
+		allowedHeaders := allowedHeadersCfg
+		if allowedHeaders == "" {
+			allowedHeaders = "Content-Type, Authorization, X-Service-Token, X-API-Key, X-Filename, X-Evidence-Ref"
+		}
+		w.Header().Set("Access-Control-Allow-Headers", allowedHeaders)
+		w.Header().Set("Access-Control-Max-Age", strconv.Itoa(maxAge))
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
