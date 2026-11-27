@@ -400,6 +400,8 @@ type VulnFilter struct {
 	// CWE filters findings by weakness class (#409): ?cwe=CWE-79. Exact
 	// match against the stored cwe_ids.
 	CWE string
+	// Source filters findings by advisory_source ("private", "osv", etc.).
+	Source string
 }
 
 // ownerPredicate restricts sbom_id to the SBOMs matching f, or returns ""
@@ -461,6 +463,10 @@ func vulnWhere(scope string, f VulnFilter) (string, []any) {
 	if f.CWE != "" {
 		preds = append(preds, "has(cwe_ids, ?)")
 		args = append(args, f.CWE)
+	}
+	if f.Source != "" {
+		preds = append(preds, "advisory_source = ?")
+		args = append(args, f.Source)
 	}
 	owner, ownerArgs := ownerPredicate(f, false)
 	if owner != "" {

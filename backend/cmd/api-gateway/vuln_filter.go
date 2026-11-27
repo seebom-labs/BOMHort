@@ -120,9 +120,15 @@ func vulnListHandler(chClient *clickhouse.Client, filter vulnFilterFunc, preset 
 			writeError(w, http.StatusBadRequest, invalidExploitMsg)
 			return
 		}
+		source, ok := parseSource(r.URL.Query().Get("source"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Invalid source (expected private or osv)")
+			return
+		}
 		f, status, msg := filter(r)
 		f.Reachability = reachability
 		f.ExploitAvailable = exploitOnly
+		f.Source = source
 		if status == 0 && preset != nil {
 			if msg = preset(r, &f); msg != "" {
 				status = http.StatusBadRequest
@@ -223,4 +229,21 @@ func parseCWE(raw string) (string, bool) {
 		}
 	}
 	return upper, true
+}
+
+// parseSource validates the optional ?source= filter ("private", "osv", or feed name).
+func parseSource(raw string) (string, bool) {
+	raw = strings.ToLower(strings.TrimSpace(raw))
+	if raw == "" {
+		return "", true
+	}
+	if len(raw) > 64 {
+		return "", false
+	}
+	for _, r := range raw {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' && r != '_' && r != '.' {
+			return "", false
+		}
+	}
+	return raw, true
 }

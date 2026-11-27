@@ -199,9 +199,10 @@ func TestScanner_GenericJSON(t *testing.T) {
 		"project.spdx.json":       `{"spdxVersion": "SPDX-2.3"}`,
 		"advisory.openvex.json":   `{"@context": "openvex"}`,
 		"not-json.txt":            `plain text`,
-		"license-policy.json":     `{"permissive":["MIT"]}`,
-		"license-exceptions.json": `{"exceptions":[]}`,
-		"project-groups.json":     `{"groups":[]}`,
+		"license-policy.json":          `{"permissive":["MIT"]}`,
+		"license-exceptions.json":      `{"exceptions":[]}`,
+		"project-groups.json":          `{"groups":[]}`,
+		"private-vulnerabilities.json": `[]`,
 	}
 
 	for name, content := range testFiles {

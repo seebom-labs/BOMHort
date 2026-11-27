@@ -70,6 +70,15 @@ func TestAdvisoryRecordsRoundTrip(t *testing.T) {
 		t.Fatalf("items = %+v", items)
 	}
 
+	// QueryFindingsByAdvisorySource returns the finding with all columns properly mapped.
+	bySource, err := c.QueryFindingsByAdvisorySource(ctx, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bySource) != 1 || bySource[0].SBOMID != sbomID || bySource[0].VulnID != fmt.Sprintf("FX-%d", n) || bySource[0].AdvisorySource != source || bySource[0].AdvisoryStatus != advisory.StatusPendingUpstreamFix {
+		t.Fatalf("bySource = %+v", bySource)
+	}
+
 	// The stored finding is found under its prefix and closed by key.
 	stored, err := c.QueryFindingsUnderPrefixes(ctx, []string{"pkg:" + key})
 	if err != nil {

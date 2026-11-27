@@ -13,6 +13,31 @@ type purl struct {
 	qualifiers map[string]string
 }
 
+// PURL is the parsed form of a Package URL needed for advisory and private vulnerability matching.
+type PURL = purl
+
+// Type returns the PURL type (e.g. "npm", "pypi", "apk").
+func (p PURL) Type() string { return p.typ }
+
+// Key returns the lower-cased "type/namespace/name" key without version.
+func (p PURL) Key() string { return p.key }
+
+// Version returns the package version string.
+func (p PURL) Version() string { return p.version }
+
+// ParsePURL reads pkg:type/namespace/name@version?qualifiers#subpath. It
+// returns false for anything that is not a PURL.
+func ParsePURL(s string) (PURL, bool) {
+	return parsePURL(s)
+}
+
+// AffectedKey returns the package key ("type/namespace/name") an affected
+// entry describes, and the distro release its ecosystem names ("3.18" for
+// "Alpine:v3.18"), if any.
+func AffectedKey(pkgPURL, ecosystem, name string) (key, release string) {
+	return affectedKey(pkgPURL, ecosystem, name)
+}
+
 // parsePURL reads pkg:type/namespace/name@version?qualifiers#subpath. It
 // returns false for anything that is not a PURL.
 func parsePURL(s string) (purl, bool) {
@@ -105,6 +130,12 @@ func affectedKey(pkgPURL, ecosystem, name string) (key, release string) {
 		n = strings.Replace(n, ":", "/", 1)
 	}
 	return prefix + "/" + n, release
+}
+
+// ReleaseMatches reports whether a PURL's distro qualifier is compatible with
+// the release an affected entry is scoped to.
+func ReleaseMatches(p PURL, release string) bool {
+	return releaseMatches(p, release)
 }
 
 // releaseMatches reports whether a PURL's distro qualifier is compatible with

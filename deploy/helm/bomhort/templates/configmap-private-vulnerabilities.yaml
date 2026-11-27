@@ -1,0 +1,24 @@
+{{- include "bomhort.privateVulnerabilities.validate" . }}
+{{- $pv := .Values.privateVulnerabilities | default dict }}
+{{- if include "bomhort.privateVulnerabilities.mounted" . }}
+{{- if not $pv.existingConfigMap }}
+{{- $entries := list }}
+{{- if include "bomhort.privateVulnerabilities.customSet" . }}
+{{- if kindIs "string" $pv.custom }}
+{{- $entries = mustFromJson $pv.custom }}
+{{- else }}
+{{- $entries = $pv.custom }}
+{{- end }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-private-vulnerabilities
+  labels:
+    app.kubernetes.io/name: bomhort
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  private-vulnerabilities.json: |-
+    {{- $entries | mustToPrettyJson | nindent 4 }}
+{{- end }}
+{{- end }}

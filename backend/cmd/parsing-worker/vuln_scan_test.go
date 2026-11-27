@@ -6,6 +6,7 @@ import (
 
 	"github.com/seebom-labs/bomhort/backend/internal/advisory"
 	"github.com/seebom-labs/bomhort/backend/internal/osv"
+	"github.com/seebom-labs/bomhort/backend/internal/privatevuln"
 )
 
 type fakeOSV struct {
@@ -79,3 +80,115 @@ func TestScanVulnerabilitiesBackport(t *testing.T) {
 		t.Fatalf("findings = %+v", got)
 	}
 }
+
+type failOnCallOSV struct{ t *testing.T }
+
+func (f failOnCallOSV) QueryBatch(context.Context, []string) (*osv.BatchResponse, error) {
+	f.t.Fatal("QueryBatch must not be called when SkipOSV=true")
+	return nil, nil
+}
+
+func (f failOnCallOSV) HydrateVulns(context.Context, []string) (map[string]*osv.VulnEntry, error) {
+	f.t.Fatal("HydrateVulns must not be called when SkipOSV=true")
+	return nil, nil
+}
+
+func TestCollectVulnerabilityFindings_SkipOSVStillMatchesPrivate(t *testing.T) {
+	doc := `[
+		{
+			"id": "BOMHORT-2024-007",
+			"summary": "Private finding active under SKIP_OSV",
+			"affected": [
+				{
+					"package": {"name": "internal-lib", "ecosystem": "npm", "purl": "pkg:npm/internal-lib"},
+					"versions": ["1.2.3"]
+				}
+			]
+		}
+	]`
+	pvtIdx, err := privatevuln.Parse([]byte(doc), "test.json")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	got, err := collectVulnerabilityFindings(context.Background(), true, failOnCallOSV{t}, nil, pvtIdx, []string{"pkg:npm/internal-lib@1.2.3", "pkg:npm/other@1.0.0"})
+	if err != nil {
+		t.Fatalf("collectVulnerabilityFindings: %v", err)
+	}
+	if len(got) != 1 || got[0].Entry.ID != "BOMHORT-2024-007" || got[0].Source != "private" || got[0].PURL != "pkg:npm/internal-lib@1.2.3" {
+		t.Fatalf("findings = %+v", got)
+	}
+}
+
+func TestCollectJobFindings_SkipOSVStillMatchesPrivate(t *testing.T) {
+	doc := `[{
+		"id": "ACME-2026-001",
+		"summary": "Private advisory",
+		"affected": [{
+			"package": {"ecosystem": "npm", "name": "express"},
+			"ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "4.19.0"}]}]
+		}]
+	}]`
+	idx, err := privatevuln.Parse([]byte(doc), "private.json")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	got, err := collectVulnerabilityFindings(
+		context.Background(),
+		true,
+		fakeOSV{byPURL: map[string][]string{"pkg:npm/express@4.18.2": {"GHSA-public"}}},
+		nil,
+		idx,
+		[]string{"pkg:npm/express@4.18.2"},
+	)
+	if err != nil {
+		t.Fatalf("collectVulnerabilityFindings: %v", err)
+	}
+	if len(got) != 1 || got[0].Entry.ID != "ACME-2026-001" || got[0].Source != "private" {
+		t.Fatalf("findings = %+v, want ACME-2026-001 (private) even with SkipOSV=true", got)
+	}
+}
+
+func TestEvaluateWorkerVulnerabilities_PassesPrivateIndex(t *testing.T) {
+	doc := `[{
+		"id": "ACME-2026-WORKER",
+		"summary": "Private worker test",
+		"affected": [{
+			"package": {"ecosystem": "npm", "name": "worker-lib"},
+			"ranges": [{"type": "SEMVER", "events": [{"introduced": "0"}, {"fixed": "2.0.0"}]}]
+		}]
+	}]`
+	idx, err := privatevuln.Parse([]byte(doc), "test.json")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	called := false
+	privateVulns := func() *privatevuln.Index {
+		called = true
+		return idx
+	}
+
+	purls := []string{"pkg:npm/worker-lib@1.0.0"}
+	findings, err := evaluateWorkerVulnerabilities(context.Background(), true, fakeOSV{}, nil, privateVulns, purls)
+	if err != nil {
+		t.Fatalf("evaluateWorkerVulnerabilities: %v", err)
+	}
+	if !called {
+		t.Fatal("privateVulns provider was not invoked")
+	}
+	if len(findings) != 1 || findings[0].Entry.ID != "ACME-2026-WORKER" || findings[0].Source != "private" {
+		t.Fatalf("findings = %+v, want ACME-2026-WORKER", findings)
+	}
+
+	// When privateVulns is nil, no private findings are gathered
+	findingsNoPvt, err := evaluateWorkerVulnerabilities(context.Background(), true, fakeOSV{}, nil, nil, purls)
+	if err != nil {
+		t.Fatalf("evaluateWorkerVulnerabilities nil: %v", err)
+	}
+	if len(findingsNoPvt) != 0 {
+		t.Fatalf("expected 0 findings when privateVulns is nil, got %d", len(findingsNoPvt))
+	}
+}
+

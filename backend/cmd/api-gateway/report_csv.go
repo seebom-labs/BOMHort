@@ -111,6 +111,11 @@ func vulnerabilityReportHandler(filter vulnFilterFunc, stream vulnerabilityStrea
 			writeError(w, http.StatusBadRequest, invalidExploitMsg)
 			return
 		}
+		source, ok := parseSource(q.Get("source"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Invalid source (expected private or osv)")
+			return
+		}
 
 		f, status, msg := filter(r)
 		if status != 0 {
@@ -118,6 +123,7 @@ func vulnerabilityReportHandler(filter vulnFilterFunc, stream vulnerabilityStrea
 			return
 		}
 		f.ExploitAvailable = exploitOnly
+		f.Source = source
 
 		rows, err := stream(r.Context(), scope, f)
 		if err != nil {

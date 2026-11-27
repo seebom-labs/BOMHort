@@ -667,6 +667,7 @@ All vulnerabilities found in a specific SBOM, including the effective VEX statem
 | `reachability` | string | all | Filter by reachability evidence: `reachable`, `not_reachable`, or `unknown` (#535) |
 | `exploit` | string | all | `available`: only findings with [public exploit code](#exploit-code) |
 | `cwe` | string | all | Only findings of this weakness class, e.g. `CWE-79` (#409). Case-insensitive; normalised to `CWE-<number>`. |
+| `source` | string | all | Filter by advisory source: `private`, `osv`, or an advisory feed name |
 
 **Response:** `200 OK`
 ```json
@@ -883,6 +884,7 @@ Paginated list of all discovered vulnerabilities across all SBOMs. Each item car
 | `reachability` | string | all | Filter by reachability evidence: `reachable`, `not_reachable`, or `unknown` (#535) |
 | `exploit` | string | — | `available`: only findings with [public exploit code](#exploit-code) |
 | `cwe` | string | all | Only findings of this weakness class, e.g. `CWE-79` (#409). Case-insensitive; normalised to `CWE-<number>`. |
+| `source` | string | all | Filter by advisory source: `private`, `osv`, or configured advisory feed name (#515) |
 
 The ownership filters (#459) take comma-separated values: values within one parameter are ORed, parameters are ANDed (`?cluster=prod-eu,prod-us&tag=sandbox` = SBOMs in either cluster that carry `sandbox`). Ownership is read from the SBOM, so it matches the project and fleet views. A value longer than 200 characters is a `400`.
 
@@ -995,6 +997,7 @@ Every finding of [`GET /api/v1/vulnerabilities`](#get-apiv1vulnerabilities) as a
 | `reachability` | string | all | Filter by reachability evidence: `reachable`, `not_reachable`, or `unknown` (#535) |
 | `exploit` | string | — | `available`: only findings with [public exploit code](#exploit-code) |
 | `cwe` | string | all | Only findings of this weakness class, e.g. `CWE-79` (#409). Case-insensitive; normalised to `CWE-<number>`. |
+| `source` | string | all | Filter by advisory source: `private`, `osv`, or configured advisory feed name (#515) |
 
 The ownership filters work as on the JSON listing.
 
@@ -1311,7 +1314,7 @@ One row per distinct `(vuln_id, purl)` across every SBOM of the project, with
 among all statements scoped to any of the project's SBOMs that cover the pair,
 the newest wins. Same row shape as `GET /api/v1/vulnerabilities`; not paginated.
 `dependency_scope` is the shallowest depth the package has in any of the
-project's SBOMs. Accepts `?scope=` and `?exploit=available` like `GET /api/v1/vulnerabilities`.
+project's SBOMs. Accepts `?scope=`, `?exploit=available`, and `?source=` (e.g. `private` or `osv`) like `GET /api/v1/vulnerabilities`.
 
 ### `GET /api/v1/projects/{name}/packages`
 
@@ -1467,6 +1470,55 @@ outage keeps serving it. Missing optional files return an empty document. An
 existing empty primary file takes precedence over any fallback file. Stored
 compliance results follow configuration changes automatically: the workers
 re-check them in the background ([Retroactive application](/docs/license-exceptions/#retroactive-application)).
+
+### `GET /api/v1/private-vulnerabilities`
+
+Configured active private vulnerability advisories (read-only, loaded from the configured
+`PRIVATE_VULNERABILITIES_FILE` or `PRIVATE_VULNERABILITIES_SOURCE` in OSV schema and
+reloaded every `PRIVATE_VULNERABILITIES_REFRESH_INTERVAL`).
+
+Advisory entries use the OSV format with IDs matching `^[A-Za-z0-9._-]{1,100}$` (e.g.
+`BOMHORT-2024-001`, `ORG-SEC-123`) and never public OSV prefixes such as `CVE-`, `GHSA-`,
+`PYSEC-`, `GO-`, `RUSTSEC-`, `MAL-`, or `DSA-`. Entries with `withdrawn` set are excluded
+from active evaluation and from this endpoint. Both `parsing-worker` (even when `SKIP_OSV=true`)
+and `cve-refresher` evaluate private advisories; `cve-refresher` closes removed or withdrawn
+findings (including when the local file is removed) and propagates summary, severity, fixed
+version, and alias updates.
+
+**Response:** `200 OK`
+```json
+[
+  {
+    "id": "BOMHORT-2024-001",
+    "summary": "Internal flaw in custom authentication middleware",
+    "details": "A timing vulnerability exists in internal token verification.",
+    "references": [
+      {
+        "type": "ADVISORY",
+        "url": "https://security.example.com/advisories/BOMHORT-2024-001"
+      }
+    ],
+    "affected": [
+      {
+        "package": {
+          "name": "internal-auth",
+          "ecosystem": "npm",
+          "purl": "pkg:npm/internal-auth"
+        },
+        "ranges": [
+          {
+            "type": "SEMVER",
+            "events": [
+              {"introduced": "0"},
+              {"fixed": "2.1.0"}
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]
+```
 
 ### `GET /api/v1/license-policy`
 

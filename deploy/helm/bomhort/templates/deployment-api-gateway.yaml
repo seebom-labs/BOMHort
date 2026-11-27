@@ -57,7 +57,8 @@ spec:
           {{- end }}
           {{- end }}
           {{- $exceptionsEnv := include "bomhort.licenseExceptions.env" . }}
-          {{- if or .Values.clickhouse.userPasswordSecret.enabled .Values.s3.credentialsSecret.enabled .Values.apiGateway.auth.enabled .Values.apiGateway.maxUploadSizeMB .Values.apiGateway.teaBaseUrl .Values.apiGateway.dedupByImageDigest $queryLimits $exceptionsEnv }}
+          {{- $privateVulnsEnv := include "bomhort.privateVulnerabilities.env" . }}
+          {{- if or .Values.clickhouse.userPasswordSecret.enabled .Values.s3.credentialsSecret.enabled .Values.apiGateway.auth.enabled .Values.apiGateway.maxUploadSizeMB .Values.apiGateway.teaBaseUrl .Values.apiGateway.dedupByImageDigest $queryLimits $exceptionsEnv $privateVulnsEnv }}
           env:
             {{- if .Values.apiGateway.teaBaseUrl }}
             - name: TEA_BASE_URL
@@ -125,6 +126,7 @@ spec:
               value: {{ .value | quote }}
             {{- end }}
             {{- with $exceptionsEnv }}{{ . | trim | nindent 12 }}{{ end }}
+            {{- with $privateVulnsEnv }}{{ . | trim | nindent 12 }}{{ end }}
           {{- end }}
           livenessProbe:
             httpGet:
@@ -149,6 +151,7 @@ spec:
             {{- /* No rollout checksum: the pods re-read the mounted
                  directory and re-check stored results themselves. */}}
             {{- with include "bomhort.licenseExceptions.volumeMount" . }}{{ . | trim | nindent 12 }}{{ end }}
+            {{- with include "bomhort.privateVulnerabilities.volumeMount" . }}{{ . | trim | nindent 12 }}{{ end }}
             {{- if .Values.licensePolicy.enabled }}
             - name: license-policy
               mountPath: {{ .Values.licensePolicy.mountPath }}
@@ -174,6 +177,7 @@ spec:
             claimName: {{ .Values.originalStore.fs.pvcName }}
         {{- end }}
         {{- with include "bomhort.licenseExceptions.volume" . }}{{ . | trim | nindent 8 }}{{ end }}
+        {{- with include "bomhort.privateVulnerabilities.volume" . }}{{ . | trim | nindent 8 }}{{ end }}
         {{- with .Values.licensePolicy }}
         {{- if .enabled }}
         - name: license-policy
