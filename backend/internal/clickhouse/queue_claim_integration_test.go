@@ -75,10 +75,10 @@ func TestOwnClaimedJobIDsIgnoresSupersededClaim(t *testing.T) {
 	insert := func(createdAt time.Time, worker string) {
 		t.Helper()
 		if err := c.Conn.Exec(ctx, `INSERT INTO ingestion_queue (`+queueColumns+`)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			createdAt, jobID, "integration-test/claim.spdx.json", uuid.NewString(),
 			"processing", "sbom", worker, &createdAt, (*time.Time)(nil), "",
-			"", "", "", "", "", "", []string{}, "", time.Time{}); err != nil {
+			"", "", "", "", "", "", []string{}, "", "", "", "", time.Time{}); err != nil {
 			t.Fatalf("insert claim for %s: %v", worker, err)
 		}
 	}
