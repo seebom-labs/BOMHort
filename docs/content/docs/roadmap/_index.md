@@ -52,7 +52,7 @@ Two rules drive sequencing:
 | ✅ | ~~[#132](https://github.com/seebom-labs/BOMHort/issues/132)~~ / ~~[#133](https://github.com/seebom-labs/BOMHort/issues/133)~~ Cluster endpoints | `GET /api/v1/clusters`, per-cluster stats and SBOM lists. |
 | ✅ | ~~[#135](https://github.com/seebom-labs/BOMHort/issues/135)~~ SBOM Upload (Push Model) | `POST /api/v1/sboms/upload` from CI/CD pipelines. |
 | ✅ | ~~[#398](https://github.com/seebom-labs/BOMHort/issues/398)~~ Project-centric read model | `GET /api/v1/projects/{name}` + sub-resources, de-duplicated counts; the project identity rule is contract. Shipped in v0.8.0. |
-| 🟡 | [#136](https://github.com/seebom-labs/BOMHort/issues/136) Enhanced CORS | Functionally done (POST on upload, `X-API-Key`). Remaining bits (`CORS_ALLOW_CREDENTIALS`, configurable methods) are additive → v1.1.0. |
+| ✅ | ~~[#136](https://github.com/seebom-labs/BOMHort/issues/136)~~ Enhanced CORS | Complete: `CORS_ALLOW_CREDENTIALS`, configurable methods/headers, and max-age. |
 
 **Schema wave `014`–`022` — complete:** `document_store` ([#256](https://github.com/seebom-labs/BOMHort/issues/256)), `namespace`/`project` ([#138](https://github.com/seebom-labs/BOMHort/issues/138), [#57](https://github.com/seebom-labs/BOMHort/issues/57)), `source_repo`/`source_ref` ([#332](https://github.com/seebom-labs/BOMHort/issues/332)), VEX provenance ([#334](https://github.com/seebom-labs/BOMHort/issues/334)), VEX SBOM scope ([#350](https://github.com/seebom-labs/BOMHort/issues/350)), OSV aliases, VEX `product_ref`, `document_version`, `tags` ([#357](https://github.com/seebom-labs/BOMHort/issues/357)). `023`–`026` followed in v0.8.0; the v0.9.0 register work starts at `027`.
 
@@ -174,7 +174,7 @@ All v0.x releases are development milestones and may contain breaking changes be
 | 🔲 | [#267](https://github.com/seebom-labs/BOMHort/issues/267) → [#176](https://github.com/seebom-labs/BOMHort/issues/176) Cluster Picker | Query-param filter first (help wanted), then navbar dropdown. |
 | 🔲 | [#140](https://github.com/seebom-labs/BOMHort/issues/140) Workload vulnerability summary | Image → posture; additional [#141](https://github.com/seebom-labs/BOMHort/issues/141) input. |
 | 🔲 | [#57](https://github.com/seebom-labs/BOMHort/issues/57) Per-project policies | License policies, severity thresholds, exception scopes per project. |
-| 🔲 | [#136](https://github.com/seebom-labs/BOMHort/issues/136) CORS (remaining) | `CORS_ALLOW_CREDENTIALS`, configurable methods/headers. |
+| ✅ | ~~[#136](https://github.com/seebom-labs/BOMHort/issues/136)~~ CORS (remaining) | `CORS_ALLOW_CREDENTIALS`, configurable methods/headers. |
 | 🔲 | [#490](https://github.com/seebom-labs/BOMHort/issues/490) Resolver response limits | Bounded bodies, deps.dev page cap; lands with the mirror's outbound feeds. |
 | 🔲 | [#60](https://github.com/seebom-labs/BOMHort/issues/60) Local OSV mirror | Offline / air-gapped; KEV and EPSS feeds get the same treatment. |
 | 🔲 | [#143](https://github.com/seebom-labs/BOMHort/issues/143) In-toto Witness integration | `03x_create_attestations`, signature verification; additional [#141](https://github.com/seebom-labs/BOMHort/issues/141) input. |
