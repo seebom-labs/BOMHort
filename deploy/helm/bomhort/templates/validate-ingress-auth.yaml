@@ -1,0 +1,31 @@
+{{- /*
+Security validation for ingress and authentication. API authentication protects
+direct API paths. The bundled UI is intentionally public and its nginx proxy
+injects the service token on read requests, so a UI ingress path also needs
+external user authentication.
+*/ -}}
+{{- if .Values.ingress.enabled }}
+  {{- $authEnabled := false }}
+  {{- $uiIngress := false }}
+  {{- if .Values.apiGateway }}
+    {{- if .Values.apiGateway.auth }}
+      {{- if .Values.apiGateway.auth.enabled }}
+        {{- $authEnabled = true }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+  {{- range .Values.ingress.hosts }}
+    {{- range .paths }}
+      {{- if eq (.serviceSuffix | default "api-gateway") "ui" }}
+        {{- $uiIngress = true }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+
+  {{- if and .Values.ingress.requireAuth (not $authEnabled) }}
+    {{- fail "[SECURITY ERROR] ingress.requireAuth=true requires apiGateway.auth.enabled=true to protect direct API paths." }}
+  {{- end }}
+  {{- if and .Values.ingress.requireAuth $uiIngress (not .Values.ingress.externalAuth.enabled) }}
+    {{- fail "[SECURITY ERROR] ingress.requireAuth=true cannot expose the bundled UI without external authentication. Configure authentication in the ingress/controller and set ingress.externalAuth.enabled=true, or remove the UI ingress path." }}
+  {{- end }}
+{{- end }}

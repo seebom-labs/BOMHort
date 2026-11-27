@@ -1,4 +1,19 @@
 {{- if .Values.ingress.enabled }}
+{{- $authEnabled := .Values.apiGateway.auth.enabled | default false }}
+{{- $uiIngress := false }}
+{{- range .Values.ingress.hosts }}
+  {{- range .paths }}
+    {{- if eq (.serviceSuffix | default "api-gateway") "ui" }}
+      {{- $uiIngress = true }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+{{- $annotations := deepCopy (.Values.ingress.annotations | default dict) }}
+{{- if not $authEnabled }}
+  {{- $_ := set $annotations "bomhort.dev/security-warning" "API gateway authentication is disabled; direct API paths may expose SBOM and vulnerability data." }}
+{{- else if and $uiIngress (not .Values.ingress.externalAuth.enabled) }}
+  {{- $_ := set $annotations "bomhort.dev/security-warning" "The public UI proxies anonymous reads with the gateway service token; configure external user authentication before exposing this UI path." }}
+{{- end }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -7,7 +22,7 @@ metadata:
     app.kubernetes.io/name: bomhort
     app.kubernetes.io/component: ingress
     app.kubernetes.io/instance: {{ .Release.Name }}
-  {{- with .Values.ingress.annotations }}
+  {{- with $annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
