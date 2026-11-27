@@ -1,0 +1,57 @@
+{{- if .Values.clickhouse.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-clickhouse-access
+  labels:
+    app.kubernetes.io/name: bomhort
+    app.kubernetes.io/component: clickhouse
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: bomhort
+      clickhouse.altinity.com/chi: {{ .Release.Name }}-clickhouse
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/name: bomhort
+            matchExpressions:
+              - key: app.kubernetes.io/component
+                operator: In
+                values:
+                  - api-gateway
+                  - parsing-worker
+                  - cve-refresher
+                  - ingestion-watcher
+                  - migrate
+                  - data-migration
+      ports:
+        - protocol: TCP
+          port: {{ .Values.clickhouse.port | default 9000 }}
+    # The Altinity operator uses the ClickHouse HTTP interface for lifecycle
+    # checks and reconciliation. Both selectors are required to match.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml .Values.clickhouse.networkPolicy.operatorNamespaceSelector | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.clickhouse.networkPolicy.operatorPodSelector | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 8123
+    # ClickHouse replicas exchange replication data on 9009. Scope this to
+    # pods belonging to this ClickHouseInstallation only.
+    - from:
+        - podSelector:
+            matchLabels:
+              clickhouse.altinity.com/chi: {{ .Release.Name }}-clickhouse
+      ports:
+        - protocol: TCP
+          port: 9009
+{{- end }}
