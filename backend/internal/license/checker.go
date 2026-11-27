@@ -1,9 +1,12 @@
 package license
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 
@@ -155,6 +158,33 @@ func GetPolicy() *PolicyFile {
 	return pf
 }
 
+// PolicyFingerprint returns a stable digest of the active classification
+// policy, including expression mode. It is used to invalidate stored
+// compliance results when the policy changes.
+func PolicyFingerprint() string {
+	policyMu.RLock()
+	permissive := make([]string, 0, len(activePolicy.permissive))
+	for id := range activePolicy.permissive {
+		permissive = append(permissive, id)
+	}
+	copyleft := make([]string, 0, len(activePolicy.copyleft))
+	for id := range activePolicy.copyleft {
+		copyleft = append(copyleft, id)
+	}
+	mode := activePolicy.mode
+	policyMu.RUnlock()
+
+	sort.Strings(permissive)
+	sort.Strings(copyleft)
+	canonical, _ := json.Marshal(struct {
+		Permissive []string       `json:"permissive"`
+		Copyleft   []string       `json:"copyleft"`
+		Mode       ExpressionMode `json:"mode"`
+	}{Permissive: permissive, Copyleft: copyleft, Mode: mode})
+	digest := sha256.Sum256(canonical)
+	return hex.EncodeToString(digest[:])
+}
+
 // Categorize returns the compliance category for an SPDX license identifier
 // or expression. A bare identifier is matched exactly, then by SPDX modifier
 // prefix. A compound expression ("A AND B", "A OR B", "A WITH E", with
@@ -228,9 +258,12 @@ func (p *Policy) categorizeSingle(id string) Category {
 
 // Result holds the compliance check result for one SBOM.
 type Result struct {
-	LicenseID            string
-	Category             Category
-	PackageCount         uint32
+	LicenseID    string
+	Category     Category
+	PackageCount uint32
+	// PackageNames carries the source package identities when a stored result
+	// is re-evaluated under a changed classification policy.
+	PackageNames         []string
 	NonCompliantPackages []string
 	ExemptedPackages     []string // packages covered by exceptions
 	ExemptionReason      string   // reason if entire license is exempted

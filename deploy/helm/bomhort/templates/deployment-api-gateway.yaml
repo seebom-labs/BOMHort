@@ -14,6 +14,9 @@ spec:
       app.kubernetes.io/component: api-gateway
   template:
     metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/license-policy: {{ printf "%s:%s" (include (print $.Template.BasePath "/configmap-license-policy.yaml") .) .Values.licensePolicy.rolloutChecksum | sha256sum }}
       labels:
         app.kubernetes.io/name: bomhort
         app.kubernetes.io/component: api-gateway

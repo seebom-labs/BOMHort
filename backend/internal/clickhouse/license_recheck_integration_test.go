@@ -82,6 +82,18 @@ func TestLicenseRecheckQueries(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("InsertSBOM: %v", err)
 	}
+	if err := c.InsertSBOMPackages(ctx, &models.SBOMPackages{
+		IngestedAt: time.Now(), SBOMID: sbomID, SourceFile: "integration-test/recheck.spdx.json",
+		PackageSPDXIDs:        []string{"SPDXRef-a", "SPDXRef-b", "SPDXRef-mit"},
+		PackageNames:          []string{"a", "b", "mit"},
+		PackageVersions:       []string{"1", "2", "3"},
+		PackagePURLs:          []string{"pkg:generic/a", "pkg:generic/b", "pkg:generic/mit"},
+		PackageLicenses:       []string{"GPL-3.0-only", "GPL-3.0-only", "MIT"},
+		PackageLicenseSources: []string{"declared", "declared", "declared"},
+		PackageDepths:         []uint16{1, 1, 1},
+	}); err != nil {
+		t.Fatalf("InsertSBOMPackages: %v", err)
+	}
 	row := models.LicenseCompliance{
 		CheckedAt:            time.Now().Add(-time.Minute),
 		SBOMID:               sbomID,
@@ -104,6 +116,14 @@ func TestLicenseRecheckQueries(t *testing.T) {
 	if err := c.InsertLicenseCompliance(ctx, []models.LicenseCompliance{updated}); err != nil {
 		t.Fatalf("InsertLicenseCompliance: %v", err)
 	}
+	permissive := models.LicenseCompliance{
+		CheckedAt: time.Now(), SBOMID: sbomID, SourceFile: "integration-test/recheck.spdx.json",
+		LicenseID: "MIT", Category: "permissive", PackageCount: 1,
+		NonCompliantPackages: []string{}, ExemptedPackages: []string{},
+	}
+	if err := c.InsertLicenseCompliance(ctx, []models.LicenseCompliance{permissive}); err != nil {
+		t.Fatalf("InsertLicenseCompliance (permissive): %v", err)
+	}
 
 	var got []StoredLicenseCompliance
 	err = c.EachLicenseCompliance(ctx, func(r StoredLicenseCompliance) error {
@@ -115,12 +135,23 @@ func TestLicenseRecheckQueries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EachLicenseCompliance: %v", err)
 	}
-	if len(got) != 1 {
-		t.Fatalf("got %d rows for the SBOM, want 1 (FINAL)", len(got))
+	if len(got) != 2 {
+		t.Fatalf("got %d rows for the SBOM, want 2 (FINAL)", len(got))
 	}
-	r := got[0]
+	byLicense := map[string]StoredLicenseCompliance{}
+	for _, row := range got {
+		byLicense[row.LicenseID] = row
+	}
+	r := byLicense["GPL-3.0-only"]
 	if r.DocumentName != "recheck-project" || r.Category != "copyleft" || r.PackageCount != 2 || r.Project != "p" ||
 		!slices.Equal(r.NonCompliantPackages, []string{"b"}) || !slices.Equal(r.ExemptedPackages, []string{"a"}) || r.ExemptionReason != "granted" {
 		t.Fatalf("row = %+v", r)
+	}
+	if len(r.PackageNames) != 0 {
+		t.Fatalf("non-permissive row should not duplicate source names: %v", r.PackageNames)
+	}
+	permissiveRow := byLicense["MIT"]
+	if permissiveRow.Category != "permissive" || !slices.Equal(permissiveRow.PackageNames, []string{"mit"}) {
+		t.Fatalf("permissive row source package names = %v, want [mit]", permissiveRow.PackageNames)
 	}
 }
