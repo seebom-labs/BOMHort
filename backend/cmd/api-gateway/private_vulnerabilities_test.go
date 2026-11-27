@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/seebom-labs/bomhort/backend/internal/osv"
 	"github.com/seebom-labs/bomhort/backend/internal/privatevuln"
 	"github.com/seebom-labs/bomhort/backend/internal/rulesource"
 )
@@ -32,7 +31,7 @@ func TestPrivateVulnerabilitiesHandler_Empty(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 
-	var entries []osv.VulnEntry
+	var entries []privatevuln.Entry
 	if err := json.Unmarshal(rec.Body.Bytes(), &entries); err != nil {
 		t.Fatalf("json unmarshal: %v", err)
 	}
@@ -92,7 +91,7 @@ func TestPrivateVulnerabilitiesHandler_Populated(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 
-	var entries []osv.VulnEntry
+	var entries []privatevuln.Entry
 	if err := json.Unmarshal(rec.Body.Bytes(), &entries); err != nil {
 		t.Fatalf("json unmarshal: %v", err)
 	}

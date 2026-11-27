@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/seebom-labs/bomhort/backend/internal/osv"
 	"github.com/seebom-labs/bomhort/backend/internal/privatevuln"
 	"github.com/seebom-labs/bomhort/backend/internal/rulesource"
 )
@@ -37,7 +36,7 @@ func privateVulnerabilitiesHandler(watcher *privatevuln.Watcher) http.HandlerFun
 			return
 		}
 		if idx == nil || len(idx.ActiveEntries) == 0 {
-			writeJSON(w, http.StatusOK, []osv.VulnEntry{})
+			writeJSON(w, http.StatusOK, []privatevuln.Entry{})
 			return
 		}
 		writeJSON(w, http.StatusOK, idx.ActiveEntries)

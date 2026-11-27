@@ -149,3 +149,46 @@ func TestCollectJobFindings_SkipOSVStillMatchesPrivate(t *testing.T) {
 		t.Fatalf("findings = %+v, want ACME-2026-001 (private) even with SkipOSV=true", got)
 	}
 }
+
+func TestEvaluateWorkerVulnerabilities_PassesPrivateIndex(t *testing.T) {
+	doc := `[{
+		"id": "ACME-2026-WORKER",
+		"summary": "Private worker test",
+		"affected": [{
+			"package": {"ecosystem": "npm", "name": "worker-lib"},
+			"ranges": [{"type": "SEMVER", "events": [{"introduced": "0"}, {"fixed": "2.0.0"}]}]
+		}]
+	}]`
+	idx, err := privatevuln.Parse([]byte(doc), "test.json")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	called := false
+	privateVulns := func() *privatevuln.Index {
+		called = true
+		return idx
+	}
+
+	purls := []string{"pkg:npm/worker-lib@1.0.0"}
+	findings, err := evaluateWorkerVulnerabilities(context.Background(), true, fakeOSV{}, nil, privateVulns, purls)
+	if err != nil {
+		t.Fatalf("evaluateWorkerVulnerabilities: %v", err)
+	}
+	if !called {
+		t.Fatal("privateVulns provider was not invoked")
+	}
+	if len(findings) != 1 || findings[0].Entry.ID != "ACME-2026-WORKER" || findings[0].Source != "private" {
+		t.Fatalf("findings = %+v, want ACME-2026-WORKER", findings)
+	}
+
+	// When privateVulns is nil, no private findings are gathered
+	findingsNoPvt, err := evaluateWorkerVulnerabilities(context.Background(), true, fakeOSV{}, nil, nil, purls)
+	if err != nil {
+		t.Fatalf("evaluateWorkerVulnerabilities nil: %v", err)
+	}
+	if len(findingsNoPvt) != 0 {
+		t.Fatalf("expected 0 findings when privateVulns is nil, got %d", len(findingsNoPvt))
+	}
+}
+

@@ -71,6 +71,9 @@ func TestVulnListHandlerRejects(t *testing.T) {
 		{"GET /c/{name}", "/c/a?cluster=b"},
 		{"GET /x", "/x?exploit=true"},
 		{"GET /x", "/x?exploit=Available"},
+		{"GET /x", "/x?source=invalid%20source"},
+		{"GET /x", "/x?source=invalid/slash"},
+		{"GET /x", "/x?source=" + strings.Repeat("s", 65)},
 	} {
 		mux := http.NewServeMux()
 		// nil client: a request that reaches the query would panic.

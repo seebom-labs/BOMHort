@@ -571,11 +571,7 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 	} else {
 		log.Printf("  SKIP_OSV=true, skipping OSV scan for %s (%d PURLs)", job.SourceFile, len(result.Packages.PackagePURLs))
 	}
-	var pvtIdx *privatevuln.Index
-	if privateVulns != nil {
-		pvtIdx = privateVulns()
-	}
-	findings, err := collectVulnerabilityFindings(ctx, cfg.SkipOSV, osvClient, matcher, pvtIdx, purls)
+	findings, err := evaluateWorkerVulnerabilities(ctx, cfg.SkipOSV, osvClient, matcher, privateVulns, purls)
 	if err != nil {
 		return err
 	}

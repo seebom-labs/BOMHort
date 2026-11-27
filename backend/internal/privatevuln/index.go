@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	json "github.com/goccy/go-json"
 
@@ -59,19 +60,37 @@ var publicOSVPrefixes = []string{
 	"ALPINE-CVE-",
 }
 
+// Reference links external advisories, commits, or reports for a vulnerability.
+type Reference struct {
+	Type string `json:"type"`
+	URL  string `json:"url"`
+}
+
+// Entry represents a private vulnerability advisory in OSV schema.
+// It embeds osv.VulnEntry for shared fields (ID, Summary, Severity, Affected, etc.)
+// and includes Details and References for private advisories without bloating
+// the shared public osv.VulnEntry (and its osv_json column).
+type Entry struct {
+	osv.VulnEntry
+	Details    string      `json:"details,omitempty"`
+	References []Reference `json:"references,omitempty"`
+}
+
 // Index provides fast in-memory lookup of private vulnerability advisories
 // against PURLs.
 type Index struct {
 	// Entries is all valid private advisories in file order.
-	Entries []osv.VulnEntry
+	Entries []Entry
 	// ActiveEntries excludes withdrawn advisories.
-	ActiveEntries []osv.VulnEntry
+	ActiveEntries []Entry
 	// byKey maps a package key ("type/namespace/name") to the affected targets.
 	byKey map[string][]entryTarget
+	// warned deduplicates log warnings per (advisory.ID + "\x00" + purl) per Index instance.
+	warned sync.Map
 }
 
 type entryTarget struct {
-	entry    osv.VulnEntry
+	entry    Entry
 	affected osv.Affected
 	release  string
 }
@@ -104,11 +123,11 @@ func Parse(data []byte, name string) (*Index, error) {
 		return &Index{byKey: make(map[string][]entryTarget)}, nil
 	}
 
-	var entries []osv.VulnEntry
+	var entries []Entry
 	if trimmed[0] == '{' {
 		var wrapper struct {
-			Version         string          `json:"version"`
-			Vulnerabilities []osv.VulnEntry `json:"vulnerabilities"`
+			Version         string  `json:"version"`
+			Vulnerabilities []Entry `json:"vulnerabilities"`
 		}
 		if err := json.Unmarshal(trimmed, &wrapper); err != nil {
 			return nil, fmt.Errorf("failed to parse private vulnerabilities file %s: %w", name, err)
@@ -162,10 +181,25 @@ func Parse(data []byte, name string) (*Index, error) {
 	return idx, nil
 }
 
+func unorderableVersion(ver string) (string, bool) {
+	if strings.Contains(ver, "!") {
+		return "PyPI epoch prefix", true
+	}
+	if parsed, ok := parseLenientSemver(ver); ok && parsed.unknownTag {
+		return fmt.Sprintf("unknown suffix %q", parsed.tag), true
+	}
+	return "", false
+}
+
 func warnUnvalidatableRanges(id, file, key string, a osv.Affected) {
 	if len(a.Versions) == 0 && len(a.Ranges) == 0 {
 		log.Printf("WARNING: private vulnerability %s (%s) in %s has no versions or ranges and will never match", id, key, file)
 		return
+	}
+	for _, v := range a.Versions {
+		if reason, unorderable := unorderableVersion(v); unorderable {
+			log.Printf("WARNING: private vulnerability %s (%s) in %s has affected version %q with %s that cannot be ordered safely", id, key, file, v, reason)
+		}
 	}
 	purlType, _, _ := strings.Cut(key, "/")
 	for _, r := range a.Ranges {
@@ -192,6 +226,9 @@ func warnUnvalidatableRanges(id, file, key string, a osv.Affected) {
 				if _, ok := cmp(ver, ver); !ok {
 					log.Printf("WARNING: private vulnerability %s (%s) in %s has range event %q that cannot be parsed under %s", id, key, file, ver, rt)
 					break
+				}
+				if reason, unorderable := unorderableVersion(ver); unorderable {
+					log.Printf("WARNING: private vulnerability %s (%s) in %s has range event %q with %s that cannot be ordered safely under %s", id, key, file, ver, reason, rt)
 				}
 			}
 		}
@@ -224,7 +261,10 @@ func (idx *Index) Match(purls []string) []advisory.Finding {
 			}
 			hit, evaluated := matchAffected(target.affected, p)
 			if !evaluated {
-				log.Printf("WARNING: private vulnerability %s could not evaluate package %s", target.entry.ID, purlStr)
+				warnKey := target.entry.ID + "\x00" + purlStr
+				if _, alreadyWarned := idx.warned.LoadOrStore(warnKey, struct{}{}); !alreadyWarned {
+					log.Printf("WARNING: private vulnerability %s could not evaluate package %q", target.entry.ID, purlStr)
+				}
 				continue
 			}
 			if !hit {
@@ -239,7 +279,7 @@ func (idx *Index) Match(purls []string) []advisory.Finding {
 
 			findings = append(findings, advisory.Finding{
 				PURL:         purlStr,
-				Entry:        target.entry,
+				Entry:        target.entry.VulnEntry,
 				Source:       "private",
 				Status:       advisory.StatusAffected,
 				FixedVersion: advisory.FixedIn(target.affected),
@@ -247,7 +287,6 @@ func (idx *Index) Match(purls []string) []advisory.Finding {
 			})
 		}
 	}
-
 	return findings
 }
 
@@ -332,9 +371,11 @@ func comparePrivateSemver(a, b string) (int, bool) {
 }
 
 type lenientVersion struct {
-	nums    []uint64
-	preRank int // -1 pre-release (alpha/beta/rc/pre/dev/snapshot/m), 0 normal/final release
-	tag     string
+	epoch      uint64
+	nums       []uint64
+	preRank    int // -1 pre-release, 0 normal/final release, 1 post-release
+	tag        string
+	unknownTag bool
 }
 
 func parseLenientSemver(raw string) (lenientVersion, bool) {
@@ -344,6 +385,21 @@ func parseLenientSemver(raw string) (lenientVersion, bool) {
 	if i := strings.IndexByte(v, '+'); i >= 0 {
 		v = v[:i]
 	}
+	if v == "" {
+		return out, false
+	}
+
+	// PyPI PEP 440 epoch support: e.g. "1!1.0"
+	if i := strings.IndexByte(v, '!'); i >= 0 {
+		epochStr := v[:i]
+		v = v[i+1:]
+		epochNum, err := strconv.ParseUint(epochStr, 10, 64)
+		if err != nil {
+			return out, false
+		}
+		out.epoch = epochNum
+	}
+
 	if v == "" || v[0] < '0' || v[0] > '9' {
 		return out, false
 	}
@@ -398,12 +454,17 @@ func parseLenientSemver(raw string) (lenientVersion, bool) {
 		switch {
 		case isFinalTag(low):
 			out.preRank = 0
+			out.tag = low
+		case isPostReleaseTag(low):
+			out.preRank = 1
+			out.tag = low
 		case isPreReleaseTag(low):
 			out.preRank = -1
 			out.tag = low
 		default:
 			out.preRank = -1
 			out.tag = low
+			out.unknownTag = true
 		}
 	}
 	return out, true
@@ -413,8 +474,8 @@ func isFinalTag(s string) bool {
 	return s == "final" || s == "release" || s == "ga"
 }
 
-func isPreReleaseTag(s string) bool {
-	for _, p := range []string{"rc", "alpha", "beta", "pre", "dev", "snapshot", "a", "b", "m"} {
+func isPostReleaseTag(s string) bool {
+	for _, p := range []string{"post", "sp", "patch", "rev", "servicepack"} {
 		if strings.HasPrefix(s, p) {
 			return true
 		}
@@ -422,7 +483,25 @@ func isPreReleaseTag(s string) bool {
 	return false
 }
 
+func isPreReleaseTag(s string) bool {
+	for _, p := range []string{"rc", "alpha", "beta", "pre", "dev", "snapshot", "m"} {
+		if strings.HasPrefix(s, p) {
+			return true
+		}
+	}
+	if (strings.HasPrefix(s, "a") || strings.HasPrefix(s, "b")) && len(s) > 1 && s[1] >= '0' && s[1] <= '9' {
+		return true
+	}
+	return false
+}
+
 func cmpLenientSemver(a, b lenientVersion) int {
+	if a.epoch != b.epoch {
+		if a.epoch < b.epoch {
+			return -1
+		}
+		return 1
+	}
 	n := len(a.nums)
 	if len(b.nums) > n {
 		n = len(b.nums)
@@ -451,6 +530,44 @@ func cmpLenientSemver(a, b lenientVersion) int {
 	return compareTagTokens(a.tag, b.tag)
 }
 
+type tagToken struct {
+	isNum bool
+	num   uint64
+	str   string
+}
+
+func tokenizeTag(s string) []tagToken {
+	var tokens []tagToken
+	i := 0
+	for i < len(s) {
+		if s[i] == '.' || s[i] == '-' || s[i] == '_' {
+			i++
+			continue
+		}
+		if s[i] >= '0' && s[i] <= '9' {
+			j := i
+			for j < len(s) && s[j] >= '0' && s[j] <= '9' {
+				j++
+			}
+			num, err := strconv.ParseUint(s[i:j], 10, 64)
+			if err == nil {
+				tokens = append(tokens, tagToken{isNum: true, num: num})
+			} else {
+				tokens = append(tokens, tagToken{str: s[i:j]})
+			}
+			i = j
+		} else {
+			j := i
+			for j < len(s) && (s[j] < '0' || s[j] > '9') && s[j] != '.' && s[j] != '-' && s[j] != '_' {
+				j++
+			}
+			tokens = append(tokens, tagToken{str: s[i:j]})
+			i = j
+		}
+	}
+	return tokens
+}
+
 func compareTagTokens(a, b string) int {
 	if a == b {
 		return 0
@@ -461,5 +578,36 @@ func compareTagTokens(a, b string) int {
 	if b == "" {
 		return 1
 	}
-	return strings.Compare(a, b)
+	toksA := tokenizeTag(a)
+	toksB := tokenizeTag(b)
+	n := len(toksA)
+	if len(toksB) < n {
+		n = len(toksB)
+	}
+	for i := 0; i < n; i++ {
+		ta, tb := toksA[i], toksB[i]
+		if ta.isNum && tb.isNum {
+			if ta.num < tb.num {
+				return -1
+			}
+			if ta.num > tb.num {
+				return 1
+			}
+		} else if ta.isNum && !tb.isNum {
+			return -1
+		} else if !ta.isNum && tb.isNum {
+			return 1
+		} else {
+			if c := strings.Compare(ta.str, tb.str); c != 0 {
+				return c
+			}
+		}
+	}
+	if len(toksA) < len(toksB) {
+		return -1
+	}
+	if len(toksA) > len(toksB) {
+		return 1
+	}
+	return 0
 }

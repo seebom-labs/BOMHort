@@ -27,6 +27,11 @@ test.describe('Vulnerabilities', () => {
     await expect(page.locator('.viewport')).not.toHaveClass(/stale/);
     await page.getByLabel('Dependency scope filter').selectOption('');
 
+    await page.getByLabel('Advisory source filter').selectOption('private');
+    await expect(page.locator('.export-btn')).toHaveAttribute('href', /source=private/);
+    await expect(page.locator('.viewport')).not.toHaveClass(/stale/);
+    await page.getByLabel('Advisory source filter').selectOption('');
+
     const href = await page.locator('.export-btn').getAttribute('href');
     expect(href).toContain('/api/v1/');
     expect((await page.request.get(href!)).ok()).toBeTruthy();

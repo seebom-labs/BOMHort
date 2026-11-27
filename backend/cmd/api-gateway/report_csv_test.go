@@ -199,3 +199,26 @@ func TestVulnerabilityReportPassesExploitFilter(t *testing.T) {
 		t.Fatalf("status %d, filter %+v; want the exploit filter passed to the query", rec.Code, got)
 	}
 }
+
+func TestVulnerabilityReportPassesSourceFilter(t *testing.T) {
+	var got clickhouse.VulnFilter
+	h := vulnerabilityReportHandler(noParents, func(_ context.Context, _ string, f clickhouse.VulnFilter) (vulnerabilityRows, error) {
+		got = f
+		return &fakeVulnRows{}, nil
+	}, fixedNow)
+
+	// Valid source passes through to filter
+	rec := httptest.NewRecorder()
+	h(rec, httptest.NewRequest(http.MethodGet, "/api/v1/reports/vulnerabilities?format=csv&source=private", nil))
+	if rec.Code != http.StatusOK || got.Source != "private" {
+		t.Fatalf("status %d, filter %+v; want Source == 'private'", rec.Code, got)
+	}
+
+	// Invalid source returns 400 Bad Request
+	recBad := httptest.NewRecorder()
+	h(recBad, httptest.NewRequest(http.MethodGet, "/api/v1/reports/vulnerabilities?format=csv&source=invalid%20name", nil))
+	if recBad.Code != http.StatusBadRequest {
+		t.Fatalf("status %d, want 400 for invalid source", recBad.Code)
+	}
+}
+

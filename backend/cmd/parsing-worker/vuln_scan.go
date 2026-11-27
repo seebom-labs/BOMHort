@@ -97,6 +97,16 @@ func scanVulnerabilities(ctx context.Context, src vulnSource, matcher *advisory.
 	return findings, nil
 }
 
+// evaluateWorkerVulnerabilities resolves the private vulnerability index from
+// privateVulns and evaluates both public OSV and private findings.
+func evaluateWorkerVulnerabilities(ctx context.Context, skipOSV bool, src vulnSource, matcher *advisory.Matcher, privateVulns func() *privatevuln.Index, purls []string) ([]advisory.Finding, error) {
+	var pvtIdx *privatevuln.Index
+	if privateVulns != nil {
+		pvtIdx = privateVulns()
+	}
+	return collectVulnerabilityFindings(ctx, skipOSV, src, matcher, pvtIdx, purls)
+}
+
 // collectVulnerabilityFindings gathers public OSV and advisory-feed findings
 // (unless skipOSV is set) and always merges active private vulnerability advisories.
 func collectVulnerabilityFindings(ctx context.Context, skipOSV bool, src vulnSource, matcher *advisory.Matcher, pvtIdx *privatevuln.Index, purls []string) ([]advisory.Finding, error) {

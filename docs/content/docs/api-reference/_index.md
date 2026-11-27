@@ -667,6 +667,7 @@ All vulnerabilities found in a specific SBOM, including the effective VEX statem
 | `reachability` | string | all | Filter by reachability evidence: `reachable`, `not_reachable`, or `unknown` (#535) |
 | `exploit` | string | all | `available`: only findings with [public exploit code](#exploit-code) |
 | `cwe` | string | all | Only findings of this weakness class, e.g. `CWE-79` (#409). Case-insensitive; normalised to `CWE-<number>`. |
+| `source` | string | all | Filter by advisory source: `private`, `osv`, or an advisory feed name |
 
 **Response:** `200 OK`
 ```json
@@ -1313,7 +1314,7 @@ One row per distinct `(vuln_id, purl)` across every SBOM of the project, with
 among all statements scoped to any of the project's SBOMs that cover the pair,
 the newest wins. Same row shape as `GET /api/v1/vulnerabilities`; not paginated.
 `dependency_scope` is the shallowest depth the package has in any of the
-project's SBOMs. Accepts `?scope=` and `?exploit=available` like `GET /api/v1/vulnerabilities`.
+project's SBOMs. Accepts `?scope=`, `?exploit=available`, and `?source=` (e.g. `private` or `osv`) like `GET /api/v1/vulnerabilities`.
 
 ### `GET /api/v1/projects/{name}/packages`
 

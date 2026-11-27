@@ -341,3 +341,150 @@ func TestMatch_EcosystemAndLenientSemverAndVersionless(t *testing.T) {
 		}
 	}
 }
+
+func TestMatch_MaintainerVersionCases(t *testing.T) {
+	doc := `[
+		{
+			"id": "CASE-1",
+			"summary": "fixed 2.32.0",
+			"affected": [{
+				"package": {"ecosystem": "PyPI", "name": "pkg-a"},
+				"ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "2.32.0"}]}]
+			}]
+		},
+		{
+			"id": "CASE-2",
+			"summary": "fixed 2.32.0.post1",
+			"affected": [{
+				"package": {"ecosystem": "PyPI", "name": "pkg-b"},
+				"ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "2.32.0.post1"}]}]
+			}]
+		},
+		{
+			"id": "CASE-3",
+			"summary": "fixed 2.32.0rc10",
+			"affected": [{
+				"package": {"ecosystem": "PyPI", "name": "pkg-c"},
+				"ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "2.32.0rc10"}]}]
+			}]
+		},
+		{
+			"id": "CASE-4",
+			"summary": "fixed 2.32.0rc9",
+			"affected": [{
+				"package": {"ecosystem": "PyPI", "name": "pkg-d"},
+				"ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "2.32.0rc9"}]}]
+			}]
+		},
+		{
+			"id": "CASE-5",
+			"summary": "fixed 2.0 (epoch test)",
+			"affected": [{
+				"package": {"ecosystem": "PyPI", "name": "pkg-e"},
+				"ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "2.0"}]}]
+			}]
+		},
+		{
+			"id": "CASE-5-REV",
+			"summary": "fixed 1!1.0 (epoch test)",
+			"affected": [{
+				"package": {"ecosystem": "PyPI", "name": "pkg-e2"},
+				"ranges": [{"type": "ECOSYSTEM", "events": [{"introduced": "0"}, {"fixed": "1!1.0"}]}]
+			}]
+		},
+		{
+			"id": "CASE-6",
+			"summary": "fixed 1.5.1",
+			"affected": [{
+				"package": {"purl": "pkg:maven/org.example/pkg-f"},
+				"ranges": [{"type": "SEMVER", "events": [{"introduced": "0"}, {"fixed": "1.5.1"}]}]
+			}]
+		},
+		{
+			"id": "CASE-6-REV",
+			"summary": "fixed 1.5.1.SP1",
+			"affected": [{
+				"package": {"purl": "pkg:maven/org.example/pkg-f2"},
+				"ranges": [{"type": "SEMVER", "events": [{"introduced": "0"}, {"fixed": "1.5.1.SP1"}]}]
+			}]
+		}
+	]`
+
+	idx, err := Parse([]byte(doc), "cases.json")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	purls := []string{
+		"pkg:pypi/pkg-a@2.32.0.post1", // Case 1: fixed 2.32.0 vs 2.32.0.post1 -> not affected
+		"pkg:pypi/pkg-b@2.32.0",       // Case 2: fixed 2.32.0.post1 vs 2.32.0 -> affected
+		"pkg:pypi/pkg-c@2.32.0rc9",     // Case 3: fixed 2.32.0rc10 vs 2.32.0rc9 -> affected
+		"pkg:pypi/pkg-d@2.32.0rc10",    // Case 4: fixed 2.32.0rc9 vs 2.32.0rc10 -> not affected
+		"pkg:pypi/pkg-e@1!1.0",         // Case 5: fixed 2.0 vs 1!1.0 (PyPI epoch) -> not affected
+		"pkg:pypi/pkg-e2@2.0",          // Case 5 rev: fixed 1!1.0 vs 2.0 -> affected
+		"pkg:maven/org.example/pkg-f@1.5.1.SP1", // Case 6: fixed 1.5.1 vs 1.5.1.SP1 -> not affected
+		"pkg:maven/org.example/pkg-f2@1.5.1",    // Case 6 rev: fixed 1.5.1.SP1 vs 1.5.1 -> affected
+	}
+
+	findings := idx.Match(purls)
+	matched := make(map[string]string)
+	for _, f := range findings {
+		matched[f.Entry.ID] = f.PURL
+	}
+
+	// Verify matches
+	if _, ok := matched["CASE-1"]; ok {
+		t.Errorf("CASE-1: 2.32.0.post1 should NOT be affected by fixed 2.32.0")
+	}
+	if purl, ok := matched["CASE-2"]; !ok || purl != "pkg:pypi/pkg-b@2.32.0" {
+		t.Errorf("CASE-2: 2.32.0 should BE affected by fixed 2.32.0.post1, got %v", matched["CASE-2"])
+	}
+	if purl, ok := matched["CASE-3"]; !ok || purl != "pkg:pypi/pkg-c@2.32.0rc9" {
+		t.Errorf("CASE-3: 2.32.0rc9 should BE affected by fixed 2.32.0rc10, got %v", matched["CASE-3"])
+	}
+	if _, ok := matched["CASE-4"]; ok {
+		t.Errorf("CASE-4: 2.32.0rc10 should NOT be affected by fixed 2.32.0rc9")
+	}
+	if _, ok := matched["CASE-5"]; ok {
+		t.Errorf("CASE-5: 1!1.0 should NOT be affected by fixed 2.0")
+	}
+	if purl, ok := matched["CASE-5-REV"]; !ok || purl != "pkg:pypi/pkg-e2@2.0" {
+		t.Errorf("CASE-5-REV: 2.0 should BE affected by fixed 1!1.0, got %v", matched["CASE-5-REV"])
+	}
+	if _, ok := matched["CASE-6"]; ok {
+		t.Errorf("CASE-6: 1.5.1.SP1 should NOT be affected by fixed 1.5.1")
+	}
+	if purl, ok := matched["CASE-6-REV"]; !ok || purl != "pkg:maven/org.example/pkg-f2@1.5.1" {
+		t.Errorf("CASE-6-REV: 1.5.1 should BE affected by fixed 1.5.1.SP1, got %v", matched["CASE-6-REV"])
+	}
+}
+
+func TestMatch_LogInjectionSanitizationAndDedup(t *testing.T) {
+	doc := `[{
+		"id": "ACME-2026-LOG",
+		"summary": "Log injection test",
+		"affected": [{
+			"package": {"ecosystem": "npm", "name": "express"},
+			"ranges": [{"type": "SEMVER", "events": [{"introduced": "1.0.0"}, {"fixed": "2.0.0"}]}]
+		}]
+	}]`
+
+	idx, err := Parse([]byte(doc), "test.json")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	// PURL with invalid version containing newline
+	forgedPURL := "pkg:npm/express@x\n2026/11/26 00:00:00 ERROR: forged log line"
+	// First match evaluation triggers the warning
+	findings := idx.Match([]string{forgedPURL})
+	if len(findings) != 0 {
+		t.Errorf("expected 0 findings for unparseable version, got %d", len(findings))
+	}
+
+	// Second match on the same index instance should be deduplicated by sync.Map
+	findings2 := idx.Match([]string{forgedPURL})
+	if len(findings2) != 0 {
+		t.Errorf("expected 0 findings on second match, got %d", len(findings2))
+	}
+}

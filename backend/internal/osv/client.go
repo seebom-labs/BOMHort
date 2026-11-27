@@ -136,17 +136,10 @@ type QueryResult struct {
 	Vulns []VulnEntry `json:"vulns"`
 }
 
-// Reference links external advisories, commits, or reports for a vulnerability.
-type Reference struct {
-	Type string `json:"type"`
-	URL  string `json:"url"`
-}
-
 // VulnEntry represents a single vulnerability from OSV.
 type VulnEntry struct {
 	ID      string `json:"id"`
 	Summary string `json:"summary"`
-	Details string `json:"details,omitempty"`
 	// Aliases lists the other identifiers assigned to the same flaw
 	// (GHSA-… ↔ CVE-… ↔ GO-…). Dropping them made VEX matching an exact
 	// string comparison, so a statement about the CVE never suppressed
@@ -163,7 +156,6 @@ type VulnEntry struct {
 	Withdrawn        string                 `json:"withdrawn,omitempty"`
 	Severity         []Severity             `json:"severity"`
 	Affected         []Affected             `json:"affected"`
-	References       []Reference            `json:"references,omitempty"`
 	DatabaseSpecific map[string]interface{} `json:"database_specific"`
 }
 
