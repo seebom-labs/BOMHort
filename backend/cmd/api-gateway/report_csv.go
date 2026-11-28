@@ -38,7 +38,7 @@ type vulnerabilityStreamFunc func(ctx context.Context, scope string, f clickhous
 
 // reportFormats are the accepted ?format= values. A whitelist so a future
 // "pdf" is an addition, not a rework, and anything else is a clear 400.
-var reportFormats = map[string]bool{"csv": true}
+var reportFormats = map[string]bool{"csv": true, "sarif": true}
 
 // vulnerabilityCSVHeader: cve_id first — the id an auditor's questionnaire
 // asks for (#412) — then OSV's id and every other alias. The remediation
@@ -89,6 +89,10 @@ func csvSafe(s string) string {
 	return s
 }
 
+// maxSARIFResults is the maximum number of results GitHub Code Scanning accepts
+// in a single SARIF upload. Full-corpus exports above this limit must be partitioned.
+const maxSARIFResults = 25000
+
 // csvFlushEvery bounds how many rows sit in the csv.Writer buffer before
 // they are pushed to the client.
 const csvFlushEvery = 500
@@ -98,7 +102,7 @@ func vulnerabilityReportHandler(filter vulnFilterFunc, stream vulnerabilityStrea
 		q := r.URL.Query()
 		format := q.Get("format")
 		if !reportFormats[format] {
-			writeError(w, http.StatusBadRequest, "Invalid format (expected csv)")
+			writeError(w, http.StatusBadRequest, "Invalid format (expected csv or sarif)")
 			return
 		}
 		scope, ok := parseScope(q.Get("scope"))
@@ -126,6 +130,84 @@ func vulnerabilityReportHandler(filter vulnFilterFunc, stream vulnerabilityStrea
 			return
 		}
 		defer rows.Close()
+
+		if format == "sarif" {
+			limitStr := q.Get("limit")
+			offsetStr := q.Get("offset")
+			var limit uint64 = maxSARIFResults
+			var offset uint64 = 0
+			hasExplicitLimit := limitStr != ""
+
+			if hasExplicitLimit {
+				parsed, err := strconv.ParseUint(limitStr, 10, 64)
+				if err != nil || parsed == 0 {
+					writeError(w, http.StatusBadRequest, "Invalid limit (expected positive integer)")
+					return
+				}
+				if parsed > maxSARIFResults {
+					writeError(w, http.StatusBadRequest, "limit cannot exceed 25,000 for SARIF export")
+					return
+				}
+				limit = parsed
+			}
+
+			if offsetStr != "" {
+				parsed, err := strconv.ParseUint(offsetStr, 10, 64)
+				if err != nil {
+					writeError(w, http.StatusBadRequest, "Invalid offset (expected non-negative integer)")
+					return
+				}
+				offset = parsed
+			}
+
+			var skipped uint64
+			for skipped < offset && rows.Next() {
+				skipped++
+			}
+			if err := rows.Err(); err != nil {
+				log.Printf("ERROR: vulnerability report: %v", err)
+				writeError(w, http.StatusInternalServerError, "Failed to export vulnerabilities")
+				return
+			}
+			if skipped < offset {
+				writeEmptySARIF(w, http.StatusOK)
+				return
+			}
+
+			var items []dto.VulnerabilityListItem
+			for uint64(len(items)) <= limit && rows.Next() {
+				items = append(items, rows.Item())
+			}
+			if err := rows.Err(); err != nil {
+				log.Printf("ERROR: vulnerability report: %v", err)
+				writeError(w, http.StatusInternalServerError, "Failed to export vulnerabilities")
+				return
+			}
+
+			hasMore := false
+			if uint64(len(items)) > limit {
+				hasMore = true
+				items = items[:limit]
+			}
+
+			if !hasExplicitLimit && offset == 0 && hasMore {
+				writeError(w, http.StatusBadRequest, "Report exceeds GitHub Code Scanning limit of 25,000 results. Please partition using ?limit=25000&offset=0")
+				return
+			}
+
+			filename := "bomhort-vulnerabilities-" + now().UTC().Format("2006-01-02") + ".sarif"
+			w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+			w.Header().Set("Cache-Control", "no-store")
+			if hasMore {
+				w.Header().Set("X-Has-More", "true")
+				nextOffset := offset + limit
+				w.Header().Set("Link", "<"+r.URL.Path+"?format=sarif&limit="+strconv.FormatUint(limit, 10)+"&offset="+strconv.FormatUint(nextOffset, 10)+">; rel=\"next\"")
+			} else {
+				w.Header().Set("X-Has-More", "false")
+			}
+			writeSARIF(w, http.StatusOK, items)
+			return
+		}
 
 		filename := "bomhort-vulnerabilities-" + now().UTC().Format("2006-01-02") + ".csv"
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")

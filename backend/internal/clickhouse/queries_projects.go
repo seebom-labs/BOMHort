@@ -69,6 +69,20 @@ const projectSBOMs = `(
 	FROM (SELECT * FROM sboms FINAL) AS s
 )`
 
+// ProjectExists checks if any SBOM exists for the given project name.
+func (c *Client) ProjectExists(ctx context.Context, name string) (bool, error) {
+	var count uint64
+	err := c.Conn.QueryRow(ctx, fmt.Sprintf(`
+		SELECT count()
+		FROM %s AS s
+		WHERE s.project_name = ?
+	`, projectSBOMs), name).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("failed to check project existence: %w", err)
+	}
+	return count > 0, nil
+}
+
 // projectRows reads table with FINAL, restricted to the SBOMs of the projects
 // matching filter (a predicate over projectSBOMs' columns, aliased `s`, e.g.
 // "s.project_name IN (?)").

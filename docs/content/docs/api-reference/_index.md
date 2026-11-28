@@ -667,6 +667,7 @@ All vulnerabilities found in a specific SBOM, including the effective VEX statem
 | `reachability` | string | all | Filter by reachability evidence: `reachable`, `not_reachable`, or `unknown` (#535) |
 | `exploit` | string | all | `available`: only findings with [public exploit code](#exploit-code) |
 | `cwe` | string | all | Only findings of this weakness class, e.g. `CWE-79` (#409). Case-insensitive; normalised to `CWE-<number>`. |
+| `format` | string | json | `sarif` for OASIS SARIF 2.1.0 JSON export (`application/sarif+json`) for CI gating and code scanning (#512). |
 
 **Response:** `200 OK`
 ```json
@@ -985,7 +986,9 @@ Every finding of [`GET /api/v1/vulnerabilities`](#get-apiv1vulnerabilities) as a
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `format` | string | ✅ | `csv`. The only format today; anything else is a `400`. |
+| `format` | string | ✅ | `csv` or `sarif` (#512). Anything else is a `400`. |
+| `limit` | integer | - | Maximum results to export (SARIF only, default 25000, capped at 25000 for GitHub Code Scanning compatibility, #512). |
+| `offset` | integer | - | Number of findings to skip for partitioned exports (SARIF only, #512). |
 | `scope` | string | — | Only `root`, `direct`, `transitive` or `unknown` findings (see [Dependency scope](#dependency-scope)) |
 | `cluster` | string | — | Only findings of SBOMs in these clusters |
 | `namespace` | string | — | Only findings of SBOMs in these namespaces |
@@ -1000,7 +1003,9 @@ The ownership filters work as on the JSON listing.
 
 A legacy `vex_filter` parameter is ignored, as on the JSON listing.
 
-**Response:** `200 OK`, `Content-Type: text/csv; charset=utf-8`, `Content-Disposition: attachment; filename=bomhort-vulnerabilities-<YYYY-MM-DD>.csv` (UTC date).
+**Response (CSV):** `200 OK`, `Content-Type: text/csv; charset=utf-8`, `Content-Disposition: attachment; filename="bomhort-vulnerabilities-<YYYY-MM-DD>.csv"` (UTC date).
+
+**Response (SARIF, #512):** `200 OK`, `Content-Type: application/sarif+json`, `Content-Disposition: attachment; filename="bomhort-vulnerabilities-<YYYY-MM-DD>.sarif"` (UTC date). OASIS SARIF 2.1.0 format with unique rules per vulnerability id, deterministic severity and CVSS score mapping, repository-relative physical locations, and external suppressions for findings with VEX not_affected or fixed status. Capped at 25,000 results per export to comply with GitHub Code Scanning upload bounds; reports with >25,000 findings return `400` when unpartitioned, instructing clients to use `?limit=25000&offset=0`. Partitioned responses provide `X-Has-More` and standard `Link: <...>; rel="next"` headers.
 
 ```csv
 cve_id,vuln_id,aliases,severity,purl,summary,fixed_version,source_file,discovered_at,dependency_scope,dependency_depth,remediation_status,reachability,evidence_source,evidence_ref,evidence_at,exploit_available,exploit_sources,action_statement,action_statement_timestamp,vex_author
@@ -1311,7 +1316,7 @@ One row per distinct `(vuln_id, purl)` across every SBOM of the project, with
 among all statements scoped to any of the project's SBOMs that cover the pair,
 the newest wins. Same row shape as `GET /api/v1/vulnerabilities`; not paginated.
 `dependency_scope` is the shallowest depth the package has in any of the
-project's SBOMs. Accepts `?scope=` and `?exploit=available` like `GET /api/v1/vulnerabilities`.
+project's SBOMs. Accepts `?scope=` and `?exploit=available` like `GET /api/v1/vulnerabilities`, and `?format=sarif` for OASIS SARIF 2.1.0 export (#512).
 
 ### `GET /api/v1/projects/{name}/packages`
 
