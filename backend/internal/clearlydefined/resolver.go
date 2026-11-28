@@ -222,6 +222,20 @@ type Resolver struct {
 	attributions    sync.Map // cacheKey -> []string
 	discovered      sync.Map // cacheKey -> []string (all discovered expressions)
 	privatePrefixes []string
+	newMu           sync.Mutex
+	newKeys         map[string]struct{}
+}
+
+func (r *Resolver) recordNewKey(key string) {
+	if key == "" {
+		return
+	}
+	r.newMu.Lock()
+	defer r.newMu.Unlock()
+	if r.newKeys == nil {
+		r.newKeys = make(map[string]struct{})
+	}
+	r.newKeys[key] = struct{}{}
 }
 
 // NewResolver creates a resolver against the public ClearlyDefined service.
@@ -399,6 +413,40 @@ func (r *Resolver) PreloadCache(entries map[string]string) {
 	}
 }
 
+func (r *Resolver) encodeEntry(k string) (string, bool) {
+	lic, reason := "", ""
+	if v, ok := r.licenseCache.Load(k); ok {
+		lic, reason = license.SplitCacheValue(v.(string))
+	}
+	var disc, parties []string
+	if dv, ok := r.discovered.Load(k); ok {
+		disc = dv.([]string)
+	}
+	if pv, ok := r.attributions.Load(k); ok {
+		parties = pv.([]string)
+	}
+
+	if len(disc) > 0 || len(parties) > 0 {
+		rec := cachedRecord{
+			License:    lic,
+			Reason:     reason,
+			Discovered: disc,
+			Parties:    parties,
+		}
+		if b, err := json.Marshal(rec); err == nil {
+			return string(b), true
+		}
+	}
+
+	if lic != "" {
+		return lic, true
+	}
+	if reason != "" {
+		return license.NegativeCacheValue(reason), true
+	}
+	return "", false
+}
+
 // CacheEntries exports the in-memory cache for persistence in registry_license_cache (#530).
 func (r *Resolver) CacheEntries() map[string]string {
 	out := make(map[string]string)
@@ -418,35 +466,29 @@ func (r *Resolver) CacheEntries() map[string]string {
 	})
 
 	for k := range keys {
-		lic, reason := "", ""
-		if v, ok := r.licenseCache.Load(k); ok {
-			lic, reason = license.SplitCacheValue(v.(string))
+		if encoded, ok := r.encodeEntry(k); ok {
+			out[k] = encoded
 		}
-		var disc, parties []string
-		if dv, ok := r.discovered.Load(k); ok {
-			disc = dv.([]string)
-		}
-		if pv, ok := r.attributions.Load(k); ok {
-			parties = pv.([]string)
-		}
+	}
+	return out
+}
 
-		if len(disc) > 0 || len(parties) > 0 {
-			rec := cachedRecord{
-				License:    lic,
-				Reason:     reason,
-				Discovered: disc,
-				Parties:    parties,
-			}
-			if b, err := json.Marshal(rec); err == nil {
-				out[k] = string(b)
-				continue
-			}
-		}
+// NewCacheEntries returns and drains cache entries added or updated since PreloadCache
+// or the previous call, avoiding full cache rewrites on repeated scans.
+func (r *Resolver) NewCacheEntries() map[string]string {
+	r.newMu.Lock()
+	if len(r.newKeys) == 0 {
+		r.newMu.Unlock()
+		return nil
+	}
+	keys := r.newKeys
+	r.newKeys = nil
+	r.newMu.Unlock()
 
-		if lic != "" {
-			out[k] = lic
-		} else if reason != "" {
-			out[k] = license.NegativeCacheValue(reason)
+	out := make(map[string]string, len(keys))
+	for k := range keys {
+		if encoded, ok := r.encodeEntry(k); ok {
+			out[k] = encoded
 		}
 	}
 	return out
@@ -466,10 +508,12 @@ func (r *Resolver) Load(key string) (lic, reason string, ok bool) {
 func (r *Resolver) StoreResult(key, lic, reason string) {
 	if lic != "" {
 		r.licenseCache.Store(key, lic)
+		r.recordNewKey(key)
 		return
 	}
 	if reason != "" {
 		r.licenseCache.Store(key, license.NegativeCacheValue(reason))
+		r.recordNewKey(key)
 	}
 }
 
