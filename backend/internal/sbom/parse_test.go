@@ -1,6 +1,8 @@
 package sbom
 
 import (
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -169,5 +171,55 @@ func TestIsSPDX3Context(t *testing.T) {
 		if got := isSPDX3Context(json.RawMessage(in)); got != want {
 			t.Errorf("isSPDX3Context(%s) = %v, want %v", in, got, want)
 		}
+	}
+}
+
+func TestParse_CycloneDXObjectToolsBothBackendsAndQuality(t *testing.T) {
+	cdxJSON := `{
+		"bomFormat": "CycloneDX",
+		"specVersion": "1.6",
+		"serialNumber": "urn:uuid:7c8e9f10-2b3c-4d5e-8f9a-0123456789ab",
+		"version": 1,
+		"metadata": {
+			"timestamp": "2026-11-24T21:00:00Z",
+			"tools": {
+				"components": [
+					{"type": "application", "author": "anchore", "name": "syft", "version": "1.55.0"}
+				]
+			},
+			"component": {"type": "container", "name": "alpine", "version": "3.20"}
+		},
+		"components": [
+			{"type": "library", "bom-ref": "ref1", "name": "busybox", "version": "1.36.1-r29", "purl": "pkg:apk/alpine/busybox@1.36.1-r29", "licenses": [{"license": {"id": "GPL-2.0-only"}}]}
+		]
+	}`
+
+	wantTools := []string{"Tool: anchore syft 1.55.0"}
+
+	// Built-in parser (default)
+	SetUseProtobom(false)
+	builtinRes, err := Parse(strings.NewReader(cdxJSON), "syft.cdx.json", "hash-builtin")
+	if err != nil {
+		t.Fatalf("built-in Parse failed: %v", err)
+	}
+	if !reflect.DeepEqual(builtinRes.SBOM.CreatorTools, wantTools) {
+		t.Errorf("built-in CreatorTools = %v, want %v", builtinRes.SBOM.CreatorTools, wantTools)
+	}
+	if slices.Contains(builtinRes.SBOM.QualityFlags, FlagMissingAuthor) {
+		t.Errorf("built-in unexpected %q flag in %v", FlagMissingAuthor, builtinRes.SBOM.QualityFlags)
+	}
+
+	// Protobom backend
+	SetUseProtobom(true)
+	defer SetUseProtobom(false)
+	protoRes, err := Parse(strings.NewReader(cdxJSON), "syft.cdx.json", "hash-proto")
+	if err != nil {
+		t.Fatalf("protobom Parse failed: %v", err)
+	}
+	if !reflect.DeepEqual(protoRes.SBOM.CreatorTools, wantTools) {
+		t.Errorf("protobom CreatorTools = %v, want %v", protoRes.SBOM.CreatorTools, wantTools)
+	}
+	if slices.Contains(protoRes.SBOM.QualityFlags, FlagMissingAuthor) {
+		t.Errorf("protobom unexpected %q flag in %v", FlagMissingAuthor, protoRes.SBOM.QualityFlags)
 	}
 }

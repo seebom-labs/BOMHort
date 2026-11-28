@@ -1,6 +1,7 @@
 package protobomparser
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/protobom/protobom/pkg/sbom"
@@ -158,5 +159,50 @@ func TestExtractNodeLicense_CompoundParenthesized(t *testing.T) {
 				t.Errorf("extractNodeLicense() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestParse_CycloneDXToolsObject(t *testing.T) {
+	cdxJSON := []byte(`{
+		"bomFormat": "CycloneDX",
+		"specVersion": "1.6",
+		"serialNumber": "urn:uuid:test-cdx16-tools",
+		"version": 1,
+		"metadata": {
+			"timestamp": "2026-11-24T21:00:00Z",
+			"tools": {
+				"components": [
+					{"type": "application", "author": "anchore", "name": "syft", "version": "1.55.0"}
+				],
+				"services": [
+					{"provider": {"name": "acme"}, "name": "bom-relay", "version": "1.0.0"}
+				]
+			},
+			"component": {"type": "application", "name": "test-app", "version": "2.0"}
+		},
+		"components": [
+			{
+				"type": "library",
+				"bom-ref": "pkg:golang/github.com/example/lib@v1.0.0",
+				"name": "github.com/example/lib",
+				"version": "v1.0.0",
+				"purl": "pkg:golang/github.com/example/lib@v1.0.0",
+				"licenses": [{"license": {"id": "MIT"}}]
+			}
+		],
+		"dependencies": []
+	}`)
+
+	result, err := Parse(cdxJSON, "syft.cdx.json", "protobom-cdx16-hash")
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	wantTools := []string{
+		"Tool: anchore syft 1.55.0",
+		"Tool: acme bom-relay 1.0.0",
+	}
+	if !reflect.DeepEqual(result.SBOM.CreatorTools, wantTools) {
+		t.Errorf("CreatorTools = %v, want %v", result.SBOM.CreatorTools, wantTools)
 	}
 }

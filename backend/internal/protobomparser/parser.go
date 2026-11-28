@@ -17,6 +17,7 @@ import (
 	"github.com/protobom/protobom/pkg/reader"
 	"github.com/protobom/protobom/pkg/sbom"
 
+	"github.com/seebom-labs/bomhort/backend/internal/cyclonedx"
 	"github.com/seebom-labs/bomhort/backend/internal/imageid"
 	"github.com/seebom-labs/bomhort/backend/internal/license"
 	"github.com/seebom-labs/bomhort/backend/internal/sbomname"
@@ -52,6 +53,11 @@ func Parse(data []byte, sourceFile, sha256Hash string) (*ParseResult, error) {
 			result.SBOM.RootPURL = purl
 			result.SBOM.ImageRef, result.SBOM.ImageDigest = imageid.FromPURL(purl)
 		}
+	}
+	if len(result.SBOM.CreatorTools) == 0 && strings.HasPrefix(result.SBOM.SPDXVersion, "CycloneDX") {
+		// protobom v0.7.0 drops CycloneDX 1.5+ metadata.tools.components and services;
+		// recover them directly so CreatorTools and SBOM quality scoring match the built-in parser.
+		result.SBOM.CreatorTools = cyclonedx.ExtractTools(data)
 	}
 	name, err := sbomname.Resolve(data, result.SBOM.DocumentName, sourceFile)
 	if err != nil {
