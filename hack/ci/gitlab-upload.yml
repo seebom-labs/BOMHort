@@ -1,0 +1,105 @@
+# Reusable GitLab CI template for uploading SBOMs to BOMHort.
+# Mirrors the inputs and behavior of .github/actions/upload-sbom.
+#
+# Usage in .gitlab-ci.yml:
+#
+#   include:
+#     - remote: 'https://raw.githubusercontent.com/seebom-labs/BOMHort/main/hack/ci/gitlab-upload.yml'
+#
+#   upload-sbom:
+#     extends: .bomhort-upload-sbom
+#     variables:
+#       BOMHORT_URL: 'https://bomhort.example.com'
+#       BOMHORT_TOKEN: $BOMHORT_UPLOAD_TOKEN
+#       BOMHORT_SBOM: 'target/bom.spdx.json'
+#       BOMHORT_PROJECT: $CI_PROJECT_NAME
+
+.bomhort-upload-sbom:
+  image:
+    name: curlimages/curl:latest
+    entrypoint: [""]
+  variables:
+    BOMHORT_URL: ""
+    BOMHORT_TOKEN: ""
+    BOMHORT_AUTH_TYPE: "bearer"
+    BOMHORT_SBOM: ""
+    BOMHORT_PROJECT: "$CI_PROJECT_NAME"
+    BOMHORT_CLUSTER: ""
+    BOMHORT_NAMESPACE: ""
+    BOMHORT_PARENT: ""
+    BOMHORT_TAGS: ""
+    BOMHORT_SOURCE_REPO: "$CI_PROJECT_URL"
+    BOMHORT_SOURCE_REF: "$CI_COMMIT_SHA"
+  script:
+    - |
+      if [ -z "$BOMHORT_URL" ] || [ -z "$BOMHORT_TOKEN" ] || [ -z "$BOMHORT_SBOM" ]; then
+        echo "Error: BOMHORT_URL, BOMHORT_TOKEN, and BOMHORT_SBOM are required variables." >&2
+        exit 1
+      fi
+      if [ ! -f "$BOMHORT_SBOM" ]; then
+        echo "Error: SBOM file not found: $BOMHORT_SBOM" >&2
+        exit 1
+      fi
+      if [ "$BOMHORT_AUTH_TYPE" != "bearer" ] && [ "$BOMHORT_AUTH_TYPE" != "api-key" ]; then
+        echo "Error: BOMHORT_AUTH_TYPE must be 'bearer' or 'api-key'." >&2
+        exit 1
+      fi
+      if [ -n "$(printf '%s' "$BOMHORT_TOKEN" | tr -d '\r\n')" ] && [ "$(printf '%s' "$BOMHORT_TOKEN" | tr -d '\r\n')" != "$BOMHORT_TOKEN" ]; then
+        echo "Error: BOMHORT_TOKEN must not contain newline characters." >&2
+        exit 1
+      fi
+      FILENAME=$(basename "$BOMHORT_SBOM")
+      BASE_URL="${BOMHORT_URL%/}"
+
+      urlencode() {
+        printf '%s' "$1" | awk '
+        BEGIN {
+          for (i = 0; i < 256; i++) {
+            c = sprintf("%c", i)
+            if (c ~ /[a-zA-Z0-9._~-]/) {
+              map[c] = c
+            } else {
+              map[c] = sprintf("%%%02X", i)
+            }
+          }
+        }
+        {
+          len = length($0)
+          for (i = 1; i <= len; i++) {
+            c = substr($0, i, 1)
+            printf "%s", (c in map ? map[c] : c)
+          }
+        }'
+      }
+
+      QUERY=""
+      add_query() {
+        val="$1"
+        key="$2"
+        if [ -n "$val" ]; then
+          enc=$(urlencode "$val")
+          QUERY="${QUERY}${QUERY:+&}${key}=${enc}"
+        fi
+      }
+      add_query "$BOMHORT_PROJECT" "project"
+      add_query "$BOMHORT_CLUSTER" "cluster"
+      add_query "$BOMHORT_NAMESPACE" "namespace"
+      add_query "$BOMHORT_PARENT" "parent"
+      add_query "$BOMHORT_TAGS" "tags"
+      [ -n "$QUERY" ] && QUERY="?$QUERY"
+
+      CURL_CONFIG=$(mktemp)
+      trap 'rm -f "$CURL_CONFIG"' EXIT
+      chmod 600 "$CURL_CONFIG"
+      {
+        printf 'header = "X-Filename: %s"\n' "$FILENAME"
+        if [ "$BOMHORT_AUTH_TYPE" = "api-key" ]; then
+          printf 'header = "X-API-Key: %s"\n' "$BOMHORT_TOKEN"
+        else
+          printf 'header = "Authorization: Bearer %s"\n' "$BOMHORT_TOKEN"
+        fi
+        [ -n "$BOMHORT_SOURCE_REPO" ] && printf 'header = "X-Source-Repo: %s"\n' "$BOMHORT_SOURCE_REPO"
+        [ -n "$BOMHORT_SOURCE_REF" ] && printf 'header = "X-Source-Ref: %s"\n' "$BOMHORT_SOURCE_REF"
+      } > "$CURL_CONFIG"
+
+      curl -fsS -K "$CURL_CONFIG" -X POST --data-binary "@$BOMHORT_SBOM" "$BASE_URL/api/v1/sboms/upload$QUERY"
