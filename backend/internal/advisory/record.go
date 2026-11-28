@@ -122,8 +122,9 @@ func declaredStatus(a osv.Affected, comps []Component, p purl) string {
 // for this package (unknown range type, no comparator, unparsable version):
 // the caller then leaves the decision to osv.dev.
 func inRange(a osv.Affected, p purl) (affected, ok bool) {
-	for _, v := range a.Versions {
-		if v == p.version {
+	v := purlVersion(p)
+	for _, ver := range a.Versions {
+		if ver == v || ver == p.version {
 			return true, true
 		}
 	}
@@ -136,10 +137,10 @@ func inRange(a osv.Affected, p purl) (affected, ok bool) {
 		case "ECOSYSTEM":
 			cmp = comparatorFor(p.typ)
 		}
-		if cmp == nil || p.version == "" {
+		if cmp == nil || v == "" {
 			continue
 		}
-		hit, rok := evalRange(r.Events, p.version, cmp)
+		hit, rok := evalRange(r.Events, v, cmp)
 		if !rok {
 			continue
 		}

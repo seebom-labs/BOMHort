@@ -348,10 +348,57 @@ func combine(p string, verdicts []verdict, hits []osv.VulnEntry) []Finding {
 	}
 	for i, h := range hits {
 		if !consumed[i] {
-			out = append(out, Finding{PURL: p, Entry: h, Source: OSVSource})
+			if f, ok := FilterOSVHit(p, h); ok {
+				out = append(out, f)
+			}
 		}
 	}
 	return out
+}
+
+// FilterOSVHit evaluates whether an OSV entry truly affects the given PURL.
+// For OS packages (deb, apk, rpm), OSV often returns hits across all releases
+// or misses distro-specific backports; FilterOSVHit verifies that the record
+// has an affected entry for this distro release and that the package version
+// is actually within the affected range.
+func FilterOSVHit(purlStr string, h osv.VulnEntry) (Finding, bool) {
+	f := Finding{PURL: purlStr, Entry: h, Source: OSVSource}
+	pp, ok := parsePURL(purlStr)
+	if !ok {
+		return f, true
+	}
+
+	isOSPkg := pp.typ == "deb" || pp.typ == "apk" || pp.typ == "rpm"
+	v, found := evaluate(h, pp)
+	if found {
+		if !IsOpen(v.status) {
+			// Version is past the fixed version or marked not affected.
+			return Finding{}, false
+		}
+		if v.fixed != "" {
+			f.FixedVersion = v.fixed
+		}
+		return f, true
+	}
+
+	// If none of the affected entries matched p.key and release, check whether
+	// the record specifically describes this package for OTHER distro releases.
+	// If so, the advisory belongs to another release and must not be reported.
+	if isOSPkg && hasOtherDistroReleases(h, pp) {
+		return Finding{}, false
+	}
+
+	return f, true
+}
+
+func hasOtherDistroReleases(e osv.VulnEntry, p purl) bool {
+	for _, a := range e.Affected {
+		key, release := affectedKey(a.Package.PURL, a.Package.Ecosystem, a.Package.Name)
+		if key == p.key && release != "" && !releaseMatches(p, release) {
+			return true
+		}
+	}
+	return false
 }
 
 // mergeAliases returns base's aliases plus every id the feed record is known

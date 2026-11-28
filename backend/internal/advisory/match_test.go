@@ -392,3 +392,147 @@ func TestReconcileNeedsAuthority(t *testing.T) {
 		t.Fatalf("closures = %+v, err %v", got, err)
 	}
 }
+
+func TestFilterOSVHit_RedHatReleaseFiltering(t *testing.T) {
+	purl := "pkg:rpm/redhat/openssl-libs@3.5.9-1.el9_9?distro=rhel-9.9&epoch=1"
+
+	// Hit 1: RHSA-2020:5588 for RHEL 8 (rhel_e4s:8.0) fixed in 1:1.1.1-9.el8_0 -> must be dropped.
+	rhsa8 := osv.VulnEntry{
+		ID: "RHSA-2020:5588",
+		Affected: []osv.Affected{{
+			Package: osv.AffectedPackage{Ecosystem: "Red Hat:rhel_e4s:8.0::baseos", Name: "openssl-libs"},
+			Ranges:  []osv.Range{{Type: "ECOSYSTEM", Events: []osv.Event{{Introduced: "0"}, {Fixed: "1:1.1.1-9.el8_0"}}}},
+		}},
+	}
+	if _, ok := FilterOSVHit(purl, rhsa8); ok {
+		t.Error("RHSA-2020:5588 (RHEL 8 advisory) should be filtered out for RHEL 9 package")
+	}
+
+	// Hit 2: RHEL 10 advisory fixed in el10 build -> must be dropped.
+	rhsa10 := osv.VulnEntry{
+		ID: "RHSA-2026:1000",
+		Affected: []osv.Affected{{
+			Package: osv.AffectedPackage{Ecosystem: "Red Hat:enterprise_linux:10.0", Name: "openssl-libs"},
+			Ranges:  []osv.Range{{Type: "ECOSYSTEM", Events: []osv.Event{{Introduced: "0"}, {Fixed: "1:3.6.0-1.el10"}}}},
+		}},
+	}
+	if _, ok := FilterOSVHit(purl, rhsa10); ok {
+		t.Error("RHEL 10 advisory should be filtered out for RHEL 9 package")
+	}
+
+	// Hit 3: RHEL 9 advisory where version 1:3.5.9 is past fixed 1:3.0.7 -> must be dropped.
+	rhsa9Fixed := osv.VulnEntry{
+		ID: "RHSA-2023:2523",
+		Affected: []osv.Affected{{
+			Package: osv.AffectedPackage{Ecosystem: "Red Hat:enterprise_linux:9::appstream", Name: "openssl-libs"},
+			Ranges:  []osv.Range{{Type: "ECOSYSTEM", Events: []osv.Event{{Introduced: "0"}, {Fixed: "1:3.0.7-6.el9_2"}}}},
+		}},
+	}
+	if _, ok := FilterOSVHit(purl, rhsa9Fixed); ok {
+		t.Error("RHEL 9 advisory already fixed in 1:3.0.7 should be filtered out for 1:3.5.9")
+	}
+
+	// Hit 4: RHEL 9 advisory truly open (fixed in 1:3.5.10) -> must be kept.
+	rhsa9Open := osv.VulnEntry{
+		ID: "RHSA-2026:9999",
+		Affected: []osv.Affected{{
+			Package: osv.AffectedPackage{Ecosystem: "Red Hat:enterprise_linux:9::baseos", Name: "openssl-libs"},
+			Ranges:  []osv.Range{{Type: "ECOSYSTEM", Events: []osv.Event{{Introduced: "0"}, {Fixed: "1:3.5.10-1.el9_9"}}}},
+		}},
+	}
+	f, ok := FilterOSVHit(purl, rhsa9Open)
+	if !ok {
+		t.Fatal("RHEL 9 open advisory should be kept")
+	}
+	if f.Entry.ID != "RHSA-2026:9999" || f.Source != OSVSource || f.FixedVersion != "1:3.5.10-1.el9_9" {
+		t.Fatalf("unexpected finding: %+v", f)
+	}
+}
+
+func TestFilterOSVHit_DebianAndAlpine(t *testing.T) {
+	// Debian 12 package.
+	debPURL := "pkg:deb/debian/openssl@3.0.11-1~deb12u1?distro=debian-12.7"
+
+	deb11Hit := osv.VulnEntry{
+		ID: "DSA-1111-1",
+		Affected: []osv.Affected{{
+			Package: osv.AffectedPackage{Ecosystem: "Debian:11", Name: "openssl"},
+			Ranges:  []osv.Range{{Type: "ECOSYSTEM", Events: []osv.Event{{Introduced: "0"}, {Fixed: "1.1.1n-0+deb11u5"}}}},
+		}},
+	}
+	if _, ok := FilterOSVHit(debPURL, deb11Hit); ok {
+		t.Error("Debian 11 advisory should be filtered out for Debian 12 package")
+	}
+
+	deb12Hit := osv.VulnEntry{
+		ID: "DEBIAN-CVE-2023-5363",
+		Affected: []osv.Affected{{
+			Package: osv.AffectedPackage{Ecosystem: "Debian:12", Name: "openssl"},
+			Ranges:  []osv.Range{{Type: "ECOSYSTEM", Events: []osv.Event{{Introduced: "0"}, {Fixed: "3.0.11-1~deb12u2"}}}},
+		}},
+	}
+	f, ok := FilterOSVHit(debPURL, deb12Hit)
+	if !ok {
+		t.Fatal("Debian 12 open advisory should be kept")
+	}
+	if f.FixedVersion != "3.0.11-1~deb12u2" {
+		t.Errorf("FixedVersion = %q, want 3.0.11-1~deb12u2", f.FixedVersion)
+	}
+
+	// Alpine 3.19 package.
+	alpinePURL := "pkg:apk/alpine/openssl@3.1.4-r0?distro=alpine-3.19.1"
+
+	alpine18Hit := osv.VulnEntry{
+		ID: "ALPINE-CVE-2023-0001",
+		Affected: []osv.Affected{{
+			Package: osv.AffectedPackage{Ecosystem: "Alpine:v3.18", Name: "openssl"},
+			Ranges:  []osv.Range{{Type: "ECOSYSTEM", Events: []osv.Event{{Introduced: "0"}, {Fixed: "3.1.1-r1"}}}},
+		}},
+	}
+	if _, ok := FilterOSVHit(alpinePURL, alpine18Hit); ok {
+		t.Error("Alpine 3.18 advisory should be filtered out for Alpine 3.19 package")
+	}
+
+	alpine19Hit := osv.VulnEntry{
+		ID: "ALPINE-CVE-2025-9232",
+		Affected: []osv.Affected{{
+			Package: osv.AffectedPackage{Ecosystem: "Alpine:v3.19", Name: "openssl"},
+			Ranges:  []osv.Range{{Type: "ECOSYSTEM", Events: []osv.Event{{Introduced: "3.0.0"}, {Fixed: "3.1.8-r1"}}}},
+		}},
+	}
+	f, ok = FilterOSVHit(alpinePURL, alpine19Hit)
+	if !ok {
+		t.Fatal("Alpine 3.19 open advisory should be kept")
+	}
+	if f.FixedVersion != "3.1.8-r1" {
+		t.Errorf("FixedVersion = %q, want 3.1.8-r1", f.FixedVersion)
+	}
+}
+
+func TestFromOSV_FiltersWrongReleases(t *testing.T) {
+	purl := "pkg:rpm/redhat/openssl-libs@3.5.9-1.el9_9?distro=rhel-9.9&epoch=1"
+	hits := []osv.VulnEntry{
+		{
+			ID: "RHSA-2020:5588",
+			Affected: []osv.Affected{{
+				Package: osv.AffectedPackage{Ecosystem: "Red Hat:rhel_e4s:8.0::baseos", Name: "openssl-libs"},
+				Ranges:  []osv.Range{{Type: "ECOSYSTEM", Events: []osv.Event{{Introduced: "0"}, {Fixed: "1:1.1.1-9.el8_0"}}}},
+			}},
+		},
+		{
+			ID: "RHSA-2026:9999",
+			Affected: []osv.Affected{{
+				Package: osv.AffectedPackage{Ecosystem: "Red Hat:enterprise_linux:9::baseos", Name: "openssl-libs"},
+				Ranges:  []osv.Range{{Type: "ECOSYSTEM", Events: []osv.Event{{Introduced: "0"}, {Fixed: "1:3.5.10-1.el9_9"}}}},
+			}},
+		},
+	}
+
+	findings := FromOSV(purl, hits)
+	if len(findings) != 1 {
+		t.Fatalf("findings count = %d, want 1", len(findings))
+	}
+	if findings[0].Entry.ID != "RHSA-2026:9999" {
+		t.Fatalf("unexpected finding: %+v", findings[0])
+	}
+}

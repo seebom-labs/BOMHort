@@ -8,6 +8,8 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -114,11 +116,14 @@ func NewClient() *Client {
 // BatchQuery represents a single query in a batch request.
 type BatchQuery struct {
 	Package PackageQuery `json:"package"`
+	Version string       `json:"version,omitempty"`
 }
 
-// PackageQuery identifies a package by PURL.
+// PackageQuery identifies a package by PURL or by ecosystem and name.
 type PackageQuery struct {
-	PURL string `json:"purl"`
+	PURL      string `json:"purl,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Ecosystem string `json:"ecosystem,omitempty"`
 }
 
 // BatchRequest is the request body for /v1/querybatch.
@@ -198,6 +203,214 @@ type Event struct {
 	Limit        string `json:"limit,omitempty"`
 }
 
+var debianCodenames = map[string]string{
+	"buzz":     "1.1",
+	"rex":      "1.2",
+	"bo":       "1.3",
+	"hamm":     "2.0",
+	"slink":    "2.1",
+	"potato":   "2.2",
+	"woody":    "3.0",
+	"sarge":    "3.1",
+	"etch":     "4.0",
+	"lenny":    "5.0",
+	"squeeze":  "6.0",
+	"wheezy":   "7",
+	"jessie":   "8",
+	"stretch":  "9",
+	"buster":   "10",
+	"bullseye": "11",
+	"bookworm": "12",
+	"trixie":   "13",
+	"forky":    "14",
+	"sid":      "unstable",
+}
+
+func debianRelease(distro string) string {
+	distro = strings.ToLower(strings.TrimSpace(distro))
+	if distro == "" {
+		return ""
+	}
+	if i := strings.LastIndexByte(distro, '-'); i >= 0 {
+		distro = distro[i+1:]
+	}
+	distro = strings.TrimPrefix(distro, "v")
+	if rel, ok := debianCodenames[distro]; ok {
+		return rel
+	}
+	if i := strings.IndexByte(distro, '.'); i >= 0 {
+		distro = distro[:i]
+	}
+	if distro != "" && isAllDigits(distro) {
+		return distro
+	}
+	return ""
+}
+
+func alpineRelease(distro string) string {
+	distro = strings.ToLower(strings.TrimSpace(distro))
+	if distro == "" {
+		return ""
+	}
+	if i := strings.LastIndexByte(distro, '-'); i >= 0 {
+		distro = distro[i+1:]
+	}
+	distro = strings.TrimPrefix(distro, "v")
+	parts := strings.Split(distro, ".")
+	if len(parts) >= 2 && isAllDigits(parts[0]) && isAllDigits(parts[1]) {
+		return parts[0] + "." + parts[1]
+	}
+	if len(parts) == 1 && isAllDigits(parts[0]) {
+		return parts[0]
+	}
+	return ""
+}
+
+func rpmDistroMajor(distro string) string {
+	distro = strings.ToLower(strings.TrimSpace(distro))
+	if distro == "" {
+		return ""
+	}
+	if i := strings.LastIndexByte(distro, '-'); i >= 0 {
+		distro = distro[i+1:]
+	}
+	distro = strings.TrimPrefix(distro, "v")
+	if i := strings.IndexByte(distro, '.'); i >= 0 {
+		distro = distro[:i]
+	}
+	if distro != "" && isAllDigits(distro) {
+		return distro
+	}
+	return ""
+}
+
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func splitPURL(s string) (typ, namespace, name, version string, qualifiers map[string]string, ok bool) {
+	rest, ok := strings.CutPrefix(strings.TrimSpace(s), "pkg:")
+	if !ok {
+		return "", "", "", "", nil, false
+	}
+	if i := strings.IndexByte(rest, '#'); i >= 0 {
+		rest = rest[:i]
+	}
+	qualifiers = make(map[string]string)
+	if i := strings.IndexByte(rest, '?'); i >= 0 {
+		for _, kv := range strings.Split(rest[i+1:], "&") {
+			k, v, _ := strings.Cut(kv, "=")
+			if dv, err := url.QueryUnescape(v); err == nil {
+				v = dv
+			}
+			qualifiers[strings.ToLower(k)] = v
+		}
+		rest = rest[:i]
+	}
+	if i := strings.LastIndexByte(rest, '@'); i >= 0 {
+		v := rest[i+1:]
+		if dv, err := url.PathUnescape(v); err == nil {
+			v = dv
+		}
+		version, rest = v, rest[:i]
+	}
+	rest = strings.Trim(rest, "/")
+	t, path, ok := strings.Cut(rest, "/")
+	if !ok || t == "" || path == "" {
+		return "", "", "", "", nil, false
+	}
+	typ = strings.ToLower(t)
+	if i := strings.LastIndexByte(path, '/'); i >= 0 {
+		namespace = strings.ToLower(path[:i])
+		name = path[i+1:]
+	} else {
+		name = path
+	}
+	return typ, namespace, name, version, qualifiers, true
+}
+
+// PURLToQuery converts a package URL into an OSV BatchQuery. For standard
+// language packages and distributions whose PURL query works out of the box,
+// it preserves the PURL. For OS distributions where OSV requires ecosystem
+// and release coordinates (Debian, Alpine, AlmaLinux, Rocky Linux, Red Hat),
+// it maps the package name, ecosystem:release and version.
+func PURLToQuery(s string) BatchQuery {
+	s = strings.TrimSpace(s)
+	typ, namespace, name, version, qualifiers, ok := splitPURL(s)
+	if !ok {
+		return BatchQuery{Package: PackageQuery{PURL: s}}
+	}
+
+	distro := qualifiers["distro"]
+	switch typ {
+	case "deb":
+		if namespace == "debian" {
+			if rel := debianRelease(distro); rel != "" {
+				return BatchQuery{
+					Package: PackageQuery{
+						Name:      name,
+						Ecosystem: "Debian:" + rel,
+					},
+					Version: version,
+				}
+			}
+		}
+	case "apk":
+		if namespace == "alpine" {
+			if rel := alpineRelease(distro); rel != "" {
+				return BatchQuery{
+					Package: PackageQuery{
+						Name:      name,
+						Ecosystem: "Alpine:v" + rel,
+					},
+					Version: version,
+				}
+			}
+		}
+	case "rpm":
+		switch namespace {
+		case "almalinux":
+			if rel := rpmDistroMajor(distro); rel != "" {
+				return BatchQuery{
+					Package: PackageQuery{
+						Name:      name,
+						Ecosystem: "AlmaLinux:" + rel,
+					},
+					Version: version,
+				}
+			}
+		case "rocky-linux", "rocky":
+			if rel := rpmDistroMajor(distro); rel != "" {
+				return BatchQuery{
+					Package: PackageQuery{
+						Name:      name,
+						Ecosystem: "Rocky Linux:" + rel,
+					},
+					Version: version,
+				}
+			}
+		case "redhat", "rhel", "centos":
+			return BatchQuery{
+				Package: PackageQuery{
+					Name:      name,
+					Ecosystem: "Red Hat",
+				},
+				Version: version,
+			}
+		}
+	}
+
+	return BatchQuery{Package: PackageQuery{PURL: s}}
+}
+
 // QueryBatch sends a batch of PURLs to the OSV API and returns the results.
 // PURLs are sent in chunks of maxBatchSize to respect API limits.
 // Includes rate limiting and exponential backoff retry for transient errors.
@@ -214,9 +427,7 @@ func (c *Client) QueryBatch(ctx context.Context, purls []string) (*BatchResponse
 		if purl == "" {
 			continue
 		}
-		queries = append(queries, BatchQuery{
-			Package: PackageQuery{PURL: purl},
-		})
+		queries = append(queries, PURLToQuery(purl))
 	}
 
 	if len(queries) == 0 {
