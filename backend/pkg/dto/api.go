@@ -181,6 +181,8 @@ type VulnerabilityListItem struct {
 	// issued (OpenVEX action_statement_timestamp). Omitted for statements
 	// ingested before migration 033, which store the zero time.
 	VEXActionStatementTimestamp string `json:"vex_action_statement_timestamp,omitempty"`
+	// VEXRole is the role of the winning VEX statement (e.g. "upstream" from subscriptions) (#334, #538).
+	VEXRole string `json:"vex_role,omitempty"`
 	// VEXScope (#350): "sbom" when the winning statement is scoped to this
 	// SBOM, "global" for unscoped legacy statements. Omitted without VEX.
 	VEXScope string `json:"vex_scope,omitempty"`

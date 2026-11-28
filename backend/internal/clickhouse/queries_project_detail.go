@@ -269,6 +269,7 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 	if pred := depthPredicate(depScope, "v.dependency_depth"); pred != "" {
 		scopeAnd = " AND " + pred
 	}
+	vexOrder := vexPrecedenceExpr("st")
 	rows, err := c.Conn.Query(ctx, fmt.Sprintf(`
 		WITH scope AS (
 			SELECT sbom_id, has(quality_flags, 'no-dependency-graph') AS has_no_dep_graph
@@ -289,6 +290,7 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 			ifNull(vx.vex_statement_id, '')      AS vex_statement_id,
 			ifNull(vx.vex_author, '')            AS vex_author,
 			ifNull(vx.vex_tooling, '')           AS vex_tooling,
+			ifNull(vx.vex_role, '')              AS vex_role,
 			f.has_no_dep_graph                   AS has_no_dep_graph,
 			f.reachability, f.evidence_source, f.evidence_ref, f.evidence_at
 		FROM (
@@ -319,15 +321,16 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 		LEFT JOIN (
 			SELECT
 				m.vuln_id AS vuln_id, m.purl AS purl,
-				argMax(st.status, st.vex_timestamp)          AS vex_status,
-				argMax(st.justification, st.vex_timestamp)   AS vex_justification,
-				argMax(st.action_statement, st.vex_timestamp)     AS vex_action_statement,
-				argMax(st.impact_statement, st.vex_timestamp)     AS vex_impact_statement,
-				argMax(st.action_statement_timestamp, st.vex_timestamp) AS vex_action_statement_timestamp,
-				argMax(toString(st.vex_id), st.vex_timestamp) AS vex_statement_id,
-				argMax(st.author, st.vex_timestamp)          AS vex_author,
-				argMax(st.tooling, st.vex_timestamp)         AS vex_tooling,
-				max(st.vex_timestamp)                        AS winning_timestamp
+				argMax(st.status, `+vexOrder+`)          AS vex_status,
+				argMax(st.justification, `+vexOrder+`)   AS vex_justification,
+				argMax(st.action_statement, `+vexOrder+`)     AS vex_action_statement,
+				argMax(st.impact_statement, `+vexOrder+`)     AS vex_impact_statement,
+				argMax(st.action_statement_timestamp, `+vexOrder+`) AS vex_action_statement_timestamp,
+				argMax(toString(st.vex_id), `+vexOrder+`) AS vex_statement_id,
+				argMax(st.author, `+vexOrder+`)          AS vex_author,
+				argMax(st.tooling, `+vexOrder+`)         AS vex_tooling,
+				argMax(st.role, `+vexOrder+`)            AS vex_role,
+				argMax(st.vex_timestamp, `+vexOrder+`)   AS winning_timestamp
 			FROM (
 				SELECT DISTINCT vuln_id, purl,
 					arrayJoin(arrayConcat([vuln_id], aliases)) AS match_id
@@ -364,6 +367,7 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 			&item.VEXActionStatement, &item.VEXImpactStatement,
 			&actionAt, &vexTimestamp,
 			&item.VEXStatementID, &item.VEXAuthor, &item.VEXTooling,
+			&item.VEXRole,
 			&hasNoDepGraph,
 			&item.Reachability, &item.EvidenceSource, &item.EvidenceRef, &evidenceAt,
 		); err != nil {

@@ -51,6 +51,9 @@ import (
 // the mux registration and the CORS per-route method scoping can't drift.
 const uploadPath = "/api/v1/sboms/upload"
 
+// vexUpstreamSyncPath triggers on-demand upstream VEX subscription sync (#538).
+const vexUpstreamSyncPath = "/api/v1/vex/upstream/sync"
+
 // uploadCleanupTimeout bounds the best-effort S3 RemoveObject issued when an
 // upload was already staged but its ingestion-job enqueue failed. Runs on a
 // fresh context (the request's may be cancelled), so it needs its own deadline.
@@ -1200,6 +1203,9 @@ func main() {
 	mux.Handle("GET /tea", teaHandler)
 	mux.Handle("HEAD /tea", teaHandler)
 
+	// On-demand upstream VEX sync (#538).
+	mux.HandleFunc("POST "+vexUpstreamSyncPath, upstreamVEXSyncHandler(cfg, chClient))
+
 	// CORS + security middleware for Angular dev server.
 	// Order (outermost first): security headers → rate limit → CORS → auth → mux.
 	// Auth sits closest to the mux so 401s still get CORS + security headers.
@@ -1472,9 +1478,9 @@ func corsMiddleware(allowedOrigins string, next http.Handler) http.Handler {
 			}
 		}
 
-		// POST is valid on the upload route and evidence routes.
+		// POST is valid on upload, evidence (#535), and upstream VEX sync (#538) routes.
 		allowedMethods := "GET, HEAD, OPTIONS"
-		if r.URL.Path == uploadPath || (strings.HasPrefix(r.URL.Path, "/api/v1/sboms/") && strings.HasSuffix(r.URL.Path, "/evidence")) {
+		if r.URL.Path == uploadPath || r.URL.Path == vexUpstreamSyncPath || (strings.HasPrefix(r.URL.Path, "/api/v1/sboms/") && strings.HasSuffix(r.URL.Path, "/evidence")) {
 			allowedMethods = "GET, POST, OPTIONS"
 		}
 		w.Header().Set("Access-Control-Allow-Methods", allowedMethods)

@@ -256,3 +256,43 @@ func TestKubernetesSerializesCallbacksAcrossLockers(t *testing.T) {
 		t.Fatalf("second WithLock did not finish: %v", ctx.Err())
 	}
 }
+
+func TestRunLeader_LocalMode(t *testing.T) {
+	t.Setenv("KUBERNETES_SERVICE_HOST", "")
+	t.Setenv("POD_NAMESPACE", "")
+
+	called := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := RunLeader(ctx, "worker-1", "test-lease", func(leaderCtx context.Context) {
+		close(called)
+	}); err != nil {
+		t.Fatalf("RunLeader: %v", err)
+	}
+
+	select {
+	case <-called:
+	case <-time.After(time.Second):
+		t.Fatal("RunLeader callback did not run in local mode")
+	}
+}
+
+func TestRunLeader_Kubernetes(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	called := make(chan struct{})
+	if err := runLeaderWithClient(ctx, client, "test-ns", "test-vex-lease", "worker-1", func(leaderCtx context.Context) {
+		close(called)
+	}); err != nil {
+		t.Fatalf("runLeaderWithClient: %v", err)
+	}
+
+	select {
+	case <-called:
+	case <-time.After(time.Second):
+		t.Fatal("runLeaderWithClient callback did not run")
+	}
+}

@@ -105,20 +105,21 @@ func (c *Client) QueryDashboardStats(ctx context.Context, f VulnFilter) (*dto.Da
 	// than a JOIN key — and the argMax runs *after* it, so a product-wide and a
 	// component-scoped statement for the same finding compete on timestamp like
 	// any other pair.
+	vexOrder := vexPrecedenceExpr("vx")
 	var suppressedByVEX uint64
 	if err := c.Conn.QueryRow(ctx, `
 		SELECT count()
 		FROM (
 			SELECT
 				v.sbom_id AS sbom_id, v.vuln_id AS vuln_id, v.purl AS purl,
-				argMax(vx.status, vx.vex_timestamp) AS winning_status
+				argMax(vx.status, `+vexOrder+`) AS winning_status
 			FROM (
 				SELECT sbom_id, vuln_id, purl,
 					arrayJoin(arrayConcat([vuln_id], aliases)) AS match_id
 				FROM vulnerabilities FINAL`+w+`
 			) AS v
 			INNER JOIN (
-				SELECT sbom_id, vuln_id, product_purl, status, vex_timestamp
+				SELECT sbom_id, vuln_id, product_purl, status, vex_timestamp, ingested_at, role
 				FROM vex_statements FINAL
 				WHERE sbom_id != ''
 			) AS vx ON vx.vuln_id = v.match_id
@@ -476,7 +477,19 @@ func vulnWhere(scope string, f VulnFilter) (string, []any) {
 	return " WHERE " + strings.Join(preds, " AND "), args
 }
 
+// vexPrecedenceExpr builds the ClickHouse tuple ordering key for argMax over
+// vex_statements so local statements always outrank upstream statements
+// (role = 'upstream'), breaking ties by vex_timestamp and then ingested_at.
+func vexPrecedenceExpr(alias string) string {
+	prefix := ""
+	if alias != "" {
+		prefix = alias + "."
+	}
+	return fmt.Sprintf("(%[1]srole != 'upstream', %[1]svex_timestamp, %[1]singested_at)", prefix)
+}
+
 func vulnerabilityListSQL(scopeWhere string) string {
+	vexOrder := vexPrecedenceExpr("s")
 	return `
 		SELECT
 			v.vuln_id, v.severity, v.purl, v.summary,
@@ -492,6 +505,7 @@ func vulnerabilityListSQL(scopeWhere string) string {
 			ifNull(vx.vex_statement_id, '') AS vex_statement_id,
 			ifNull(vx.vex_author, '') AS vex_author,
 			ifNull(vx.vex_tooling, '') AS vex_tooling,
+			ifNull(vx.vex_role, '') AS vex_role,
 			ifNull(q.has_no_dep_graph, 0) AS has_no_dep_graph,
 			v.reachability, v.evidence_source, v.evidence_ref, v.evidence_at
 		FROM (SELECT * FROM vulnerabilities FINAL` + scopeWhere + `) AS v
@@ -502,15 +516,16 @@ func vulnerabilityListSQL(scopeWhere string) string {
 		LEFT JOIN (
 			SELECT
 				toString(f.sbom_id) AS sbom_id, f.vuln_id AS vuln_id, f.purl AS purl,
-				argMax(s.status, s.vex_timestamp) AS vex_status,
-				argMax(s.justification, s.vex_timestamp) AS vex_justification,
-				argMax(s.action_statement, s.vex_timestamp) AS vex_action_statement,
-				argMax(s.impact_statement, s.vex_timestamp) AS vex_impact_statement,
-				argMax(s.action_statement_timestamp, s.vex_timestamp) AS vex_action_statement_timestamp,
-				argMax(toString(s.vex_id), s.vex_timestamp) AS vex_statement_id,
-				argMax(s.author, s.vex_timestamp) AS vex_author,
-				argMax(s.tooling, s.vex_timestamp) AS vex_tooling,
-				max(s.vex_timestamp) AS winning_timestamp
+				argMax(s.status, ` + vexOrder + `) AS vex_status,
+				argMax(s.justification, ` + vexOrder + `) AS vex_justification,
+				argMax(s.action_statement, ` + vexOrder + `) AS vex_action_statement,
+				argMax(s.impact_statement, ` + vexOrder + `) AS vex_impact_statement,
+				argMax(s.action_statement_timestamp, ` + vexOrder + `) AS vex_action_statement_timestamp,
+				argMax(toString(s.vex_id), ` + vexOrder + `) AS vex_statement_id,
+				argMax(s.author, ` + vexOrder + `) AS vex_author,
+				argMax(s.tooling, ` + vexOrder + `) AS vex_tooling,
+				argMax(s.role, ` + vexOrder + `) AS vex_role,
+				argMax(s.vex_timestamp, ` + vexOrder + `) AS winning_timestamp
 			FROM (
 				SELECT DISTINCT sbom_id, vuln_id, purl,
 					arrayJoin(arrayConcat([vuln_id], aliases)) AS match_id
@@ -519,7 +534,7 @@ func vulnerabilityListSQL(scopeWhere string) string {
 			INNER JOIN (
 				SELECT sbom_id, vuln_id, product_purl, status, action_statement,
 					action_statement_timestamp, impact_statement, justification,
-					author, tooling, vex_id, vex_timestamp
+					author, tooling, vex_id, vex_timestamp, ingested_at, role
 				FROM vex_statements FINAL
 				WHERE sbom_id != ''
 			) AS s ON s.vuln_id = f.match_id AND s.sbom_id = toString(f.sbom_id)
@@ -554,6 +569,7 @@ func scanVulnerabilityListRow(rows driver.Rows) (dto.VulnerabilityListItem, erro
 		&item.VEXStatementID,
 		&item.VEXAuthor,
 		&item.VEXTooling,
+		&item.VEXRole,
 		&hasNoDepGraph,
 		&item.Reachability, &item.EvidenceSource, &item.EvidenceRef, &evidenceAt,
 	); err != nil {
