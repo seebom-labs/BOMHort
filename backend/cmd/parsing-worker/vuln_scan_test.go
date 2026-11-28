@@ -79,3 +79,35 @@ func TestScanVulnerabilitiesBackport(t *testing.T) {
 		t.Fatalf("findings = %+v", got)
 	}
 }
+
+func TestScanVulnerabilities_OSPackagesReleaseFiltering(t *testing.T) {
+	rhel9PURL := "pkg:rpm/redhat/openssl-libs@3.5.9-1.el9_9?distro=rhel-9.9&epoch=1"
+	rhsa8 := &osv.VulnEntry{
+		ID: "RHSA-2020:5588",
+		Affected: []osv.Affected{{
+			Package: osv.AffectedPackage{Ecosystem: "Red Hat:rhel_e4s:8.0::baseos", Name: "openssl-libs"},
+			Ranges:  []osv.Range{{Type: "ECOSYSTEM", Events: []osv.Event{{Introduced: "0"}, {Fixed: "1:1.1.1-9.el8_0"}}}},
+		}},
+	}
+	rhsa9 := &osv.VulnEntry{
+		ID: "RHSA-2026:9999",
+		Affected: []osv.Affected{{
+			Package: osv.AffectedPackage{Ecosystem: "Red Hat:enterprise_linux:9::baseos", Name: "openssl-libs"},
+			Ranges:  []osv.Range{{Type: "ECOSYSTEM", Events: []osv.Event{{Introduced: "0"}, {Fixed: "1:3.5.10-1.el9_9"}}}},
+		}},
+	}
+
+	src := fakeOSV{
+		byPURL: map[string][]string{rhel9PURL: {"RHSA-2020:5588", "RHSA-2026:9999"}},
+		full:   map[string]*osv.VulnEntry{"RHSA-2020:5588": rhsa8, "RHSA-2026:9999": rhsa9},
+	}
+
+	// Without feeds: OSV hits for other releases should be filtered out.
+	got, err := scanVulnerabilities(context.Background(), src, nil, []string{rhel9PURL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Entry.ID != "RHSA-2026:9999" {
+		t.Fatalf("got findings = %+v, want only RHSA-2026:9999", got)
+	}
+}

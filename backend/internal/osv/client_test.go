@@ -198,3 +198,107 @@ func TestHydrateVulns_CachesPreviousResults(t *testing.T) {
 		t.Errorf("expected still 1 API fetch (deduped+cached), got %d", fetchCount)
 	}
 }
+
+func TestPURLToQuery(t *testing.T) {
+	tests := []struct {
+		name          string
+		purl          string
+		wantEcosystem string
+		wantName      string
+		wantVersion   string
+		wantPURL      string
+	}{
+		{
+			name:          "Debian with distro debian-12.7",
+			purl:          "pkg:deb/debian/openssl@3.0.11-1~deb12u1?arch=amd64&distro=debian-12.7",
+			wantEcosystem: "Debian:12",
+			wantName:      "openssl",
+			wantVersion:   "3.0.11-1~deb12u1",
+		},
+		{
+			name:          "Debian with codename bookworm",
+			purl:          "pkg:deb/debian/openssl@3.0.11-1~deb12u1?distro=bookworm",
+			wantEcosystem: "Debian:12",
+			wantName:      "openssl",
+			wantVersion:   "3.0.11-1~deb12u1",
+		},
+		{
+			name:          "Alpine with distro alpine-3.19.1",
+			purl:          "pkg:apk/alpine/openssl@3.1.4-r0?arch=x86_64&distro=alpine-3.19.1",
+			wantEcosystem: "Alpine:v3.19",
+			wantName:      "openssl",
+			wantVersion:   "3.1.4-r0",
+		},
+		{
+			name:          "Alpine with distro 3.20.0",
+			purl:          "pkg:apk/alpine/curl@8.7.1-r0?distro=3.20.0",
+			wantEcosystem: "Alpine:v3.20",
+			wantName:      "curl",
+			wantVersion:   "8.7.1-r0",
+		},
+		{
+			name:          "AlmaLinux 9",
+			purl:          "pkg:rpm/almalinux/openssl@3.0.7-27.el9_2?distro=almalinux-9.2",
+			wantEcosystem: "AlmaLinux:9",
+			wantName:      "openssl",
+			wantVersion:   "3.0.7-27.el9_2",
+		},
+		{
+			name:          "Rocky Linux 9",
+			purl:          "pkg:rpm/rocky-linux/openssl@3.0.7-27.el9_2?distro=rocky-9.2",
+			wantEcosystem: "Rocky Linux:9",
+			wantName:      "openssl",
+			wantVersion:   "3.0.7-27.el9_2",
+		},
+		{
+			name:          "Red Hat RHEL 9",
+			purl:          "pkg:rpm/redhat/openssl-libs@3.5.9-1.el9_9?distro=rhel-9.9",
+			wantEcosystem: "Red Hat",
+			wantName:      "openssl-libs",
+			wantVersion:   "3.5.9-1.el9_9",
+		},
+		{
+			name:          "CentOS 7",
+			purl:          "pkg:rpm/centos/curl@7.29.0-59.el7?distro=centos-7",
+			wantEcosystem: "Red Hat",
+			wantName:      "curl",
+			wantVersion:   "7.29.0-59.el7",
+		},
+		{
+			name:     "Ubuntu preserves PURL",
+			purl:     "pkg:deb/ubuntu/openssl@3.0.2-0ubuntu1.15?distro=ubuntu-22.04",
+			wantPURL: "pkg:deb/ubuntu/openssl@3.0.2-0ubuntu1.15?distro=ubuntu-22.04",
+		},
+		{
+			name:     "NPM preserves PURL",
+			purl:     "pkg:npm/lodash@4.17.15",
+			wantPURL: "pkg:npm/lodash@4.17.15",
+		},
+		{
+			name:     "Invalid PURL preserves string",
+			purl:     "not-a-purl",
+			wantPURL: "not-a-purl",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q := PURLToQuery(tt.purl)
+			if tt.wantPURL != "" {
+				if q.Package.PURL != tt.wantPURL {
+					t.Errorf("q.Package.PURL = %q, want %q", q.Package.PURL, tt.wantPURL)
+				}
+				return
+			}
+			if q.Package.Ecosystem != tt.wantEcosystem {
+				t.Errorf("q.Package.Ecosystem = %q, want %q", q.Package.Ecosystem, tt.wantEcosystem)
+			}
+			if q.Package.Name != tt.wantName {
+				t.Errorf("q.Package.Name = %q, want %q", q.Package.Name, tt.wantName)
+			}
+			if q.Version != tt.wantVersion {
+				t.Errorf("q.Version = %q, want %q", q.Version, tt.wantVersion)
+			}
+		})
+	}
+}

@@ -104,6 +104,14 @@ Mageia, openEuler, Azure Linux and the language ecosystems). A record whose
 ecosystem names a release (`Alpine:v3.18`) only applies to a PURL whose
 `distro` qualifier agrees; a PURL without the qualifier matches every release.
 
+When querying osv.dev, BOMHort translates distro packages (Debian, Alpine,
+AlmaLinux, Rocky Linux, Red Hat) into ecosystem- and release-qualified queries so
+OSV matches distro-specific entries rather than returning empty results or
+matching across unrelated major releases. Returned OSV advisories pass through the
+same release-matching and version-range evaluation (including RPM epochs from
+PURL qualifiers), dropping advisories scoped to other distro releases or already
+fixed in the package version.
+
 Versions are compared in the package's own order: **apk** (`-rN`, `_rc`,
 `_p`), **dpkg** (epochs, `~`, `+deb12u1`) and **rpm** (`~`, `^`, `.el9_2`), plus
 SemVer for `SEMVER` ranges. A record that cannot be evaluated (an `ECOSYSTEM`

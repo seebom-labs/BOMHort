@@ -11,11 +11,13 @@ import (
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
 
-// FromOSV wraps osv.dev hits as findings, for callers without feeds.
+// FromOSV wraps osv.dev hits as findings, verifying release and range rules.
 func FromOSV(purl string, hits []osv.VulnEntry) []Finding {
-	out := make([]Finding, len(hits))
-	for i, h := range hits {
-		out[i] = Finding{PURL: purl, Entry: h, Source: OSVSource}
+	var out []Finding
+	for _, h := range hits {
+		if f, ok := FilterOSVHit(purl, h); ok {
+			out = append(out, f)
+		}
 	}
 	return out
 }
