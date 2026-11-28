@@ -178,7 +178,7 @@ When `USE_PROTOBOM=true`, **all** SBOM parsing is routed through protobom — in
 | `serialNumber` | `SBOM.DocumentNamespace` | URN format |
 | `metadata.component.name` | `SBOM.DocumentName` | With version appended; unusable names use the shared fallback above |
 | `metadata.timestamp` | `SBOM.CreationDate` | RFC3339 |
-| `metadata.tools[].name` | `SBOM.CreatorTools` | Prefixed with "Tool: " |
+| `metadata.tools` | `SBOM.CreatorTools` | Accepts both legacy array (`tools[]`) and CycloneDX 1.5+ object (`tools.components[]`, `tools.services[]`); prefixed with `"Tool: "` |
 | `components[].bom-ref` | `PackageSPDXIDs` | Used as node identifier |
 | `components[].name` | `PackageNames` | |
 | `components[].version` | `PackageVersions` | |

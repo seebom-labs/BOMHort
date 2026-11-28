@@ -1,6 +1,9 @@
 package cyclonedx
 
 import (
+	"os"
+	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/seebom-labs/bomhort/backend/internal/license"
@@ -345,5 +348,160 @@ func TestParse_CompoundLicensePrecedencePreserved(t *testing.T) {
 	cat2 := license.Categorize(lic2)
 	if cat2 != license.CategoryCopyleft {
 		t.Errorf("Categorize(%q) = %q, want %q", lic2, cat2, license.CategoryCopyleft)
+	}
+}
+
+func TestParse_MetadataToolsFormats(t *testing.T) {
+	tests := []struct {
+		name      string
+		toolsJSON string
+		wantTools []string
+		wantErr   bool
+	}{
+		{
+			name:      "legacy array form",
+			toolsJSON: `[{"vendor": "anchore", "name": "syft", "version": "0.100.0"}]`,
+			wantTools: []string{"Tool: anchore syft 0.100.0"},
+		},
+		{
+			name:      "legacy array missing vendor",
+			toolsJSON: `[{"name": "trivy", "version": "0.50.0"}]`,
+			wantTools: []string{"Tool: trivy 0.50.0"},
+		},
+		{
+			name:      "object form syft component with author",
+			toolsJSON: `{"components": [{"type": "application", "author": "anchore", "name": "syft", "version": "1.55.0"}]}`,
+			wantTools: []string{"Tool: anchore syft 1.55.0"},
+		},
+		{
+			name:      "object form component with manufacturer and manufacture",
+			toolsJSON: `{"components": [{"type": "application", "manufacturer": {"name": "Aqua"}, "name": "trivy", "version": "0.58.0"}, {"type": "application", "manufacture": "VendorCo", "name": "scanner", "version": "2.0"}]}`,
+			wantTools: []string{"Tool: Aqua trivy 0.58.0", "Tool: VendorCo scanner 2.0"},
+		},
+		{
+			name:      "object form component with supplier publisher authors and group fallback",
+			toolsJSON: `{"components": [{"supplier": {"name": "Supp"}, "name": "t1"}, {"publisher": "Pub", "name": "t2"}, {"authors": [{"name": "Auth"}], "name": "t3"}, {"group": "org.acme", "name": "t4", "version": "1.0"}]}`,
+			wantTools: []string{"Tool: Supp t1", "Tool: Pub t2", "Tool: Auth t3", "Tool: org.acme t4 1.0"},
+		},
+		{
+			name:      "object form services with provider and group",
+			toolsJSON: `{"services": [{"provider": {"name": "acme"}, "name": "bom-signer", "version": "2.1.0"}, {"group": "sec", "name": "attestor"}]}`,
+			wantTools: []string{"Tool: acme bom-signer 2.1.0", "Tool: sec attestor"},
+		},
+		{
+			name:      "object form components and services combined",
+			toolsJSON: `{"components": [{"type": "application", "author": "anchore", "name": "syft", "version": "1.55.0"}], "services": [{"provider": {"name": "ci"}, "name": "sbom-relay", "version": "1.2.0"}]}`,
+			wantTools: []string{"Tool: anchore syft 1.55.0", "Tool: ci sbom-relay 1.2.0"},
+		},
+		{
+			name:      "empty object",
+			toolsJSON: `{}`,
+			wantTools: nil,
+		},
+		{
+			name:      "empty array",
+			toolsJSON: `[]`,
+			wantTools: nil,
+		},
+		{
+			name:      "null tools",
+			toolsJSON: `null`,
+			wantTools: nil,
+		},
+		{
+			name:      "empty component and null entries skipped cleanly",
+			toolsJSON: `{"components": [{}, null]}`,
+			wantTools: nil,
+		},
+		{
+			name:      "invalid string tools fails decode",
+			toolsJSON: `"syft"`,
+			wantErr:   true,
+		},
+		{
+			name:      "invalid number tools fails decode",
+			toolsJSON: `42`,
+			wantErr:   true,
+		},
+		{
+			name:      "invalid components field type fails decode",
+			toolsJSON: `{"components": "not-an-array"}`,
+			wantErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			doc := []byte(`{
+				"bomFormat": "CycloneDX",
+				"specVersion": "1.6",
+				"serialNumber": "urn:uuid:11111111-2222-3333-4444-555555555555",
+				"version": 1,
+				"metadata": {
+					"timestamp": "2026-11-24T21:00:00Z",
+					"tools": ` + tt.toolsJSON + `,
+					"component": {"type": "application", "name": "app", "version": "1.0.0"}
+				},
+				"components": []
+			}`)
+			res, err := Parse(doc, "tools.cdx.json", "hash")
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got nil (tools=%v)", res.SBOM.CreatorTools)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !reflect.DeepEqual(res.SBOM.CreatorTools, tt.wantTools) {
+				t.Errorf("CreatorTools = %#v, want %#v", res.SBOM.CreatorTools, tt.wantTools)
+			}
+		})
+	}
+}
+
+func TestParse_SyftFixtureObjectTools(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "syft_1.6_tools_object.cdx.json"))
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	res, err := Parse(data, "syft_1.6_tools_object.cdx.json", "fixture-hash")
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	if res.SBOM.SPDXVersion != "CycloneDX-1.6" {
+		t.Errorf("SPDXVersion = %q, want CycloneDX-1.6", res.SBOM.SPDXVersion)
+	}
+	wantTools := []string{"Tool: anchore syft 1.55.0"}
+	if !reflect.DeepEqual(res.SBOM.CreatorTools, wantTools) {
+		t.Errorf("CreatorTools = %v, want %v", res.SBOM.CreatorTools, wantTools)
+	}
+	if res.SBOM.Supplier != "Alpine Linux" {
+		t.Errorf("Supplier = %q, want Alpine Linux", res.SBOM.Supplier)
+	}
+	if len(res.Packages.PackageNames) != 2 {
+		t.Fatalf("expected 2 packages, got %d", len(res.Packages.PackageNames))
+	}
+	if len(res.Packages.DirectIndices) != 2 {
+		t.Errorf("expected 2 direct dependency seeds, got %v", res.Packages.DirectIndices)
+	}
+}
+
+func TestExtractTools(t *testing.T) {
+	data := []byte(`  {"bomFormat":"CycloneDX","specVersion":"1.6","metadata":{"tools":{"components":[{"author":"anchore","name":"syft","version":"1.55.0"}]}}}`)
+	got := ExtractTools(data)
+	want := []string{"Tool: anchore syft 1.55.0"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("ExtractTools = %v, want %v", got, want)
+	}
+
+	if xmlOut := ExtractTools([]byte(`<bom xmlns="http://cyclonedx.org/schema/bom/1.5"/>`)); xmlOut != nil {
+		t.Errorf("expected nil for XML input, got %v", xmlOut)
+	}
+	if nonCDX := ExtractTools([]byte(`{"spdxVersion":"SPDX-2.3"}`)); nonCDX != nil {
+		t.Errorf("expected nil for non-CycloneDX input, got %v", nonCDX)
 	}
 }

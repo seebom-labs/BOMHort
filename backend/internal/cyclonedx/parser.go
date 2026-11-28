@@ -4,6 +4,7 @@
 package cyclonedx
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 	"time"
@@ -38,7 +39,7 @@ type CDXDocument struct {
 // CDXMetadata holds BOM metadata.
 type CDXMetadata struct {
 	Timestamp string        `json:"timestamp"`
-	Tools     []CDXTool     `json:"tools"`
+	Tools     CDXTools      `json:"tools"`
 	Component *CDXComponent `json:"component"`
 	// Manufacturer (1.6) / Manufacture (1.5, deprecated spelling) and
 	// Supplier name who makes and who ships the product; used as a parent
@@ -77,6 +78,154 @@ type CDXTool struct {
 	Vendor  string `json:"vendor"`
 	Name    string `json:"name"`
 	Version string `json:"version"`
+}
+
+// CDXTools decodes metadata.tools in both CycloneDX forms: the legacy array of
+// tools (<= 1.4, deprecated in 1.5) and the 1.5+ object form containing
+// components and services arrays.
+type CDXTools []CDXTool
+
+type cdxToolComponent struct {
+	Vendor       string            `json:"vendor"`
+	Manufacturer *CDXOrganization  `json:"manufacturer"`
+	Manufacture  *CDXOrganization  `json:"manufacture"`
+	Supplier     *CDXOrganization  `json:"supplier"`
+	Publisher    string            `json:"publisher"`
+	Author       string            `json:"author"`
+	Authors      []CDXOrganization `json:"authors"`
+	Group        string            `json:"group"`
+	Name         string            `json:"name"`
+	Version      string            `json:"version"`
+}
+
+type cdxToolService struct {
+	Provider *CDXOrganization `json:"provider"`
+	Group    string           `json:"group"`
+	Name     string           `json:"name"`
+	Version  string           `json:"version"`
+}
+
+type cdxToolsObject struct {
+	Components []cdxToolComponent `json:"components"`
+	Services   []cdxToolService   `json:"services"`
+}
+
+// UnmarshalJSON accepts both the legacy array form ([{"vendor", "name", "version"}])
+// and the CycloneDX 1.5+ object form ({"components": [...], "services": [...]}).
+func (t *CDXTools) UnmarshalJSON(b []byte) error {
+	trimmed := bytes.TrimSpace(b)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		*t = nil
+		return nil
+	}
+
+	if trimmed[0] == '[' {
+		var legacy []CDXTool
+		if err := json.Unmarshal(trimmed, &legacy); err != nil {
+			return err
+		}
+		*t = legacy
+		return nil
+	}
+
+	var obj cdxToolsObject
+	if err := json.Unmarshal(trimmed, &obj); err != nil {
+		return err
+	}
+
+	out := make([]CDXTool, 0, len(obj.Components)+len(obj.Services))
+	for _, c := range obj.Components {
+		out = append(out, CDXTool{
+			Vendor:  toolComponentVendor(c),
+			Name:    c.Name,
+			Version: c.Version,
+		})
+	}
+	for _, s := range obj.Services {
+		out = append(out, CDXTool{
+			Vendor:  toolServiceVendor(s),
+			Name:    s.Name,
+			Version: s.Version,
+		})
+	}
+	*t = out
+	return nil
+}
+
+func orgName(o *CDXOrganization) string {
+	if o == nil {
+		return ""
+	}
+	return o.Name
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if s := strings.TrimSpace(v); s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+func toolComponentVendor(c cdxToolComponent) string {
+	if v := firstNonEmpty(
+		c.Vendor,
+		orgName(c.Manufacturer),
+		orgName(c.Manufacture),
+		orgName(c.Supplier),
+		c.Publisher,
+		c.Author,
+	); v != "" {
+		return v
+	}
+	for i := range c.Authors {
+		if s := strings.TrimSpace(c.Authors[i].Name); s != "" {
+			return s
+		}
+	}
+	return strings.TrimSpace(c.Group)
+}
+
+func toolServiceVendor(s cdxToolService) string {
+	return firstNonEmpty(orgName(s.Provider), s.Group)
+}
+
+func formatTools(tools []CDXTool) []string {
+	var out []string
+	for _, t := range tools {
+		var parts []string
+		for _, p := range []string{t.Vendor, t.Name, t.Version} {
+			if s := strings.TrimSpace(p); s != "" {
+				parts = append(parts, s)
+			}
+		}
+		if len(parts) == 0 {
+			continue
+		}
+		out = append(out, "Tool: "+strings.Join(parts, " "))
+	}
+	return out
+}
+
+// ExtractTools decodes metadata.tools from a CycloneDX JSON document and
+// formats them as "Tool: ..." strings. Returns nil when the input is not valid
+// CycloneDX JSON (for example XML parsed via protobom) or declares no tools.
+func ExtractTools(data []byte) []string {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return nil
+	}
+	var doc struct {
+		BomFormat string `json:"bomFormat"`
+		Metadata  struct {
+			Tools CDXTools `json:"tools"`
+		} `json:"metadata"`
+	}
+	if err := json.Unmarshal(trimmed, &doc); err != nil || doc.BomFormat != "CycloneDX" {
+		return nil
+	}
+	return formatTools(doc.Metadata.Tools)
 }
 
 // CDXComponent represents a single component in the BOM.
@@ -150,17 +299,7 @@ func Parse(data []byte, sourceFile, sha256Hash string) (*ParseResult, error) {
 	}
 
 	// Extract tools.
-	var tools []string
-	for _, t := range doc.Metadata.Tools {
-		toolStr := t.Name
-		if t.Vendor != "" {
-			toolStr = t.Vendor + " " + t.Name
-		}
-		if t.Version != "" {
-			toolStr += " " + t.Version
-		}
-		tools = append(tools, "Tool: "+toolStr)
-	}
+	tools := formatTools(doc.Metadata.Tools)
 
 	// Keep meaningful component names; resolve unusable ones before a version
 	// suffix can disguise a temporary/empty name as a meaningful document name.
