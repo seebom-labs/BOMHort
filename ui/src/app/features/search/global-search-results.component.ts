@@ -9,6 +9,7 @@ import { ApiService } from '../../core/api.service';
 import { GlobalSearchResponse } from '../../core/api.models';
 import { VulnAliasesComponent } from '../../shared/vuln-aliases/vuln-aliases.component';
 import { primaryVulnId } from '../../shared/vuln-identity';
+import { purlEcosystem } from '../../shared/purl';
 
 @Component({
   selector: 'app-global-search-results',
@@ -47,7 +48,7 @@ import { primaryVulnId } from '../../shared/vuln-identity';
         <!-- Packages -->
         <div class="facet-section" *ngIf="data.packages.length > 0">
           <h2>Packages ({{ data.total_packages }})</h2>
-          <div class="result-card" *ngFor="let pkg of data.packages" [routerLink]="['/package-search', pkg.package_name]">
+          <div class="result-card" *ngFor="let pkg of data.packages" [routerLink]="['/package-search', pkg.package_name]" [queryParams]="purlEcosystem(pkg.purl) ? { ecosystem: purlEcosystem(pkg.purl) } : null">
             <div class="pkg-info">
               <span class="pkg-name">{{ pkg.package_name }}</span>
               <span class="pkg-meta">{{ pkg.project_count }} {{ pkg.project_count === 1 ? 'project' : 'projects' }}</span>
@@ -202,6 +203,7 @@ import { primaryVulnId } from '../../shared/vuln-identity';
 })
 export class GlobalSearchResultsComponent implements OnInit {
   readonly vulnLabel = primaryVulnId;
+  readonly purlEcosystem = purlEcosystem;
   query = '';
   searchInput = '';
   data: GlobalSearchResponse | null = null;
